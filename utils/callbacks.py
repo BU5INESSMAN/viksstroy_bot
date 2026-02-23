@@ -2,9 +2,9 @@ from aiogram.filters.callback_data import CallbackData
 from typing import Optional
 
 class TeamCallback(CallbackData, prefix="team"):
-    """Для управления бригадами и сотрудниками"""
-    action: str          # view, create, edit_name, add_leader, add_member, delete_team
-    team_id: int = 0     # ID бригады
+    action: str
+    team_id: Optional[int] = None    # Сделали Optional
+    member_id: Optional[int] = None  # Сделали Optional
 
 class AppAction(CallbackData, prefix="app"):
     """Для процесса создания заявки"""

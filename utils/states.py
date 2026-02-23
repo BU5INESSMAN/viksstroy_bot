@@ -13,6 +13,8 @@ class TeamStates(StatesGroup):
     wait_for_leader = State()    # Ввод ФИО бригадира (авто-переименование)
     wait_for_member = State()    # Ввод ФИО обычного рабочего
     wait_for_pos = State()       # Ввод должности рабочего
+    wait_for_member_fio = State()  # Ожидание нового ФИО сотрудника
+    wait_for_member_pos = State()  # Ожидание новой должности
 
 class AppStates(StatesGroup):
     """Состояния пошагового создания заявки прорабом"""

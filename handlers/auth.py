@@ -12,6 +12,31 @@ router = Router()
 
 @router.message(CommandStart())
 async def cmd_start(message: types.Message, state: FSMContext, db: DatabaseManager, role: str = None):
+    args = message.text.split()
+
+    # ПРОВЕРКА НА ССЫЛКУ-ПРИГЛАШЕНИЕ
+    if len(args) > 1 and args[1].startswith("reg_"):
+        invite_code = args[1].replace("reg_", "")
+        member = await db.get_member_by_invite(invite_code)
+
+        if member:
+            if member['tg_user_id']:
+                await message.answer("❌ Этот код уже был использован.")
+                return
+
+            await db.register_member_tg(member['id'], message.from_user.id)
+            await message.answer(
+                f"🎉 Добро пожаловать, <b>{member['fio']}</b>!\n"
+                f"Вы успешно зарегистрированы в бригаде как <b>{member['position']}</b>.\n"
+                f"Теперь вы будете получать уведомления о новых заявках.",
+                parse_mode="HTML"
+            )
+            # Можно также добавить его в таблицу users с ролью 'worker'
+            return
+        else:
+            await message.answer("❌ Неверный или просроченный код приглашения.")
+            return
+
     await state.clear()
     if role:
         await message.answer(
