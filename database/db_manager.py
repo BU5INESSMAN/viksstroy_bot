@@ -1,7 +1,6 @@
 import aiosqlite
 import os
 import logging
-from datetime import datetime, timedelta
 
 
 class DatabaseManager:
@@ -11,7 +10,6 @@ class DatabaseManager:
 
     async def init_db(self):
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        # Открываем постоянное соединение
         self.conn = await aiosqlite.connect(self.db_path)
         self.conn.row_factory = aiosqlite.Row
 
@@ -21,22 +19,18 @@ class DatabaseManager:
                 await self.conn.executescript(schema)
                 await self.conn.commit()
 
-        # АВТОМАТИЧЕСКАЯ МИГРАЦИЯ БАЗЫ ДАННЫХ
         try:
             await self.conn.execute("ALTER TABLE equipment ADD COLUMN is_active INTEGER DEFAULT 1")
         except Exception:
             pass
-
         try:
             await self.conn.execute("ALTER TABLE equipment ADD COLUMN driver_fio TEXT DEFAULT 'Не указан'")
         except Exception:
             pass
-
         try:
             await self.conn.execute("ALTER TABLE applications ADD COLUMN foreman_id INTEGER")
         except Exception:
             pass
-
         try:
             await self.conn.execute("ALTER TABLE teams ADD COLUMN creator_id INTEGER")
         except Exception:
@@ -46,7 +40,6 @@ class DatabaseManager:
         logging.info("База данных успешно инициализирована и обновлена.")
 
     async def close(self):
-        """Метод для корректного закрытия соединения при выходе"""
         if self.conn:
             await self.conn.close()
 
@@ -56,10 +49,8 @@ class DatabaseManager:
             return await cursor.fetchone()
 
     async def add_user(self, user_id: int, fio: str, role: str):
-        await self.conn.execute(
-            "INSERT INTO users (user_id, fio, role, is_active) VALUES (?, ?, ?, 1)",
-            (user_id, fio, role)
-        )
+        await self.conn.execute("INSERT INTO users (user_id, fio, role, is_active) VALUES (?, ?, ?, 1)",
+                                (user_id, fio, role))
         await self.conn.commit()
 
     async def get_all_users(self):
@@ -71,10 +62,8 @@ class DatabaseManager:
         await self.conn.commit()
 
     async def toggle_user_status(self, user_id: int, blacklist: int):
-        await self.conn.execute(
-            "UPDATE users SET is_blacklisted = ?, failed_attempts = 0 WHERE user_id = ?",
-            (blacklist, user_id)
-        )
+        await self.conn.execute("UPDATE users SET is_blacklisted = ?, failed_attempts = 0 WHERE user_id = ?",
+                                (blacklist, user_id))
         await self.conn.commit()
 
     async def increment_failed_attempts(self, user_id: int):
@@ -85,8 +74,7 @@ class DatabaseManager:
     async def get_object_history(self, user_id: int):
         async with self.conn.execute(
                 "SELECT DISTINCT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC LIMIT 5",
-                (user_id,)
-        ) as cursor:
+                (user_id,)) as cursor:
             return await cursor.fetchall()
 
     async def create_empty_team(self, creator_id: int):
@@ -120,10 +108,8 @@ class DatabaseManager:
             return await cursor.fetchall()
 
     async def add_team_member(self, team_id: int, fio: str, position: str):
-        await self.conn.execute(
-            "INSERT INTO team_members (team_id, fio, position) VALUES (?, ?, ?)",
-            (team_id, fio, position)
-        )
+        await self.conn.execute("INSERT INTO team_members (team_id, fio, position) VALUES (?, ?, ?)",
+                                (team_id, fio, position))
         await self.conn.commit()
 
     async def remove_team_member(self, member_id: int):
@@ -135,28 +121,36 @@ class DatabaseManager:
         await self.conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
         await self.conn.commit()
 
-    # --- Техника ---
+    # --- Техника и логика времени ---
     async def get_equipment_categories(self):
         async with self.conn.execute("SELECT DISTINCT category FROM equipment WHERE is_active = 1") as cursor:
             rows = await cursor.fetchall()
             return [row['category'] for row in rows]
 
-    async def get_equipment_by_category(self, category: str, date_target: str, start_h: int, end_h: int):
-        cursor = await self.conn.execute("SELECT * FROM equipment WHERE category = ? AND is_active = 1", (category,))
-        items = await cursor.fetchall()
-        cursor = await self.conn.execute(
-            "SELECT equipment_id FROM applications WHERE date_target = ? AND status != 'rejected' AND (time_start < ? AND time_end > ?)",
-            (date_target, end_h, start_h)
-        )
-        busy = await cursor.fetchall()
-        busy_ids = [row['equipment_id'] for row in busy]
-        return [dict(i) for i in items], busy_ids
+    async def get_equipment(self, equip_id: int):
+        async with self.conn.execute("SELECT * FROM equipment WHERE id = ?", (equip_id,)) as cursor:
+            return await cursor.fetchone()
 
+    async def get_equipment_by_category(self, category: str):
+        """Возвращает всю активную технику в категории (занятость проверяется на этапе выбора времени)"""
+        async with self.conn.execute("SELECT * FROM equipment WHERE category = ? AND is_active = 1",
+                                     (category,)) as cursor:
+            items = await cursor.fetchall()
+            return [dict(i) for i in items]
+
+    async def get_equipment_busy_intervals(self, equip_id: int, date_target: str):
+        """Возвращает список занятых интервалов (time_start, time_end) для машины на конкретную дату"""
+        async with self.conn.execute(
+                "SELECT time_start, time_end FROM applications WHERE equipment_id = ? AND date_target = ? AND status != 'rejected'",
+                (equip_id, date_target)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return [(r['time_start'], r['time_end']) for r in rows]
+
+    # --- Админ (Техника) ---
     async def add_equipment(self, name, category, driver_fio="Не указан"):
-        await self.conn.execute(
-            "INSERT INTO equipment (name, category, driver_fio, is_active) VALUES (?, ?, ?, ?)",
-            (name, category, driver_fio, 1)
-        )
+        await self.conn.execute("INSERT INTO equipment (name, category, driver_fio, is_active) VALUES (?, ?, ?, ?)",
+                                (name, category, driver_fio, 1))
         await self.conn.commit()
 
     async def toggle_equipment_status(self, equip_id: int, is_active: int):
@@ -177,7 +171,6 @@ class DatabaseManager:
              data['equipment_id'], data['time_start'], data['time_end'], data.get('comment', ''))
         )
         app_id = cursor.lastrowid
-        # Исправлено название таблицы
         for m_id in data['selected_member_ids']:
             await self.conn.execute("INSERT INTO application_selected_staff (app_id, member_id) VALUES (?, ?)",
                                     (app_id, m_id))
@@ -185,7 +178,6 @@ class DatabaseManager:
         return app_id
 
     async def get_application_details(self, app_id: int):
-        """Возвращает детальную информацию по заявке для модераторов"""
         cursor = await self.conn.execute(
             """SELECT a.*, t.name as team_name, e.name as equip_name, e.driver_fio, u.fio as foreman_name
                FROM applications a
@@ -197,7 +189,6 @@ class DatabaseManager:
         app = await cursor.fetchone()
         if not app: return None
 
-        # Исправлено название таблицы и ключа
         cursor = await self.conn.execute(
             """SELECT tm.fio, tm.position FROM application_selected_staff ast 
                JOIN team_members tm ON ast.member_id = tm.id WHERE ast.app_id = ?""", (app_id,)
