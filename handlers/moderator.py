@@ -3,8 +3,7 @@ from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from database.db_manager import DatabaseManager
-from keyboards.inline_factory import AppAction  # Используем существующую фабрику или расширим
-from aiogram.utils.keyboard import InlineKeyboardBuilder
+from keyboards import inline_factory as kb
 
 router = Router()
 
@@ -13,182 +12,120 @@ class ModStates(StatesGroup):
     wait_for_rejection_reason = State()
 
 
-# --- КЛАВИАТУРЫ МОДЕРАТОРА ---
-
-def get_mod_decision_kb(app_id: int):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Одобрить", callback_data=f"mod_approve_{app_id}")
-    builder.button(text="❌ Отклонить", callback_data=f"mod_reject_{app_id}")
-    builder.adjust(2)
-    return builder.as_markup()
-
-
-# --- ЛОГИКА ---
-
 async def send_new_app_to_moderators(bot, app_id: int, db: DatabaseManager):
-    """Функция рассылки новой заявки модераторам (вызывать в конце foreman.py)"""
+    """Рассылка новой заявки модераторам"""
     data = await db.get_application_details(app_id)
     if not data: return
 
-    app = data['details']
-    staff = ", ".join([f"{m['fio']} ({m['position']})" for m in data['staff']])
+    details = data['details']
+    mods = await db.get_admins_and_moderators()
+
+    total_foremen = await db.get_foremen_count()
+    today_apps = await db.get_today_apps_count()
 
     text = (
-        f"🔔 <b>НОВАЯ ЗАЯВКА №{app_id}</b>\n\n"
-        f"📍 <b>Объект:</b> {app['object_address']}\n"
-        f"👤 <b>Прораб:</b> {app['foreman_name']}\n"
-        f"📅 <b>Дата:</b> {app['date_target']}\n"
-        f"⏰ <b>Время:</b> {app['time_start']}:00 - {app['time_end']}:00\n"
-        f"🚜 <b>Техника:</b> {app['equip_name']} (Водитель: {app['driver_fio']})\n"
-        f"👥 <b>Состав:</b> {staff}\n"
-        f"💬 <b>Коммент:</b> {app['comment']}\n"
+        f"📦 <b>НОВАЯ ЗАЯВКА №{app_id}</b>\n"
+        f"👤 От прораба: <b>{details['foreman_name']}</b>\n"
+        f"📊 Заполнено за сегодня: <b>{today_apps} из {total_foremen}</b>\n\n"
+        f"Нажмите кнопку ниже, чтобы взять заявку в работу."
     )
 
-    # В реальности здесь должен быть список ID модераторов из БД или .env
-    # Для примера отправим в лог или конкретному админу
-    # (В main.py мы добавим логику рассылки по ролям)
-    pass
+    markup = kb.get_mod_take_kb(app_id)
+    for mod_id in mods:
+        try:
+            await bot.send_message(mod_id, text, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            pass
 
 
-@router.callback_query(F.data.startswith("mod_approve_"))
-async def approve_application(callback: types.CallbackQuery, db: DatabaseManager):
+# --- ОБРАБОТЧИКИ МОДЕРАТОРА ---
+
+@router.callback_query(F.data.startswith("mod_take_"))
+async def process_take_app(callback: types.CallbackQuery, db: DatabaseManager):
     app_id = int(callback.data.split("_")[2])
-    await db.update_app_status(app_id, "approved")
+    data = await db.get_application_details(app_id)
+    if not data:
+        return await callback.answer("Заявка не найдена!")
 
-    app_data = await db.get_application_details(app_id)
-    foreman_id = app_data['details']['foreman_id']
-
-    await callback.message.edit_text(callback.message.text + "\n\n✅ <b>ОДОБРЕНО</b>")
+    details = data['details']
+    foreman_id = details['foreman_id']
+    mod_name = callback.from_user.username or callback.from_user.first_name
 
     # Уведомляем прораба
     try:
-        await callback.bot.send_message(
-            foreman_id,
-            f"🎉 Ваша заявка №{app_id} на объект {app_data['details']['object_address']} <b>ОДОБРЕНА</b>!"
-        )
-    except:
+        await callback.bot.send_message(foreman_id, f"👀 Ваша заявка №{app_id} рассматривается модератором @{mod_name}.")
+    except Exception:
         pass
+
+    # Показываем полную карточку модератору
+    staff_str = "\n".join([f"  — {s['fio']} ({s['position']})" for s in data['staff']])
+    text = (
+        f"📋 <b>ЗАЯВКА №{app_id} (РАССМОТРЕНИЕ)</b>\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"👤 Прораб: {details['foreman_name']}\n"
+        f"📅 Дата: {details['date_target']}\n"
+        f"📍 Объект: {details['object_address']}\n"
+        f"👥 Бригада: {details['team_name']}\n"
+        f"👨‍🔧 Состав:\n{staff_str}\n"
+        f"🚜 Техника: {details['equip_name']}\n"
+        f"⏰ Время: {details['time_start']}:00 - {details['time_end']}:00\n"
+        f"💬 Комментарий: {details['comment']}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"Выберите решение:"
+    )
+
+    await callback.message.edit_text(text, reply_markup=kb.get_mod_decision_kb(app_id), parse_mode="HTML")
+
+
+@router.callback_query(F.data.startswith("mod_approve_"))
+async def mod_approve(callback: types.CallbackQuery, db: DatabaseManager):
+    app_id = int(callback.data.split("_")[2])
+    await db.update_app_status(app_id, "approved")
+
+    data = await db.get_application_details(app_id)
+    foreman_id = data['details']['foreman_id']
+
+    # Уведомляем прораба
+    try:
+        await callback.bot.send_message(foreman_id, f"✅ <b>Ваша заявка №{app_id} ОДОБРЕНА!</b>", parse_mode="HTML")
+    except Exception:
+        pass
+
+    await callback.message.edit_text(callback.message.text + "\n\n✅ <b>СТАТУС: ОДОБРЕНО</b>", parse_mode="HTML")
 
 
 @router.callback_query(F.data.startswith("mod_reject_"))
-async def reject_application_start(callback: types.CallbackQuery, state: FSMContext):
+async def mod_reject_start(callback: types.CallbackQuery, state: FSMContext):
     app_id = int(callback.data.split("_")[2])
-    await state.update_data(reject_app_id=app_id, mod_msg_id=callback.message.message_id)
-    await callback.message.answer("Введите причину отказа:")
+    await state.update_data(reject_app_id=app_id)
+    await callback.message.answer(f"Напишите причину отклонения заявки №{app_id}:")
     await state.set_state(ModStates.wait_for_rejection_reason)
+    await callback.answer()
 
 
 @router.message(ModStates.wait_for_rejection_reason)
-async def process_rejection(message: types.Message, state: FSMContext, db: DatabaseManager):
+async def mod_reject_finish(message: types.Message, state: FSMContext, db: DatabaseManager):
     data = await state.get_data()
     app_id = data['reject_app_id']
     reason = message.text.strip()
 
     await db.update_app_status(app_id, "rejected", reason)
+
+    # Уведомляем прораба с кнопкой "Исправить"
     app_data = await db.get_application_details(app_id)
+    foreman_id = app_data['details']['foreman_id']
 
-    await message.answer(f"✅ Заявка №{app_id} отклонена.")
+    text_to_foreman = (
+        f"❌ <b>ВАША ЗАЯВКА №{app_id} ОТКЛОНЕНА!</b>\n\n"
+        f"💬 <b>Причина:</b> {reason}\n\n"
+        f"Нажмите кнопку ниже, чтобы исправить ошибки и отправить заново."
+    )
 
-    # Уведомляем прораба
     try:
-        await message.bot.send_message(
-            app_data['details']['foreman_id'],
-            f"❌ Ваша заявка №{app_id} на объект {app_data['details']['object_address']} <b>ОТКЛОНЕНА</b>.\n\n"
-            f"<b>Причина:</b> {reason}"
-        )
-    except:
+        await message.bot.send_message(foreman_id, text_to_foreman,
+                                       reply_markup=kb.get_foreman_edit_rejected_kb(app_id), parse_mode="HTML")
+    except Exception:
         pass
+
+    await message.answer(f"✅ Заявка №{app_id} отклонена. Прораб уведомлен.")
     await state.clear()
-
-
-async def send_new_app_to_moderators(bot, app_id: int, db: DatabaseManager):
-    """Рассылает карточку новой заявки всем модераторам и админам"""
-    data = await db.get_application_details(app_id)
-    if not data: return
-
-    app = data['details']
-    # Формируем список ФИО сотрудников
-    staff_list = "\n".join([f"— {m['fio']} ({m['position']})" for m in data['staff']])
-
-    text = (
-        f"🔔 <b>НОВАЯ ЗАЯВКА №{app_id}</b>\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"📍 <b>Объект:</b> {app['object_address']}\n"
-        f"👤 <b>Прораб:</b> {app['foreman_name']}\n"
-        f"📅 <b>Дата:</b> {app['date_target']}\n"
-        f"⏰ <b>Время:</b> {app['time_start']}:00 - {app['time_end']}:00\n"
-        f"🚜 <b>Техника:</b> {app['equip_name']}\n"
-        f"👨‍🔧 <b>Водитель:</b> {app['driver_fio']}\n"
-        f"👥 <b>Состав:</b>\n{staff_list}\n"
-        f"💬 <b>Коммент:</b> {app['comment']}\n"
-        f"━━━━━━━━━━━━━━━"
-    )
-
-    # Получаем всех, кому нужно отправить
-    mod_ids = await db.get_admins_and_moderators()
-
-    # Добавляем ID из .env (суперадминов) для подстраховки
-    super_admins = os.getenv("SUPER_ADMIN_IDS", "").split(",")
-    all_recipients = set(mod_ids + [int(i) for i in super_admins if i.strip()])
-
-    for m_id in all_recipients:
-        try:
-            await bot.send_message(
-                m_id,
-                text,
-                reply_markup=get_mod_decision_kb(app_id),  # Кнопки ✅/❌
-                parse_mode="HTML"
-            )
-        except Exception as e:
-            print(f"Не удалось отправить уведомление модератору {m_id}: {e}")
-
-
-# 1. Обработка кнопки из главного меню (текстовая команда)
-@router.message(F.text == "📂 Список заявок")
-async def show_pending_applications(message: types.Message, db: DatabaseManager, role: str):
-    if role not in ["moderator", "admin"]:
-        return
-
-    apps = await db.get_pending_applications()
-
-    if not apps:
-        await message.answer("✅ Все заявки обработаны. Новых пока нет.")
-        return
-
-    await message.answer(
-        "📂 <b>Список ожидающих заявок:</b>\nВыберите для просмотра деталей:",
-        reply_markup=get_pending_list_kb(apps),
-        parse_mode="HTML"
-    )
-
-
-# 2. Обработка нажатия на конкретную заявку из списка
-@router.callback_query(F.data.startswith("mod_view_"))
-async def view_app_details(callback: types.CallbackQuery, db: DatabaseManager):
-    app_id = int(callback.data.split("_")[2])
-
-    # Используем уже готовую функцию рассылки, чтобы показать карточку
-    data = await db.get_application_details(app_id)
-    if not data:
-        await callback.answer("Заявка не найдена.")
-        return
-
-    app = data['details']
-    staff_list = "\n".join([f"— {m['fio']}" for m in data['staff']])
-
-    text = (
-        f"📋 <b>ДЕТАЛИ ЗАЯВКИ №{app_id}</b>\n"
-        f"━━━━━━━━━━━━━━━\n"
-        f"📍 <b>Объект:</b> {app['object_address']}\n"
-        f"👤 <b>Прораб:</b> {app['foreman_name']}\n"
-        f"📅 <b>Дата:</b> {app['date_target']}\n"
-        f"👥 <b>Состав:</b>\n{staff_list}\n"
-        f"━━━━━━━━━━━━━━━"
-    )
-
-    # Редактируем старое сообщение, превращая его в карточку с кнопками ✅/❌
-    await callback.message.edit_text(
-        text,
-        reply_markup=get_mod_decision_kb(app_id),
-        parse_mode="HTML"
-    )

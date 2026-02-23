@@ -1,6 +1,7 @@
 import aiosqlite
 import os
 import logging
+from datetime import datetime
 
 
 class DatabaseManager:
@@ -37,11 +38,32 @@ class DatabaseManager:
             pass
 
         await self.conn.commit()
-        logging.info("База данных успешно инициализирована и обновлена.")
+        logging.info("База данных успешно инициализирована.")
 
     async def close(self):
         if self.conn:
             await self.conn.close()
+
+    # --- СТАТИСТИКА ДЛЯ МОДЕРАТОРОВ ---
+    async def get_foremen_count(self):
+        async with self.conn.execute("SELECT COUNT(*) FROM users WHERE role = 'foreman' AND is_active = 1") as cursor:
+            return (await cursor.fetchone())[0]
+
+    async def get_today_apps_count(self):
+        # Считаем уникальных прорабов, которые подали заявки (pending или approved) за сегодня
+        async with self.conn.execute(
+                "SELECT COUNT(DISTINCT foreman_id) FROM applications WHERE status != 'rejected' AND date(created_at) = date('now', 'localtime')") as cursor:
+            return (await cursor.fetchone())[0]
+
+    async def get_app_members_with_tg(self, app_id: int):
+        """Получает TG ID зарегистрированных рабочих из конкретной заявки"""
+        async with self.conn.execute("""
+            SELECT tm.tg_user_id, tm.fio, tm.position 
+            FROM application_selected_staff ast 
+            JOIN team_members tm ON ast.member_id = tm.id 
+            WHERE ast.app_id = ? AND tm.tg_user_id IS NOT NULL
+        """, (app_id,)) as cursor:
+            return await cursor.fetchall()
 
     # --- Пользователи ---
     async def get_user(self, user_id: int):
@@ -121,7 +143,7 @@ class DatabaseManager:
         await self.conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
         await self.conn.commit()
 
-    # --- Техника и логика времени ---
+    # --- Техника ---
     async def get_equipment_categories(self):
         async with self.conn.execute("SELECT DISTINCT category FROM equipment WHERE is_active = 1") as cursor:
             rows = await cursor.fetchall()
@@ -132,14 +154,12 @@ class DatabaseManager:
             return await cursor.fetchone()
 
     async def get_equipment_by_category(self, category: str):
-        """Возвращает всю активную технику в категории (занятость проверяется на этапе выбора времени)"""
         async with self.conn.execute("SELECT * FROM equipment WHERE category = ? AND is_active = 1",
                                      (category,)) as cursor:
             items = await cursor.fetchall()
             return [dict(i) for i in items]
 
     async def get_equipment_busy_intervals(self, equip_id: int, date_target: str):
-        """Возвращает список занятых интервалов (time_start, time_end) для машины на конкретную дату"""
         async with self.conn.execute(
                 "SELECT time_start, time_end FROM applications WHERE equipment_id = ? AND date_target = ? AND status != 'rejected'",
                 (equip_id, date_target)
@@ -163,19 +183,33 @@ class DatabaseManager:
 
     # --- Заявки ---
     async def save_application(self, data: dict, foreman_id: int):
-        cursor = await self.conn.execute(
-            """INSERT INTO applications 
-            (foreman_id, object_address, team_id, date_target, equipment_id, time_start, time_end, comment, status) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
-            (foreman_id, data['object_address'], data['team_id'], data['date_target'],
-             data['equipment_id'], data['time_start'], data['time_end'], data.get('comment', ''))
-        )
-        app_id = cursor.lastrowid
+        app_id = data.get('edit_app_id')  # Если это редактирование после отказа
+
+        if app_id:
+            await self.conn.execute(
+                """UPDATE applications 
+                SET object_address=?, team_id=?, date_target=?, equipment_id=?, time_start=?, time_end=?, comment=?, status='pending', rejection_reason=NULL 
+                WHERE id=?""",
+                (data['object_address'], data['team_id'], data['date_target'], data['equipment_id'], data['time_start'],
+                 data['time_end'], data.get('comment', ''), app_id)
+            )
+            await self.conn.execute("DELETE FROM application_selected_staff WHERE app_id=?", (app_id,))
+            new_app_id = app_id
+        else:
+            cursor = await self.conn.execute(
+                """INSERT INTO applications 
+                (foreman_id, object_address, team_id, date_target, equipment_id, time_start, time_end, comment, status) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
+                (foreman_id, data['object_address'], data['team_id'], data['date_target'], data['equipment_id'],
+                 data['time_start'], data['time_end'], data.get('comment', ''))
+            )
+            new_app_id = cursor.lastrowid
+
         for m_id in data['selected_member_ids']:
             await self.conn.execute("INSERT INTO application_selected_staff (app_id, member_id) VALUES (?, ?)",
-                                    (app_id, m_id))
+                                    (new_app_id, m_id))
         await self.conn.commit()
-        return app_id
+        return new_app_id
 
     async def get_application_details(self, app_id: int):
         cursor = await self.conn.execute(
@@ -189,8 +223,9 @@ class DatabaseManager:
         app = await cursor.fetchone()
         if not app: return None
 
+        # Добавлено извлечение member_id
         cursor = await self.conn.execute(
-            """SELECT tm.fio, tm.position FROM application_selected_staff ast 
+            """SELECT ast.member_id, tm.fio, tm.position FROM application_selected_staff ast 
                JOIN team_members tm ON ast.member_id = tm.id WHERE ast.app_id = ?""", (app_id,)
         )
         staff = await cursor.fetchall()

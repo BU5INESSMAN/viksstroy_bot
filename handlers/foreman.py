@@ -531,6 +531,12 @@ async def rev_edit_comment(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "rev_confirm")
 async def confirm_application_final(callback: types.CallbackQuery, state: FSMContext, db: DatabaseManager):
     data = await state.get_data()
+
+    # --- ИСПРАВЛЕНИЕ ОШИБКИ ЗДЕСЬ ---
+    # Передаем список участников в нужный ключ для базы данных
+    data['selected_member_ids'] = data.get('sel_m', [])
+    # --------------------------------
+
     # Финальная проверка
     required_keys = ['date_target', 'object_address', 'team_id', 'sel_m', 'equipment_id', 'time_start', 'time_end',
                      'comment']
@@ -547,3 +553,35 @@ async def confirm_application_final(callback: types.CallbackQuery, state: FSMCon
 @router.callback_query(F.data == "ignore")
 async def ignore_callback(callback: types.CallbackQuery):
     await callback.answer("Это время недоступно для бронирования!", show_alert=True)
+
+
+@router.callback_query(F.data.startswith("edit_rejected_"))
+async def edit_rejected_app(callback: types.CallbackQuery, state: FSMContext, db: DatabaseManager):
+    app_id = int(callback.data.split("_")[2])
+    app_data = await db.get_application_details(app_id)
+
+    if not app_data:
+        return await callback.answer("Ошибка: заявка не найдена в базе.", show_alert=True)
+
+    details = app_data['details']
+    staff = app_data['staff']
+
+    # Загружаем старые данные в FSM, как если бы прораб ввел их сам
+    await state.update_data(
+        edit_app_id=app_id,  # Флаг, что это перезапись старой заявки
+        date_target=details['date_target'],
+        object_address=details['object_address'],
+        team_id=details['team_id'],
+        team_name=details['team_name'],
+        equipment_id=details['equipment_id'],
+        equip_name=details['equip_name'],
+        time_start=details['time_start'],
+        time_end=details['time_end'],
+        comment=details['comment'],
+        sel_m=[s['member_id'] for s in staff],
+        sel_m_names=[s['fio'] for s in staff],
+    )
+
+    await callback.message.delete()  # Удаляем сообщение с отказом
+    # Вызываем твою готовую функцию проверки (WYSIWYG)
+    await show_review_card(callback.message, state)
