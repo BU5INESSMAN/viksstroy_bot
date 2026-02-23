@@ -79,6 +79,7 @@ async def main():
     finally:
         # Гарантируем закрытие всех соединений при выходе
         await bot.session.close()
+        await db.close()
         logger.info("Сессия бота завершена.")
 
 
