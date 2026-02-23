@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: viksstroy_bot
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data  # Пробрасываем папку с БД на твой компьютер
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10mb"
+        max-file: "3"
