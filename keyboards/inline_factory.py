@@ -183,3 +183,23 @@ def get_mod_decision_kb(app_id: int):
     builder.button(text="🔙 Назад", callback_data="mod_back_to_list")
     builder.adjust(2, 1)
     return builder.as_markup()
+
+def get_mod_take_kb(app_id: int):
+    """Кнопка 'Рассмотреть' для модератора при получении уведомления"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔍 Рассмотреть", callback_data=f"mod_take_{app_id}")
+    return builder.as_markup()
+
+def get_mod_decision_kb(app_id: int):
+    """Кнопки решения для модератора"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ Одобрить", callback_data=f"mod_approve_{app_id}")
+    builder.button(text="❌ Отклонить", callback_data=f"mod_reject_{app_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+def get_foreman_edit_rejected_kb(app_id: int):
+    """Кнопка для прораба 'Исправить заявку' после отказа"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Исправить заявку", callback_data=f"edit_rejected_{app_id}")
+    return builder.as_markup()
