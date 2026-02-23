@@ -33,11 +33,27 @@ async def create_team(callback: types.CallbackQuery, db: DatabaseManager):
     await callback.message.edit_text(f"Бригада №{tid} создана.",
                                      reply_markup=kb.get_team_edit_kb(tid, False, 0))
 
+
 @router.callback_query(TeamCallback.filter(F.action == "view"))
 async def view_team(callback: types.CallbackQuery, callback_data: TeamCallback, db: DatabaseManager):
-    t, m, hl = await db.get_team_full_data(callback_data.team_id)
-    await callback.message.edit_text(f"Бригада: {t['name']}\nУчастников: {len(m)}",
-                                     reply_markup=kb.get_team_edit_kb(t['id'], hl, len(m)))
+    # 1. Получаем данные о бригаде и её участниках из базы
+    t = await db.get_team(callback_data.team_id)
+    m = await db.get_team_members(callback_data.team_id)
+
+    # 2. ФОРМИРУЕМ ТЕКСТ (этот блок у вас, скорее всего, пропал)
+    text = (
+        f"🏗 <b>Бригада:</b> {t['name']}\n"
+        f"👥 <b>Участников:</b> {len(m)}\n\n"
+        f"Ниже представлен список людей. Нажмите на имя сотрудника, чтобы изменить его ФИО, "
+        f"специальность или создать ссылку-приглашение."
+    )
+
+    # 3. Отправляем сообщение с текстом и клавиатурой
+    await callback.message.edit_text(
+        text,  # Переменная 'text' теперь определена выше
+        reply_markup=kb.get_team_edit_kb(t['id'], m),
+        parse_mode="HTML"
+    )
 
 @router.callback_query(TeamCallback.filter(F.action == "add_leader"))
 async def add_leader_start(callback: types.CallbackQuery, callback_data: TeamCallback, state: FSMContext):
@@ -70,6 +86,68 @@ async def save_name(message: types.Message, state: FSMContext, db: DatabaseManag
     t, m, hl = await db.get_team_full_data(data['tid'])
     await message.answer("✅ Название обновлено", reply_markup=kb.get_team_edit_kb(t['id'], hl, len(m)))
 
+
+# Вызов меню конкретного сотрудника
+@router.callback_query(TeamCallback.filter(F.action == "manage_member"))
+async def manage_member(callback: types.CallbackQuery, callback_data: TeamCallback, db: DatabaseManager):
+    # Теперь callback_data.member_id существует
+    member = await db.get_member(callback_data.member_id)
+
+    if not member:
+        await callback.answer("Ошибка: участник не найден")
+        return
+
+    status = "✅ Зарегистрирован" if member['tg_user_id'] else "⚠️ Ожидает входа по ссылке"
+
+    text = (
+        f"👤 <b>Управление: {member['fio']}</b>\n"
+        f"🛠 Специальность: {member['position']}\n"
+        f"Статус: {status}"
+    )
+
+    # Вызываем меню управления (которое мы создавали в прошлых шагах)
+    await callback.message.edit_text(
+        text,
+        reply_markup=kb.get_member_edit_kb(callback_data.team_id, callback_data.member_id),
+        parse_mode="HTML"
+    )
+
+
+# Генерация и отправка ссылки
+@router.callback_query(TeamCallback.filter(F.action == "m_invite"))
+async def invite_member(callback: types.CallbackQuery, callback_data: TeamCallback, db: DatabaseManager):
+    code = await db.get_or_create_invite_code(callback_data.member_id)
+    bot_info = await callback.bot.get_me()
+    invite_link = f"https://t.me/{bot_info.username}?start=reg_{code}"
+
+    await callback.message.answer(
+        f"🔗 <b>Ссылка-приглашение для {callback_data.member_id}:</b>\n\n"
+        f"<code>{invite_link}</code>\n\n"
+        f"Перешлите это сообщение сотруднику. После перехода он будет закреплен за вашей бригадой.",
+        parse_mode="HTML"
+    )
+    await callback.answer()
+
+
+# 3. Начало изменения ФИО/Специальности
+@router.callback_query(TeamCallback.filter(F.action.in_(["m_edit_fio", "m_edit_pos"])))
+async def edit_member_start(callback: types.CallbackQuery, callback_data: TeamCallback, state: FSMContext):
+    await state.update_data(edit_m_id=callback_data.member_id, edit_t_id=callback_data.team_id)
+
+    if callback_data.action == "m_edit_fio":
+        await callback.message.answer("Введите новое ФИО сотрудника:")
+        await state.set_state(TeamStates.wait_for_member_fio)
+    else:
+        await callback.message.answer("Введите новую специальность:")
+        await state.set_state(TeamStates.wait_for_member_pos)
+    await callback.answer()
+
+@router.message(TeamStates.wait_for_member_fio)
+async def edit_member_fio_done(message: types.Message, state: FSMContext, db: DatabaseManager):
+    data = await state.get_data()
+    await db.update_member(data['edit_m_id'], fio=message.text.strip())
+    await message.answer("✅ ФИО обновлено")
+    await state.clear()
 
 # --- БЛОК: СОЗДАНИЕ ЗАЯВКИ ---
 @router.message(F.text == "📝 Создать заявку")

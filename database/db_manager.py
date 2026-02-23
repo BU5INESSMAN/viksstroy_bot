@@ -122,6 +122,21 @@ class DatabaseManager:
             has_leader = any(m['position'].lower() == 'бригадир' for m in members)
             return dict(team), [dict(m) for m in members], has_leader
 
+    async def get_team(self, team_id: int):
+        """Получить данные о бригаде по её ID"""
+        async with self as db:
+            async with db.execute("SELECT * FROM teams WHERE id = ?", (team_id,)) as cursor:
+                return await cursor.fetchone()
+
+    async def get_team_members(self, team_id: int):
+        """Получить список всех участников конкретной бригады"""
+        async with self as db:
+            async with db.execute(
+                    "SELECT * FROM team_members WHERE team_id = ?",
+                    (team_id,)
+            ) as cursor:
+                return await cursor.fetchall()
+
     async def add_team_member(self, team_id: int, fio: str, position: str):
         async with self as db:
             await db.execute(
@@ -238,3 +253,46 @@ class DatabaseManager:
                    WHERE a.date = ? AND a.status = 'approved'""", (date_str,)
             ) as cursor:
                 return await cursor.fetchall()
+
+    async def get_member(self, member_id: int):
+        """Получить данные конкретного сотрудника"""
+        async with self as db:
+            async with db.execute("SELECT * FROM team_members WHERE id = ?", (member_id,)) as cursor:
+                return await cursor.fetchone()
+
+    async def update_member(self, member_id: int, fio: str = None, position: str = None):
+        """Обновить ФИО или должность сотрудника"""
+        async with self as db:
+            if fio:
+                await db.execute("UPDATE team_members SET fio = ? WHERE id = ?", (fio, member_id))
+            if position:
+                await db.execute("UPDATE team_members SET position = ? WHERE id = ?", (position, member_id))
+            await db.commit()
+
+    async def get_or_create_invite_code(self, member_id: int):
+        """Получает существующий или создает новый 8-значный код приглашения"""
+        async with self as db:
+            async with db.execute("SELECT invite_code FROM team_members WHERE id = ?", (member_id,)) as cursor:
+                row = await cursor.fetchone()
+                if row and row['invite_code']:
+                    return row['invite_code']
+
+            import secrets, string
+            new_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+            await db.execute("UPDATE team_members SET invite_code = ? WHERE id = ?", (new_code, member_id))
+            await db.commit()
+            return new_code
+
+    async def get_member_by_invite(self, code: str):
+        """Поиск сотрудника по коду приглашения"""
+        async with self as db:
+            async with db.execute("SELECT * FROM team_members WHERE invite_code = ?", (code,)) as cursor:
+                return await cursor.fetchone()
+
+    async def register_member_tg(self, member_id: int, tg_id: int):
+        """Привязка Telegram ID к сотруднику"""
+        async with self as db:
+            await db.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (tg_id, member_id))
+            # Также добавляем его в общую таблицу пользователей как 'worker' или 'foreman'
+            # (зависит от вашей логики, обычно рабочим роль не нужна, но запись в users полезна)
+            await db.commit()
