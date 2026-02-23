@@ -20,6 +20,28 @@ def get_admin_categories_kb(categories: list):
     builder.adjust(2)
     return builder.as_markup()
 
+
+# --- КЛАВИАТУРЫ ОТМЕНЫ (НОВЫЕ) ---
+
+def get_cancel_edit_kb(team_id: int, member_id: int):
+    """Кнопка отмены при вводе нового ФИО или специальности"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🔙 Отмена",
+        callback_data=TeamCallback(action="manage_member", team_id=team_id, member_id=member_id)
+    )
+    return builder.as_markup()
+
+def get_cancel_add_kb(team_id: int):
+    """Кнопка отмены при добавлении нового участника"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="🔙 Отмена",
+        callback_data=TeamCallback(action="view", team_id=team_id)
+    )
+    return builder.as_markup()
+
+
 # --- КЛАВИАТУРЫ ПРОРАБА (БРИГАДЫ И ЗАЯВКИ) ---
 
 def get_teams_main_kb(teams: list):
@@ -30,54 +52,36 @@ def get_teams_main_kb(teams: list):
             text=f"🏗 {team['name']}",
             callback_data=TeamCallback(action="view", team_id=team['id'])
         )
-    # ИСПРАВЛЕНО: Теперь team_id=0 или None не вызовет ошибку
     builder.button(text="➕ Создать новую бригаду", callback_data=TeamCallback(action="create", team_id=0))
     builder.adjust(1)
     return builder.as_markup()
-
 
 def get_member_edit_kb(team_id: int, member_id: int):
     """Меню управления конкретным участником"""
     builder = InlineKeyboardBuilder()
 
-    # Кнопки редактирования данных
     builder.button(text="✏️ Изменить ФИО",
                    callback_data=TeamCallback(action="edit_m_fio", team_id=team_id, member_id=member_id))
     builder.button(text="🛠 Изменить специальность",
                    callback_data=TeamCallback(action="edit_m_pos", team_id=team_id, member_id=member_id))
-
-    # Кнопка получения ссылки (инвайт-кода)
     builder.button(text="🔗 Ссылка для входа",
                    callback_data=TeamCallback(action="get_invite", team_id=team_id, member_id=member_id))
-
-    # Кнопка удаления (выделяем предупреждающим знаком)
     builder.button(text="❌ Удалить из бригады",
                    callback_data=TeamCallback(action="delete_member", team_id=team_id, member_id=member_id))
-
-    # Кнопка назад в меню бригады
     builder.button(text="🔙 Назад к бригаде", callback_data=TeamCallback(action="view", team_id=team_id))
 
-    builder.adjust(1)  # Кнопки в столбик
+    builder.adjust(1)
     return builder.as_markup()
 
 def get_team_edit_kb(team_id: int, members: list):
     builder = InlineKeyboardBuilder()
 
-    # Кнопка названия
     builder.button(text="✏️ Изменить название", callback_data=TeamCallback(action="edit_name", team_id=team_id))
 
     for m in members:
-        # 1. Значок регистрации
         reg_status = "" if m['tg_user_id'] else "⚠️ "
-
-        # 2. Формируем текст: Имя (Специальность)
         btn_text = f"{reg_status}{m['fio']} ({m['position']})"
 
-        # 3. Определяем стиль (красный для лидера)
-        # В aiogram 3.x для InlineKeyboardButton нет прямого поля style как в Discord,
-        # но мы можем выделить его визуально через иконку или использовать логику на стороне хендлера.
-        # Если вы используете кастомные сборки или планируете WebApp - это одно,
-        # но для стандартных кнопок выделим его текстом и иконкой:
         if m['is_leader']:
             btn_text = f"🔴 {m['fio']}"
 
@@ -89,7 +93,7 @@ def get_team_edit_kb(team_id: int, members: list):
     if len(members) < 12:
         builder.button(text="➕ Добавить человека", callback_data=TeamCallback(action="add_member", team_id=team_id))
 
-    builder.button(text="🔙 Назад", callback_data=TeamCallback(action="main_menu"))
+    builder.button(text="🔙 Назад", callback_data=TeamCallback(action="main_menu", team_id=team_id))
     builder.adjust(1)
     return builder.as_markup()
 

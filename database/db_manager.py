@@ -3,296 +3,255 @@ import os
 import logging
 from datetime import datetime, timedelta
 
+
 class DatabaseManager:
     def __init__(self, db_path: str):
         self.db_path = db_path
-
-    async def __aenter__(self):
-        self.conn = await aiosqlite.connect(self.db_path)
-        self.conn.row_factory = aiosqlite.Row
-        return self.conn
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        await self.conn.close()
+        self.conn = None
 
     async def init_db(self):
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        async with self as db:
-            if os.path.exists("database/schema.sql"):
-                with open("database/schema.sql", "r", encoding="utf-8") as f:
-                    schema = f.read()
-                    await db.executescript(schema)
-                    await db.commit()
+        # Открываем постоянное соединение
+        self.conn = await aiosqlite.connect(self.db_path)
+        self.conn.row_factory = aiosqlite.Row
 
-            # --- АВТОМАТИЧЕСКАЯ МИГРАЦИЯ БАЗЫ ДАННЫХ ---
-            try:
-                await db.execute("ALTER TABLE equipment ADD COLUMN is_active INTEGER DEFAULT 1")
-            except Exception:
-                pass
+        if os.path.exists("database/schema.sql"):
+            with open("database/schema.sql", "r", encoding="utf-8") as f:
+                schema = f.read()
+                await self.conn.executescript(schema)
+                await self.conn.commit()
 
-            try:
-                await db.execute("ALTER TABLE equipment ADD COLUMN driver_fio TEXT DEFAULT 'Не указан'")
-            except Exception:
-                pass
+        # АВТОМАТИЧЕСКАЯ МИГРАЦИЯ БАЗЫ ДАННЫХ
+        try:
+            await self.conn.execute("ALTER TABLE equipment ADD COLUMN is_active INTEGER DEFAULT 1")
+        except Exception:
+            pass
 
-                # ВОТ ЭТО ДОБАВЛЯЕМ СЕЙЧАС:
-            try:
-                # Добавляем creator_id в заявки
-                await db.execute("ALTER TABLE applications ADD COLUMN creator_id INTEGER")
-            except Exception:
-                pass
+        try:
+            await self.conn.execute("ALTER TABLE equipment ADD COLUMN driver_fio TEXT DEFAULT 'Не указан'")
+        except Exception:
+            pass
 
-            try:
-                # На всякий случай добавляем creator_id и в бригады (если там тоже нет)
-                await db.execute("ALTER TABLE teams ADD COLUMN creator_id INTEGER")
-            except Exception:
-                pass
+        try:
+            await self.conn.execute("ALTER TABLE applications ADD COLUMN foreman_id INTEGER")
+        except Exception:
+            pass
 
-            await db.commit()
-            logging.info("База данных успешно инициализирована и обновлена.")
+        try:
+            await self.conn.execute("ALTER TABLE teams ADD COLUMN creator_id INTEGER")
+        except Exception:
+            pass
+
+        await self.conn.commit()
+        logging.info("База данных успешно инициализирована и обновлена.")
+
+    async def close(self):
+        """Метод для корректного закрытия соединения при выходе"""
+        if self.conn:
+            await self.conn.close()
 
     # --- Пользователи ---
     async def get_user(self, user_id: int):
-        async with self as db:
-            async with db.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
-                return await cursor.fetchone()
+        async with self.conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
+            return await cursor.fetchone()
 
     async def add_user(self, user_id: int, fio: str, role: str):
-        async with self as db:
-            await db.execute(
-                "INSERT INTO users (user_id, fio, role, is_active) VALUES (?, ?, ?, 1)",
-                (user_id, fio, role)
-            )
-            await db.commit()
+        await self.conn.execute(
+            "INSERT INTO users (user_id, fio, role, is_active) VALUES (?, ?, ?, 1)",
+            (user_id, fio, role)
+        )
+        await self.conn.commit()
 
     async def get_all_users(self):
-        async with self as db:
-            async with db.execute("SELECT user_id, fio, role, is_active, is_blacklisted FROM users") as cursor:
-                return await cursor.fetchall()
+        async with self.conn.execute("SELECT user_id, fio, role, is_active, is_blacklisted FROM users") as cursor:
+            return await cursor.fetchall()
 
     async def update_user_role(self, user_id: int, new_role: str):
-        async with self as db:
-            await db.execute("UPDATE users SET role = ? WHERE user_id = ?", (new_role, user_id))
-            await db.commit()
+        await self.conn.execute("UPDATE users SET role = ? WHERE user_id = ?", (new_role, user_id))
+        await self.conn.commit()
 
     async def toggle_user_status(self, user_id: int, blacklist: int):
-        async with self as db:
-            await db.execute(
-                "UPDATE users SET is_blacklisted = ?, failed_attempts = 0 WHERE user_id = ?",
-                (blacklist, user_id)
-            )
-            await db.commit()
+        await self.conn.execute(
+            "UPDATE users SET is_blacklisted = ?, failed_attempts = 0 WHERE user_id = ?",
+            (blacklist, user_id)
+        )
+        await self.conn.commit()
 
     async def increment_failed_attempts(self, user_id: int):
-        async with self as db:
-            await db.execute("UPDATE users SET failed_attempts = failed_attempts + 1 WHERE user_id = ?", (user_id,))
-            await db.commit()
+        await self.conn.execute("UPDATE users SET failed_attempts = failed_attempts + 1 WHERE user_id = ?", (user_id,))
+        await self.conn.commit()
 
     # --- Бригады ---
     async def get_object_history(self, user_id: int):
-        async with self as db:
-            async with db.execute(
-                "SELECT DISTINCT object_address FROM applications WHERE creator_id = ? ORDER BY id DESC LIMIT 5",
+        async with self.conn.execute(
+                "SELECT DISTINCT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC LIMIT 5",
                 (user_id,)
-            ) as cursor:
-                return await cursor.fetchall()
+        ) as cursor:
+            return await cursor.fetchall()
 
     async def create_empty_team(self, creator_id: int):
-        async with self as db:
-            cursor = await db.execute("INSERT INTO teams (name, creator_id) VALUES (?, ?)", ("Новая бригада", creator_id))
-            await db.commit()
-            return cursor.lastrowid
+        cursor = await self.conn.execute("INSERT INTO teams (name, creator_id) VALUES (?, ?)",
+                                         ("Новая бригада", creator_id))
+        await self.conn.commit()
+        return cursor.lastrowid
 
     async def update_team_name(self, team_id: int, new_name: str):
-        async with self as db:
-            await db.execute("UPDATE teams SET name = ? WHERE id = ?", (new_name, team_id))
-            await db.commit()
+        await self.conn.execute("UPDATE teams SET name = ? WHERE id = ?", (new_name, team_id))
+        await self.conn.commit()
 
     async def get_all_teams(self):
-        async with self as db:
-            async with db.execute("SELECT * FROM teams") as cursor:
-                return await cursor.fetchall()
+        async with self.conn.execute("SELECT * FROM teams") as cursor:
+            return await cursor.fetchall()
 
     async def get_team_full_data(self, team_id: int):
-        async with self as db:
-            cursor = await db.execute("SELECT * FROM teams WHERE id = ?", (team_id,))
-            team = await cursor.fetchone()
-            cursor = await db.execute("SELECT * FROM team_members WHERE team_id = ?", (team_id,))
-            members = await cursor.fetchall()
-            has_leader = any(m['position'].lower() == 'бригадир' for m in members)
-            return dict(team), [dict(m) for m in members], has_leader
+        cursor = await self.conn.execute("SELECT * FROM teams WHERE id = ?", (team_id,))
+        team = await cursor.fetchone()
+        cursor = await self.conn.execute("SELECT * FROM team_members WHERE team_id = ?", (team_id,))
+        members = await cursor.fetchall()
+        has_leader = any(m['position'].lower() == 'бригадир' for m in members)
+        return dict(team), [dict(m) for m in members], has_leader
 
     async def get_team(self, team_id: int):
-        """Получить данные о бригаде по её ID"""
-        async with self as db:
-            async with db.execute("SELECT * FROM teams WHERE id = ?", (team_id,)) as cursor:
-                return await cursor.fetchone()
+        async with self.conn.execute("SELECT * FROM teams WHERE id = ?", (team_id,)) as cursor:
+            return await cursor.fetchone()
 
     async def get_team_members(self, team_id: int):
-        """Получить список всех участников конкретной бригады"""
-        async with self as db:
-            async with db.execute(
-                    "SELECT * FROM team_members WHERE team_id = ?",
-                    (team_id,)
-            ) as cursor:
-                return await cursor.fetchall()
+        async with self.conn.execute("SELECT * FROM team_members WHERE team_id = ?", (team_id,)) as cursor:
+            return await cursor.fetchall()
 
     async def add_team_member(self, team_id: int, fio: str, position: str):
-        async with self as db:
-            await db.execute(
-                "INSERT INTO team_members (team_id, fio, position) VALUES (?, ?, ?)",
-                (team_id, fio, position)
-            )
-            await db.commit()
+        await self.conn.execute(
+            "INSERT INTO team_members (team_id, fio, position) VALUES (?, ?, ?)",
+            (team_id, fio, position)
+        )
+        await self.conn.commit()
 
     async def remove_team_member(self, member_id: int):
-        async with self as db:
-            await db.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
-            await db.commit()
+        await self.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
+        await self.conn.commit()
 
     async def delete_team(self, team_id: int):
-        async with self as db:
-            await db.execute("DELETE FROM team_members WHERE team_id = ?", (team_id,))
-            await db.execute("DELETE FROM teams WHERE id = ?", (team_id,))
-            await db.commit()
+        await self.conn.execute("DELETE FROM team_members WHERE team_id = ?", (team_id,))
+        await self.conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
+        await self.conn.commit()
 
     # --- Техника ---
     async def get_equipment_categories(self):
-        async with self as db:
-            async with db.execute("SELECT DISTINCT category FROM equipment WHERE is_active = 1") as cursor:
-                rows = await cursor.fetchall()
-                return [row['category'] for row in rows]
+        async with self.conn.execute("SELECT DISTINCT category FROM equipment WHERE is_active = 1") as cursor:
+            rows = await cursor.fetchall()
+            return [row['category'] for row in rows]
 
-    async def get_equipment_by_category(self, category: str, date: str, start_h: int, end_h: int):
-        async with self as db:
-            cursor = await db.execute("SELECT * FROM equipment WHERE category = ? AND is_active = 1", (category,))
-            items = await cursor.fetchall()
-            cursor = await db.execute(
-                "SELECT equipment_id FROM applications WHERE date = ? AND status != 'rejected' AND (time_start < ? AND time_end > ?)",
-                (date, end_h, start_h)
-            )
-            busy = await cursor.fetchall()
-            busy_ids = [row['equipment_id'] for row in busy]
-            return [dict(i) for i in items], busy_ids
+    async def get_equipment_by_category(self, category: str, date_target: str, start_h: int, end_h: int):
+        cursor = await self.conn.execute("SELECT * FROM equipment WHERE category = ? AND is_active = 1", (category,))
+        items = await cursor.fetchall()
+        cursor = await self.conn.execute(
+            "SELECT equipment_id FROM applications WHERE date_target = ? AND status != 'rejected' AND (time_start < ? AND time_end > ?)",
+            (date_target, end_h, start_h)
+        )
+        busy = await cursor.fetchall()
+        busy_ids = [row['equipment_id'] for row in busy]
+        return [dict(i) for i in items], busy_ids
 
     async def add_equipment(self, name, category, driver_fio="Не указан"):
-        async with self as db:
-            await db.execute(
-                "INSERT INTO equipment (name, category, driver_fio, is_active) VALUES (?, ?, ?, ?)",
-                (name, category, driver_fio, 1)
-            )
-            await db.commit()
+        await self.conn.execute(
+            "INSERT INTO equipment (name, category, driver_fio, is_active) VALUES (?, ?, ?, ?)",
+            (name, category, driver_fio, 1)
+        )
+        await self.conn.commit()
 
     async def toggle_equipment_status(self, equip_id: int, is_active: int):
-        async with self as db:
-            await db.execute("UPDATE equipment SET is_active = ? WHERE id = ?", (is_active, equip_id))
-            await db.commit()
+        await self.conn.execute("UPDATE equipment SET is_active = ? WHERE id = ?", (is_active, equip_id))
+        await self.conn.commit()
 
     async def get_all_equipment_admin(self):
-        async with self as db:
-            async with db.execute("SELECT * FROM equipment") as cursor:
-                return await cursor.fetchall()
+        async with self.conn.execute("SELECT * FROM equipment") as cursor:
+            return await cursor.fetchall()
 
     # --- Заявки ---
-    async def save_application(self, data: dict, creator_id: int):
-        async with self as db:
-            cursor = await db.execute(
-                """INSERT INTO applications 
-                (creator_id, object_address, team_id, date, equipment_id, time_start, time_end, comment, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
-                (creator_id, data['object_address'], data['team_id'], data['date_target'],
-                 data['equipment_id'], data['time_start'], data['time_end'], data.get('comment', ''))
-            )
-            app_id = cursor.lastrowid
-            for m_id in data['selected_member_ids']:
-                await db.execute("INSERT INTO app_staff (application_id, member_id) VALUES (?, ?)", (app_id, m_id))
-            await db.commit()
-            return app_id
+    async def save_application(self, data: dict, foreman_id: int):
+        cursor = await self.conn.execute(
+            """INSERT INTO applications 
+            (foreman_id, object_address, team_id, date_target, equipment_id, time_start, time_end, comment, status) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
+            (foreman_id, data['object_address'], data['team_id'], data['date_target'],
+             data['equipment_id'], data['time_start'], data['time_end'], data.get('comment', ''))
+        )
+        app_id = cursor.lastrowid
+        # Исправлено название таблицы
+        for m_id in data['selected_member_ids']:
+            await self.conn.execute("INSERT INTO application_selected_staff (app_id, member_id) VALUES (?, ?)",
+                                    (app_id, m_id))
+        await self.conn.commit()
+        return app_id
 
-    async def get_application_full(self, app_id: int):
-        async with self as db:
-            cursor = await db.execute(
-                """SELECT a.*, t.name as team_name, e.name as equip_name, e.driver_fio, u.fio as creator_name
-                   FROM applications a
-                   LEFT JOIN teams t ON a.team_id = t.id
-                   LEFT JOIN equipment e ON a.equipment_id = e.id
-                   LEFT JOIN users u ON a.creator_id = u.user_id
-                   WHERE a.id = ?""", (app_id,)
-            )
-            app = await cursor.fetchone()
-            if not app: return None
-            cursor = await db.execute(
-                """SELECT tm.fio, tm.position FROM app_staff ast 
-                   JOIN team_members tm ON ast.member_id = tm.id WHERE ast.application_id = ?""", (app_id,)
-            )
-            staff = await cursor.fetchall()
-            return dict(app), [dict(s) for s in staff]
+    async def get_application_details(self, app_id: int):
+        """Возвращает детальную информацию по заявке для модераторов"""
+        cursor = await self.conn.execute(
+            """SELECT a.*, t.name as team_name, e.name as equip_name, e.driver_fio, u.fio as foreman_name
+               FROM applications a
+               LEFT JOIN teams t ON a.team_id = t.id
+               LEFT JOIN equipment e ON a.equipment_id = e.id
+               LEFT JOIN users u ON a.foreman_id = u.user_id
+               WHERE a.id = ?""", (app_id,)
+        )
+        app = await cursor.fetchone()
+        if not app: return None
 
-    async def update_application_status(self, app_id: int, status: str, moderator_id: int):
-        async with self as db:
-            await db.execute("UPDATE applications SET status = ?, moderator_id = ? WHERE id = ?", (status, moderator_id, app_id))
-            await db.commit()
+        # Исправлено название таблицы и ключа
+        cursor = await self.conn.execute(
+            """SELECT tm.fio, tm.position FROM application_selected_staff ast 
+               JOIN team_members tm ON ast.member_id = tm.id WHERE ast.app_id = ?""", (app_id,)
+        )
+        staff = await cursor.fetchall()
+        return {"details": dict(app), "staff": [dict(s) for s in staff]}
+
+    async def update_app_status(self, app_id: int, status: str, rejection_reason: str = None):
+        if rejection_reason:
+            await self.conn.execute("UPDATE applications SET status = ?, rejection_reason = ? WHERE id = ?",
+                                    (status, rejection_reason, app_id))
+        else:
+            await self.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (status, app_id))
+        await self.conn.commit()
 
     async def get_pending_applications(self):
-        async with self as db:
-            async with db.execute("SELECT id, object_address FROM applications WHERE status = 'pending'") as cursor:
-                return await cursor.fetchall()
+        async with self.conn.execute("SELECT id, object_address FROM applications WHERE status = 'pending'") as cursor:
+            return await cursor.fetchall()
 
     async def get_user_applications(self, user_id: int):
-        async with self as db:
-            async with db.execute("SELECT * FROM applications WHERE creator_id = ? ORDER BY id DESC LIMIT 10", (user_id,)) as cursor:
-                return await cursor.fetchall()
+        async with self.conn.execute("SELECT * FROM applications WHERE foreman_id = ? ORDER BY id DESC LIMIT 10",
+                                     (user_id,)) as cursor:
+            return await cursor.fetchall()
 
-    async def get_daily_report(self, date_str: str):
-        async with self as db:
-            async with db.execute(
-                """SELECT a.*, t.name as team_name, e.name as equip_name 
-                   FROM applications a
-                   LEFT JOIN teams t ON a.team_id = t.id
-                   LEFT JOIN equipment e ON a.equipment_id = e.id
-                   WHERE a.date = ? AND a.status = 'approved'""", (date_str,)
-            ) as cursor:
-                return await cursor.fetchall()
+    async def get_admins_and_moderators(self):
+        async with self.conn.execute("SELECT user_id FROM users WHERE role IN ('admin', 'moderator')") as cursor:
+            rows = await cursor.fetchall()
+            return [row['user_id'] for row in rows]
 
     async def get_member(self, member_id: int):
-        """Получить данные конкретного сотрудника"""
-        async with self as db:
-            async with db.execute("SELECT * FROM team_members WHERE id = ?", (member_id,)) as cursor:
-                return await cursor.fetchone()
+        async with self.conn.execute("SELECT * FROM team_members WHERE id = ?", (member_id,)) as cursor:
+            return await cursor.fetchone()
 
     async def update_member(self, member_id: int, fio: str = None, position: str = None):
-        """Обновить ФИО или должность сотрудника"""
-        async with self as db:
-            if fio:
-                await db.execute("UPDATE team_members SET fio = ? WHERE id = ?", (fio, member_id))
-            if position:
-                await db.execute("UPDATE team_members SET position = ? WHERE id = ?", (position, member_id))
-            await db.commit()
+        if fio: await self.conn.execute("UPDATE team_members SET fio = ? WHERE id = ?", (fio, member_id))
+        if position: await self.conn.execute("UPDATE team_members SET position = ? WHERE id = ?", (position, member_id))
+        await self.conn.commit()
 
     async def get_or_create_invite_code(self, member_id: int):
-        """Получает существующий или создает новый 8-значный код приглашения"""
-        async with self as db:
-            async with db.execute("SELECT invite_code FROM team_members WHERE id = ?", (member_id,)) as cursor:
-                row = await cursor.fetchone()
-                if row and row['invite_code']:
-                    return row['invite_code']
+        async with self.conn.execute("SELECT invite_code FROM team_members WHERE id = ?", (member_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row and row['invite_code']:
+                return row['invite_code']
 
-            import secrets, string
-            new_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
-            await db.execute("UPDATE team_members SET invite_code = ? WHERE id = ?", (new_code, member_id))
-            await db.commit()
-            return new_code
+        import secrets, string
+        new_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+        await self.conn.execute("UPDATE team_members SET invite_code = ? WHERE id = ?", (new_code, member_id))
+        await self.conn.commit()
+        return new_code
 
     async def get_member_by_invite(self, code: str):
-        """Поиск сотрудника по коду приглашения"""
-        async with self as db:
-            async with db.execute("SELECT * FROM team_members WHERE invite_code = ?", (code,)) as cursor:
-                return await cursor.fetchone()
+        async with self.conn.execute("SELECT * FROM team_members WHERE invite_code = ?", (code,)) as cursor:
+            return await cursor.fetchone()
 
     async def register_member_tg(self, member_id: int, tg_id: int):
-        """Привязка Telegram ID к сотруднику"""
-        async with self as db:
-            await db.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (tg_id, member_id))
-            # Также добавляем его в общую таблицу пользователей как 'worker' или 'foreman'
-            # (зависит от вашей логики, обычно рабочим роль не нужна, но запись в users полезна)
-            await db.commit()
+        await self.conn.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (tg_id, member_id))
+        await self.conn.commit()
