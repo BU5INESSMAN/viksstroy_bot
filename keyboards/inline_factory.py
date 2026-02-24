@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 def get_admin_main_kb():
     builder = InlineKeyboardBuilder()
     builder.button(text="🚜 Управление техникой", callback_data="admin_equip_list")
+    builder.button(text="📥 Массовое добавление техники", callback_data="admin_bulk_equip")
     builder.button(text="👥 Список пользователей", callback_data="admin_users_list")
     builder.button(text="📊 Статистика заявок", callback_data="admin_stats")
     builder.adjust(1)
@@ -70,19 +71,31 @@ def get_member_edit_kb(team_id: int, member_id: int):
 def get_team_edit_kb(team_id: int, members: list):
     builder = InlineKeyboardBuilder()
     builder.button(text="✏️ Изменить название", callback_data=TeamCallback(action="edit_name", team_id=team_id))
+
+    has_leader = False
     for m in members:
+        if m['is_leader'] == 1 or m['position'].lower() == 'бригадир':
+            has_leader = True
+
         reg_status = "" if m['tg_user_id'] else "⚠️ "
-        btn_text = f"🔴 {m['fio']}" if m['is_leader'] else f"{reg_status}{m['fio']} ({m['position']})"
+        btn_text = f"🔴 {m['fio']}" if m['is_leader'] == 1 or m[
+            'position'].lower() == 'бригадир' else f"{reg_status}{m['fio']} ({m['position']})"
         builder.button(text=btn_text,
                        callback_data=TeamCallback(action="manage_member", team_id=team_id, member_id=m['id']))
+
+    # Кнопка бригадира показывается ТОЛЬКО если его еще нет
+    if not has_leader:
+        builder.button(text="👑 Добавить бригадира", callback_data=TeamCallback(action="add_leader", team_id=team_id))
+
     if len(members) < 12:
         builder.button(text="➕ Добавить человека", callback_data=TeamCallback(action="add_member", team_id=team_id))
+
     builder.button(text="🔙 Назад", callback_data=TeamCallback(action="main_menu", team_id=team_id))
     builder.adjust(1)
     return builder.as_markup()
 
 
-# --- КЛАВИАТУРЫ ЗАЯВОК (ИЗМЕНЕННЫЕ) ---
+# --- КЛАВИАТУРЫ ЗАЯВОК ---
 def get_dates_kb():
     builder = InlineKeyboardBuilder()
     tomorrow = (datetime.now() + timedelta(days=1)).strftime("%d.%m")
@@ -168,6 +181,22 @@ def get_review_kb():
 
 
 # --- КЛАВИАТУРЫ МОДЕРАТОРА ---
+def get_mod_panel_kb():
+    """Главная панель модератора"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📤 Принудительно в группу", callback_data="mod_publish_apps")
+    builder.button(text="🔔 Напомнить прорабам", callback_data="mod_remind_all")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def get_mod_take_kb(app_id: int):
+    """Приходит вместе с новой заявкой"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔍 Рассмотреть заявку", callback_data=f"mod_take_{app_id}")
+    builder.button(text="🔔 Напомнить остальным", callback_data="mod_remind_all")
+    builder.adjust(1)
+    return builder.as_markup()
+
 def get_pending_list_kb(apps: list):
     builder = InlineKeyboardBuilder()
     for app in apps:
@@ -175,23 +204,7 @@ def get_pending_list_kb(apps: list):
     builder.adjust(1)
     return builder.as_markup()
 
-
 def get_mod_decision_kb(app_id: int):
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✅ Одобрить", callback_data=f"mod_approve_{app_id}")
-    builder.button(text="❌ Отклонить", callback_data=f"mod_reject_{app_id}")
-    builder.button(text="🔙 Назад", callback_data="mod_back_to_list")
-    builder.adjust(2, 1)
-    return builder.as_markup()
-
-def get_mod_take_kb(app_id: int):
-    """Кнопка 'Рассмотреть' для модератора при получении уведомления"""
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🔍 Рассмотреть", callback_data=f"mod_take_{app_id}")
-    return builder.as_markup()
-
-def get_mod_decision_kb(app_id: int):
-    """Кнопки решения для модератора"""
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ Одобрить", callback_data=f"mod_approve_{app_id}")
     builder.button(text="❌ Отклонить", callback_data=f"mod_reject_{app_id}")
@@ -199,7 +212,28 @@ def get_mod_decision_kb(app_id: int):
     return builder.as_markup()
 
 def get_foreman_edit_rejected_kb(app_id: int):
-    """Кнопка для прораба 'Исправить заявку' после отказа"""
     builder = InlineKeyboardBuilder()
     builder.button(text="✏️ Исправить заявку", callback_data=f"edit_rejected_{app_id}")
+    return builder.as_markup()
+
+
+def get_equip_edit_kb(equip_id: int, is_active: int):
+    """Клавиатура управления конкретной машиной"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ Название", callback_data=f"eq_edit_name_{equip_id}")
+    builder.button(text="📂 Категория", callback_data=f"eq_edit_cat_{equip_id}")
+    builder.button(text="👨‍✈️ Водитель", callback_data=f"eq_edit_driver_{equip_id}")
+
+    status_text = "🔴 Отключить" if is_active else "🟢 Включить (Неактивна)"
+    builder.button(text=status_text, callback_data=f"eq_toggle_{equip_id}")
+    builder.button(text="🗑 Удалить", callback_data=f"eq_delete_{equip_id}")
+    builder.button(text="🔙 Назад к списку", callback_data="admin_equip_list")
+    builder.adjust(2, 1, 2, 1)
+    return builder.as_markup()
+
+
+def get_cancel_admin_kb(equip_id: int):
+    """Отмена при вводе нового значения для техники"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔙 Отмена", callback_data=f"admin_equip_edit_{equip_id}")
     return builder.as_markup()

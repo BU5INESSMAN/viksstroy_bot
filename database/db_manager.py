@@ -20,6 +20,7 @@ class DatabaseManager:
                 await self.conn.executescript(schema)
                 await self.conn.commit()
 
+        # Автоматические миграции
         try:
             await self.conn.execute("ALTER TABLE equipment ADD COLUMN is_active INTEGER DEFAULT 1")
         except Exception:
@@ -36,6 +37,10 @@ class DatabaseManager:
             await self.conn.execute("ALTER TABLE teams ADD COLUMN creator_id INTEGER")
         except Exception:
             pass
+        try:
+            await self.conn.execute("ALTER TABLE applications ADD COLUMN is_published INTEGER DEFAULT 0")
+        except Exception:
+            pass
 
         await self.conn.commit()
         logging.info("База данных успешно инициализирована.")
@@ -50,13 +55,25 @@ class DatabaseManager:
             return (await cursor.fetchone())[0]
 
     async def get_today_apps_count(self):
-        # Считаем уникальных прорабов, которые подали заявки (pending или approved) за сегодня
         async with self.conn.execute(
                 "SELECT COUNT(DISTINCT foreman_id) FROM applications WHERE status != 'rejected' AND date(created_at) = date('now', 'localtime')") as cursor:
             return (await cursor.fetchone())[0]
 
+    async def get_missing_foremen_today(self):
+        """Возвращает список прорабов, которые сегодня еще не сдали ни одной заявки"""
+        async with self.conn.execute("""
+            SELECT user_id, fio 
+            FROM users 
+            WHERE role = 'foreman' AND is_active = 1
+            AND user_id NOT IN (
+                SELECT DISTINCT foreman_id 
+                FROM applications 
+                WHERE date(created_at) = date('now', 'localtime')
+            )
+        """) as cursor:
+            return await cursor.fetchall()
+
     async def get_app_members_with_tg(self, app_id: int):
-        """Получает TG ID зарегистрированных рабочих из конкретной заявки"""
         async with self.conn.execute("""
             SELECT tm.tg_user_id, tm.fio, tm.position 
             FROM application_selected_staff ast 
@@ -64,6 +81,17 @@ class DatabaseManager:
             WHERE ast.app_id = ? AND tm.tg_user_id IS NOT NULL
         """, (app_id,)) as cursor:
             return await cursor.fetchall()
+
+    # --- Публикация в группу ---
+    async def get_approved_apps_for_publish(self):
+        """Берет все одобренные заявки, которые еще не были опубликованы в группе"""
+        async with self.conn.execute(
+                "SELECT id FROM applications WHERE status = 'approved' AND is_published = 0") as cursor:
+            return await cursor.fetchall()
+
+    async def mark_app_as_published(self, app_id: int):
+        await self.conn.execute("UPDATE applications SET is_published = 1 WHERE id = ?", (app_id,))
+        await self.conn.commit()
 
     # --- Пользователи ---
     async def get_user(self, user_id: int):
@@ -118,7 +146,7 @@ class DatabaseManager:
         team = await cursor.fetchone()
         cursor = await self.conn.execute("SELECT * FROM team_members WHERE team_id = ?", (team_id,))
         members = await cursor.fetchall()
-        has_leader = any(m['position'].lower() == 'бригадир' for m in members)
+        has_leader = any(m['is_leader'] == 1 or m['position'].lower() == 'бригадир' for m in members)
         return dict(team), [dict(m) for m in members], has_leader
 
     async def get_team(self, team_id: int):
@@ -129,9 +157,9 @@ class DatabaseManager:
         async with self.conn.execute("SELECT * FROM team_members WHERE team_id = ?", (team_id,)) as cursor:
             return await cursor.fetchall()
 
-    async def add_team_member(self, team_id: int, fio: str, position: str):
-        await self.conn.execute("INSERT INTO team_members (team_id, fio, position) VALUES (?, ?, ?)",
-                                (team_id, fio, position))
+    async def add_team_member(self, team_id: int, fio: str, position: str, is_leader: int = 0):
+        await self.conn.execute("INSERT INTO team_members (team_id, fio, position, is_leader) VALUES (?, ?, ?, ?)",
+                                (team_id, fio, position, is_leader))
         await self.conn.commit()
 
     async def remove_team_member(self, member_id: int):
@@ -183,7 +211,7 @@ class DatabaseManager:
 
     # --- Заявки ---
     async def save_application(self, data: dict, foreman_id: int):
-        app_id = data.get('edit_app_id')  # Если это редактирование после отказа
+        app_id = data.get('edit_app_id')
 
         if app_id:
             await self.conn.execute(
@@ -223,7 +251,6 @@ class DatabaseManager:
         app = await cursor.fetchone()
         if not app: return None
 
-        # Добавлено извлечение member_id
         cursor = await self.conn.execute(
             """SELECT ast.member_id, tm.fio, tm.position FROM application_selected_staff ast 
                JOIN team_members tm ON ast.member_id = tm.id WHERE ast.app_id = ?""", (app_id,)
@@ -281,3 +308,57 @@ class DatabaseManager:
     async def register_member_tg(self, member_id: int, tg_id: int):
         await self.conn.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (tg_id, member_id))
         await self.conn.commit()
+
+    # --- РЕДАКТИРОВАНИЕ И УДАЛЕНИЕ ТЕХНИКИ ---
+    async def update_equipment(self, equip_id: int, name: str = None, category: str = None, driver_fio: str = None):
+        if name: await self.conn.execute("UPDATE equipment SET name = ? WHERE id = ?", (name, equip_id))
+        if category: await self.conn.execute("UPDATE equipment SET category = ? WHERE id = ?", (category, equip_id))
+        if driver_fio: await self.conn.execute("UPDATE equipment SET driver_fio = ? WHERE id = ?",
+                                               (driver_fio, equip_id))
+        await self.conn.commit()
+
+    async def delete_equipment(self, equip_id: int):
+        # Жесткое удаление из базы
+        await self.conn.execute("DELETE FROM equipment WHERE id = ?", (equip_id,))
+        await self.conn.commit()
+
+    # --- СТАТИСТИКА ЗАЯВОК ---
+    async def get_general_statistics(self):
+        stats = {}
+        # 1. Сводка за сегодня
+        async with self.conn.execute(
+                "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime')") as c:
+            stats['today_total'] = (await c.fetchone())[0]
+        async with self.conn.execute(
+                "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'approved'") as c:
+            stats['today_approved'] = (await c.fetchone())[0]
+        async with self.conn.execute(
+                "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'rejected'") as c:
+            stats['today_rejected'] = (await c.fetchone())[0]
+
+        # 2. Ждут отправки в группу
+        async with self.conn.execute(
+                "SELECT count(*) FROM applications WHERE status = 'approved' AND is_published = 0") as c:
+            stats['waiting_publish'] = (await c.fetchone())[0]
+
+        # 3. Топ-3 техники (за все время)
+        async with self.conn.execute('''
+            SELECT e.name, COUNT(a.id) as cnt 
+            FROM applications a 
+            JOIN equipment e ON a.equipment_id = e.id 
+            WHERE a.status = 'approved' 
+            GROUP BY e.id ORDER BY cnt DESC LIMIT 3
+        ''') as c:
+            stats['top_equip'] = await c.fetchall()
+
+        # 4. Топ-3 прорабов
+        async with self.conn.execute('''
+            SELECT u.fio, COUNT(a.id) as cnt 
+            FROM applications a 
+            JOIN users u ON a.foreman_id = u.user_id 
+            WHERE a.status = 'approved' 
+            GROUP BY u.user_id ORDER BY cnt DESC LIMIT 3
+        ''') as c:
+            stats['top_foremen'] = await c.fetchall()
+
+        return stats
