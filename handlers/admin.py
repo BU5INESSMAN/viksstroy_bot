@@ -20,7 +20,8 @@ class AdminStates(StatesGroup):
 @router.message(Command("admin"))
 @router.message(F.text == "🛠 Панель управления")
 async def admin_panel_main(message: types.Message, role: str):
-    if role != "admin": return
+    # Теперь сюда могут войти и Босс, и Суперадмин
+    if role not in ["admin", "boss", "superadmin"]: return
     await message.answer("🛠 <b>Панель администратора</b>\nВыберите раздел для управления:",
                          reply_markup=kb.get_admin_main_kb(), parse_mode="HTML")
 
@@ -83,7 +84,7 @@ async def process_bulk_equip(message: types.Message, state: FSMContext, db: Data
         return await message.answer("Отменено.", reply_markup=kb.get_admin_main_kb())
 
     lines = message.text.strip().split('\n')
-    added = 0
+    to_insert = []
     errors = []
 
     for i, line in enumerate(lines, 1):
@@ -92,12 +93,15 @@ async def process_bulk_equip(message: types.Message, state: FSMContext, db: Data
         if len(parts) >= 2:
             category, name = parts[0], parts[1]
             driver = parts[2] if len(parts) > 2 else "Не указан"
-            await db.add_equipment(name, category, driver)
-            added += 1
+            to_insert.append((name, category, driver, 1))
         else:
             errors.append(f"Строка {i}: неверный формат ({line})")
 
-    text = f"✅ <b>Успешно добавлено {added} единиц техники.</b>"
+    # Пакетная вставка вместо цикла одиночных запросов
+    if to_insert:
+        await db.add_equipment_bulk(to_insert)
+
+    text = f"✅ <b>Успешно добавлено {len(to_insert)} единиц техники.</b>"
     if errors: text += "\n\n⚠️ <b>Ошибки при распознавании:</b>\n" + "\n".join(errors)
     await message.answer(text, parse_mode="HTML", reply_markup=kb.get_admin_main_kb())
     await state.clear()

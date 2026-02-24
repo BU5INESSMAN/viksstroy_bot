@@ -107,9 +107,10 @@ def get_dates_kb():
 
 def get_object_history_kb(history: List[Dict[str, Any]]):
     builder = InlineKeyboardBuilder()
-    for obj in history:
+    for idx, obj in enumerate(history):
+        # Передаем индекс (idx) вместо длинной строки с адресом, чтобы не превышать лимит в 64 байта
         builder.button(text=str(obj['object_address']),
-                       callback_data=AppAction(step="select_obj", val=obj['object_address']))
+                       callback_data=AppAction(step="select_obj", val=str(idx)))
     builder.adjust(1)
     return builder.as_markup()
 
