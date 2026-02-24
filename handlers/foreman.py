@@ -62,10 +62,18 @@ async def add_leader_start(callback: types.CallbackQuery, callback_data: TeamCal
 async def save_leader(message: types.Message, state: FSMContext, db: DatabaseManager):
     data = await state.get_data()
     fio = message.text.strip()
-    await db.add_team_member(data['tid'], fio, "Бригадир")
+    # Передаем is_leader=1, чтобы бот запомнил, что это старший
+    await db.add_team_member(data['tid'], fio, "Бригадир", is_leader=1)
     await db.update_team_name(data['tid'], f"Бригада {fio}")
     await state.clear()
-    await message.answer(f"✅ Бригадир {fio} добавлен.")
+
+    t, m, hl = await db.get_team_full_data(data['tid'])
+    # Возвращаем обновленную клавиатуру
+    await message.answer(
+        f"✅ Бригадир <b>{fio}</b> успешно добавлен в бригаду!",
+        reply_markup=kb.get_team_edit_kb(t['id'], m),
+        parse_mode="HTML"
+    )
 
 
 @router.callback_query(TeamCallback.filter(F.action == "edit_name"))

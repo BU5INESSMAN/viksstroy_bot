@@ -1,25 +1,34 @@
 # viksstroy_bot/keyboards/reply.py
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
-from aiogram.utils.keyboard import ReplyKeyboardBuilder
-
 
 def get_main_menu_kb(role: str) -> ReplyKeyboardMarkup:
-    """Главное меню (внизу у кнопок) в зависимости от роли"""
-    builder = ReplyKeyboardBuilder()
+    """
+    Возвращает текстовую клавиатуру (Reply) в зависимости от роли пользователя.
+    """
+    keyboard = []
 
-    # Логика для Прораба
-    if role == "foreman":
-        builder.button(text="📝 Создать заявку")
-        builder.button(text="👥 Управление бригадами")
+    # --- Кнопки для ПРОРАБА ---
+    if role in ["foreman", "admin"]:
+        keyboard.append([
+            KeyboardButton(text="📝 Создать заявку"),
+            KeyboardButton(text="👥 Управление бригадами")
+        ])
 
-    # Логика для Модератора
-    elif role == "moderator":
-        builder.button(text="📂 Список заявок")
+    # --- Кнопки для МОДЕРАТОРА ---
+    if role in ["moderator", "admin"]:
+        keyboard.append([
+            KeyboardButton(text="🛡 Панель модератора"),
+            KeyboardButton(text="📤 Отправить наряды в группу")
+        ])
 
-    # Логика для Администратора
-    elif role == "admin":
-        builder.button(text="🛠 Панель управления")  # Управление техникой и юзерами
-        builder.button(text="📂 Список заявок")  # Админ тоже может модерировать
+    # --- Кнопки для АДМИНА ---
+    if role == "admin":
+        keyboard.append([
+            KeyboardButton(text="🛠 Панель управления")
+        ])
 
-    builder.adjust(2)
-    return builder.as_markup(resize_keyboard=True)
+    return ReplyKeyboardMarkup(
+        keyboard=keyboard,
+        resize_keyboard=True,
+        input_field_placeholder="Выберите действие ниже 👇"
+    )
