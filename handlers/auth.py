@@ -6,6 +6,7 @@ from aiogram.fsm.context import FSMContext
 from keyboards.reply import get_main_menu_kb
 from utils.states import AuthStates
 from database.db_manager import DatabaseManager
+from utils.notifications import notify_management
 
 router = Router()
 
@@ -14,39 +15,33 @@ router = Router()
 async def cmd_start(message: types.Message, state: FSMContext, db: DatabaseManager, role: str = None):
     args = message.text.split()
 
-    # ПРОВЕРКА НА ССЫЛКУ-ПРИГЛАШЕНИЕ
     if len(args) > 1 and args[1].startswith("reg_"):
         invite_code = args[1].replace("reg_", "")
         member = await db.get_member_by_invite(invite_code)
 
         if member:
             if member['tg_user_id']:
-                await message.answer("❌ Этот код уже был использован.")
-                return
+                return await message.answer("❌ Этот код уже был использован.")
 
             await db.register_member_tg(member['id'], message.from_user.id)
+
+            # Логируем вход по инвайту
+            team = await db.get_team(member['team_id'])
+            await notify_management(message.bot,
+                                    f"🔗 <b>Вход по ссылке:</b>\nФИО: {member['fio']}\nДолжность: {member['position']}\nБригада: {team['name']}")
+
             await message.answer(
-                f"🎉 Добро пожаловать, <b>{member['fio']}</b>!\n"
-                f"Вы успешно зарегистрированы в бригаде как <b>{member['position']}</b>.\n"
-                f"Теперь вы будете получать уведомления о новых заявках.",
-                parse_mode="HTML"
-            )
-            # Можно также добавить его в таблицу users с ролью 'worker'
+                f"🎉 Добро пожаловать, <b>{member['fio']}</b>!\nВы успешно зарегистрированы в бригаде как <b>{member['position']}</b>.",
+                parse_mode="HTML")
             return
         else:
-            await message.answer("❌ Неверный или просроченный код приглашения.")
-            return
+            return await message.answer("❌ Неверный или просроченный код приглашения.")
 
     await state.clear()
     if role:
-        await message.answer(
-            f"С возвращением!\nВаш статус: <b>{role}</b>",
-            reply_markup=get_main_menu_kb(role),
-            parse_mode="HTML"
-        )
-        return
+        return await message.answer(f"С возвращением!\nВаш статус: <b>{role}</b>", reply_markup=get_main_menu_kb(role),
+                                    parse_mode="HTML")
 
-    # Если юзер новый - начинаем регистрацию
     await message.answer("👋 Добро пожаловать в систему ВикСтрой!\nПожалуйста, введите пароль доступа:")
     await state.set_state(AuthStates.wait_for_password)
 
@@ -56,13 +51,15 @@ async def process_password(message: types.Message, state: FSMContext, db: Databa
     password = message.text.strip()
     user_id = message.from_user.id
 
-    # Проверка пароля на основе переменных окружения
     if password == os.getenv("FOREMAN_PASS", "1234"):
         await state.update_data(chosen_role="foreman")
     elif password == os.getenv("MODERATOR_PASS", "4321"):
         await state.update_data(chosen_role="moderator")
-    elif str(user_id) in os.getenv("SUPER_ADMIN_IDS", "").split(","):
-        # Если это админ зашел в первый раз
+    elif str(user_id) in os.getenv("SUPERADMIN_IDS", "").split(","):
+        await state.update_data(chosen_role="superadmin")
+    elif str(user_id) in os.getenv("BOSS_IDS", "").split(","):
+        await state.update_data(chosen_role="boss")
+    elif str(user_id) in os.getenv("ADMIN_IDS", "").split(","):
         await state.update_data(chosen_role="admin")
     else:
         await db.increment_failed_attempts(user_id)
@@ -72,9 +69,7 @@ async def process_password(message: types.Message, state: FSMContext, db: Databa
             await message.answer("❌ Вы заблокированы за превышение попыток ввода пароля.")
             await state.clear()
             return
-
-        await message.answer("❌ Неверный пароль. Попробуйте еще раз.")
-        return
+        return await message.answer("❌ Неверный пароль. Попробуйте еще раз.")
 
     await message.answer("✅ Пароль принят.\nПожалуйста, введите ваши Фамилию и Имя:")
     await state.set_state(AuthStates.wait_for_fio)
@@ -84,17 +79,17 @@ async def process_password(message: types.Message, state: FSMContext, db: Databa
 async def process_fio(message: types.Message, state: FSMContext, db: DatabaseManager):
     fio = message.text.strip()
 
-    # Проверка ФИО: только русские буквы, минимум 2 слова
     if not re.match(r"^[А-ЯЁа-яё\s-]+$", fio, re.IGNORECASE) or len(fio.split()) < 2:
-        await message.answer("❌ Введите корректные Фамилию и Имя (используйте только русские буквы):")
-        return
+        return await message.answer("❌ Введите корректные Фамилию и Имя (используйте только русские буквы):")
 
     data = await state.get_data()
     role = data.get("chosen_role", "foreman")
 
     await db.add_user(message.from_user.id, fio, role)
-    await message.answer(
-        "🎉 Регистрация успешно завершена!\nИспользуйте меню ниже для работы:",
-        reply_markup=get_main_menu_kb(role)
-    )
+
+    # Логируем регистрацию
+    await notify_management(message.bot, f"👤 <b>Новая регистрация:</b>\nФИО: {fio}\nРоль: {role}")
+
+    await message.answer("🎉 Регистрация успешно завершена!\nИспользуйте меню ниже для работы:",
+                         reply_markup=get_main_menu_kb(role))
     await state.clear()

@@ -60,7 +60,6 @@ class DatabaseManager:
             return (await cursor.fetchone())[0]
 
     async def get_missing_foremen_today(self):
-        """Возвращает список прорабов, которые сегодня еще не сдали ни одной заявки"""
         async with self.conn.execute("""
             SELECT user_id, fio 
             FROM users 
@@ -84,9 +83,9 @@ class DatabaseManager:
 
     # --- Публикация в группу ---
     async def get_approved_apps_for_publish(self):
-        """Берет все одобренные заявки, которые еще не были опубликованы в группе"""
+        """Берет все одобренные заявки, которые еще не были опубликованы в группе (обрабатывает NULL)"""
         async with self.conn.execute(
-                "SELECT id FROM applications WHERE status = 'approved' AND is_published = 0") as cursor:
+                "SELECT id FROM applications WHERE status = 'approved' AND (is_published = 0 OR is_published IS NULL)") as cursor:
             return await cursor.fetchall()
 
     async def mark_app_as_published(self, app_id: int):
@@ -199,6 +198,13 @@ class DatabaseManager:
     async def add_equipment(self, name, category, driver_fio="Не указан"):
         await self.conn.execute("INSERT INTO equipment (name, category, driver_fio, is_active) VALUES (?, ?, ?, ?)",
                                 (name, category, driver_fio, 1))
+        await self.conn.commit()
+
+    async def add_equipment_bulk(self, equipment_list: list):
+        await self.conn.executemany(
+            "INSERT INTO equipment (name, category, driver_fio, is_active) VALUES (?, ?, ?, ?)",
+            equipment_list
+        )
         await self.conn.commit()
 
     async def toggle_equipment_status(self, equip_id: int, is_active: int):
@@ -318,14 +324,12 @@ class DatabaseManager:
         await self.conn.commit()
 
     async def delete_equipment(self, equip_id: int):
-        # Жесткое удаление из базы
         await self.conn.execute("DELETE FROM equipment WHERE id = ?", (equip_id,))
         await self.conn.commit()
 
-    # --- СТАТИСТИКА ЗАЯВОК ---
+    # --- СТАТИСТИКА ЗАЯВОК И ОТЧЕТЫ ---
     async def get_general_statistics(self):
         stats = {}
-        # 1. Сводка за сегодня
         async with self.conn.execute(
                 "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime')") as c:
             stats['today_total'] = (await c.fetchone())[0]
@@ -335,13 +339,9 @@ class DatabaseManager:
         async with self.conn.execute(
                 "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'rejected'") as c:
             stats['today_rejected'] = (await c.fetchone())[0]
-
-        # 2. Ждут отправки в группу
         async with self.conn.execute(
-                "SELECT count(*) FROM applications WHERE status = 'approved' AND is_published = 0") as c:
+                "SELECT count(*) FROM applications WHERE status = 'approved' AND (is_published = 0 OR is_published IS NULL)") as c:
             stats['waiting_publish'] = (await c.fetchone())[0]
-
-        # 3. Топ-3 техники (за все время)
         async with self.conn.execute('''
             SELECT e.name, COUNT(a.id) as cnt 
             FROM applications a 
@@ -350,8 +350,6 @@ class DatabaseManager:
             GROUP BY e.id ORDER BY cnt DESC LIMIT 3
         ''') as c:
             stats['top_equip'] = await c.fetchall()
-
-        # 4. Топ-3 прорабов
         async with self.conn.execute('''
             SELECT u.fio, COUNT(a.id) as cnt 
             FROM applications a 
@@ -360,5 +358,29 @@ class DatabaseManager:
             GROUP BY u.user_id ORDER BY cnt DESC LIMIT 3
         ''') as c:
             stats['top_foremen'] = await c.fetchall()
-
         return stats
+
+    async def get_daily_report(self, date_target: str):
+        cursor = await self.conn.execute(
+            """SELECT a.*, u.fio as foreman_fio, e.name as equip_name, e.driver_fio
+               FROM applications a
+               LEFT JOIN users u ON a.foreman_id = u.user_id
+               LEFT JOIN equipment e ON a.equipment_id = e.id
+               WHERE a.date_target = ? AND a.status = 'approved'""",
+            (date_target,)
+        )
+        apps = await cursor.fetchall()
+        report = []
+        for app in apps:
+            c2 = await self.conn.execute(
+                """SELECT tm.fio, tm.position FROM application_selected_staff ast
+                   JOIN team_members tm ON ast.member_id = tm.id
+                   WHERE ast.app_id = ?""", (app['id'],)
+            )
+            members = await c2.fetchall()
+            member_strs = [f"{m['fio']} ({m['position']})" for m in members]
+            report.append({
+                'info': dict(app),
+                'members': member_strs
+            })
+        return report

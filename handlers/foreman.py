@@ -333,7 +333,15 @@ async def process_manual_date_input(message: types.Message, state: FSMContext, d
 @router.callback_query(AppAction.filter(F.step == "select_obj"))
 async def set_object_history(callback: types.CallbackQuery, callback_data: AppAction, state: FSMContext,
                              db: DatabaseManager):
-    await state.update_data(object_address=callback_data.val)
+    idx = int(callback_data.val)
+    history = await db.get_object_history(callback.from_user.id)
+
+    if idx < len(history):
+        obj_address = history[idx]['object_address']
+    else:
+        obj_address = "Неизвестный объект"
+
+    await state.update_data(object_address=obj_address)
     data = await state.get_data()
 
     if data.get('is_editing_simple'):
@@ -539,13 +547,8 @@ async def rev_edit_comment(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "rev_confirm")
 async def confirm_application_final(callback: types.CallbackQuery, state: FSMContext, db: DatabaseManager):
     data = await state.get_data()
-
-    # --- ИСПРАВЛЕНИЕ ОШИБКИ ЗДЕСЬ ---
-    # Передаем список участников в нужный ключ для базы данных
     data['selected_member_ids'] = data.get('sel_m', [])
-    # --------------------------------
 
-    # Финальная проверка
     required_keys = ['date_target', 'object_address', 'team_id', 'sel_m', 'equipment_id', 'time_start', 'time_end',
                      'comment']
     if not all(k in data for k in required_keys):
@@ -554,6 +557,12 @@ async def confirm_application_final(callback: types.CallbackQuery, state: FSMCon
     app_id = await db.save_application(data, callback.from_user.id)
     final_text = build_app_card(data) + f"\n✅ <b>ЗАЯВКА №{app_id} УСПЕШНО ОТПРАВЛЕНА!</b>\nОжидайте решения модератора."
     await callback.message.edit_text(final_text, parse_mode="HTML")
+
+    # ЛОГИРОВАНИЕ ДЛЯ БОССА
+    from utils.notifications import notify_management
+    await notify_management(callback.bot,
+                            f"📝 <b>Создана новая заявка №{app_id}</b>\nПрораб: {callback.from_user.full_name}\nОбъект: {data['object_address']}")
+
     await state.clear()
     await send_new_app_to_moderators(callback.bot, app_id, db)
 

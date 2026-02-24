@@ -1,28 +1,24 @@
-# viksstroy_bot/keyboards/reply.py
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton
 
 def get_main_menu_kb(role: str) -> ReplyKeyboardMarkup:
-    """
-    Возвращает текстовую клавиатуру (Reply) в зависимости от роли пользователя.
-    """
     keyboard = []
 
-    # --- Кнопки для ПРОРАБА ---
-    if role in ["foreman", "admin"]:
+    # --- ПРОРАБ + ВЫСШЕЕ РУКОВОДСТВО ---
+    if role in ["foreman", "admin", "boss", "superadmin"]:
         keyboard.append([
             KeyboardButton(text="📝 Создать заявку"),
             KeyboardButton(text="👥 Управление бригадами")
         ])
 
-    # --- Кнопки для МОДЕРАТОРА ---
-    if role in ["moderator", "admin"]:
+    # --- МОДЕРАТОР + ВЫСШЕЕ РУКОВОДСТВО ---
+    if role in ["moderator", "admin", "boss", "superadmin"]:
         keyboard.append([
             KeyboardButton(text="🛡 Панель модератора"),
             KeyboardButton(text="📤 Отправить наряды в группу")
         ])
 
-    # --- Кнопки для АДМИНА ---
-    if role == "admin":
+    # --- АДМИН + ВЫСШЕЕ РУКОВОДСТВО ---
+    if role in ["admin", "boss", "superadmin"]:
         keyboard.append([
             KeyboardButton(text="🛠 Панель управления")
         ])
