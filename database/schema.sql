@@ -1,18 +1,18 @@
 -- Таблица пользователей системы
 CREATE TABLE IF NOT EXISTS users (
-    user_id INTEGER PRIMARY KEY,          -- Telegram ID
-    fio TEXT,                             -- ФИО пользователя
-    role TEXT,                            -- admin, moderator, foreman
-    is_active INTEGER DEFAULT 0,          -- Прошел ли регистрацию
-    is_blacklisted INTEGER DEFAULT 0,     -- Заблокирован ли (3 ошибки)
-    failed_attempts INTEGER DEFAULT 0     -- Счетчик неверных паролей
+    user_id INTEGER PRIMARY KEY,
+    fio TEXT,
+    role TEXT,
+    is_active INTEGER DEFAULT 0,
+    is_blacklisted INTEGER DEFAULT 0,
+    failed_attempts INTEGER DEFAULT 0
 );
 
 -- Таблица бригад
 CREATE TABLE IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,                            -- Название (авто или ручное)
-    creator_id INTEGER,                   -- Кто создал
+    name TEXT,
+    creator_id INTEGER,
     FOREIGN KEY (creator_id) REFERENCES users (user_id)
 );
 
@@ -21,19 +21,19 @@ CREATE TABLE IF NOT EXISTS team_members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     team_id INTEGER,
     fio TEXT,
-    position TEXT,                        -- Должность
-    invite_code TEXT UNIQUE,              -- 8-значный код для регистрации
-    tg_user_id INTEGER NULL,              -- Заполнится, когда человек зайдет по ссылке
-    is_leader INTEGER DEFAULT 0,          -- Является ли бригадиром
+    position TEXT,
+    invite_code TEXT UNIQUE,
+    tg_user_id INTEGER NULL,
+    is_leader INTEGER DEFAULT 0,
     FOREIGN KEY (team_id) REFERENCES teams (id)
 );
 
 -- Справочник техники
 CREATE TABLE IF NOT EXISTS equipment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT,                            -- Название (например, "Экскаватор JCB")
-    category TEXT,                        -- Категория
-    driver_fio TEXT                       -- ФИО прикрепленного водителя
+    name TEXT,
+    category TEXT,
+    driver_fio TEXT
 );
 
 -- Таблица заявок
@@ -43,12 +43,12 @@ CREATE TABLE IF NOT EXISTS applications (
     object_address TEXT,
     team_id INTEGER,
     equipment_id INTEGER,
-    date_target TEXT,                     -- Формат ДД.ММ
+    date_target TEXT,
     time_start INTEGER,
     time_end INTEGER,
     comment TEXT,
-    status TEXT DEFAULT 'pending',        -- pending, approved, rejected
-    rejection_reason TEXT,                -- Причина отказа
+    status TEXT DEFAULT 'pending',
+    rejection_reason TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (foreman_id) REFERENCES users (user_id),
     FOREIGN KEY (team_id) REFERENCES teams (id),

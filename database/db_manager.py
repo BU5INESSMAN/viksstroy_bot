@@ -20,7 +20,6 @@ class DatabaseManager:
                 await self.conn.executescript(schema)
                 await self.conn.commit()
 
-        # Автоматические миграции
         try:
             await self.conn.execute("ALTER TABLE equipment ADD COLUMN is_active INTEGER DEFAULT 1")
         except Exception:
@@ -42,6 +41,11 @@ class DatabaseManager:
         except Exception:
             pass
 
+        try:
+            await self.conn.execute("UPDATE users SET role = 'superadmin' WHERE role = 'admin'")
+        except Exception:
+            pass
+
         await self.conn.commit()
         logging.info("База данных успешно инициализирована.")
 
@@ -49,7 +53,6 @@ class DatabaseManager:
         if self.conn:
             await self.conn.close()
 
-    # --- СТАТИСТИКА ДЛЯ МОДЕРАТОРОВ ---
     async def get_foremen_count(self):
         async with self.conn.execute("SELECT COUNT(*) FROM users WHERE role = 'foreman' AND is_active = 1") as cursor:
             return (await cursor.fetchone())[0]
@@ -81,9 +84,7 @@ class DatabaseManager:
         """, (app_id,)) as cursor:
             return await cursor.fetchall()
 
-    # --- Публикация в группу ---
     async def get_approved_apps_for_publish(self):
-        """Берет все одобренные заявки, которые еще не были опубликованы в группе (обрабатывает NULL)"""
         async with self.conn.execute(
                 "SELECT id FROM applications WHERE status = 'approved' AND (is_published = 0 OR is_published IS NULL)") as cursor:
             return await cursor.fetchall()
@@ -92,7 +93,6 @@ class DatabaseManager:
         await self.conn.execute("UPDATE applications SET is_published = 1 WHERE id = ?", (app_id,))
         await self.conn.commit()
 
-    # --- Пользователи ---
     async def get_user(self, user_id: int):
         async with self.conn.execute("SELECT * FROM users WHERE user_id = ?", (user_id,)) as cursor:
             return await cursor.fetchone()
@@ -119,7 +119,6 @@ class DatabaseManager:
         await self.conn.execute("UPDATE users SET failed_attempts = failed_attempts + 1 WHERE user_id = ?", (user_id,))
         await self.conn.commit()
 
-    # --- Бригады ---
     async def get_object_history(self, user_id: int):
         async with self.conn.execute(
                 "SELECT DISTINCT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC LIMIT 5",
@@ -170,7 +169,6 @@ class DatabaseManager:
         await self.conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
         await self.conn.commit()
 
-    # --- Техника ---
     async def get_equipment_categories(self):
         async with self.conn.execute("SELECT DISTINCT category FROM equipment WHERE is_active = 1") as cursor:
             rows = await cursor.fetchall()
@@ -194,7 +192,6 @@ class DatabaseManager:
             rows = await cursor.fetchall()
             return [(r['time_start'], r['time_end']) for r in rows]
 
-    # --- Админ (Техника) ---
     async def add_equipment(self, name, category, driver_fio="Не указан"):
         await self.conn.execute("INSERT INTO equipment (name, category, driver_fio, is_active) VALUES (?, ?, ?, ?)",
                                 (name, category, driver_fio, 1))
@@ -215,7 +212,6 @@ class DatabaseManager:
         async with self.conn.execute("SELECT * FROM equipment") as cursor:
             return await cursor.fetchall()
 
-    # --- Заявки ---
     async def save_application(self, data: dict, foreman_id: int):
         app_id = data.get('edit_app_id')
 
@@ -282,7 +278,7 @@ class DatabaseManager:
             return await cursor.fetchall()
 
     async def get_admins_and_moderators(self):
-        async with self.conn.execute("SELECT user_id FROM users WHERE role IN ('admin', 'moderator')") as cursor:
+        async with self.conn.execute("SELECT user_id FROM users WHERE role IN ('superadmin', 'moderator')") as cursor:
             rows = await cursor.fetchall()
             return [row['user_id'] for row in rows]
 
@@ -315,7 +311,6 @@ class DatabaseManager:
         await self.conn.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (tg_id, member_id))
         await self.conn.commit()
 
-    # --- РЕДАКТИРОВАНИЕ И УДАЛЕНИЕ ТЕХНИКИ ---
     async def update_equipment(self, equip_id: int, name: str = None, category: str = None, driver_fio: str = None):
         if name: await self.conn.execute("UPDATE equipment SET name = ? WHERE id = ?", (name, equip_id))
         if category: await self.conn.execute("UPDATE equipment SET category = ? WHERE id = ?", (category, equip_id))
@@ -327,20 +322,15 @@ class DatabaseManager:
         await self.conn.execute("DELETE FROM equipment WHERE id = ?", (equip_id,))
         await self.conn.commit()
 
-    # --- СТАТИСТИКА ЗАЯВОК И ОТЧЕТЫ ---
     async def get_general_statistics(self):
         stats = {}
-        async with self.conn.execute(
-                "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime')") as c:
+        async with self.conn.execute("SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime')") as c:
             stats['today_total'] = (await c.fetchone())[0]
-        async with self.conn.execute(
-                "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'approved'") as c:
+        async with self.conn.execute("SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'approved'") as c:
             stats['today_approved'] = (await c.fetchone())[0]
-        async with self.conn.execute(
-                "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'rejected'") as c:
+        async with self.conn.execute("SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'rejected'") as c:
             stats['today_rejected'] = (await c.fetchone())[0]
-        async with self.conn.execute(
-                "SELECT count(*) FROM applications WHERE status = 'approved' AND (is_published = 0 OR is_published IS NULL)") as c:
+        async with self.conn.execute("SELECT count(*) FROM applications WHERE status = 'approved' AND (is_published = 0 OR is_published IS NULL)") as c:
             stats['waiting_publish'] = (await c.fetchone())[0]
         async with self.conn.execute('''
             SELECT e.name, COUNT(a.id) as cnt 

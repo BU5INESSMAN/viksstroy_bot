@@ -6,9 +6,16 @@ from aiogram.fsm.context import FSMContext
 from keyboards.reply import get_main_menu_kb
 from utils.states import AuthStates
 from database.db_manager import DatabaseManager
-from utils.notifications import notify_management
+from utils.notifications import notify_bosses
 
 router = Router()
+
+ROLE_NAMES = {
+    "superadmin": "👑 Супер-Админ",
+    "boss": "👔 БОСС",
+    "moderator": "🛡 Модератор",
+    "foreman": "👷‍♂️ Прораб"
+}
 
 
 @router.message(CommandStart())
@@ -21,28 +28,48 @@ async def cmd_start(message: types.Message, state: FSMContext, db: DatabaseManag
 
         if member:
             if member['tg_user_id']:
-                return await message.answer("❌ Этот код уже был использован.")
+                return await message.answer("❌ <b>Ошибка:</b> Этот код уже был использован.")
 
             await db.register_member_tg(member['id'], message.from_user.id)
 
-            # Логируем вход по инвайту
             team = await db.get_team(member['team_id'])
-            await notify_management(message.bot,
-                                    f"🔗 <b>Вход по ссылке:</b>\nФИО: {member['fio']}\nДолжность: {member['position']}\nБригада: {team['name']}")
+            team_name = team['name'] if team else "Неизвестная бригада"
+            await notify_bosses(
+                message.bot, db,
+                f"👤 <b>Новая регистрация рабочего:</b>\n"
+                f"├ ФИО: <code>{member['fio']}</code>\n"
+                f"├ Бригада: <b>{team_name}</b>\n"
+                f"└ Должность: <i>{member['position']}</i>"
+            )
 
             await message.answer(
-                f"🎉 Добро пожаловать, <b>{member['fio']}</b>!\nВы успешно зарегистрированы в бригаде как <b>{member['position']}</b>.",
-                parse_mode="HTML")
+                f"🎉 <b>Добро пожаловать, {member['fio']}!</b>\n\n"
+                f"✅ Вы успешно зарегистрированы в бригаде.\n"
+                f"🛠 <b>Ваша должность:</b> <code>{member['position']}</code>\n\n"
+                f"<i>Теперь вы будете получать уведомления о новых сменах прямо сюда.</i>",
+                parse_mode="HTML"
+            )
             return
         else:
-            return await message.answer("❌ Неверный или просроченный код приглашения.")
+            return await message.answer("❌ <b>Ошибка:</b> Неверный или просроченный код приглашения.")
 
     await state.clear()
-    if role:
-        return await message.answer(f"С возвращением!\nВаш статус: <b>{role}</b>", reply_markup=get_main_menu_kb(role),
-                                    parse_mode="HTML")
 
-    await message.answer("👋 Добро пожаловать в систему ВикСтрой!\nПожалуйста, введите пароль доступа:")
+    if role:
+        display_role = ROLE_NAMES.get(role, f"👤 {role}")
+        await message.answer(
+            f"👋 <b>С возвращением в ВИКС Расписание!</b>\n\n"
+            f"Ваш текущий статус: <b>{display_role}</b>\n\n"
+            f"<i>👇 Используйте меню ниже для навигации.</i>",
+            reply_markup=get_main_menu_kb(role),
+            parse_mode="HTML"
+        )
+        return
+
+    await message.answer(
+        "👋 <b>Добро пожаловать в ВИКС Расписание!</b>\n\n"
+        "🔐 <i>Пожалуйста, введите пароль доступа:</i>"
+    )
     await state.set_state(AuthStates.wait_for_password)
 
 
@@ -55,23 +82,23 @@ async def process_password(message: types.Message, state: FSMContext, db: Databa
         await state.update_data(chosen_role="foreman")
     elif password == os.getenv("MODERATOR_PASS", "4321"):
         await state.update_data(chosen_role="moderator")
-    elif str(user_id) in os.getenv("SUPERADMIN_IDS", "").split(","):
-        await state.update_data(chosen_role="superadmin")
-    elif str(user_id) in os.getenv("BOSS_IDS", "").split(","):
+    elif password == os.getenv("BOSS_PASS", "boss123"):
         await state.update_data(chosen_role="boss")
-    elif str(user_id) in os.getenv("ADMIN_IDS", "").split(","):
-        await state.update_data(chosen_role="admin")
+    elif password == os.getenv("SUPERADMIN_PASS", "super123"):
+        await state.update_data(chosen_role="superadmin")
+    elif str(user_id) in os.getenv("SUPER_ADMIN_IDS", "").split(","):
+        await state.update_data(chosen_role="superadmin")
     else:
         await db.increment_failed_attempts(user_id)
         user_data = await db.get_user(user_id)
         if user_data and user_data['failed_attempts'] >= 5:
             await db.toggle_user_status(user_id, 1)
-            await message.answer("❌ Вы заблокированы за превышение попыток ввода пароля.")
+            await message.answer("❌ <b>Вы заблокированы</b> за превышение лимита попыток ввода пароля.")
             await state.clear()
             return
-        return await message.answer("❌ Неверный пароль. Попробуйте еще раз.")
+        return await message.answer("❌ <b>Неверный пароль.</b> Попробуйте еще раз.")
 
-    await message.answer("✅ Пароль принят.\nПожалуйста, введите ваши Фамилию и Имя:")
+    await message.answer("✅ <b>Пароль принят.</b>\nПожалуйста, введите ваши Фамилию и Имя:")
     await state.set_state(AuthStates.wait_for_fio)
 
 
@@ -80,16 +107,24 @@ async def process_fio(message: types.Message, state: FSMContext, db: DatabaseMan
     fio = message.text.strip()
 
     if not re.match(r"^[А-ЯЁа-яё\s-]+$", fio, re.IGNORECASE) or len(fio.split()) < 2:
-        return await message.answer("❌ Введите корректные Фамилию и Имя (используйте только русские буквы):")
+        return await message.answer(
+            "❌ <b>Ошибка:</b> Введите корректные Фамилию и Имя (используйте только русские буквы):")
 
     data = await state.get_data()
     role = data.get("chosen_role", "foreman")
+    display_role = ROLE_NAMES.get(role, role)
 
     await db.add_user(message.from_user.id, fio, role)
 
-    # Логируем регистрацию
-    await notify_management(message.bot, f"👤 <b>Новая регистрация:</b>\nФИО: {fio}\nРоль: {role}")
+    await notify_bosses(
+        message.bot, db,
+        f"🔐 <b>Авторизация по паролю:</b>\n"
+        f"Пользователь <b>{fio}</b> вошел в систему на роль {display_role}."
+    )
 
-    await message.answer("🎉 Регистрация успешно завершена!\nИспользуйте меню ниже для работы:",
-                         reply_markup=get_main_menu_kb(role))
+    await message.answer(
+        f"🎉 <b>Регистрация успешно завершена!</b>\n\n"
+        f"<i>Используйте кнопки внизу экрана для начала работы:</i>",
+        reply_markup=get_main_menu_kb(role)
+    )
     await state.clear()

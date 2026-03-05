@@ -1,4 +1,3 @@
-# viksstroy_bot/handlers/foreman.py
 from aiogram import Router, F, types
 from aiogram.fsm.context import FSMContext
 from keyboards import inline_factory as kb
@@ -7,13 +6,10 @@ from utils.callbacks import TeamCallback, AppAction
 from database.db_manager import DatabaseManager
 import re
 from handlers.moderator import send_new_app_to_moderators
+from utils.notifications import notify_bosses
 
 router = Router()
 
-
-# ==========================================
-# УПРАВЛЕНИЕ БРИГАДАМИ (БЕЗ ИЗМЕНЕНИЙ)
-# ==========================================
 
 @router.message(F.text == "👥 Управление бригадами")
 async def menu_teams(message: types.Message, db: DatabaseManager):
@@ -62,13 +58,11 @@ async def add_leader_start(callback: types.CallbackQuery, callback_data: TeamCal
 async def save_leader(message: types.Message, state: FSMContext, db: DatabaseManager):
     data = await state.get_data()
     fio = message.text.strip()
-    # Передаем is_leader=1, чтобы бот запомнил, что это старший
     await db.add_team_member(data['tid'], fio, "Бригадир", is_leader=1)
     await db.update_team_name(data['tid'], f"Бригада {fio}")
     await state.clear()
 
     t, m, hl = await db.get_team_full_data(data['tid'])
-    # Возвращаем обновленную клавиатуру
     await message.answer(
         f"✅ Бригадир <b>{fio}</b> успешно добавлен в бригаду!",
         reply_markup=kb.get_team_edit_kb(t['id'], m),
@@ -185,12 +179,7 @@ async def add_member_final(message: types.Message, state: FSMContext, db: Databa
     await message.answer(f"✅ {data['m_fio']} добавлен в бригаду!", reply_markup=kb.get_team_edit_kb(t['id'], m))
 
 
-# ==========================================
-# СОЗДАНИЕ ЗАЯВКИ (ИНТЕЛЛЕКТУАЛЬНОЕ ВРЕМЯ И WYSIWYG)
-# ==========================================
-
 def get_busy_hours_set(busy_intervals):
-    """Превращает интервалы занятости в плоский набор занятых часов"""
     busy = set()
     for s, e in busy_intervals:
         for h in range(s, e):
@@ -199,20 +188,18 @@ def get_busy_hours_set(busy_intervals):
 
 
 def get_available_start_hours(busy_intervals):
-    """Час начала доступен, если свободны 3 часа подряд (минимум заказа)"""
     busy = get_busy_hours_set(busy_intervals)
     avail = []
-    for h in range(0, 22):  # Нельзя начать позже 21:00 (так как конец в 24:00)
+    for h in range(0, 22):
         if h not in busy and (h + 1) not in busy and (h + 2) not in busy:
             avail.append(h)
     return avail
 
 
 def get_available_end_hours(start_h, busy_intervals):
-    """Час конца смены доступен, если от старта до него нет занятых окон"""
     busy = get_busy_hours_set(busy_intervals)
     avail = []
-    for h in range(start_h + 3, 25):  # Минимум 3 часа
+    for h in range(start_h + 3, 25):
         valid = True
         for ch in range(start_h, h):
             if ch in busy:
@@ -221,28 +208,26 @@ def get_available_end_hours(start_h, busy_intervals):
         if valid:
             avail.append(h)
         else:
-            break  # Нельзя перепрыгнуть через занятый блок
+            break
     return avail
 
 
 def build_app_card(data: dict) -> str:
-    """Генерирует карточку заявки на лету для отображения прорабу"""
-    text = "📋 <b>ФОРМИРОВАНИЕ ЗАЯВКИ:</b>\n━━━━━━━━━━━━━━━\n"
-    if 'date_target' in data: text += f"📅 <b>Дата:</b> {data['date_target']}\n"
+    text = "📋 <b>ВИКС Расписание | Карточка заявки</b>\n━━━━━━━━━━━━━━━\n"
+    if 'date_target' in data: text += f"📅 <b>Дата:</b> <code>{data['date_target']}</code>\n"
     if 'object_address' in data: text += f"📍 <b>Объект:</b> {data['object_address']}\n"
-    if 'team_name' in data: text += f"👥 <b>Бригада:</b> {data['team_name']}\n"
-    if 'sel_m_names' in data and data['sel_m_names']:
-        text += f"👨‍🔧 <b>Состав:</b>\n" + "\n".join([f"  — {n}" for n in data['sel_m_names']]) + "\n"
-    if 'equip_name' in data: text += f"🚜 <b>Техника:</b> {data['equip_name']}\n"
     if 'time_start' in data and 'time_end' in data:
-        text += f"⏰ <b>Время:</b> {data['time_start']}:00 - {data['time_end']}:00\n"
-    if 'comment' in data: text += f"💬 <b>Коммент:</b> {data['comment']}\n"
+        text += f"⏰ <b>Время:</b> <code>{data['time_start']}:00 - {data['time_end']}:00</code>\n"
+    if 'equip_name' in data: text += f"🚜 <b>Техника:</b> {data['equip_name']}\n"
+    if 'team_name' in data: text += f"\n👥 <b>Бригада:</b> <i>{data['team_name']}</i>\n"
+    if 'sel_m_names' in data and data['sel_m_names']:
+        text += f"👨‍🔧 <b>Состав смены:</b>\n" + "\n".join([f"  ├ {n}" for n in data['sel_m_names']]) + "\n"
+    if 'comment' in data: text += f"\n💬 <b>Комментарий:</b> {data['comment']}\n"
     text += "━━━━━━━━━━━━━━━\n\n"
     return text
 
 
 async def show_review_card(message_or_callback, state: FSMContext):
-    """Универсальная функция для вывода карточки проверки перед отправкой"""
     data = await state.get_data()
     text = build_app_card(data) + "👀 <b>ПРОВЕРКА ЗАЯВКИ:</b>\nВсе ли верно? Вы можете изменить любой пункт."
     markup = kb.get_review_kb()
@@ -253,7 +238,6 @@ async def show_review_card(message_or_callback, state: FSMContext):
 
 
 async def validate_time_on_date_change(message_or_callback, state: FSMContext, db: DatabaseManager, new_date: str):
-    """Секретная проверка: если при редактировании изменили дату, проверяем, не занята ли техника"""
     data = await state.get_data()
     if data.get('equipment_id') and data.get('time_start'):
         busy_intervals = await db.get_equipment_busy_intervals(data['equipment_id'], new_date)
@@ -275,8 +259,6 @@ async def validate_time_on_date_change(message_or_callback, state: FSMContext, d
             return False
     return True
 
-
-# --- ОСНОВНАЯ ЦЕПОЧКА ---
 
 @router.message(F.text == "📝 Создать заявку")
 async def start_app(message: types.Message, state: FSMContext):
@@ -500,8 +482,6 @@ async def finish_app(message: types.Message, state: FSMContext):
     await show_review_card(message, state)
 
 
-# --- РЕДАКТИРОВАНИЕ ПЕРЕД ОТПРАВКОЙ (WYSIWYG) ---
-
 @router.callback_query(F.data == "rev_cancel_edit")
 async def cancel_edit(callback: types.CallbackQuery, state: FSMContext):
     await state.update_data(is_editing_date=False, is_editing_simple=False)
@@ -547,6 +527,7 @@ async def rev_edit_comment(callback: types.CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "rev_confirm")
 async def confirm_application_final(callback: types.CallbackQuery, state: FSMContext, db: DatabaseManager):
     data = await state.get_data()
+
     data['selected_member_ids'] = data.get('sel_m', [])
 
     required_keys = ['date_target', 'object_address', 'team_id', 'sel_m', 'equipment_id', 'time_start', 'time_end',
@@ -557,13 +538,12 @@ async def confirm_application_final(callback: types.CallbackQuery, state: FSMCon
     app_id = await db.save_application(data, callback.from_user.id)
     final_text = build_app_card(data) + f"\n✅ <b>ЗАЯВКА №{app_id} УСПЕШНО ОТПРАВЛЕНА!</b>\nОжидайте решения модератора."
     await callback.message.edit_text(final_text, parse_mode="HTML")
-
-    # ЛОГИРОВАНИЕ ДЛЯ БОССА
-    from utils.notifications import notify_management
-    await notify_management(callback.bot,
-                            f"📝 <b>Создана новая заявка №{app_id}</b>\nПрораб: {callback.from_user.full_name}\nОбъект: {data['object_address']}")
-
     await state.clear()
+
+    user_data = await db.get_user(callback.from_user.id)
+    foreman_name = user_data['fio'] if user_data else callback.from_user.first_name
+    await notify_bosses(callback.bot, db, f"👷‍♂️ Прораб <b>{foreman_name}</b> создал новую заявку <b>№{app_id}</b>.")
+
     await send_new_app_to_moderators(callback.bot, app_id, db)
 
 
@@ -583,9 +563,8 @@ async def edit_rejected_app(callback: types.CallbackQuery, state: FSMContext, db
     details = app_data['details']
     staff = app_data['staff']
 
-    # Загружаем старые данные в FSM, как если бы прораб ввел их сам
     await state.update_data(
-        edit_app_id=app_id,  # Флаг, что это перезапись старой заявки
+        edit_app_id=app_id,
         date_target=details['date_target'],
         object_address=details['object_address'],
         team_id=details['team_id'],
@@ -599,6 +578,5 @@ async def edit_rejected_app(callback: types.CallbackQuery, state: FSMContext, db
         sel_m_names=[s['fio'] for s in staff],
     )
 
-    await callback.message.delete()  # Удаляем сообщение с отказом
-    # Вызываем твою готовую функцию проверки (WYSIWYG)
+    await callback.message.delete()
     await show_review_card(callback.message, state)

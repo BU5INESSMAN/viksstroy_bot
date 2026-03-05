@@ -1,8 +1,7 @@
 import asyncio
 import logging
 import os
-import traceback
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -12,11 +11,16 @@ from database.db_manager import DatabaseManager
 from handlers import auth, foreman, moderator, admin
 from middlewares.auth_middleware import AuthMiddleware
 from utils.scheduler import setup_scheduler
-from utils.notifications import notify_management
+from utils.notifications import notify_bosses
+
 
 async def main():
     load_dotenv()
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+    )
     logger = logging.getLogger(__name__)
 
     db_path = os.getenv("DB_PATH", "data/viksstroy.db")
@@ -25,16 +29,18 @@ async def main():
 
     bot_token = os.getenv("BOT_TOKEN")
     if not bot_token:
-        return logger.error("Критическая ошибка: BOT_TOKEN не найден в .env!")
+        logger.error("Критическая ошибка: BOT_TOKEN не найден в .env!")
+        return
 
-    bot = Bot(token=bot_token, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    bot = Bot(
+        token=bot_token,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    )
+
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
-    # DI Инъекции
     dp["db"] = db
-    dp["bot"] = bot  # Пробрасываем самого бота для глобального перехватчика
-
     dp.update.outer_middleware(AuthMiddleware(db))
 
     dp.include_router(auth.router)
@@ -42,25 +48,22 @@ async def main():
     dp.include_router(moderator.router)
     dp.include_router(foreman.router)
 
-    # ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК ОШИБОК (Отправляет логи Суперадминам)
-    @dp.errors()
-    async def global_error_handler(event: types.ErrorEvent, bot: Bot):
-        tb = "".join(traceback.format_exception(type(event.exception), event.exception, event.exception.__traceback__))
-        err_msg = f"🚨 <b>СИСТЕМНАЯ ОШИБКА БОТА:</b>\n<pre>{tb[-3500:]}</pre>"
-        await notify_management(bot, err_msg, level="superadmin")
-        logger.error(f"Глобальная ошибка: {event.exception}")
-
     scheduler = setup_scheduler(bot, db)
-    logger.info(">>> Система ВикСтрой успешно запущена <<<")
+
+    logger.info(">>> ВИКС Расписание успешно запущено <<<")
+
+    await notify_bosses(bot, db, "🚀 <b>ВИКС Расписание успешно запущено и готово к работе!</b>", level='info')
 
     try:
         scheduler.start()
         await dp.start_polling(bot)
     except Exception as e:
-        logger.error(f"Ошибка в работе бота: {e}")
+        logger.error(f"Произошла ошибка в работе бота: {e}")
     finally:
         await bot.session.close()
         await db.close()
+        logger.info("Сессия бота завершена.")
+
 
 if __name__ == "__main__":
     try:
