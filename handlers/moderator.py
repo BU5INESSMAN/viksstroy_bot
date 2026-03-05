@@ -17,7 +17,8 @@ class ModStates(StatesGroup):
 
 @router.message(F.text == "🛡 Панель модератора")
 @router.message(Command("mod"))
-async def mod_panel_main(message: types.Message, db: DatabaseManager, role: str):
+async def mod_panel_main(message: types.Message, db: DatabaseManager, role: str = None):
+    # Добавлено "= None" для защиты от неавторизованных нажатий
     if role not in ["moderator", "boss", "superadmin"]: return
     await message.answer("🛡 <b>Панель модератора | ВИКС Расписание</b>\n\n<i>Выберите доступное действие:</i>",
                          reply_markup=kb.get_mod_panel_kb(), parse_mode="HTML")
