@@ -18,7 +18,8 @@ class AdminStates(StatesGroup):
 
 @router.message(Command("admin"))
 @router.message(F.text == "🛠 Панель управления")
-async def admin_panel_main(message: types.Message, role: str):
+async def admin_panel_main(message: types.Message, role: str = None):
+    # Добавлено "= None" для защиты от неавторизованных нажатий
     if role not in ["moderator", "boss", "superadmin"]: return
     await message.answer(
         "🛠 <b>Панель управления | ВИКС Расписание</b>\n\n"
