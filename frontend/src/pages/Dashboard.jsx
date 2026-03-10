@@ -9,18 +9,13 @@ export default function Dashboard() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // ТЕМНАЯ ТЕМА
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'system');
-
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
     if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      root.classList.add(systemTheme);
-    } else {
-      root.classList.add(theme);
-    }
+      root.classList.add(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
+    } else root.classList.add(theme);
     localStorage.setItem('theme', theme);
   }, [theme]);
 
@@ -31,9 +26,8 @@ export default function Dashboard() {
   };
 
   const themeIcon = theme === 'light' ? '🌞' : theme === 'dark' ? '🌙' : '💻';
-  const themeTitle = theme === 'light' ? 'Светлая тема' : theme === 'dark' ? 'Темная тема' : 'Как в системе';
+  const themeTitle = theme === 'light' ? 'Светлая тема' : theme === 'dark' ? 'Темная тема' : 'Системная тема';
 
-  // Состояния модалок
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', text: '', onConfirm: null, confirmText: 'Да', color: 'blue' });
   const [isTeamModalOpen, setTeamModalOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
@@ -44,17 +38,14 @@ export default function Dashboard() {
   const [appForm, setAppForm] = useState({ date_target: '', object_address: '', time_start: '08', time_end: '17', team_id: '', equip_id: '', comment: '' });
   const [inviteInfo, setInviteInfo] = useState(null);
   const [copiedLink, setCopiedLink] = useState('');
-
   const [isProfileModalOpen, setProfileModalOpen] = useState(false);
   const [profileData, setProfileData] = useState(null);
   const [profileLogs, setProfileLogs] = useState([]);
   const [editProfile, setEditProfile] = useState({});
-
-  // ТЕХНИКА
   const [isEquipModalOpen, setEquipModalOpen] = useState(false);
   const [equipList, setEquipList] = useState([]);
   const [newEquip, setNewEquip] = useState({ name: '', category: '' });
-  const [customCategory, setCustomCategory] = useState(''); // Поле для ручного ввода
+  const [customCategory, setCustomCategory] = useState('');
 
   const role = localStorage.getItem('user_role') || 'Гость';
   const tgId = localStorage.getItem('tg_id') || '0';
@@ -63,9 +54,7 @@ export default function Dashboard() {
   const fetchData = () => {
     axios.get('/api/dashboard').then(res => {
       setData(res.data);
-      if(res.data.equip_categories?.length > 0 && !newEquip.category) {
-        setNewEquip(prev => ({...prev, category: res.data.equip_categories[0]}));
-      }
+      if(res.data.equip_categories?.length > 0 && !newEquip.category) setNewEquip(prev => ({...prev, category: res.data.equip_categories[0]}));
     }).catch(() => {});
     if (tgId !== '0') axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => setActiveApp(res.data)).catch(() => setActiveApp(null));
     if (['boss', 'superadmin', 'moderator'].includes(role)) axios.get('/api/users').then(res => setUsers(res.data)).catch(() => {});
@@ -73,31 +62,15 @@ export default function Dashboard() {
   };
 
   useEffect(() => { fetchData(); setLoading(false); }, [tgId, role]);
-
   const handleLogout = () => { localStorage.removeItem('user_role'); localStorage.removeItem('tg_id'); navigate('/'); };
   const copyToClipboard = (text, type) => { navigator.clipboard.writeText(text); setCopiedLink(type); setTimeout(() => setCopiedLink(''), 2000); };
 
-  // --- ЛОГИКА АПИ ---
   const openProfile = async (targetId) => { try { const res = await axios.get(`/api/users/${targetId}/profile`); setProfileData(res.data.profile); setProfileLogs(res.data.logs); setEditProfile({ fio: res.data.profile.fio, role: res.data.profile.role, team_id: res.data.profile.team_id || '', position: res.data.profile.position || '', avatar_url: res.data.profile.avatar_url || '' }); setProfileModalOpen(true); } catch (err) { alert("Ошибка загрузки профиля"); } };
   const handleUpdateAvatar = async () => { const newUrl = prompt("Введите ссылку на новое фото (URL):", editProfile.avatar_url); if (newUrl !== null) { try { const fd = new FormData(); fd.append('avatar_url', newUrl); fd.append('tg_id', tgId); await axios.post(`/api/users/${profileData.user_id}/update_avatar`, fd); setEditProfile({...editProfile, avatar_url: newUrl}); setProfileData({...profileData, avatar_url: newUrl}); } catch (e) { alert("Ошибка обновления фото"); } } };
   const handleSaveProfile = async () => { try { const fd = new FormData(); fd.append('tg_id', tgId); fd.append('fio', editProfile.fio); fd.append('role', editProfile.role); fd.append('team_id', editProfile.team_id); fd.append('position', editProfile.position); await axios.post(`/api/users/${profileData.user_id}/update_profile`, fd); alert("Профиль успешно обновлен!"); setProfileModalOpen(false); fetchData(); } catch (e) { alert("Ошибка сохранения профиля."); } };
-  const handleDeleteUser = () => { setConfirmDialog({ isOpen: true, title: 'Удаление пользователя', text: `ПОЛНОСТЬЮ удалить «${profileData.fio}»?`, confirmText: 'Удалить навсегда', color: 'red', onConfirm: async () => { setConfirmDialog({ ...confirmDialog, isOpen: false }); try { const fd = new FormData(); fd.append('tg_id', tgId); await axios.post(`/api/users/${profileData.user_id}/delete`, fd); setProfileModalOpen(false); fetchData(); } catch (e) { alert("Ошибка удаления"); } } }); };
-
-  const openEquipModal = async () => { try { const res = await axios.get('/api/equipment/admin_list'); setEquipList(res.data); setEquipModalOpen(true); } catch (e) { alert("Ошибка загрузки техники"); } };
-
-  const handleAddEquip = async (e) => {
-    e.preventDefault();
-    try {
-      // Если выбрано "Другое", используем текст из поля для ввода
-      const finalCategory = newEquip.category === 'Другое' ? (customCategory.trim() || 'Без категории') : newEquip.category;
-      const fd = new FormData(); fd.append('name', newEquip.name); fd.append('category', finalCategory); fd.append('tg_id', tgId);
-      await axios.post('/api/equipment/add', fd);
-      setNewEquip({ name: '', category: data.equip_categories[0] || '' });
-      setCustomCategory('');
-      const res = await axios.get('/api/equipment/admin_list'); setEquipList(res.data); fetchData();
-    } catch (e) { alert("Ошибка добавления"); }
-  };
-
+  const handleDeleteUser = () => { setConfirmDialog({ isOpen: true, title: 'Удаление пользователя', text: `ПОЛНОСТЬЮ удалить «${profileData.fio}»?`, confirmText: 'Удалить', color: 'red', onConfirm: async () => { setConfirmDialog({ ...confirmDialog, isOpen: false }); try { const fd = new FormData(); fd.append('tg_id', tgId); await axios.post(`/api/users/${profileData.user_id}/delete`, fd); setProfileModalOpen(false); fetchData(); } catch (e) { alert("Ошибка"); } } }); };
+  const openEquipModal = async () => { try { const res = await axios.get('/api/equipment/admin_list'); setEquipList(res.data); setEquipModalOpen(true); } catch (e) { alert("Ошибка загрузки"); } };
+  const handleAddEquip = async (e) => { e.preventDefault(); try { const finalCategory = newEquip.category === 'Другое' ? (customCategory.trim() || 'Без категории') : newEquip.category; const fd = new FormData(); fd.append('name', newEquip.name); fd.append('category', finalCategory); fd.append('tg_id', tgId); await axios.post('/api/equipment/add', fd); setNewEquip({ name: '', category: data.equip_categories[0] || '' }); setCustomCategory(''); const res = await axios.get('/api/equipment/admin_list'); setEquipList(res.data); fetchData(); } catch (e) { alert("Ошибка"); } };
   const handleToggleEquip = async (id, currentStatus) => { try { const fd = new FormData(); fd.append('is_active', currentStatus ? 0 : 1); fd.append('tg_id', tgId); await axios.post(`/api/equipment/${id}/toggle`, fd); const res = await axios.get('/api/equipment/admin_list'); setEquipList(res.data); fetchData(); } catch (e) { alert("Ошибка"); } };
   const handleDeleteEquip = (id, name) => { if (!window.confirm(`Удалить технику ${name}?`)) return; try { const fd = new FormData(); fd.append('tg_id', tgId); axios.post(`/api/equipment/${id}/delete`, fd).then(() => { axios.get('/api/equipment/admin_list').then(res => setEquipList(res.data)); fetchData(); }); } catch (e) { alert("Ошибка"); } };
   const handleGenerateInvite = async (teamId) => { try { const res = await axios.post(`/api/teams/${teamId}/generate_invite`); setInviteInfo(res.data); } catch (err) { alert("Ошибка!"); } };
@@ -118,29 +91,31 @@ export default function Dashboard() {
   const canEditUsers = ['boss', 'superadmin', 'moderator'].includes(role);
 
   const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'Гость': 'Гость' };
-
-  // Умные категории (Берем из БД, добавляем "Другое" в конец)
   const displayCategories = [...(data.equip_categories || [])];
   if (!displayCategories.includes('Другое')) displayCategories.push('Другое');
-  if (displayCategories.length === 1) { displayCategories.unshift('Кран', 'Экскаватор'); } // Заглушка если БД пуста
+  if (displayCategories.length === 1) { displayCategories.unshift('Кран', 'Экскаватор'); }
 
   if (loading) return <div className="text-center mt-20 text-gray-800 dark:text-gray-200">Загрузка...</div>;
 
   return (
     <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-10 transition-colors duration-200">
-      <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 px-6 py-4 flex justify-between items-center mb-6 transition-colors duration-200">
+      <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 px-4 sm:px-6 py-4 flex justify-between items-center mb-6 transition-colors duration-200">
         <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">ВИКС Расписание</h1>
-        <div className="flex items-center space-x-3 sm:space-x-4">
-          <button onClick={toggleTheme} className="text-xl w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition" title={themeTitle}>
-            {themeIcon}
+        <div className="flex items-center space-x-2 sm:space-x-4">
+          <button onClick={toggleTheme} className="text-xl w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition" title={themeTitle}>{themeIcon}</button>
+
+          {/* НОВАЯ КНОПКА ИНСТРУКЦИИ */}
+          <button onClick={() => navigate('/guide')} className="flex items-center space-x-2 hover:bg-gray-50 dark:hover:bg-gray-700 px-3 py-1.5 rounded-lg transition border border-transparent hover:border-gray-200 dark:hover:border-gray-600">
+             <span className="text-blue-600 dark:text-blue-300 font-bold text-lg">📖</span>
+             <span className="text-sm font-medium hidden md:block">Инструкция</span>
           </button>
 
           <button onClick={() => openProfile(tgId)} className="flex items-center space-x-2 hover:bg-gray-50 dark:hover:bg-gray-700 px-3 py-1.5 rounded-lg transition border border-transparent hover:border-gray-200 dark:hover:border-gray-600">
              <div className="w-8 h-8 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center overflow-hidden"><span className="text-blue-600 dark:text-blue-300 font-bold text-sm">👤</span></div>
-             <span className="text-sm font-medium hidden sm:block">Мой профиль</span>
+             <span className="text-sm font-medium hidden sm:block">Профиль</span>
           </button>
-          <span className="text-sm text-gray-400 dark:text-gray-600 hidden sm:block">|</span>
-          <span className="text-sm text-gray-500 dark:text-gray-400 hidden md:block">Должность: <b className="text-gray-800 dark:text-gray-200">{roleNames[role]}</b></span>
+          <span className="text-sm text-gray-400 dark:text-gray-600 hidden lg:block">|</span>
+          <span className="text-sm text-gray-500 dark:text-gray-400 hidden lg:block">Должность: <b className="text-gray-800 dark:text-gray-200">{roleNames[role]}</b></span>
           <button onClick={handleLogout} className="text-sm font-medium text-red-500 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 transition">Выйти</button>
         </div>
       </nav>
@@ -241,7 +216,7 @@ export default function Dashboard() {
         )}
       </main>
 
-      {/* --- МОДАЛЬНЫЕ ОКНА С ТЕМНОЙ ТЕМОЙ --- */}
+      {/* МОДАЛКИ (Остаются такими же, как в прошлом ответе) */}
 
       {/* Техника */}
       {isEquipModalOpen && (
@@ -261,9 +236,7 @@ export default function Dashboard() {
                                     <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">{eq.category}</p>
                                 </div>
                                 <div className="flex items-center space-x-2">
-                                    <button onClick={() => handleToggleEquip(eq.id, eq.is_active)} className={`px-3 py-1.5 rounded text-xs font-bold ${eq.is_active ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-500 hover:bg-yellow-200' : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-500 hover:bg-green-200'}`}>
-                                        {eq.is_active ? 'В ремонт' : 'В строй'}
-                                    </button>
+                                    <button onClick={() => handleToggleEquip(eq.id, eq.is_active)} className={`px-3 py-1.5 rounded text-xs font-bold ${eq.is_active ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-500 hover:bg-yellow-200' : 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-500 hover:bg-green-200'}`}>{eq.is_active ? 'В ремонт' : 'В строй'}</button>
                                     <button onClick={() => handleDeleteEquip(eq.id, eq.name)} className="px-3 py-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/50 rounded text-xs font-bold">Удалить</button>
                                 </div>
                             </div>
@@ -314,7 +287,6 @@ export default function Dashboard() {
                         </div>
                     </div>
                 </div>
-
                 <div className="p-6 space-y-6">
                     <div className="space-y-4">
                         <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4>
@@ -322,30 +294,23 @@ export default function Dashboard() {
                             <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:opacity-70" /></div>
                             <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:bg-gray-100 dark:disabled:bg-gray-800 disabled:opacity-70" /></div>
                         </div>
-
                         {canEditUsers && (
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">Бригада</label>
                                 <div className="flex flex-wrap gap-2">
                                     <button type="button" onClick={() => setEditProfile({...editProfile, team_id: ''})} className={`px-4 py-2 text-sm font-medium rounded-lg border transition ${!editProfile.team_id ? 'bg-red-50 dark:bg-red-900/30 border-red-500 text-red-700 dark:text-red-400' : 'bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50'}`}>Без бригады</button>
-                                    {data.teams.map(t => (
-                                        <button key={t.id} type="button" onClick={() => setEditProfile({...editProfile, team_id: t.id})} className={`px-4 py-2 text-sm font-medium rounded-lg border transition ${Number(editProfile.team_id) === t.id ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-700 dark:text-blue-400 shadow-sm' : 'bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50'}`}>🏗 {t.name}</button>
-                                    ))}
+                                    {data.teams.map(t => (<button key={t.id} type="button" onClick={() => setEditProfile({...editProfile, team_id: t.id})} className={`px-4 py-2 text-sm font-medium rounded-lg border transition ${Number(editProfile.team_id) === t.id ? 'bg-blue-50 dark:bg-blue-900/30 border-blue-500 text-blue-700 dark:text-blue-400 shadow-sm' : 'bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50'}`}>🏗 {t.name}</button>))}
                                 </div>
                             </div>
                         )}
-
                         {canEditUsers && profileData.user_id !== Number(tgId) && (
                             <div>
                                 <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">Роль</label>
                                 <div className="flex flex-wrap gap-2">
-                                    {Object.entries(roleNames).filter(([key]) => key !== 'Гость').map(([key, label]) => (
-                                        <button key={key} type="button" onClick={() => setEditProfile({...editProfile, role: key})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${editProfile.role === key ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-500 text-indigo-700 dark:text-indigo-400 shadow-sm' : 'bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50'}`}>{label}</button>
-                                    ))}
+                                    {Object.entries(roleNames).filter(([key]) => key !== 'Гость').map(([key, label]) => (<button key={key} type="button" onClick={() => setEditProfile({...editProfile, role: key})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${editProfile.role === key ? 'bg-indigo-50 dark:bg-indigo-900/30 border-indigo-500 text-indigo-700 dark:text-indigo-400 shadow-sm' : 'bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50'}`}>{label}</button>))}
                                 </div>
                             </div>
                         )}
-
                         {canEditUsers && (
                             <div className="flex justify-between items-center pt-4 mt-2 border-t border-gray-100 dark:border-gray-700">
                                 <button onClick={handleDeleteUser} disabled={profileData.user_id === Number(tgId)} className="text-red-500 dark:text-red-400 font-bold text-sm bg-red-50 dark:bg-red-900/20 px-4 py-2.5 rounded-lg disabled:opacity-50">🗑 Удалить</button>
@@ -353,17 +318,11 @@ export default function Dashboard() {
                             </div>
                         )}
                     </div>
-
                     <div className="mt-8">
                         <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2 mb-4">История действий</h4>
                         {profileLogs.length > 0 ? (
                             <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
-                                {profileLogs.map(log => (
-                                    <div key={log.id} className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg border border-gray-100 dark:border-gray-600 flex justify-between items-start text-sm">
-                                        <span className="text-gray-700 dark:text-gray-300">{log.action}</span>
-                                        <span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap ml-4">{new Date(log.timestamp).toLocaleString('ru-RU', {day: '2-digit', month: 'short', hour: '2-digit', minute:'2-digit'})}</span>
-                                    </div>
-                                ))}
+                                {profileLogs.map(log => (<div key={log.id} className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg border border-gray-100 dark:border-gray-600 flex justify-between items-start text-sm"><span className="text-gray-700 dark:text-gray-300">{log.action}</span><span className="text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap ml-4">{new Date(log.timestamp).toLocaleString('ru-RU', {day: '2-digit', month: 'short', hour: '2-digit', minute:'2-digit'})}</span></div>))}
                             </div>
                         ) : (<p className="text-gray-500 dark:text-gray-400 text-sm italic">Действий не найдено.</p>)}
                     </div>
@@ -372,48 +331,33 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Окно подтверждения */}
       {confirmDialog.isOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[60] backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl transition-colors">
                 <h3 className="text-xl font-bold mb-2">{confirmDialog.title}</h3>
                 <p className="text-gray-600 dark:text-gray-400 mb-6 text-sm">{confirmDialog.text}</p>
-                <div className="flex space-x-3">
-                    <button onClick={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} className="w-1/2 bg-gray-100 dark:bg-gray-700 py-2.5 rounded-xl font-medium text-gray-700 dark:text-gray-300">Отмена</button>
-                    <button onClick={confirmDialog.onConfirm} className={`w-1/2 text-white py-2.5 rounded-xl font-medium shadow-md ${confirmDialog.color === 'red' ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>{confirmDialog.confirmText}</button>
-                </div>
+                <div className="flex space-x-3"><button onClick={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} className="w-1/2 bg-gray-100 dark:bg-gray-700 py-2.5 rounded-xl font-medium text-gray-700 dark:text-gray-300">Отмена</button><button onClick={confirmDialog.onConfirm} className={`w-1/2 text-white py-2.5 rounded-xl font-medium shadow-md ${confirmDialog.color === 'red' ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'}`}>{confirmDialog.confirmText}</button></div>
             </div>
         </div>
       )}
 
-      {/* Инвайт */}
       {inviteInfo && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-2xl w-full max-w-md transition-colors">
                 <h3 className="text-xl font-bold mb-6 text-center">Приглашение</h3>
                 <div className="space-y-4 mb-6">
-                    <div>
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">✈️ Ссылка для Telegram:</label>
-                        <button onClick={() => copyToClipboard(inviteInfo.tg_bot_link, 'tg')} className={`w-full text-left px-4 py-3 border rounded-lg text-sm transition ${copiedLink === 'tg' ? 'bg-green-50 dark:bg-green-900/30 border-green-500 text-green-700 dark:text-green-400' : 'bg-gray-50 dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300'}`}>{copiedLink === 'tg' ? '✅ Ссылка скопирована!' : '🔗 Нажмите, чтобы скопировать'}</button>
-                    </div>
-                    <div>
-                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">🌐 Web-ссылка:</label>
-                        <button onClick={() => copyToClipboard(inviteInfo.invite_link, 'web')} className={`w-full text-left px-4 py-3 border rounded-lg text-sm transition ${copiedLink === 'web' ? 'bg-green-50 dark:bg-green-900/30 border-green-500 text-green-700 dark:text-green-400' : 'bg-gray-50 dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300'}`}>{copiedLink === 'web' ? '✅ Ссылка скопирована!' : '🔗 Нажмите, чтобы скопировать'}</button>
-                    </div>
+                    <div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">✈️ Ссылка для Telegram:</label><button onClick={() => copyToClipboard(inviteInfo.tg_bot_link, 'tg')} className={`w-full text-left px-4 py-3 border rounded-lg text-sm transition ${copiedLink === 'tg' ? 'bg-green-50 dark:bg-green-900/30 border-green-500 text-green-700 dark:text-green-400' : 'bg-gray-50 dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300'}`}>{copiedLink === 'tg' ? '✅ Ссылка скопирована!' : '🔗 Нажмите, чтобы скопировать'}</button></div>
+                    <div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">🌐 Web-ссылка:</label><button onClick={() => copyToClipboard(inviteInfo.invite_link, 'web')} className={`w-full text-left px-4 py-3 border rounded-lg text-sm transition ${copiedLink === 'web' ? 'bg-green-50 dark:bg-green-900/30 border-green-500 text-green-700 dark:text-green-400' : 'bg-gray-50 dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300'}`}>{copiedLink === 'web' ? '✅ Ссылка скопирована!' : '🔗 Нажмите, чтобы скопировать'}</button></div>
                 </div>
                 <button onClick={() => setInviteInfo(null)} className="w-full bg-gray-800 dark:bg-gray-700 text-white py-3 rounded-xl hover:bg-gray-900 font-medium shadow-md">Закрыть</button>
             </div>
         </div>
       )}
 
-      {/* Управление бригадой */}
       {isManageModalOpen && manageTeamData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40 overflow-y-auto">
             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl w-full max-w-lg my-8 relative transition-colors">
-                <div className="flex justify-between items-center mb-6">
-                    <h3 className="text-xl font-bold">Бригада «{manageTeamData.name}»</h3>
-                    <button onClick={() => setManageModalOpen(false)} className="text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
-                </div>
+                <div className="flex justify-between items-center mb-6"><h3 className="text-xl font-bold">Бригада «{manageTeamData.name}»</h3><button onClick={() => setManageModalOpen(false)} className="text-gray-400 hover:text-gray-700 text-2xl">&times;</button></div>
                 <div className="mb-6">
                     <h4 className="font-bold text-gray-700 dark:text-gray-300 mb-3">Состав ({manageTeamData.members.length} чел.)</h4>
                     <div className="max-h-60 overflow-y-auto space-y-2 border dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-900/50">
@@ -439,7 +383,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Создать бригаду */}
       {isTeamModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm transition-colors">
@@ -455,7 +398,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Создать заявку */}
       {isAppModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-md my-8 shadow-2xl transition-colors">
@@ -467,31 +409,20 @@ export default function Dashboard() {
                         <div className="w-1/2"><label className="font-bold text-gray-700 dark:text-gray-300 block mb-1">Начало (час)</label><input type="number" min="0" max="23" required value={appForm.time_start} onChange={e => setAppForm({...appForm, time_start: e.target.value})} className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-2.5 rounded-lg text-center outline-none" /></div>
                         <div className="w-1/2"><label className="font-bold text-gray-700 dark:text-gray-300 block mb-1">Конец (час)</label><input type="number" min="0" max="23" required value={appForm.time_end} onChange={e => setAppForm({...appForm, time_end: e.target.value})} className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-2.5 rounded-lg text-center outline-none" /></div>
                     </div>
-
                     <div>
                         <label className="font-bold text-gray-700 dark:text-gray-300 block mb-1">Бригада</label>
                         <div className="flex flex-wrap gap-2">
-                            {data.teams.map(t => (
-                                <button key={t.id} type="button" onClick={() => setAppForm({...appForm, team_id: t.id})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${Number(appForm.team_id) === t.id ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300'}`}>🏗 {t.name}</button>
-                            ))}
+                            {data.teams.map(t => (<button key={t.id} type="button" onClick={() => setAppForm({...appForm, team_id: t.id})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${Number(appForm.team_id) === t.id ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400' : 'bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300'}`}>🏗 {t.name}</button>))}
                         </div>
                     </div>
-
                     <div>
                         <label className="font-bold text-gray-700 dark:text-gray-300 block mb-1">Техника</label>
                         <div className="flex flex-wrap gap-2">
-                            {data.equipment.map(e => (
-                                <button key={e.id} type="button" onClick={() => setAppForm({...appForm, equip_id: e.id})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${Number(appForm.equip_id) === e.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300'}`}>🚜 {e.name}</button>
-                            ))}
+                            {data.equipment.map(e => (<button key={e.id} type="button" onClick={() => setAppForm({...appForm, equip_id: e.id})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${Number(appForm.equip_id) === e.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400' : 'bg-white dark:bg-gray-700 dark:border-gray-600 text-gray-600 dark:text-gray-300'}`}>🚜 {e.name}</button>))}
                         </div>
                     </div>
-
                     <div><label className="font-bold text-gray-700 dark:text-gray-300 block mb-1">Комментарий</label><input type="text" value={appForm.comment} onChange={e => setAppForm({...appForm, comment: e.target.value})} className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-2.5 rounded-lg outline-none" /></div>
-
-                    <div className="flex space-x-3 pt-4">
-                        <button type="button" onClick={() => setAppModalOpen(false)} className="w-1/3 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl font-medium">Отмена</button>
-                        <button type="submit" className="w-2/3 bg-blue-600 text-white py-3 rounded-xl font-medium shadow-md">Отправить заявку</button>
-                    </div>
+                    <div className="flex space-x-3 pt-4"><button type="button" onClick={() => setAppModalOpen(false)} className="w-1/3 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl font-medium">Отмена</button><button type="submit" className="w-2/3 bg-blue-600 text-white py-3 rounded-xl font-medium shadow-md">Отправить заявку</button></div>
                 </form>
             </div>
         </div>
