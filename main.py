@@ -13,6 +13,8 @@ from middlewares.auth_middleware import AuthMiddleware
 from utils.scheduler import setup_scheduler
 from utils.notifications import notify_bosses
 
+from handlers import invite
+
 
 async def main():
     load_dotenv()
@@ -47,6 +49,7 @@ async def main():
     dp.include_router(admin.router)
     dp.include_router(moderator.router)
     dp.include_router(foreman.router)
+    dp.include_router(invite.router)
 
     scheduler = setup_scheduler(bot, db)
 
