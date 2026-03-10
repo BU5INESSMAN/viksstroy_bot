@@ -122,10 +122,25 @@ async def get_dashboard_data():
     stats = await db.get_general_statistics()
     teams = await db.get_all_teams()
     equip = await db.get_all_equipment_admin()
+
+    # Собираем умные категории без дублей
+    async with db.conn.execute(
+            "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur:
+        cat_rows = await cur.fetchall()
+
+    categories = []
+    for r in cat_rows:
+        cat = r[0].strip()
+        if cat:
+            cat = cat.capitalize()  # Делаем первую букву заглавной (кран -> Кран)
+            if cat not in categories:
+                categories.append(cat)
+
     return {
         "stats": stats,
         "teams": [{"id": t['id'], "name": t['name']} for t in teams],
-        "equipment": [{"id": e['id'], "name": e['name'], "category": e['category']} for e in equip if e['is_active']]
+        "equipment": [{"id": e['id'], "name": e['name'], "category": e['category']} for e in equip if e['is_active']],
+        "equip_categories": categories
     }
 
 
