@@ -14,15 +14,17 @@ export default function JoinTeam() {
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [isConfirmModalOpen, setConfirmModalOpen] = useState(false);
 
+  // 1. Сначала загружаем данные бригады
   useEffect(() => {
     axios.get(`/api/invite/${code}`)
       .then(res => setTeamData(res.data))
       .catch(err => setError(err.response?.data?.detail || "Ссылка недействительна"));
   }, [code]);
 
-  // Загружаем виджет Telegram, если юзер не авторизован
+  // 2. И ТОЛЬКО ПОСЛЕ загрузки teamData пытаемся отрисовать виджет Telegram
   useEffect(() => {
-    if (!tgId && telegramWrapperRef.current && telegramWrapperRef.current.children.length === 0) {
+    // Проверяем: данные загружены? контейнер появился? скрипта еще нет?
+    if (teamData && !tgId && telegramWrapperRef.current && telegramWrapperRef.current.children.length === 0) {
       window.onTelegramAuthInvite = async (user) => {
         try {
           const response = await axios.post('/api/telegram_auth', user);
@@ -36,14 +38,14 @@ export default function JoinTeam() {
 
       const script = document.createElement('script');
       script.src = 'https://telegram.org/js/telegram-widget.js?22';
-      // ВАЖНО: Замени на username твоего бота
+      // ВАЖНО: Замени на username твоего бота (без @)
       script.setAttribute('data-telegram-login', 'viksstroy_bot');
       script.setAttribute('data-size', 'large');
       script.setAttribute('data-onauth', 'onTelegramAuthInvite(user)');
       script.async = true;
       telegramWrapperRef.current.appendChild(script);
     }
-  }, [tgId]);
+  }, [tgId, teamData]); // Добавили teamData в зависимости!
 
   const handleWorkerClick = (worker) => {
     setSelectedWorker(worker);
@@ -58,7 +60,7 @@ export default function JoinTeam() {
       formData.append('tg_id', tgId);
 
       await axios.post('/api/invite/join', formData);
-      navigate('/dashboard'); // Успех -> Сразу в дашборд
+      navigate('/dashboard');
     } catch (err) {
       setError(err.response?.data?.detail || "Ошибка сервера");
       setConfirmModalOpen(false);
@@ -86,7 +88,8 @@ export default function JoinTeam() {
         {!tgId ? (
           <div className="text-center">
             <p className="text-gray-600 mb-4 text-sm font-medium">Для вступления необходимо авторизоваться:</p>
-            <div className="flex justify-center" ref={telegramWrapperRef}></div>
+            {/* Сюда загрузится виджет */}
+            <div className="flex justify-center min-h-[40px]" ref={telegramWrapperRef}></div>
           </div>
         ) : teamData.unclaimed_workers.length === 0 ? (
           <div className="text-center bg-gray-100 p-4 rounded-lg text-gray-500 font-medium">В данной бригаде больше нет свободных мест.</div>
