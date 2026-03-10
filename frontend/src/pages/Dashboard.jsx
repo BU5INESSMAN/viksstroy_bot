@@ -9,7 +9,6 @@ export default function Dashboard() {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Состояния модалок
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', text: '', onConfirm: null, confirmText: 'Да', color: 'blue' });
   const [isTeamModalOpen, setTeamModalOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
@@ -21,11 +20,15 @@ export default function Dashboard() {
   const [inviteInfo, setInviteInfo] = useState(null);
   const [copiedLink, setCopiedLink] = useState('');
 
-  // ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ
   const [isProfileModalOpen, setProfileModalOpen] = useState(false);
   const [profileData, setProfileData] = useState(null);
   const [profileLogs, setProfileLogs] = useState([]);
   const [editProfile, setEditProfile] = useState({});
+
+  // ТЕХНИКА
+  const [isEquipModalOpen, setEquipModalOpen] = useState(false);
+  const [equipList, setEquipList] = useState([]);
+  const [newEquip, setNewEquip] = useState({ name: '', category: 'Кран' });
 
   const role = localStorage.getItem('user_role') || 'Гость';
   const tgId = localStorage.getItem('tg_id') || '0';
@@ -34,39 +37,20 @@ export default function Dashboard() {
   const fetchData = () => {
     axios.get('/api/dashboard').then(res => setData(res.data)).catch(() => {});
     if (tgId !== '0') axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => setActiveApp(res.data)).catch(() => setActiveApp(null));
-    if (['boss', 'superadmin', 'moderator'].includes(role)) {
-      axios.get('/api/users').then(res => setUsers(res.data)).catch(() => {});
-    }
-    if (['boss', 'superadmin'].includes(role)) {
-      axios.get('/api/logs').then(res => setLogs(res.data)).catch(() => {});
-    }
+    if (['boss', 'superadmin', 'moderator'].includes(role)) axios.get('/api/users').then(res => setUsers(res.data)).catch(() => {});
+    if (['boss', 'superadmin'].includes(role)) axios.get('/api/logs').then(res => setLogs(res.data)).catch(() => {});
   };
 
   useEffect(() => { fetchData(); setLoading(false); }, [tgId, role]);
 
-  const handleLogout = () => {
-    localStorage.removeItem('user_role'); localStorage.removeItem('tg_id'); navigate('/');
-  };
+  const handleLogout = () => { localStorage.removeItem('user_role'); localStorage.removeItem('tg_id'); navigate('/'); };
+  const copyToClipboard = (text, type) => { navigator.clipboard.writeText(text); setCopiedLink(type); setTimeout(() => setCopiedLink(''), 2000); };
 
-  const copyToClipboard = (text, type) => {
-    navigator.clipboard.writeText(text);
-    setCopiedLink(type);
-    setTimeout(() => setCopiedLink(''), 2000);
-  };
-
-  // --- ЛОГИКА ПРОФИЛЯ ---
   const openProfile = async (targetId) => {
     try {
       const res = await axios.get(`/api/users/${targetId}/profile`);
-      setProfileData(res.data.profile);
-      setProfileLogs(res.data.logs);
-      setEditProfile({
-        fio: res.data.profile.fio,
-        role: res.data.profile.role,
-        team_id: res.data.profile.team_id || '',
-        position: res.data.profile.position || '',
-        avatar_url: res.data.profile.avatar_url || ''
-      });
+      setProfileData(res.data.profile); setProfileLogs(res.data.logs);
+      setEditProfile({ fio: res.data.profile.fio, role: res.data.profile.role, team_id: res.data.profile.team_id || '', position: res.data.profile.position || '', avatar_url: res.data.profile.avatar_url || '' });
       setProfileModalOpen(true);
     } catch (err) { alert("Ошибка загрузки профиля"); }
   };
@@ -77,45 +61,67 @@ export default function Dashboard() {
       try {
         const fd = new FormData(); fd.append('avatar_url', newUrl); fd.append('tg_id', tgId);
         await axios.post(`/api/users/${profileData.user_id}/update_avatar`, fd);
-        setEditProfile({...editProfile, avatar_url: newUrl});
-        setProfileData({...profileData, avatar_url: newUrl});
+        setEditProfile({...editProfile, avatar_url: newUrl}); setProfileData({...profileData, avatar_url: newUrl});
       } catch (e) { alert("Ошибка обновления фото"); }
     }
   };
 
   const handleSaveProfile = async () => {
     try {
-      const fd = new FormData();
-      fd.append('tg_id', tgId);
-      fd.append('fio', editProfile.fio);
-      fd.append('role', editProfile.role);
-      fd.append('team_id', editProfile.team_id);
-      fd.append('position', editProfile.position);
+      const fd = new FormData(); fd.append('tg_id', tgId); fd.append('fio', editProfile.fio); fd.append('role', editProfile.role); fd.append('team_id', editProfile.team_id); fd.append('position', editProfile.position);
       await axios.post(`/api/users/${profileData.user_id}/update_profile`, fd);
-      alert("Профиль успешно обновлен!");
-      setProfileModalOpen(false);
-      fetchData();
-    } catch (e) { alert("Ошибка сохранения профиля. Возможно, нет прав."); }
+      alert("Профиль успешно обновлен!"); setProfileModalOpen(false); fetchData();
+    } catch (e) { alert("Ошибка сохранения профиля."); }
   };
 
   const handleDeleteUser = () => {
-    setConfirmDialog({
-      isOpen: true, title: 'Удаление пользователя', text: `Вы уверены, что хотите ПОЛНОСТЬЮ удалить «${profileData.fio}» из базы?`, confirmText: 'Удалить навсегда', color: 'red',
-      onConfirm: async () => {
+    setConfirmDialog({ isOpen: true, title: 'Удаление пользователя', text: `ПОЛНОСТЬЮ удалить «${profileData.fio}»?`, confirmText: 'Удалить навсегда', color: 'red', onConfirm: async () => {
         setConfirmDialog({ ...confirmDialog, isOpen: false });
-        try {
-          const fd = new FormData(); fd.append('tg_id', tgId);
-          await axios.post(`/api/users/${profileData.user_id}/delete`, fd);
-          setProfileModalOpen(false); fetchData();
-        } catch (e) { alert("Ошибка удаления"); }
+        try { const fd = new FormData(); fd.append('tg_id', tgId); await axios.post(`/api/users/${profileData.user_id}/delete`, fd); setProfileModalOpen(false); fetchData(); } catch (e) { alert("Ошибка удаления"); }
       }
     });
   };
 
-  // --- ОСТАЛЬНАЯ ЛОГИКА ---
-  const handleGenerateInvite = async (teamId) => { try { const res = await axios.post(`/api/teams/${teamId}/generate_invite`); setInviteInfo(res.data); } catch (err) { alert("Ошибка генерации ссылок!"); } };
-  const handleCreateTeam = async (e) => { e.preventDefault(); try { const fd = new FormData(); fd.append('name', newTeamName); fd.append('tg_id', tgId); await axios.post('/api/teams/create', fd); setTeamModalOpen(false); setNewTeamName(''); fetchData(); } catch (err) { alert("Ошибка создания бригады"); } };
-  const openManageModal = async (teamId) => { try { const res = await axios.get(`/api/teams/${teamId}/details`); setManageTeamData(res.data); setManageModalOpen(true); } catch (err) { alert("Ошибка загрузки"); } };
+  // --- УПРАВЛЕНИЕ ТЕХНИКОЙ ---
+  const openEquipModal = async () => {
+    try {
+      const res = await axios.get('/api/equipment/admin_list');
+      setEquipList(res.data);
+      setEquipModalOpen(true);
+    } catch (e) { alert("Ошибка загрузки техники"); }
+  };
+
+  const handleAddEquip = async (e) => {
+    e.preventDefault();
+    try {
+      const fd = new FormData(); fd.append('name', newEquip.name); fd.append('category', newEquip.category); fd.append('tg_id', tgId);
+      await axios.post('/api/equipment/add', fd);
+      setNewEquip({ name: '', category: 'Кран' });
+      const res = await axios.get('/api/equipment/admin_list'); setEquipList(res.data); fetchData();
+    } catch (e) { alert("Ошибка добавления"); }
+  };
+
+  const handleToggleEquip = async (id, currentStatus) => {
+    try {
+      const fd = new FormData(); fd.append('is_active', currentStatus ? 0 : 1); fd.append('tg_id', tgId);
+      await axios.post(`/api/equipment/${id}/toggle`, fd);
+      const res = await axios.get('/api/equipment/admin_list'); setEquipList(res.data); fetchData();
+    } catch (e) { alert("Ошибка"); }
+  };
+
+  const handleDeleteEquip = (id, name) => {
+    if (!window.confirm(`Удалить технику ${name}?`)) return;
+    try {
+      const fd = new FormData(); fd.append('tg_id', tgId);
+      axios.post(`/api/equipment/${id}/delete`, fd).then(() => {
+        axios.get('/api/equipment/admin_list').then(res => setEquipList(res.data)); fetchData();
+      });
+    } catch (e) { alert("Ошибка"); }
+  };
+
+  const handleGenerateInvite = async (teamId) => { try { const res = await axios.post(`/api/teams/${teamId}/generate_invite`); setInviteInfo(res.data); } catch (err) { alert("Ошибка!"); } };
+  const handleCreateTeam = async (e) => { e.preventDefault(); try { const fd = new FormData(); fd.append('name', newTeamName); fd.append('tg_id', tgId); await axios.post('/api/teams/create', fd); setTeamModalOpen(false); setNewTeamName(''); fetchData(); } catch (err) { alert("Ошибка"); } };
+  const openManageModal = async (teamId) => { try { const res = await axios.get(`/api/teams/${teamId}/details`); setManageTeamData(res.data); setManageModalOpen(true); } catch (err) { alert("Ошибка"); } };
   const handleAddMember = async (e) => { e.preventDefault(); try { const fd = new FormData(); fd.append('fio', newMember.fio); fd.append('position', newMember.position); fd.append('tg_id', tgId); await axios.post(`/api/teams/${manageTeamData.id}/members/add`, fd); setNewMember({ fio: '', position: 'Рабочий' }); const res = await axios.get(`/api/teams/${manageTeamData.id}/details`); setManageTeamData(res.data); fetchData(); } catch (err) { alert("Ошибка"); } };
   const handleDeleteMember = (memberId, memberName) => { setConfirmDialog({ isOpen: true, title: 'Удалить?', text: `Удалить «${memberName}»?`, confirmText: 'Удалить', color: 'red', onConfirm: async () => { setConfirmDialog({ ...confirmDialog, isOpen: false }); try { const fd = new FormData(); fd.append('tg_id', tgId); await axios.post(`/api/teams/members/${memberId}/delete`, fd); const res = await axios.get(`/api/teams/${manageTeamData.id}/details`); setManageTeamData(res.data); fetchData(); } catch (err) { alert("Ошибка"); } }}); };
   const handleCreateApp = async (e) => { e.preventDefault(); try { const fd = new FormData(); fd.append('tg_id', tgId); Object.keys(appForm).forEach(k => fd.append(k, appForm[k])); await axios.post('/api/applications/create', fd); setAppModalOpen(false); fetchData(); alert("Отправлено на модерацию!"); } catch (err) { alert("Ошибка"); } };
@@ -131,6 +137,7 @@ export default function Dashboard() {
   const canEditUsers = ['boss', 'superadmin', 'moderator'].includes(role);
 
   const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'Гость': 'Гость' };
+  const equipCategories = ['Кран', 'Экскаватор', 'Погрузчик', 'Манипулятор', 'Спецтехника', 'Другое'];
 
   if (loading) return <div className="text-center mt-20">Загрузка...</div>;
 
@@ -140,9 +147,7 @@ export default function Dashboard() {
         <h1 className="text-xl font-bold text-blue-600">ВИКС Расписание</h1>
         <div className="flex items-center space-x-4">
           <button onClick={() => openProfile(tgId)} className="flex items-center space-x-2 hover:bg-gray-50 px-3 py-1.5 rounded-lg transition border border-transparent hover:border-gray-200">
-             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden">
-                <span className="text-blue-600 font-bold text-sm">👤</span>
-             </div>
+             <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center overflow-hidden"><span className="text-blue-600 font-bold text-sm">👤</span></div>
              <span className="text-sm font-medium hidden sm:block">Мой профиль</span>
           </button>
           <span className="text-sm text-gray-400 hidden sm:block">|</span>
@@ -198,13 +203,13 @@ export default function Dashboard() {
                     <div className="space-y-3">
                     {showCreateOrder && (<button onClick={() => setAppModalOpen(true)} className="w-full bg-blue-600 text-white py-3 rounded-lg shadow hover:bg-blue-700 font-medium">📝 Создать заявку</button>)}
                     {showPublishOrder && (<button onClick={handlePublishAppsClick} className="w-full bg-emerald-500 text-white py-3 rounded-lg shadow hover:bg-emerald-600 font-medium">📤 Отправить наряды в группу</button>)}
+                    {showAdminPanel && (<button onClick={openEquipModal} className="w-full bg-gray-800 text-white py-3 rounded-lg shadow hover:bg-gray-900 font-medium">🛠 Панель управления техникой</button>)}
                     </div>
                 </div>
             )}
           </div>
         </div>
 
-        {/* СПИСОК ПОЛЬЗОВАТЕЛЕЙ */}
         {showUsersAndLogs && (
             <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100 mt-6">
                 <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800"><span className="text-2xl mr-2">👨‍💼</span> Пользователи системы</h2>
@@ -224,7 +229,6 @@ export default function Dashboard() {
             </div>
         )}
 
-        {/* ЖУРНАЛ ДЕЙСТВИЙ */}
         {['boss', 'superadmin'].includes(role) && (
             <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100 mt-6">
                 <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800"><span className="text-2xl mr-2">📜</span> Журнал действий системы</h2>
@@ -250,7 +254,55 @@ export default function Dashboard() {
 
       {/* --- МОДАЛЬНЫЕ ОКНА --- */}
 
-      {/* 1. Модалка: Профиль пользователя */}
+      {/* Техника (НОВАЯ) */}
+      {isEquipModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm">
+            <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl my-8 overflow-hidden">
+                <div className="flex justify-between items-center px-6 py-4 bg-gray-800 text-white">
+                    <h3 className="text-xl font-bold">🛠 Управление автопарком</h3>
+                    <button onClick={() => setEquipModalOpen(false)} className="text-gray-300 hover:text-white text-2xl">&times;</button>
+                </div>
+                <div className="p-6">
+                    <div className="mb-6 max-h-64 overflow-y-auto border rounded-xl bg-gray-50 p-2">
+                        {equipList.length === 0 ? <p className="text-center text-gray-500 py-4">Техника не найдена</p> : null}
+                        {equipList.map(eq => (
+                            <div key={eq.id} className={`flex justify-between items-center p-3 mb-2 rounded-lg border shadow-sm ${eq.is_active ? 'bg-white' : 'bg-gray-100 opacity-60'}`}>
+                                <div>
+                                    <p className="font-bold text-gray-800">{eq.name}</p>
+                                    <p className="text-xs text-gray-500 uppercase">{eq.category}</p>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                    <button onClick={() => handleToggleEquip(eq.id, eq.is_active)} className={`px-3 py-1.5 rounded text-xs font-bold ${eq.is_active ? 'bg-yellow-100 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 text-green-700 hover:bg-green-200'}`}>
+                                        {eq.is_active ? 'В ремонт' : 'В строй'}
+                                    </button>
+                                    <button onClick={() => handleDeleteEquip(eq.id, eq.name)} className="px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded text-xs font-bold">Удалить</button>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+
+                    <form onSubmit={handleAddEquip} className="bg-blue-50 p-4 rounded-xl border border-blue-100">
+                        <h4 className="font-bold text-blue-800 mb-3 text-sm uppercase">Добавить новую технику</h4>
+                        <div className="mb-3">
+                            <label className="block text-xs font-bold text-gray-500 mb-1">Название (например: Кран Ивановец 25т)</label>
+                            <input type="text" required value={newEquip.name} onChange={e => setNewEquip({...newEquip, name: e.target.value})} className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-400" />
+                        </div>
+                        <div className="mb-3">
+                            <label className="block text-xs font-bold text-gray-500 mb-2">Категория</label>
+                            <div className="flex flex-wrap gap-2">
+                                {equipCategories.map(cat => (
+                                    <button key={cat} type="button" onClick={() => setNewEquip({...newEquip, category: cat})} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${newEquip.category === cat ? 'bg-blue-500 text-white border-blue-600' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>{cat}</button>
+                                ))}
+                            </div>
+                        </div>
+                        <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700">Добавить в автопарк</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+      )}
+
+      {/* Профиль */}
       {isProfileModalOpen && profileData && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm">
             <div className="bg-white rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden my-8">
@@ -328,7 +380,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 2. Модалка: Окно подтверждения */}
+      {/* Окно подтверждения */}
       {confirmDialog.isOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[60] backdrop-blur-sm">
             <div className="bg-white p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl">
@@ -344,7 +396,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 3. Модалка: Приглашение */}
+      {/* Приглашение */}
       {inviteInfo && (
         <div className="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
             <div className="bg-white p-6 rounded-2xl shadow-2xl w-full max-w-md">
@@ -364,7 +416,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 4. Модалка: Управление составом бригады */}
+      {/* Управление составом бригады */}
       {isManageModalOpen && manageTeamData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40 overflow-y-auto">
             <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-lg my-8 relative">
@@ -398,11 +450,11 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 5. Модалка: Создать бригаду */}
+      {/* Создать бригаду */}
       {isTeamModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
             <div className="bg-white p-6 rounded-2xl w-full max-w-sm">
-                <h3 className="text-xl font-bold mb-4 text-center">Новая бригады</h3>
+                <h3 className="text-xl font-bold mb-4 text-center">Новая бригада</h3>
                 <form onSubmit={handleCreateTeam}>
                     <input type="text" required value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="Название бригады" className="w-full px-3 py-3 border rounded-xl mb-4" />
                     <div className="flex space-x-2">
@@ -414,7 +466,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 6. Модалка: Создать заявку (с кнопками вместо списков) */}
+      {/* Создать заявку (КНОПКИ) */}
       {isAppModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
             <div className="bg-white p-6 rounded-2xl w-full max-w-md my-8 shadow-2xl">
@@ -427,26 +479,20 @@ export default function Dashboard() {
                         <div className="w-1/2"><label className="font-bold text-gray-700 block mb-1">Конец (час)</label><input type="number" min="0" max="23" required value={appForm.time_end} onChange={e => setAppForm({...appForm, time_end: e.target.value})} className="w-full border p-2.5 rounded-lg text-center" /></div>
                     </div>
 
-                    {/* Кнопки-плитки для выбора бригады */}
                     <div>
                         <label className="font-bold text-gray-700 block mb-1">Выберите бригаду</label>
                         <div className="flex flex-wrap gap-2">
                             {data.teams.map(t => (
-                                <button key={t.id} type="button" onClick={() => setAppForm({...appForm, team_id: t.id})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${Number(appForm.team_id) === t.id ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-                                    🏗 {t.name}
-                                </button>
+                                <button key={t.id} type="button" onClick={() => setAppForm({...appForm, team_id: t.id})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${Number(appForm.team_id) === t.id ? 'bg-blue-50 border-blue-500 text-blue-700 shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>🏗 {t.name}</button>
                             ))}
                         </div>
                     </div>
 
-                    {/* Кнопки-плитки для выбора техники */}
                     <div>
                         <label className="font-bold text-gray-700 block mb-1">Требуемая техника</label>
                         <div className="flex flex-wrap gap-2">
                             {data.equipment.map(e => (
-                                <button key={e.id} type="button" onClick={() => setAppForm({...appForm, equip_id: e.id})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${Number(appForm.equip_id) === e.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>
-                                    🚜 {e.name}
-                                </button>
+                                <button key={e.id} type="button" onClick={() => setAppForm({...appForm, equip_id: e.id})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${Number(appForm.equip_id) === e.id ? 'bg-indigo-50 border-indigo-500 text-indigo-700 shadow-sm' : 'bg-white text-gray-600 hover:bg-gray-50'}`}>🚜 {e.name}</button>
                             ))}
                         </div>
                     </div>
