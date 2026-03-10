@@ -15,14 +15,12 @@ const getSmartDates = () => {
 export default function Dashboard() {
   const smartDates = getSmartDates();
 
-  // Состояния с защитой от пустых данных
   const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [] });
   const [activeApp, setActiveApp] = useState(null);
   const [logs, setLogs] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Темная тема
   const [theme, setTheme] = useState(localStorage.getItem('theme') || 'system');
   useEffect(() => {
     const root = window.document.documentElement; root.classList.remove('light', 'dark');
@@ -31,9 +29,11 @@ export default function Dashboard() {
     localStorage.setItem('theme', theme);
   }, [theme]);
   const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light');
-  const themeIcon = theme === 'light' ? '🌞' : theme === 'dark' ? '🌙' : '💻';
 
-  // Модальные окна
+  const themeIcon = theme === 'light' ? '🌞' : theme === 'dark' ? '🌙' : '💻';
+  // ВОТ ЭТА СТРОКА БЫЛА ПОТЕРЯНА:
+  const themeTitle = theme === 'light' ? 'Светлая тема' : theme === 'dark' ? 'Темная тема' : 'Системная тема';
+
   const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', text: '', onConfirm: null, confirmText: 'Да', color: 'blue' });
   const [isTeamModalOpen, setTeamModalOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
@@ -63,7 +63,6 @@ export default function Dashboard() {
   const tgId = localStorage.getItem('tg_id') || '0';
   const navigate = useNavigate();
 
-  // Загрузка данных
   const fetchData = () => {
     axios.get('/api/dashboard').then(res => {
         setData(res.data || { stats: {}, teams: [], equipment: [], equip_categories: [] });
@@ -79,7 +78,6 @@ export default function Dashboard() {
 
   useEffect(() => { fetchData(); setLoading(false); }, [tgId, role]);
 
-  // Загрузка рабочих при выборе бригады в заявке
   useEffect(() => {
       if (appForm.team_id) {
           axios.get(`/api/teams/${appForm.team_id}/details`).then(res => {
@@ -159,7 +157,6 @@ export default function Dashboard() {
 
   return (
     <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-10 transition-colors duration-200">
-      {/* Навигация */}
       <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 px-4 sm:px-6 py-4 flex justify-between items-center mb-6 transition-colors duration-200">
         <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">ВИКС Расписание</h1>
         <div className="flex items-center space-x-2 sm:space-x-4">
@@ -174,7 +171,6 @@ export default function Dashboard() {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
-        {/* Статистика */}
         {showStats && (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
               <StatCard title="Заявок сегодня" value={data?.stats?.today_total || 0} color="blue" />
@@ -185,7 +181,6 @@ export default function Dashboard() {
         )}
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Бригады */}
           <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
             <h2 className="text-lg font-bold mb-4 flex items-center">👥 {showTeamManagement ? "Управление бригадами" : "Моя бригада"}</h2>
             {data?.teams?.length > 0 ? (
@@ -204,7 +199,6 @@ export default function Dashboard() {
             {showTeamManagement && (<button onClick={() => setTeamModalOpen(true)} className="mt-5 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 py-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 font-medium transition-colors">+ Создать новую бригаду</button>)}
           </div>
 
-          {/* Панель активного наряда и действий */}
           <div className="space-y-6">
             {showActiveOrder && (
                 <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border-l-4 border-blue-500 relative transition-colors duration-200">
@@ -230,7 +224,6 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Пользователи */}
         {showUsersAndLogs && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 mt-6 transition-colors duration-200">
                 <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">👨‍💼</span> Пользователи системы</h2>
@@ -250,7 +243,6 @@ export default function Dashboard() {
             </div>
         )}
 
-        {/* Логи */}
         {['boss', 'superadmin'].includes(role) && (
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 mt-6 transition-colors duration-200">
                 <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📜</span> Журнал действий системы</h2>
@@ -276,7 +268,6 @@ export default function Dashboard() {
 
       {/* --- МОДАЛЬНЫЕ ОКНА --- */}
 
-      {/* 1. СОЗДАНИЕ ЗАЯВКИ */}
       {isAppModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg my-8 shadow-2xl transition-colors">
@@ -339,7 +330,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 2. УПРАВЛЕНИЕ БРИГАДОЙ */}
       {isManageModalOpen && manageTeamData && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40 overflow-y-auto">
             <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl w-full max-w-lg my-8 relative transition-colors">
@@ -384,93 +374,11 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 3. УПРАВЛЕНИЕ АВТОПАРКОМ */}
       {isEquipModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl shadow-2xl my-8 overflow-hidden transition-colors">
-                <div className="flex justify-between items-center px-6 py-4 bg-gray-800 dark:bg-gray-900 text-white"><h3 className="text-xl font-bold">🛠 Управление автопарком</h3><button onClick={() => setEquipModalOpen(false)} className="text-gray-300 hover:text-white text-2xl">&times;</button></div>
-                <div className="p-6">
-                    <div className="mb-6 max-h-64 overflow-y-auto border dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900/50 p-2">
-                        {equipList?.length === 0 ? <p className="text-center text-gray-500 py-4">Техника не найдена</p> : null}
-                        {equipList?.map(eq => (
-                            <div key={eq.id} className={`flex flex-col sm:flex-row justify-between sm:items-center p-3 mb-2 rounded-lg border dark:border-gray-600 shadow-sm transition-colors ${eq.is_active ? 'bg-white dark:bg-gray-700' : 'bg-gray-100 dark:bg-gray-800 opacity-60'}`}>
-                                <div className="mb-2 sm:mb-0"><p className="font-bold text-gray-800 dark:text-gray-200">{eq.name}</p><p className="text-xs text-gray-500 dark:text-gray-400 uppercase">{eq.category}</p></div>
-                                <div className="flex items-center space-x-2"><button onClick={() => handleToggleEquip(eq.id, eq.is_active)} className={`px-3 py-1.5 rounded text-xs font-bold ${eq.is_active ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 dark:bg-green-900/30 text-green-700 hover:bg-green-200'}`}>{eq.is_active ? 'В ремонт' : 'В строй'}</button><button onClick={() => handleDeleteEquip(eq.id, eq.name)} className="px-3 py-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 hover:bg-red-100 rounded text-xs font-bold">Удалить</button></div>
-                            </div>
-                        ))}
-                    </div>
-                    <form onSubmit={handleAddEquip} className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800">
-                        <h4 className="font-bold text-blue-800 dark:text-blue-400 mb-3 text-sm uppercase">Добавить новую технику</h4>
-                        <div className="mb-3"><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Название (например: Кран Ивановец 25т)</label><input type="text" required value={newEquip.name} onChange={e => setNewEquip({...newEquip, name: e.target.value})} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none" /></div>
-                        <div className="mb-4">
-                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">Категория</label>
-                            <div className="flex flex-wrap gap-2">
-                                {displayCategories.map(cat => (<button key={cat} type="button" onClick={() => setNewEquip({...newEquip, category: cat})} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${newEquip.category === cat ? 'bg-blue-500 text-white border-blue-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>{cat}</button>))}
-                            </div>
-                            {newEquip.category === 'Другое' && (<input type="text" required placeholder="Введите свою категорию..." value={customCategory} onChange={e => setCustomCategory(e.target.value)} className="mt-3 w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none" />)}
-                        </div>
-                        <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700">Добавить в автопарк</button>
-                    </form>
-                </div>
-            </div>
-        </div>
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm"><div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl shadow-2xl my-8 overflow-hidden transition-colors"><div className="flex justify-between items-center px-6 py-4 bg-gray-800 dark:bg-gray-900 text-white"><h3 className="text-xl font-bold">🛠 Управление автопарком</h3><button onClick={() => setEquipModalOpen(false)} className="text-gray-300 hover:text-white text-2xl">&times;</button></div><div className="p-6"><div className="mb-6 max-h-64 overflow-y-auto border dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900/50 p-2">{equipList?.length === 0 ? <p className="text-center text-gray-500 py-4">Техника не найдена</p> : null}{equipList?.map(eq => (<div key={eq.id} className={`flex flex-col sm:flex-row justify-between sm:items-center p-3 mb-2 rounded-lg border dark:border-gray-600 shadow-sm transition-colors ${eq.is_active ? 'bg-white dark:bg-gray-700' : 'bg-gray-100 dark:bg-gray-800 opacity-60'}`}><div className="mb-2 sm:mb-0"><p className="font-bold text-gray-800 dark:text-gray-200">{eq.name}</p><p className="text-xs text-gray-500 dark:text-gray-400 uppercase">{eq.category}</p></div><div className="flex items-center space-x-2"><button onClick={() => handleToggleEquip(eq.id, eq.is_active)} className={`px-3 py-1.5 rounded text-xs font-bold ${eq.is_active ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 hover:bg-yellow-200' : 'bg-green-100 dark:bg-green-900/30 text-green-700 hover:bg-green-200'}`}>{eq.is_active ? 'В ремонт' : 'В строй'}</button><button onClick={() => handleDeleteEquip(eq.id, eq.name)} className="px-3 py-1.5 bg-red-50 dark:bg-red-900/30 text-red-600 hover:bg-red-100 rounded text-xs font-bold">Удалить</button></div></div>))}</div><form onSubmit={handleAddEquip} className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-xl border border-blue-100 dark:border-blue-800"><h4 className="font-bold text-blue-800 dark:text-blue-400 mb-3 text-sm uppercase">Добавить новую технику</h4><div className="mb-3"><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Название (например: Кран Ивановец 25т)</label><input type="text" required value={newEquip.name} onChange={e => setNewEquip({...newEquip, name: e.target.value})} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none" /></div><div className="mb-4"><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">Категория</label><div className="flex flex-wrap gap-2">{displayCategories.map(cat => (<button key={cat} type="button" onClick={() => setNewEquip({...newEquip, category: cat})} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${newEquip.category === cat ? 'bg-blue-500 text-white border-blue-600' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300'}`}>{cat}</button>))}</div>{newEquip.category === 'Другое' && (<input type="text" required placeholder="Введите свою категорию..." value={customCategory} onChange={e => setCustomCategory(e.target.value)} className="mt-3 w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none" />)}</div><button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700">Добавить в автопарк</button></form></div></div></div>
       )}
 
-      {/* 4. ПРОФИЛЬ ПОЛЬЗОВАТЕЛЯ */}
-      {isProfileModalOpen && profileData && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden my-8 transition-colors">
-                <div className="bg-gradient-to-r from-blue-600 to-blue-800 dark:from-blue-800 dark:to-blue-900 px-6 py-8 text-white relative">
-                    <button onClick={() => setProfileModalOpen(false)} className="absolute top-4 right-4 text-white text-2xl font-bold">&times;</button>
-                    <div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-6">
-                        <div className="relative group cursor-pointer" onClick={handleUpdateAvatar}>
-                            <div className="w-24 h-24 rounded-full border-4 border-white shadow-lg bg-gray-200 dark:bg-gray-700 bg-cover bg-center overflow-hidden" style={{ backgroundImage: profileData.avatar_url ? `url(${profileData.avatar_url})` : 'none' }}>{!profileData.avatar_url && <span className="flex items-center justify-center w-full h-full text-4xl text-gray-400">👤</span>}</div>
-                        </div>
-                        <div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p></div>
-                    </div>
-                </div>
-                <div className="p-6 space-y-6">
-                    <div className="space-y-4">
-                        <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div><label className="block text-xs font-bold text-gray-500 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div>
-                            <div><label className="block text-xs font-bold text-gray-500 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div>
-                        </div>
-                        {canEditUsers && (
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-2">Бригада</label>
-                                <div className="flex flex-wrap gap-2">
-                                    <button type="button" onClick={() => setEditProfile({...editProfile, team_id: ''})} className={`px-4 py-2 text-sm font-medium rounded-lg border transition ${!editProfile.team_id ? 'bg-red-50 border-red-500 text-red-700' : 'bg-white dark:bg-gray-700 text-gray-600'}`}>Без бригады</button>
-                                    {data?.teams?.map(t => (<button key={t.id} type="button" onClick={() => setEditProfile({...editProfile, team_id: t.id})} className={`px-4 py-2 text-sm font-medium rounded-lg border transition ${Number(editProfile.team_id) === t.id ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white dark:bg-gray-700 text-gray-600'}`}>🏗 {t.name}</button>))}
-                                </div>
-                            </div>
-                        )}
-                        {canEditUsers && profileData.user_id !== Number(tgId) && (
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 mb-2">Роль</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {Object.entries(roleNames).filter(([key]) => key !== 'Гость').map(([key, label]) => (<button key={key} type="button" onClick={() => setEditProfile({...editProfile, role: key})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${editProfile.role === key ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'bg-white dark:bg-gray-700 text-gray-600'}`}>{label}</button>))}
-                                </div>
-                            </div>
-                        )}
-                        {canEditUsers && (
-                            <div className="flex justify-between items-center pt-4 mt-2 border-t dark:border-gray-700"><button onClick={handleDeleteUser} disabled={profileData.user_id === Number(tgId)} className="text-red-500 font-bold text-sm bg-red-50 px-4 py-2.5 rounded-lg disabled:opacity-50">🗑 Удалить</button><button onClick={handleSaveProfile} className="bg-blue-600 text-white font-bold text-sm px-6 py-2.5 rounded-lg">Сохранить</button></div>
-                        )}
-                    </div>
-                    <div className="mt-8">
-                        <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2 mb-4">История действий</h4>
-                        {profileLogs?.length > 0 ? (
-                            <div className="space-y-3 max-h-64 overflow-y-auto pr-2">
-                                {profileLogs.map(log => (<div key={log.id} className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg border border-gray-100 dark:border-gray-600 flex justify-between items-start text-sm"><span className="text-gray-700 dark:text-gray-300">{log.action}</span><span className="text-xs text-gray-400 whitespace-nowrap ml-4">{log.timestamp ? new Date(log.timestamp).toLocaleString('ru-RU') : ''}</span></div>))}
-                            </div>
-                        ) : (<p className="text-gray-500 dark:text-gray-400 text-sm italic">Действий не найдено.</p>)}
-                    </div>
-                </div>
-            </div>
-        </div>
-      )}
-
-      {/* 5. МЕЛКИЕ ОКНА (Подтверждение, Инвайт, Создать бригаду) */}
+      {isProfileModalOpen && profileData && (<div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 overflow-y-auto backdrop-blur-sm"><div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden my-8 transition-colors"><div className="bg-gradient-to-r from-blue-600 to-blue-800 dark:from-blue-800 dark:to-blue-900 px-6 py-8 text-white relative"><button onClick={() => setProfileModalOpen(false)} className="absolute top-4 right-4 text-white text-2xl font-bold">&times;</button><div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-6"><div className="relative group cursor-pointer" onClick={handleUpdateAvatar}><div className="w-24 h-24 rounded-full border-4 border-white shadow-lg bg-gray-200 dark:bg-gray-700 bg-cover bg-center overflow-hidden" style={{ backgroundImage: profileData.avatar_url ? `url(${profileData.avatar_url})` : 'none' }}>{!profileData.avatar_url && <span className="flex items-center justify-center w-full h-full text-4xl text-gray-400">👤</span>}</div></div><div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p></div></div></div><div className="p-6 space-y-6"><div className="space-y-4"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div></div>{canEditUsers && (<div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">Бригада</label><div className="flex flex-wrap gap-2"><button type="button" onClick={() => setEditProfile({...editProfile, team_id: ''})} className={`px-4 py-2 text-sm font-medium rounded-lg border transition ${!editProfile.team_id ? 'bg-red-50 border-red-500 text-red-700' : 'bg-white dark:bg-gray-700 text-gray-600'}`}>Без бригады</button>{data?.teams?.map(t => (<button key={t.id} type="button" onClick={() => setEditProfile({...editProfile, team_id: t.id})} className={`px-4 py-2 text-sm font-medium rounded-lg border transition ${Number(editProfile.team_id) === t.id ? 'bg-blue-50 border-blue-500 text-blue-700' : 'bg-white dark:bg-gray-700 text-gray-600'}`}>🏗 {t.name}</button>))}</div></div>)}{canEditUsers && profileData.user_id !== Number(tgId) && (<div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">Роль</label><div className="flex flex-wrap gap-2">{Object.entries(roleNames).filter(([key]) => key !== 'Гость').map(([key, label]) => (<button key={key} type="button" onClick={() => setEditProfile({...editProfile, role: key})} className={`px-3 py-2 text-sm font-medium rounded-lg border transition ${editProfile.role === key ? 'bg-indigo-50 border-indigo-500 text-indigo-700' : 'bg-white dark:bg-gray-700 text-gray-600'}`}>{label}</button>))}</div></div>)}{canEditUsers && (<div className="flex justify-between items-center pt-4 mt-2 border-t dark:border-gray-700"><button onClick={handleDeleteUser} disabled={profileData.user_id === Number(tgId)} className="text-red-500 font-bold text-sm bg-red-50 px-4 py-2.5 rounded-lg disabled:opacity-50">🗑 Удалить</button><button onClick={handleSaveProfile} className="bg-blue-600 text-white font-bold text-sm px-6 py-2.5 rounded-lg">Сохранить</button></div>)}</div><div className="mt-8"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2 mb-4">История действий</h4>{profileLogs?.length > 0 ? (<div className="space-y-3 max-h-64 overflow-y-auto pr-2">{profileLogs.map(log => (<div key={log.id} className="bg-gray-50 dark:bg-gray-700 p-3 rounded-lg border border-gray-100 dark:border-gray-600 flex justify-between items-start text-sm"><span className="text-gray-700 dark:text-gray-300">{log.action}</span><span className="text-xs text-gray-400 whitespace-nowrap ml-4">{log.timestamp ? new Date(log.timestamp).toLocaleString('ru-RU') : ''}</span></div>))}</div>) : (<p className="text-gray-500 dark:text-gray-400 text-sm italic">Действий не найдено.</p>)}</div></div></div></div>)}
       {confirmDialog.isOpen && (<div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[60] backdrop-blur-sm"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl transition-colors"><h3 className="text-xl font-bold mb-2">{confirmDialog.title}</h3><p className="text-gray-600 dark:text-gray-400 mb-6 text-sm">{confirmDialog.text}</p><div className="flex space-x-3"><button onClick={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} className="w-1/2 bg-gray-100 dark:bg-gray-700 py-2.5 rounded-xl font-medium text-gray-700 dark:text-gray-300">Отмена</button><button onClick={confirmDialog.onConfirm} className={`w-1/2 text-white py-2.5 rounded-xl font-medium shadow-md ${confirmDialog.color === 'red' ? 'bg-red-500' : 'bg-emerald-500'}`}>{confirmDialog.confirmText}</button></div></div></div>)}
       {inviteInfo && (<div className="fixed inset-0 bg-gray-900 bg-opacity-60 backdrop-blur-sm flex items-center justify-center p-4 z-50"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-2xl w-full max-w-md"><h3 className="text-xl font-bold mb-6 text-center">Приглашение</h3><div className="space-y-4 mb-6"><div><label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">✈️ Telegram:</label><button onClick={() => copyToClipboard(inviteInfo.tg_bot_link, 'tg')} className="w-full text-left px-4 py-3 border rounded-lg text-sm bg-gray-50">{copiedLink === 'tg' ? '✅ Скопировано!' : '🔗 Копировать'}</button></div></div><button onClick={() => setInviteInfo(null)} className="w-full bg-gray-800 text-white py-3 rounded-xl font-medium">Закрыть</button></div></div>)}
       {isTeamModalOpen && (<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50"><div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm transition-colors"><h3 className="text-xl font-bold mb-4 text-center">Новая бригада</h3><form onSubmit={handleCreateTeam}><input type="text" required value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="Название" className="w-full px-3 py-3 border dark:bg-gray-700 rounded-xl mb-4 outline-none" /><div className="flex space-x-2"><button type="button" onClick={() => setTeamModalOpen(false)} className="w-1/2 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl font-medium">Отмена</button><button type="submit" className="w-1/2 bg-blue-600 text-white py-3 rounded-xl font-medium">Создать</button></div></form></div></div>)}
