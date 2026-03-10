@@ -15,7 +15,7 @@ export default function TMAAuth() {
 
     const user = tg?.initDataUnsafe?.user;
     if (!user || !user.id) {
-      setError("Откройте это приложение внутри Telegram.");
+      setError("Пожалуйста, откройте это приложение внутри мессенджера Telegram.");
       return;
     }
 
@@ -28,6 +28,7 @@ export default function TMAAuth() {
       .then(res => {
         if (res.data.status === 'ok') {
           localStorage.setItem('user_role', res.data.role);
+          localStorage.setItem('tg_id', res.data.tg_id);
           navigate('/dashboard');
         } else if (res.data.status === 'needs_password') {
           setTgUser(res.data);
@@ -35,7 +36,7 @@ export default function TMAAuth() {
         }
       })
       .catch((err) => {
-        setError(err.response?.data?.detail || "Ошибка доступа");
+        setError(err.response?.data?.detail || "Ошибка доступа к серверу");
       });
   }, [navigate]);
 
@@ -61,35 +62,39 @@ export default function TMAAuth() {
   };
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-4">
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 p-4 transition-colors">
       {!error && !needsPassword ? (
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-          <p className="text-gray-600 font-medium">Подключение...</p>
+          <div className="animate-spin rounded-full h-14 w-14 border-4 border-blue-200 border-t-blue-600 dark:border-blue-900 dark:border-t-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-300 font-bold text-lg tracking-wide animate-pulse">Запуск системы...</p>
         </div>
       ) : needsPassword ? (
-        <div className="bg-white p-8 rounded-xl shadow-lg w-full max-w-sm">
-          <h2 className="text-xl font-bold mb-4 text-center">Требуется регистрация</h2>
+        <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl w-full max-w-sm border border-transparent dark:border-gray-700">
+          <h2 className="text-xl font-bold mb-4 text-center dark:text-white">Требуется регистрация</h2>
           <form onSubmit={handleRegister} className="space-y-4">
-            <p className="text-sm text-gray-600 text-center mb-4">Введите пароль для привязки вашего аккаунта Telegram.</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">Введите пароль, который вам выдал администратор, чтобы получить доступ.</p>
             <input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
-                placeholder="Пароль доступа..."
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Системный пароль..."
+                className="w-full px-4 py-3 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition">
-              Войти
+              <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-md">
+              Привязать аккаунт
             </button>
+            {error && <p className="text-red-500 text-sm text-center font-medium">{error}</p>}
           </form>
         </div>
       ) : (
-        <div className="text-center p-8 bg-white rounded-lg shadow-md max-w-sm w-full border-t-4 border-red-500">
-          <span className="text-5xl block mb-4">❌</span>
-          <h2 className="text-xl font-bold mb-2 text-gray-800">Ошибка</h2>
-          <p className="text-gray-600 text-sm leading-relaxed">{error}</p>
+        <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-sm w-full border-t-4 border-red-500">
+          <span className="text-6xl block mb-4">❌</span>
+          <h2 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-100">Доступ запрещен</h2>
+          <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed mb-6">{error}</p>
+          <a href="https://t.me/BU5INESSMAN" className="inline-block bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 font-bold px-6 py-2.5 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition">
+             Написать в техподдержку
+          </a>
         </div>
       )}
     </div>

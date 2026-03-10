@@ -3,6 +3,8 @@ import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import TMAAuth from './pages/TMAAuth';
 import JoinTeam from './pages/JoinTeam';
+import Guide from './pages/Guide';
+import SupportButton from './components/SupportButton';
 
 function App() {
   return (
@@ -10,8 +12,8 @@ function App() {
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/tma" element={<TMAAuth />} />
-        {/* НОВЫЙ МАРШРУТ ДЛЯ ССЫЛОК ПРИГЛАШЕНИЙ */}
         <Route path="/invite/:code" element={<JoinTeam />} />
+        <Route path="/guide" element={<Guide />} />
 
         <Route path="/dashboard" element={
           <ProtectedRoute>
@@ -19,6 +21,9 @@ function App() {
           </ProtectedRoute>
         } />
       </Routes>
+
+      {/* Кнопка техподдержки будет отображаться поверх всех страниц */}
+      <SupportButton />
     </Router>
   );
 }
