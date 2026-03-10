@@ -136,7 +136,7 @@ async def get_dashboard_data():
 # --- ИНВАЙТЫ (БЕЗ ПАРОЛЕЙ) ---
 @app.post("/api/teams/{team_id}/generate_invite")
 async def api_generate_invite(team_id: int):
-    invite_code, join_password = await db.generate_team_invite(team_id)
+    invite_code = await db.get_or_create_team_invite(team_id)
     return {
         "invite_link": f"https://islandvpn.sbs/invite/{invite_code}",
         "tg_bot_link": f"https://t.me/{os.getenv('BOT_USERNAME', 'viksstroy_bot')}?start=team_{invite_code}",

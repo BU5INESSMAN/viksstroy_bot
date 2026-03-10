@@ -406,6 +406,23 @@ class DatabaseManager:
         await self.conn.commit()
         return invite_code, join_password
 
+    async def get_or_create_team_invite(self, team_id: int):
+        """Возвращает существующий код бригады или создает новый (статичные ссылки)"""
+        # Проверяем, есть ли уже код у этой бригады
+        async with self.conn.execute("SELECT invite_code FROM teams WHERE id = ?", (team_id,)) as cursor:
+            row = await cursor.fetchone()
+            if row and row[0]:
+                return row[0]  # Возвращаем старый код
+
+        # Если кода нет - генерируем один раз и навсегда
+        invite_code = str(uuid.uuid4())[:8]
+        await self.conn.execute(
+            "UPDATE teams SET invite_code = ? WHERE id = ?",
+            (invite_code, team_id)
+        )
+        await self.conn.commit()
+        return invite_code
+
     async def get_team_by_invite(self, invite_code: str):
         """Ищет бригаду по коду ссылки"""
         async with self.conn.execute("SELECT * FROM teams WHERE invite_code = ?", (invite_code,)) as cursor:
