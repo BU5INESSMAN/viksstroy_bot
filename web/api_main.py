@@ -33,6 +33,7 @@ db = DatabaseManager(db_path)
 @app.on_event("startup")
 async def startup():
     await db.init_db()
+    await db.upgrade_db_for_invites()
     await db.conn.execute("PRAGMA journal_mode=WAL;")
     await db.conn.commit()
 
@@ -149,3 +150,44 @@ async def get_dashboard_data():
         "stats": stats,
         "teams": [{"id": t['id'], "name": t['name']} for t in teams]
     }
+
+
+# --- ГЕНЕРАЦИЯ ССЫЛКИ ДЛЯ БРИГАДЫ (Только для прорабов/боссов) ---
+@app.post("/api/teams/{team_id}/generate_invite")
+async def api_generate_invite(team_id: int):
+    # Здесь можно добавить проверку роли через куки/токен, для простоты пока открыто
+    invite_code, join_password = await db.generate_team_invite(team_id)
+    return {
+        "invite_link": f"https://islandvpn.sbs/invite/{invite_code}",
+        "tg_bot_link": f"https://t.me/{os.getenv('BOT_USERNAME', 'viksstroy_bot')}?start=team_{invite_code}",
+        "password": join_password
+    }
+
+
+# --- ПОЛУЧЕНИЕ ДАННЫХ ПРИ ПЕРЕХОДЕ ПО ССЫЛКЕ ---
+@app.get("/api/invite/{invite_code}")
+async def api_get_invite_info(invite_code: str):
+    team = await db.get_team_by_invite(invite_code)
+    if not team:
+        raise HTTPException(status_code=404, detail="Ссылка недействительна или устарела")
+
+    unclaimed = await db.get_unclaimed_workers(team['id'])
+    return {
+        "team_name": team['name'],
+        "unclaimed_workers": [{"id": w['id'], "fio": w['fio'], "position": w['position']} for w in unclaimed]
+    }
+
+
+# --- ПОДТВЕРЖДЕНИЕ ВЫБОРА СЕБЯ (Сайт) ---
+@app.post("/api/invite/join")
+async def api_join_team(invite_code: str = Form(...), password: str = Form(...), worker_id: int = Form(...)):
+    team = await db.get_team_by_invite(invite_code)
+
+    if not team:
+        raise HTTPException(status_code=404, detail="Бригада не найдена")
+    if team['join_password'] != password:
+        raise HTTPException(status_code=403, detail="Неверный пароль бригады")
+
+    # Привязываем слот к веб-пользователю
+    await db.claim_worker_slot(worker_id, is_web_only=True)
+    return {"status": "ok", "message": "Вы успешно присоединены к бригаде!"}

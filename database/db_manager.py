@@ -2,6 +2,9 @@ import aiosqlite
 import os
 import logging
 from datetime import datetime
+import uuid
+import random
+import string
 
 
 class DatabaseManager:
@@ -374,3 +377,56 @@ class DatabaseManager:
                 'members': member_strs
             })
         return report
+
+    async def upgrade_db_for_invites(self):
+        """Безопасное добавление новых колонок для логики инвайтов"""
+        try:
+            await self.conn.execute("ALTER TABLE teams ADD COLUMN invite_code TEXT")
+            await self.conn.execute("ALTER TABLE teams ADD COLUMN join_password TEXT")
+        except Exception:
+            pass  # Колонки уже существуют
+
+        try:
+            # Добавляем привязку к Telegram ID в таблицу участников бригады
+            await self.conn.execute("ALTER TABLE team_members ADD COLUMN tg_id INTEGER")
+        except Exception:
+            pass
+
+        await self.conn.commit()
+
+    async def generate_team_invite(self, team_id: int):
+        """Генерирует уникальную ссылку и 6-значный пароль для бригады"""
+        invite_code = str(uuid.uuid4())[:8]  # Короткий уникальный код
+        join_password = ''.join(random.choices(string.digits, k=6))
+
+        await self.conn.execute(
+            "UPDATE teams SET invite_code = ?, join_password = ? WHERE id = ?",
+            (invite_code, join_password, team_id)
+        )
+        await self.conn.commit()
+        return invite_code, join_password
+
+    async def get_team_by_invite(self, invite_code: str):
+        """Ищет бригаду по коду ссылки"""
+        async with self.conn.execute("SELECT * FROM teams WHERE invite_code = ?", (invite_code,)) as cursor:
+            return await cursor.fetchone()
+
+    async def get_unclaimed_workers(self, team_id: int):
+        """Получает список участников бригады, которые еще не привязали свой аккаунт"""
+        async with self.conn.execute(
+                "SELECT * FROM team_members WHERE team_id = ? AND (tg_id IS NULL OR tg_id = 0)",
+                (team_id,)
+        ) as cursor:
+            # Возвращаем список словарей (id, fio, position)
+            columns = [col[0] for col in cursor.description]
+            return [dict(zip(columns, row)) for row in await cursor.fetchall()]
+
+    async def claim_worker_slot(self, worker_id: int, tg_id: int = None, is_web_only: bool = False):
+        """Привязывает конкретного человека из списка к его аккаунту"""
+        if is_web_only:
+            # Если человек без ТГ зашел через сайт, ставим фейковый ID (например, отрицательный),
+            # чтобы слот считался занятым, но бот не пытался писать ему в ТГ.
+            tg_id = -worker_id
+
+        await self.conn.execute("UPDATE team_members SET tg_id = ? WHERE id = ?", (tg_id, worker_id))
+        await self.conn.commit()
