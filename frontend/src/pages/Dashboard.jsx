@@ -9,6 +9,9 @@ export default function Dashboard() {
   const [inviteInfo, setInviteInfo] = useState(null);
   const [copiedLink, setCopiedLink] = useState('');
 
+  // Универсальное красивое окно подтверждения (замена window.confirm)
+  const [confirmDialog, setConfirmDialog] = useState({ isOpen: false, title: '', text: '', onConfirm: null, confirmText: 'Да', color: 'blue' });
+
   // Состояния модалок
   const [isTeamModalOpen, setTeamModalOpen] = useState(false);
   const [newTeamName, setNewTeamName] = useState('');
@@ -81,19 +84,27 @@ export default function Dashboard() {
       fd.append('position', newMember.position);
       await axios.post(`/api/teams/${manageTeamData.id}/members/add`, fd);
       setNewMember({ fio: '', position: 'Рабочий' });
-      // Обновляем модалку
       const res = await axios.get(`/api/teams/${manageTeamData.id}/details`);
       setManageTeamData(res.data);
     } catch (err) { alert("Ошибка добавления"); }
   };
 
-  const handleDeleteMember = async (memberId) => {
-    if (!window.confirm("Удалить участника?")) return;
-    try {
-      await axios.post(`/api/teams/members/${memberId}/delete`);
-      const res = await axios.get(`/api/teams/${manageTeamData.id}/details`);
-      setManageTeamData(res.data);
-    } catch (err) { alert("Ошибка удаления"); }
+  const handleDeleteMember = (memberId, memberName) => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Удаление участника',
+      text: `Вы уверены, что хотите удалить «${memberName}» из бригады? Это действие нельзя отменить.`,
+      confirmText: 'Удалить',
+      color: 'red',
+      onConfirm: async () => {
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
+        try {
+          await axios.post(`/api/teams/members/${memberId}/delete`);
+          const res = await axios.get(`/api/teams/${manageTeamData.id}/details`);
+          setManageTeamData(res.data);
+        } catch (err) { alert("Ошибка удаления"); }
+      }
+    });
   };
 
   const handleCreateApp = async (e) => {
@@ -108,13 +119,22 @@ export default function Dashboard() {
     } catch (err) { alert("Ошибка создания заявки"); }
   };
 
-  const handlePublishApps = async () => {
-    if (!window.confirm("Опубликовать все одобренные наряды в Telegram-группу?")) return;
-    try {
-      const res = await axios.post('/api/applications/publish');
-      alert(`Опубликовано нарядов: ${res.data.published}`);
-      fetchData();
-    } catch (err) { alert(err.response?.data?.detail || "Ошибка публикации"); }
+  const handlePublishAppsClick = () => {
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Публикация нарядов',
+      text: 'Отправить все одобренные наряды в рабочий Telegram-чат? Убедитесь, что все заявки проверены.',
+      confirmText: 'Опубликовать',
+      color: 'green',
+      onConfirm: async () => {
+        setConfirmDialog({ ...confirmDialog, isOpen: false });
+        try {
+          const res = await axios.post('/api/applications/publish');
+          alert(`Успешно опубликовано нарядов: ${res.data.published}`);
+          fetchData();
+        } catch (err) { alert(err.response?.data?.detail || "Ошибка публикации"); }
+      }
+    });
   };
 
   const showStats = ['moderator', 'boss', 'superadmin'].includes(role);
@@ -148,17 +168,17 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="bg-white rounded-lg shadow-sm p-6 border border-gray-100">
-            <h2 className="text-lg font-bold mb-4 flex items-center">👥 Управление бригадами</h2>
+            <h2 className="text-lg font-bold mb-4 flex items-center">👥 {showTeamManagement ? "Управление бригадами" : "Моя бригада"}</h2>
             {data.teams.length > 0 ? (
                 <ul className="space-y-3">
                 {data.teams.map(t => (
                     <li key={t.id} className="p-4 bg-gray-50 rounded-lg border flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                         <span className="font-medium text-gray-800">🏗 {t.name}</span>
-                        <div className="flex space-x-2">
+                        <div className="flex space-x-2 w-full sm:w-auto mt-2 sm:mt-0">
                             {showTeamManagement && (
-                                <button onClick={() => handleGenerateInvite(t.id)} className="text-green-600 bg-green-50 px-3 py-1.5 rounded hover:bg-green-100 text-sm font-medium transition">🔗 Пригласить</button>
+                                <button onClick={() => handleGenerateInvite(t.id)} className="flex-1 sm:flex-none text-green-600 bg-green-50 px-3 py-1.5 rounded hover:bg-green-100 text-sm font-medium transition">🔗 Ссылка</button>
                             )}
-                            <button onClick={() => openManageModal(t.id)} className="text-blue-600 bg-blue-50 px-3 py-1.5 rounded hover:bg-blue-100 text-sm font-medium transition">Состав / Управлять</button>
+                            <button onClick={() => openManageModal(t.id)} className="flex-1 sm:flex-none text-blue-600 bg-blue-50 px-3 py-1.5 rounded hover:bg-blue-100 text-sm font-medium transition">Управлять</button>
                         </div>
                     </li>
                 ))}
@@ -196,7 +216,7 @@ export default function Dashboard() {
                         <button onClick={() => setAppModalOpen(true)} className="w-full bg-blue-600 text-white py-3 rounded-lg shadow hover:bg-blue-700 font-medium">📝 Создать новую заявку</button>
                     )}
                     {showPublishOrder && (
-                        <button onClick={handlePublishApps} className="w-full bg-emerald-500 text-white py-3 rounded-lg shadow hover:bg-emerald-600 font-medium">📤 Отправить наряды в группу</button>
+                        <button onClick={handlePublishAppsClick} className="w-full bg-emerald-500 text-white py-3 rounded-lg shadow hover:bg-emerald-600 font-medium">📤 Отправить наряды в группу</button>
                     )}
                     </div>
                 </div>
@@ -204,6 +224,27 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      {/* МОДАЛКА ПОДТВЕРЖДЕНИЯ (КАСТОМНАЯ ЗАМЕНА WINDOW.CONFIRM) */}
+      {confirmDialog.isOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-[60] backdrop-blur-sm">
+            <div className="bg-white p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl">
+                <h3 className="text-xl font-bold mb-2">{confirmDialog.title}</h3>
+                <p className="text-gray-600 mb-6 text-sm">{confirmDialog.text}</p>
+                <div className="flex space-x-3">
+                    <button onClick={() => setConfirmDialog({ ...confirmDialog, isOpen: false })} className="w-1/2 bg-gray-100 py-2.5 rounded-xl font-medium text-gray-700 hover:bg-gray-200 transition">Отмена</button>
+                    <button
+                        onClick={confirmDialog.onConfirm}
+                        className={`w-1/2 text-white py-2.5 rounded-xl font-medium transition shadow-md ${
+                            confirmDialog.color === 'red' ? 'bg-red-500 hover:bg-red-600' : 'bg-emerald-500 hover:bg-emerald-600'
+                        }`}
+                    >
+                        {confirmDialog.confirmText}
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {/* МОДАЛКА: ИНВАЙТ */}
       {inviteInfo && (
@@ -237,25 +278,25 @@ export default function Dashboard() {
 
       {/* МОДАЛКА: УПРАВЛЕНИЕ СОСТАВОМ БРИГАДЫ */}
       {isManageModalOpen && manageTeamData && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-            <div className="bg-white p-6 rounded-xl w-full max-w-lg my-8">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-40 overflow-y-auto">
+            <div className="bg-white p-6 rounded-2xl shadow-xl w-full max-w-lg my-8 relative">
                 <div className="flex justify-between items-center mb-6">
                     <h3 className="text-xl font-bold">Бригада «{manageTeamData.name}»</h3>
                     <button onClick={() => setManageModalOpen(false)} className="text-gray-400 hover:text-gray-700 text-2xl">&times;</button>
                 </div>
 
                 <div className="mb-6">
-                    <h4 className="font-bold text-gray-700 mb-2">Текущий состав ({manageTeamData.members.length} чел.)</h4>
-                    <div className="max-h-60 overflow-y-auto space-y-2 border rounded-lg p-2 bg-gray-50">
+                    <h4 className="font-bold text-gray-700 mb-3">Текущий состав ({manageTeamData.members.length} чел.)</h4>
+                    <div className="max-h-60 overflow-y-auto space-y-2 border rounded-xl p-3 bg-gray-50">
                         {manageTeamData.members.length === 0 ? <p className="text-gray-500 text-sm text-center py-2">Состав пуст.</p> : null}
                         {manageTeamData.members.map(m => (
-                            <div key={m.id} className="flex justify-between items-center bg-white p-2 rounded border text-sm">
+                            <div key={m.id} className="flex justify-between items-center bg-white p-3 rounded-lg border shadow-sm text-sm">
                                 <div>
-                                    <p className="font-bold">{m.fio}</p>
-                                    <p className="text-xs text-gray-500">{m.position} {m.is_linked ? <span className="text-green-600 ml-1">✓ Привязан</span> : ''}</p>
+                                    <p className="font-bold text-gray-800">{m.fio}</p>
+                                    <p className="text-xs text-gray-500 uppercase tracking-wide mt-1">{m.position} {m.is_linked ? <span className="text-green-600 font-bold ml-1 flex items-center inline-flex">✓ Привязан</span> : ''}</p>
                                 </div>
                                 {showTeamManagement && (
-                                    <button onClick={() => handleDeleteMember(m.id)} className="text-red-500 hover:text-red-700 font-bold px-2 py-1 bg-red-50 rounded">Удалить</button>
+                                    <button onClick={() => handleDeleteMember(m.id, m.fio)} className="text-red-500 hover:text-red-700 font-bold px-3 py-1.5 bg-red-50 hover:bg-red-100 transition rounded-lg">Удалить</button>
                                 )}
                             </div>
                         ))}
@@ -263,13 +304,13 @@ export default function Dashboard() {
                 </div>
 
                 {showTeamManagement && (
-                    <form onSubmit={handleAddMember} className="bg-blue-50 p-4 rounded-lg border border-blue-100">
-                        <h4 className="font-bold text-blue-800 mb-3 text-sm uppercase">Добавить участника</h4>
-                        <div className="flex space-x-2 mb-2">
-                            <input type="text" required value={newMember.fio} onChange={e => setNewMember({...newMember, fio: e.target.value})} placeholder="ФИО (например: Иванов И.И.)" className="w-2/3 px-3 py-2 border rounded text-sm" />
-                            <input type="text" required value={newMember.position} onChange={e => setNewMember({...newMember, position: e.target.value})} placeholder="Должность" className="w-1/3 px-3 py-2 border rounded text-sm" />
+                    <form onSubmit={handleAddMember} className="bg-blue-50 p-5 rounded-xl border border-blue-100">
+                        <h4 className="font-bold text-blue-800 mb-3 text-sm uppercase tracking-wide">Добавить участника</h4>
+                        <div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-3">
+                            <input type="text" required value={newMember.fio} onChange={e => setNewMember({...newMember, fio: e.target.value})} placeholder="ФИО (например: Иванов И.И.)" className="w-full sm:w-2/3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
+                            <input type="text" required value={newMember.position} onChange={e => setNewMember({...newMember, position: e.target.value})} placeholder="Должность" className="w-full sm:w-1/3 px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400" />
                         </div>
-                        <button type="submit" className="w-full bg-blue-600 text-white py-2 rounded text-sm font-medium hover:bg-blue-700 transition">Добавить в список</button>
+                        <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-medium hover:bg-blue-700 transition shadow-sm">Добавить в список</button>
                     </form>
                 )}
             </div>
@@ -279,50 +320,50 @@ export default function Dashboard() {
       {/* МОДАЛКА: СОЗДАТЬ БРИГАДУ */}
       {isTeamModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-            <div className="bg-white p-6 rounded-xl w-full max-w-sm">
-                <h3 className="text-xl font-bold mb-4">Новая бригада</h3>
+            <div className="bg-white p-6 rounded-2xl w-full max-w-sm">
+                <h3 className="text-xl font-bold mb-4 text-center">Новая бригада</h3>
                 <form onSubmit={handleCreateTeam}>
-                    <input type="text" required value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="Название бригады" className="w-full px-3 py-2 border rounded-lg mb-4" />
+                    <input type="text" required value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="Название бригады" className="w-full px-3 py-3 border rounded-xl mb-4 focus:ring-2 focus:outline-none focus:ring-blue-500" />
                     <div className="flex space-x-2">
-                        <button type="button" onClick={() => setTeamModalOpen(false)} className="w-1/2 bg-gray-200 py-2 rounded-lg font-medium hover:bg-gray-300">Отмена</button>
-                        <button type="submit" className="w-1/2 bg-blue-600 text-white py-2 rounded-lg font-medium hover:bg-blue-700">Создать</button>
+                        <button type="button" onClick={() => setTeamModalOpen(false)} className="w-1/2 bg-gray-100 py-3 rounded-xl font-medium hover:bg-gray-200">Отмена</button>
+                        <button type="submit" className="w-1/2 bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 shadow-md">Создать</button>
                     </div>
                 </form>
             </div>
         </div>
       )}
 
-      {/* МОДАЛКА: СОЗДАТЬ ЗАЯВКУ */}
+      {/* МОДАЛКА: СОЗДАТЬ ЗАЯВКУ (БЕЗ ИЗМЕНЕНИЙ) */}
       {isAppModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
-            <div className="bg-white p-6 rounded-xl w-full max-w-md my-8 shadow-2xl">
+            <div className="bg-white p-6 rounded-2xl w-full max-w-md my-8 shadow-2xl">
                 <h3 className="text-xl font-bold mb-4">Создание заявки</h3>
-                <form onSubmit={handleCreateApp} className="space-y-3 text-sm">
-                    <div><label className="font-bold">Дата выезда</label><input type="date" required value={appForm.date_target} onChange={e => setAppForm({...appForm, date_target: e.target.value})} className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" /></div>
-                    <div><label className="font-bold">Адрес объекта</label><input type="text" required value={appForm.object_address} onChange={e => setAppForm({...appForm, object_address: e.target.value})} placeholder="Ул. Ленина, 10" className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" /></div>
-                    <div className="flex space-x-2">
-                        <div className="w-1/2"><label className="font-bold">Начало (час)</label><input type="number" min="0" max="23" required value={appForm.time_start} onChange={e => setAppForm({...appForm, time_start: e.target.value})} className="w-full border p-2 rounded text-center focus:ring-2 focus:ring-blue-500" /></div>
-                        <div className="w-1/2"><label className="font-bold">Конец (час)</label><input type="number" min="0" max="23" required value={appForm.time_end} onChange={e => setAppForm({...appForm, time_end: e.target.value})} className="w-full border p-2 rounded text-center focus:ring-2 focus:ring-blue-500" /></div>
+                <form onSubmit={handleCreateApp} className="space-y-4 text-sm">
+                    <div><label className="font-bold text-gray-700 block mb-1">Дата выезда</label><input type="date" required value={appForm.date_target} onChange={e => setAppForm({...appForm, date_target: e.target.value})} className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" /></div>
+                    <div><label className="font-bold text-gray-700 block mb-1">Адрес объекта</label><input type="text" required value={appForm.object_address} onChange={e => setAppForm({...appForm, object_address: e.target.value})} placeholder="Ул. Ленина, 10" className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" /></div>
+                    <div className="flex space-x-3">
+                        <div className="w-1/2"><label className="font-bold text-gray-700 block mb-1">Начало (час)</label><input type="number" min="0" max="23" required value={appForm.time_start} onChange={e => setAppForm({...appForm, time_start: e.target.value})} className="w-full border p-2.5 rounded-lg text-center focus:ring-2 focus:ring-blue-500 focus:outline-none" /></div>
+                        <div className="w-1/2"><label className="font-bold text-gray-700 block mb-1">Конец (час)</label><input type="number" min="0" max="23" required value={appForm.time_end} onChange={e => setAppForm({...appForm, time_end: e.target.value})} className="w-full border p-2.5 rounded-lg text-center focus:ring-2 focus:ring-blue-500 focus:outline-none" /></div>
                     </div>
                     <div>
-                        <label className="font-bold">Выберите бригаду</label>
-                        <select required value={appForm.team_id} onChange={e => setAppForm({...appForm, team_id: e.target.value})} className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                        <label className="font-bold text-gray-700 block mb-1">Выберите бригаду</label>
+                        <select required value={appForm.team_id} onChange={e => setAppForm({...appForm, team_id: e.target.value})} className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
                             <option value="" disabled>-- Выберите --</option>
                             {data.teams.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
                         </select>
                     </div>
                     <div>
-                        <label className="font-bold">Требуемая техника</label>
-                        <select required value={appForm.equip_id} onChange={e => setAppForm({...appForm, equip_id: e.target.value})} className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500">
+                        <label className="font-bold text-gray-700 block mb-1">Требуемая техника</label>
+                        <select required value={appForm.equip_id} onChange={e => setAppForm({...appForm, equip_id: e.target.value})} className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none bg-white">
                             <option value="" disabled>-- Выберите --</option>
                             {data.equipment.map(e => <option key={e.id} value={e.id}>{e.name} ({e.category})</option>)}
                         </select>
                     </div>
-                    <div><label className="font-bold">Комментарий</label><input type="text" value={appForm.comment} onChange={e => setAppForm({...appForm, comment: e.target.value})} placeholder="Опционально" className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500" /></div>
+                    <div><label className="font-bold text-gray-700 block mb-1">Комментарий</label><input type="text" value={appForm.comment} onChange={e => setAppForm({...appForm, comment: e.target.value})} placeholder="Опционально" className="w-full border p-2.5 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none" /></div>
 
-                    <div className="flex space-x-2 pt-4">
-                        <button type="button" onClick={() => setAppModalOpen(false)} className="w-1/3 bg-gray-200 py-2.5 rounded-lg font-medium hover:bg-gray-300 transition">Отмена</button>
-                        <button type="submit" className="w-2/3 bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700 transition">Отправить заявку</button>
+                    <div className="flex space-x-3 pt-4">
+                        <button type="button" onClick={() => setAppModalOpen(false)} className="w-1/3 bg-gray-100 py-3 rounded-xl font-medium hover:bg-gray-200 transition">Отмена</button>
+                        <button type="submit" className="w-2/3 bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 transition shadow-md">Отправить заявку</button>
                     </div>
                 </form>
             </div>
@@ -333,9 +374,9 @@ export default function Dashboard() {
 }
 
 function StatCard({ title, value, color, text = "text-gray-900" }) {
-  const borders = { blue: 'border-blue-500', green: 'border-green-500', red: 'border-red-500', yellow: 'border-yellow-500' };
+  const borders = { blue: 'border-blue-500', green: 'border-emerald-500', red: 'border-red-500', yellow: 'border-yellow-500' };
   return (
-    <div className={`bg-white p-4 rounded-lg shadow-sm border-l-4 ${borders[color]}`}>
+    <div className={`bg-white p-5 rounded-2xl shadow-sm border-l-4 ${borders[color]}`}>
       <p className="text-sm font-medium text-gray-500 mb-1">{title}</p>
       <p className={`text-3xl font-bold ${text}`}>{value}</p>
     </div>
