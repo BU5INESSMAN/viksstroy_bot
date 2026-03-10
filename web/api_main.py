@@ -42,9 +42,83 @@ async def shutdown():
     await db.close()
 
 
-# --- ВХОД ПО ПАРОЛЮ ---
-@app.post("/api/login")
-async def process_login(password: str = Form(...)):
+# Функция проверки ID в .env
+def check_env_roles(tg_id: int):
+    super_admins = [x.strip() for x in os.getenv("SUPER_ADMIN_IDS", "").split(",") if x.strip()]
+    bosses = [x.strip() for x in os.getenv("BOSS_IDS", "").split(",") if x.strip()]
+    if str(tg_id) in super_admins:
+        return "superadmin"
+    if str(tg_id) in bosses:
+        return "boss"
+    return None
+
+
+# --- ВХОД ЧЕРЕЗ TELEGRAM WIDGET (ОБЫЧНЫЙ САЙТ) ---
+@app.post("/api/telegram_auth")
+async def telegram_auth(data: dict):
+    bot_token = os.getenv("BOT_TOKEN")
+    received_hash = data.pop('hash', None)
+
+    if time.time() - int(data.get('auth_date', 0)) > 86400:
+        raise HTTPException(status_code=403, detail="Данные авторизации устарели")
+
+    data_check_arr = [f"{k}={data[k]}" for k in sorted(data.keys()) if data[k] is not None]
+    data_check_string = "\n".join(data_check_arr)
+
+    secret_key = hashlib.sha256(bot_token.encode()).digest()
+    hash_calc = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+
+    if hash_calc != received_hash:
+        raise HTTPException(status_code=403, detail="Неверная подпись Telegram")
+
+    tg_id = int(data['id'])
+
+    # 1. Проверяем .env
+    env_role = check_env_roles(tg_id)
+    if env_role:
+        return {"status": "ok", "role": env_role, "fio": data.get('first_name', 'Руководство')}
+
+    # 2. Проверяем Базу Данных
+    user = await db.get_user(tg_id)
+    if user:
+        if user['is_blacklisted']:
+            raise HTTPException(status_code=403, detail="Пользователь заблокирован")
+        return {"status": "ok", "role": user['role'], "fio": user['fio']}
+
+    # 3. Если нигде нет -> просим пароль
+    return {
+        "status": "needs_password",
+        "tg_id": tg_id,
+        "first_name": data.get('first_name', ''),
+        "last_name": data.get('last_name', '')
+    }
+
+
+# --- ВХОД ЧЕРЕЗ TELEGRAM MINI APP ---
+@app.post("/api/tma/auth")
+async def api_tma_auth(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form("")):
+    env_role = check_env_roles(tg_id)
+    if env_role:
+        return {"status": "ok", "role": env_role, "fio": "Руководство"}
+
+    user = await db.get_user(tg_id)
+    if user:
+        if user['is_blacklisted']:
+            raise HTTPException(status_code=403, detail="Пользователь заблокирован")
+        return {"status": "ok", "role": user['role'], "fio": user['fio']}
+
+    return {
+        "status": "needs_password",
+        "tg_id": tg_id,
+        "first_name": first_name,
+        "last_name": last_name
+    }
+
+
+# --- РЕГИСТРАЦИЯ ПРИ ВХОДЕ ВПЕРВЫЕ ---
+@app.post("/api/register_telegram")
+async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form(""),
+                            password: str = Form(...)):
     role = None
     if password == os.getenv("FOREMAN_PASS"):
         role = "foreman"
@@ -58,54 +132,12 @@ async def process_login(password: str = Form(...)):
     if not role:
         raise HTTPException(status_code=401, detail="Неверный пароль")
 
+    fio = f"{last_name} {first_name}".strip()
+    if not fio:
+        fio = f"Пользователь {tg_id}"
+
+    await db.add_user(tg_id, fio, role)
     return {"status": "ok", "role": role}
-
-
-# --- ВХОД ЧЕРЕЗ TELEGRAM WIDGET (САЙТ) ---
-@app.post("/api/telegram_auth")
-async def telegram_auth(data: dict):
-    bot_token = os.getenv("BOT_TOKEN")
-    if not bot_token:
-        raise HTTPException(status_code=500, detail="Токен бота не настроен")
-
-    received_hash = data.pop('hash', None)
-
-    # Проверка на устаревание данных (защита от перехвата)
-    if time.time() - int(data.get('auth_date', 0)) > 86400:  # 24 часа
-        raise HTTPException(status_code=403, detail="Данные авторизации устарели")
-
-    # Сортируем данные для проверки подписи
-    data_check_arr = []
-    for key in sorted(data.keys()):
-        if data[key] is not None:
-            data_check_arr.append(f"{key}={data[key]}")
-    data_check_string = "\n".join(data_check_arr)
-
-    # Вычисляем SHA256 хэш
-    secret_key = hashlib.sha256(bot_token.encode()).digest()
-    hash_calc = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-
-    # Сравниваем хэши
-    if hash_calc != received_hash:
-        raise HTTPException(status_code=403, detail="Неверная подпись Telegram")
-
-    # Подпись верна! Ищем пользователя в БД
-    tg_id = int(data['id'])
-    user = await db.get_user(tg_id)
-
-    if user and user['is_active'] and not user['is_blacklisted']:
-        return {"status": "ok", "role": user['role'], "fio": user['fio']}
-
-    raise HTTPException(status_code=403, detail="Доступ запрещен: Вы не зарегистрированы или заблокированы")
-
-
-# --- ВХОД ЧЕРЕЗ TELEGRAM MINI APP ---
-@app.post("/api/tma/auth")
-async def api_tma_auth(tg_id: int = Form(...)):
-    user = await db.get_user(tg_id)
-    if user and user['is_active'] and not user['is_blacklisted']:
-        return {"status": "ok", "role": user['role'], "fio": user['fio']}
-    raise HTTPException(status_code=403, detail="Доступ запрещен или пользователь не найден")
 
 
 # --- API ДАШБОРДА ---
@@ -113,7 +145,6 @@ async def api_tma_auth(tg_id: int = Form(...)):
 async def get_dashboard_data():
     stats = await db.get_general_statistics()
     teams = await db.get_all_teams()
-
     return {
         "stats": stats,
         "teams": [{"id": t['id'], "name": t['name']} for t in teams]
