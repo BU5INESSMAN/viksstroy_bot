@@ -52,6 +52,7 @@ export default function Login() {
       const response = await axios.post('/api/register_telegram', formData);
       if (response.data.status === 'ok') {
         localStorage.setItem('user_role', response.data.role);
+        localStorage.setItem('tg_id', response.data.tg_id);
         navigate('/dashboard');
       }
     } catch (err) {
