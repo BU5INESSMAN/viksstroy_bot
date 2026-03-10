@@ -543,3 +543,11 @@ class DatabaseManager:
         await self.conn.execute("UPDATE team_members SET fio = ? WHERE tg_id = ?",
                                 (fio, target_id))  # Синхронизируем ФИО в бригаде
         await self.conn.commit()
+
+    async def upgrade_db_for_foreman(self):
+        """Добавляет колонку для статуса бригадира в таблице состава бригад"""
+        try:
+            await self.conn.execute("ALTER TABLE team_members ADD COLUMN is_foreman INTEGER DEFAULT 0")
+        except Exception:
+            pass  # Колонка уже существует
+        await self.conn.commit()
