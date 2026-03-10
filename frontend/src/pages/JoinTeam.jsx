@@ -34,7 +34,7 @@ export default function JoinTeam() {
       };
       const script = document.createElement('script');
       script.src = 'https://telegram.org/js/telegram-widget.js?22';
-      script.setAttribute('data-telegram-login', 'ТВОЙ_USERNAME_БОТА'); // ЗАМЕНИТЬ НА НИК БОТА
+      script.setAttribute('data-telegram-login', 'viksstroy_bot'); // ЗАМЕНИТЬ НА НИК БОТА
       script.setAttribute('data-size', 'large');
       script.setAttribute('data-onauth', 'onTelegramAuthInvite(user)');
       script.async = true;
