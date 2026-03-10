@@ -3,14 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 
 export default function Login() {
-  const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [needsPassword, setNeedsPassword] = useState(false);
+  const [tgUser, setTgUser] = useState(null);
+  const [password, setPassword] = useState('');
   const navigate = useNavigate();
   const telegramWrapperRef = useRef(null);
 
-  // Инициализация виджета Telegram
   useEffect(() => {
-    // Эта функция вызовется, когда пользователь нажмет кнопку Telegram
     window.onTelegramAuth = async (user) => {
       setError('');
       try {
@@ -18,48 +18,44 @@ export default function Login() {
         if (response.data.status === 'ok') {
           localStorage.setItem('user_role', response.data.role);
           navigate('/dashboard');
+        } else if (response.data.status === 'needs_password') {
+          setTgUser(response.data);
+          setNeedsPassword(true);
         }
       } catch (err) {
-        setError(err.response?.data?.detail || 'Ошибка авторизации через Telegram');
+        setError(err.response?.data?.detail || 'Ошибка авторизации');
       }
     };
 
-    // Создаем скрипт виджета
-    const script = document.createElement('script');
-    script.src = 'https://telegram.org/js/telegram-widget.js?22';
-    // ВАЖНО: Замени на username твоего бота!
-    script.setAttribute('data-telegram-login', 'viksstroy_bot');
-    script.setAttribute('data-size', 'large');
-    script.setAttribute('data-onauth', 'onTelegramAuth(user)');
-    script.setAttribute('data-request-access', 'write');
-    script.async = true;
-
-    // Вставляем скрипт в наш div, если он еще пустой
-    if (telegramWrapperRef.current && telegramWrapperRef.current.children.length === 0) {
+    if (!needsPassword && telegramWrapperRef.current && telegramWrapperRef.current.children.length === 0) {
+      const script = document.createElement('script');
+      script.src = 'https://telegram.org/js/telegram-widget.js?22';
+      // ВАЖНО: ЗАМЕНИ ТЕКСТ НИЖЕ НА ЮЗЕРНЕЙМ ТВОЕГО БОТА (БЕЗ @) !!!
+      script.setAttribute('data-telegram-login', 'viksstroy_bot');
+      script.setAttribute('data-size', 'large');
+      script.setAttribute('data-onauth', 'onTelegramAuth(user)');
+      script.async = true;
       telegramWrapperRef.current.appendChild(script);
     }
+  }, [navigate, needsPassword]);
 
-    return () => {
-      delete window.onTelegramAuth;
-    };
-  }, [navigate]);
-
-  // Обычный вход по паролю
-  const handleLogin = async (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
-
     try {
       const formData = new FormData();
+      formData.append('tg_id', tgUser.tg_id);
+      formData.append('first_name', tgUser.first_name);
+      formData.append('last_name', tgUser.last_name);
       formData.append('password', password);
 
-      const response = await axios.post('/api/login', formData);
+      const response = await axios.post('/api/register_telegram', formData);
       if (response.data.status === 'ok') {
         localStorage.setItem('user_role', response.data.role);
         navigate('/dashboard');
       }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Ошибка соединения с сервером');
+      setError(err.response?.data?.detail || 'Неверный пароль');
     }
   };
 
@@ -74,31 +70,32 @@ export default function Login() {
           </div>
         )}
 
-        {/* Контейнер для кнопки Telegram */}
-        <div className="mb-6 flex justify-center">
-          <div ref={telegramWrapperRef}></div>
-        </div>
-
-        <div className="flex items-center my-4 before:flex-1 before:border-t before:border-gray-300 before:mt-0.5 after:flex-1 after:border-t after:border-gray-300 after:mt-0.5">
-          <p className="text-center font-semibold mx-4 mb-0 text-gray-400 text-sm">ИЛИ</p>
-        </div>
-
-        <form onSubmit={handleLogin} className="space-y-4">
+        {!needsPassword ? (
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Пароль доступа</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              placeholder="Введите пароль..."
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-            />
+            <p className="text-center text-gray-600 mb-4 text-sm">Авторизуйтесь для доступа к панели</p>
+            <div className="flex justify-center" ref={telegramWrapperRef}></div>
           </div>
-          <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition duration-200 font-medium shadow-sm">
-            Войти по паролю
-          </button>
-        </form>
+        ) : (
+          <form onSubmit={handleRegister} className="space-y-4">
+            <div className="text-center mb-4">
+              <p className="font-medium text-gray-800">Привет, {tgUser.first_name}!</p>
+              <p className="text-sm text-gray-500">Вы у нас впервые. Введите системный пароль для регистрации.</p>
+            </div>
+            <div>
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+                placeholder="Системный пароль..."
+                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+            <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition">
+              Подтвердить и войти
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );
