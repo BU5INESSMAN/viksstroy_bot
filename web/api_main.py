@@ -133,13 +133,13 @@ async def get_dashboard_data():
     }
 
 
+# --- ИНВАЙТЫ (БЕЗ ПАРОЛЕЙ) ---
 @app.post("/api/teams/{team_id}/generate_invite")
 async def api_generate_invite(team_id: int):
     invite_code, join_password = await db.generate_team_invite(team_id)
     return {
         "invite_link": f"https://islandvpn.sbs/invite/{invite_code}",
         "tg_bot_link": f"https://t.me/{os.getenv('BOT_USERNAME', 'viksstroy_bot')}?start=team_{invite_code}",
-        "password": join_password
     }
 
 
@@ -154,16 +154,29 @@ async def api_get_invite_info(invite_code: str):
 
 
 @app.post("/api/invite/join")
-async def api_join_team(invite_code: str = Form(...), password: str = Form(...), worker_id: int = Form(...)):
+async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...), tg_id: int = Form(...)):
     team = await db.get_team_by_invite(invite_code)
-    if not team or team['join_password'] != password:
-        raise HTTPException(status_code=403, detail="Неверный пароль или бригада")
-    await db.claim_worker_slot(worker_id, is_web_only=True)
+    if not team:
+        raise HTTPException(status_code=404, detail="Бригада не найдена")
+
+    # Привязываем ТГ ID к рабочему месту
+    await db.conn.execute("UPDATE team_members SET tg_id = ? WHERE id = ?", (tg_id, worker_id))
+
+    # Проверяем, есть ли юзер в базе. Если нет - создаем, даем роль worker
+    user = await db.get_user(tg_id)
+    if not user:
+        async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
+            w_row = await cur.fetchone()
+            fio = w_row[0] if w_row else f"Рабочий {tg_id}"
+        await db.add_user(tg_id, fio, "worker")
+    elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
+        await db.update_user_role(tg_id, "worker")
+
+    await db.conn.commit()
     return {"status": "ok"}
 
 
-# --- НОВЫЙ ФУНКЦИОНАЛ ДАШБОРДА ---
-
+# --- УПРАВЛЕНИЕ БРИГАДАМИ ---
 @app.post("/api/teams/create")
 async def create_team(name: str = Form(...)):
     await db.conn.execute("INSERT INTO teams (name) VALUES (?)", (name,))
@@ -171,20 +184,44 @@ async def create_team(name: str = Form(...)):
     return {"status": "ok"}
 
 
+@app.get("/api/teams/{team_id}/details")
+async def get_team_details(team_id: int):
+    async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
+        team_row = await cur.fetchone()
+    if not team_row:
+        raise HTTPException(404)
+
+    async with db.conn.execute("SELECT id, fio, position, tg_id FROM team_members WHERE team_id = ?",
+                               (team_id,)) as cur:
+        members = [{"id": r[0], "fio": r[1], "position": r[2], "is_linked": bool(r[3])} for r in await cur.fetchall()]
+
+    return {"id": team_id, "name": team_row[0], "members": members}
+
+
+@app.post("/api/teams/{team_id}/members/add")
+async def add_team_member(team_id: int, fio: str = Form(...), position: str = Form(...)):
+    await db.conn.execute("INSERT INTO team_members (team_id, fio, position) VALUES (?, ?, ?)",
+                          (team_id, fio, position))
+    await db.conn.commit()
+    return {"status": "ok"}
+
+
+@app.post("/api/teams/members/{member_id}/delete")
+async def delete_team_member(member_id: int):
+    await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
+    await db.conn.commit()
+    return {"status": "ok"}
+
+
+# --- ЗАЯВКИ ---
 @app.post("/api/applications/create")
 async def create_app(
-        tg_id: int = Form(...),
-        team_id: int = Form(...),
-        equip_id: int = Form(...),
-        date_target: str = Form(...),
-        object_address: str = Form(...),
-        time_start: str = Form(...),
-        time_end: str = Form(...),
-        comment: str = Form("")
+        tg_id: int = Form(...), team_id: int = Form(...), equip_id: int = Form(...),
+        date_target: str = Form(...), object_address: str = Form(...),
+        time_start: str = Form(...), time_end: str = Form(...), comment: str = Form("")
 ):
     user = await db.get_user(tg_id)
     fio = user['fio'] if user else "Web-Пользователь"
-
     await db.conn.execute("""
                           INSERT INTO applications
                           (foreman_id, foreman_name, team_id, equip_id, date_target, object_address, time_start,
@@ -200,12 +237,10 @@ async def create_app(
 async def publish_apps():
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
-    if not group_id:
-        raise HTTPException(status_code=500, detail="Группа не настроена")
+    if not group_id: raise HTTPException(status_code=500, detail="Группа не настроена")
 
     apps = await db.get_approved_apps_for_publish()
-    if not apps:
-        raise HTTPException(status_code=400, detail="Нет заявок для публикации")
+    if not apps: raise HTTPException(status_code=400, detail="Нет заявок для публикации")
 
     count = 0
     async with aiohttp.ClientSession() as session:
@@ -214,15 +249,14 @@ async def publish_apps():
             data = await db.get_application_details(app_id)
             details = data['details']
             staff_str = "\n".join([f"  ├ {s['fio']} (<i>{s['position']}</i>)" for s in data['staff']])
-
             text = (
                 f"🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n🏢 <b>ВИКС Расписание</b>\n━━━━━━━━━━━━━━━\n"
                 f"📅 <b>Дата:</b> <code>{details['date_target']}</code>\n📍 <b>Объект:</b> {details['object_address']}\n"
                 f"⏰ <b>Время:</b> {details['time_start']}:00 - {details['time_end']}:00\n🚜 <b>Техника:</b> {details['equip_name']}\n"
                 f"👷‍♂️ <b>Прораб:</b> <b>{details['foreman_name']}</b>\n\n👥 <b>Бригада «{details['team_name']}»:</b>\n{staff_str}\n"
             )
-            if details['comment'] and details['comment'].lower() != 'нет':
-                text += f"\n💬 <b>Комментарий:</b> {details['comment']}"
+            if details['comment'] and details[
+                'comment'].lower() != 'нет': text += f"\n💬 <b>Комментарий:</b> {details['comment']}"
 
             url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
             async with session.post(url, json={"chat_id": group_id, "text": text, "parse_mode": "HTML"}) as resp:
