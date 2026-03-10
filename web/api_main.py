@@ -32,8 +32,8 @@ async def startup():
     await db.upgrade_db_for_invites()
     await db.upgrade_db_for_logs()
     await db.upgrade_db_for_profiles()
+    await db.upgrade_db_for_foreman()  # <--- Обновление БД для бригадиров
 
-    # Авто-добавление колонки для выбора людей в заявке
     try:
         await db.conn.execute("ALTER TABLE applications ADD COLUMN selected_members TEXT")
     except:
@@ -244,19 +244,33 @@ async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Fo
 async def get_team_details(team_id: int):
     async with db.conn.execute("SELECT name FROM teams WHERE id = ?",
                                (team_id,)) as cur: team_row = await cur.fetchone()
-    async with db.conn.execute("SELECT id, fio, position, tg_id FROM team_members WHERE team_id = ?",
-                               (team_id,)) as cur:
-        members = [{"id": r[0], "fio": r[1], "position": r[2], "is_linked": bool(r[3])} for r in await cur.fetchall()]
+    # Сортируем: сначала бригадиры, потом остальные
+    async with db.conn.execute(
+            "SELECT id, fio, position, tg_id, is_foreman FROM team_members WHERE team_id = ? ORDER BY is_foreman DESC, id ASC",
+            (team_id,)) as cur:
+        members = [{"id": r[0], "fio": r[1], "position": r[2], "is_linked": bool(r[3]), "is_foreman": bool(r[4])} for r
+                   in await cur.fetchall()]
     return {"id": team_id, "name": team_row[0], "members": members}
 
 
 @app.post("/api/teams/{team_id}/members/add")
-async def add_team_member(team_id: int, fio: str = Form(...), position: str = Form(...), tg_id: int = Form(0),
-                          admin_fio: str = Form("Пользователь")):
-    await db.conn.execute("INSERT INTO team_members (team_id, fio, position) VALUES (?, ?, ?)",
-                          (team_id, fio, position))
+async def add_team_member(team_id: int, fio: str = Form(...), position: str = Form(...), is_foreman: int = Form(0),
+                          tg_id: int = Form(0), admin_fio: str = Form("Пользователь")):
+    await db.conn.execute("INSERT INTO team_members (team_id, fio, position, is_foreman) VALUES (?, ?, ?, ?)",
+                          (team_id, fio, position, is_foreman))
     await db.conn.commit()
-    await db.add_log(tg_id, admin_fio, f"Добавил рабочего «{fio}» в бригаду #{team_id}")
+    role_str = "бригадира" if is_foreman else "рабочего"
+    await db.add_log(tg_id, admin_fio, f"Добавил {role_str} «{fio}» в бригаду #{team_id}")
+    return {"status": "ok"}
+
+
+@app.post("/api/teams/members/{member_id}/toggle_foreman")
+async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int = Form(0),
+                         admin_fio: str = Form("Пользователь")):
+    await db.conn.execute("UPDATE team_members SET is_foreman = ? WHERE id = ?", (is_foreman, member_id))
+    await db.conn.commit()
+    status_str = "Назначил бригадиром" if is_foreman else "Снял с должности бригадира"
+    await db.add_log(tg_id, admin_fio, f"{status_str} участника #{member_id}")
     return {"status": "ok"}
 
 
@@ -268,13 +282,12 @@ async def delete_team_member(member_id: int, tg_id: int = Form(0), admin_fio: st
     return {"status": "ok"}
 
 
-# --- НОВАЯ ЛОГИКА ЗАЯВОК (С ПЕРЕДАЧЕЙ ЛЮДЕЙ) ---
 @app.post("/api/applications/create")
 async def create_app(
         tg_id: int = Form(...), team_id: int = Form(...), equip_id: int = Form(0),
         date_target: str = Form(...), object_address: str = Form(...),
         time_start: str = Form("08"), time_end: str = Form("17"), comment: str = Form(""),
-        selected_members: str = Form("")  # ID рабочих через запятую
+        selected_members: str = Form("")
 ):
     user = await db.get_user(tg_id)
     fio = user['fio'] if user else "Web-Пользователь"
@@ -304,7 +317,6 @@ async def publish_apps(tg_id: int = Form(0)):
             data = await db.get_application_details(app_id)
             details = data['details']
 
-            # Фильтруем состав бригады, если прораб выбрал конкретных людей
             async with db.conn.execute("SELECT selected_members FROM applications WHERE id = ?", (app_id,)) as cur:
                 sel_row = await cur.fetchone()
                 selected = sel_row[0] if sel_row and sel_row[0] else ""
