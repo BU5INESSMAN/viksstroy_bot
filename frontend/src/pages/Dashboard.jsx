@@ -5,6 +5,7 @@ import axios from 'axios';
 export default function Dashboard() {
   const [data, setData] = useState({ stats: {}, teams: [] });
   const [loading, setLoading] = useState(true);
+  const [inviteInfo, setInviteInfo] = useState(null);
   const role = localStorage.getItem('user_role') || 'Гость';
   const navigate = useNavigate();
 
@@ -20,6 +21,15 @@ export default function Dashboard() {
   const handleLogout = () => {
     localStorage.removeItem('user_role');
     navigate('/');
+  };
+
+  const handleGenerateInvite = async (teamId) => {
+    try {
+      const res = await axios.post(`/api/teams/${teamId}/generate_invite`);
+      setInviteInfo(res.data);
+    } catch (err) {
+      alert("Ошибка при генерации ссылок!");
+    }
   };
 
   if (loading) {
@@ -61,8 +71,13 @@ export default function Dashboard() {
                 <ul className="space-y-2">
                 {data.teams.map(t => (
                     <li key={t.id} className="p-3 bg-gray-50 rounded border flex justify-between items-center">
-                    <span className="font-medium">🏗 {t.name}</span>
-                    <button className="text-blue-500 hover:text-blue-700 text-sm font-medium">Управлять</button>
+                        <span className="font-medium">🏗 {t.name}</span>
+                        <div className="space-x-3">
+                            <button onClick={() => handleGenerateInvite(t.id)} className="text-green-600 hover:text-green-800 text-sm font-medium transition">
+                                🔗 Пригласить
+                            </button>
+                            <button className="text-blue-500 hover:text-blue-700 text-sm font-medium transition">Управлять</button>
+                        </div>
                     </li>
                 ))}
                 </ul>
@@ -90,17 +105,42 @@ export default function Dashboard() {
           </div>
         </div>
       </main>
+
+      {/* МОДАЛЬНОЕ ОКНО С ИНФОРМАЦИЕЙ ДЛЯ ПРИГЛАШЕНИЯ */}
+      {inviteInfo && (
+        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50">
+            <div className="bg-white p-6 rounded-xl shadow-2xl w-full max-w-md">
+                <h3 className="text-xl font-bold mb-4 text-center text-gray-800">Добавление в бригаду</h3>
+
+                <div className="mb-5">
+                    <label className="block text-sm font-bold text-gray-700 mb-2 text-center">🔐 ПАРОЛЬ (сообщите рабочим):</label>
+                    <div className="text-3xl font-mono text-center bg-blue-50 py-3 rounded-lg text-blue-700 tracking-[0.2em] border border-blue-200">
+                        {inviteInfo.password}
+                    </div>
+                </div>
+
+                <div className="mb-4">
+                    <label className="block text-sm font-bold text-gray-700 mb-1">🔗 Для пользователей Telegram:</label>
+                    <input type="text" readOnly value={inviteInfo.tg_bot_link} onClick={(e) => e.target.select()} className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm text-gray-700 cursor-pointer focus:outline-none"/>
+                </div>
+
+                <div className="mb-6">
+                    <label className="block text-sm font-bold text-gray-700 mb-1">🌐 Для пользователей без Telegram:</label>
+                    <input type="text" readOnly value={inviteInfo.invite_link} onClick={(e) => e.target.select()} className="w-full px-3 py-2 bg-gray-100 border border-gray-300 rounded-md text-sm text-gray-700 cursor-pointer focus:outline-none"/>
+                </div>
+
+                <button onClick={() => setInviteInfo(null)} className="w-full bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 transition font-medium">
+                    Понятно, закрыть
+                </button>
+            </div>
+        </div>
+      )}
     </div>
   );
 }
 
 function StatCard({ title, value, color, text = "text-gray-900" }) {
-  const borders = {
-    blue: 'border-blue-500',
-    green: 'border-green-500',
-    red: 'border-red-500',
-    yellow: 'border-yellow-500'
-  };
+  const borders = { blue: 'border-blue-500', green: 'border-green-500', red: 'border-red-500', yellow: 'border-yellow-500' };
   return (
     <div className={`bg-white p-4 rounded-lg shadow-sm border-l-4 ${borders[color]}`}>
       <p className="text-sm text-gray-500 mb-1">{title}</p>
