@@ -486,3 +486,60 @@ class DatabaseManager:
         async with self.conn.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ?", (limit,)) as cursor:
             cols = [col[0] for col in cursor.description]
             return [dict(zip(cols, row)) for row in await cursor.fetchall()]
+
+    async def upgrade_db_for_profiles(self):
+        """Добавляет поддержку аватарок в БД"""
+        try:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN avatar_url TEXT")
+        except Exception:
+            pass  # Колонка уже есть
+        await self.conn.commit()
+
+    async def update_user_avatar(self, tg_id: int, avatar_url: str):
+        """Обновляет аватарку пользователя"""
+        await self.conn.execute("UPDATE users SET avatar_url = ? WHERE user_id = ?", (avatar_url, tg_id))
+        await self.conn.commit()
+
+    async def get_user_full_profile(self, target_id: int):
+        """Получает полную информацию для профиля пользователя (включая бригаду)"""
+        async with self.conn.execute("SELECT * FROM users WHERE user_id = ?", (target_id,)) as cur:
+            user_row = await cur.fetchone()
+        if not user_row: return None
+        user_cols = [col[0] for col in cur.description]
+        user_data = dict(zip(user_cols, user_row))
+
+        # Ищем, состоит ли он в бригаде
+        async with self.conn.execute("""
+                                     SELECT tm.id as member_id, tm.position, t.id as team_id, t.name as team_name
+                                     FROM team_members tm
+                                              JOIN teams t ON tm.team_id = t.id
+                                     WHERE tm.tg_id = ?
+                                     """, (target_id,)) as cur:
+            team_row = await cur.fetchone()
+
+        if team_row:
+            user_data['team_id'] = team_row[2]
+            user_data['team_name'] = team_row[3]
+            user_data['position'] = team_row[1]
+            user_data['member_id'] = team_row[0]
+        else:
+            user_data['team_id'] = None
+            user_data['team_name'] = None
+            user_data['position'] = None
+            user_data['member_id'] = None
+
+        return user_data
+
+    async def get_specific_user_logs(self, tg_id: int, limit: int = 20):
+        """Получает логи конкретного пользователя"""
+        async with self.conn.execute("SELECT * FROM logs WHERE tg_id = ? ORDER BY id DESC LIMIT ?",
+                                     (tg_id, limit)) as cur:
+            cols = [col[0] for col in cur.description]
+            return [dict(zip(cols, row)) for row in await cur.fetchall()]
+
+    async def update_user_profile_data(self, target_id: int, fio: str, role: str):
+        """Обновляет ФИО и Роль в главной таблице"""
+        await self.conn.execute("UPDATE users SET fio = ?, role = ? WHERE user_id = ?", (fio, role, target_id))
+        await self.conn.execute("UPDATE team_members SET fio = ? WHERE tg_id = ?",
+                                (fio, target_id))  # Синхронизируем ФИО в бригаде
+        await self.conn.commit()
