@@ -12,7 +12,7 @@ load_dotenv()
 
 app = FastAPI(title="ВИКС Расписание API")
 
-origins = ["*"]  # Разрешаем все источники для удобства
+origins = ["*"]
 
 app.add_middleware(
     CORSMiddleware,
@@ -31,7 +31,7 @@ async def startup():
     await db.init_db()
     await db.upgrade_db_for_invites()
     await db.upgrade_db_for_logs()
-    await db.upgrade_db_for_profiles()  # Аватарки
+    await db.upgrade_db_for_profiles()
     await db.conn.execute("PRAGMA journal_mode=WAL;")
     await db.conn.commit()
 
@@ -65,9 +65,8 @@ async def telegram_auth(data: dict):
         raise HTTPException(status_code=403, detail="Неверная подпись")
 
     tg_id = int(data['id'])
-    photo_url = data.get('photo_url', '')  # Захватываем аватарку
+    photo_url = data.get('photo_url', '')
 
-    # Сохраняем аватарку если пользователь есть в БД
     user = await db.get_user(tg_id)
     if user:
         if user['is_blacklisted']: raise HTTPException(status_code=403, detail="Пользователь заблокирован")
@@ -82,6 +81,19 @@ async def telegram_auth(data: dict):
 
     return {"status": "needs_password", "tg_id": tg_id, "first_name": data.get('first_name', ''),
             "last_name": data.get('last_name', ''), "photo_url": photo_url}
+
+
+@app.post("/api/tma/auth")
+async def api_tma_auth(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form("")):
+    env_role = check_env_roles(tg_id)
+    if env_role: return {"status": "ok", "role": env_role, "fio": "Руководство", "tg_id": tg_id}
+
+    user = await db.get_user(tg_id)
+    if user:
+        if user['is_blacklisted']: raise HTTPException(status_code=403, detail="Заблокирован")
+        return {"status": "ok", "role": user['role'], "fio": user['fio'], "tg_id": tg_id}
+
+    return {"status": "needs_password", "tg_id": tg_id, "first_name": first_name, "last_name": last_name}
 
 
 @app.post("/api/register_telegram")
@@ -122,7 +134,6 @@ async def get_logs():
     return await db.get_recent_logs(50)
 
 
-# --- УПРАВЛЕНИЕ ПОЛЬЗОВАТЕЛЯМИ И ПРОФИЛЯМИ ---
 @app.get("/api/users")
 async def api_get_users():
     users = await db.get_all_users()
@@ -154,25 +165,22 @@ async def api_update_profile(
 ):
     admin = await db.get_user(tg_id)
     admin_fio = admin['fio'] if admin else "Система"
-
-    # Проверка прав: только админы, боссы и модераторы могут менять чужие данные
-    if not admin or admin['role'] not in ['superadmin', 'boss', 'moderator']:
-        raise HTTPException(status_code=403, detail="Недостаточно прав")
+    if not admin or admin['role'] not in ['superadmin', 'boss', 'moderator']: raise HTTPException(status_code=403,
+                                                                                                  detail="Недостаточно прав")
 
     await db.update_user_profile_data(target_id, fio, role)
 
-    # Обновление бригады
     profile = await db.get_user_full_profile(target_id)
-    if profile['member_id']:  # Был в бригаде
+    if profile['member_id']:
         if team_id > 0:
             await db.conn.execute("UPDATE team_members SET team_id = ?, position = ? WHERE id = ?",
                                   (team_id, position, profile['member_id']))
         else:
             await db.conn.execute("DELETE FROM team_members WHERE id = ?", (profile['member_id'],))
-    else:  # Не был в бригаде
-        if team_id > 0:
-            await db.conn.execute("INSERT INTO team_members (team_id, fio, position, tg_id) VALUES (?, ?, ?, ?)",
-                                  (team_id, fio, position, target_id))
+    else:
+        if team_id > 0: await db.conn.execute(
+            "INSERT INTO team_members (team_id, fio, position, tg_id) VALUES (?, ?, ?, ?)",
+            (team_id, fio, position, target_id))
 
     await db.conn.commit()
     await db.add_log(tg_id, admin_fio, f"Изменил данные профиля ID:{target_id} (ФИО: {fio}, Роль: {role})")
@@ -191,7 +199,6 @@ async def api_delete_user(target_id: int, tg_id: int = Form(...)):
     return {"status": "ok"}
 
 
-# --- ИНВАЙТЫ И ОСТАЛЬНОЕ (сокращено для экономии места, оставь из прошлого шага) ---
 @app.post("/api/teams/{team_id}/generate_invite")
 async def api_generate_invite(team_id: int):
     invite_code = await db.get_or_create_team_invite(team_id)
