@@ -447,3 +447,42 @@ class DatabaseManager:
 
         await self.conn.execute("UPDATE team_members SET tg_id = ? WHERE id = ?", (tg_id, worker_id))
         await self.conn.commit()
+
+    async def upgrade_db_for_logs(self):
+        """Создает таблицу для ведения журнала действий (логов)"""
+        await self.conn.execute("""
+                                CREATE TABLE IF NOT EXISTS logs
+                                (
+                                    id
+                                    INTEGER
+                                    PRIMARY
+                                    KEY
+                                    AUTOINCREMENT,
+                                    tg_id
+                                    INTEGER,
+                                    fio
+                                    TEXT,
+                                    action
+                                    TEXT,
+                                    timestamp
+                                    DATETIME
+                                    DEFAULT
+                                    CURRENT_TIMESTAMP
+                                )
+                                """)
+        await self.conn.commit()
+
+    async def add_log(self, tg_id: int, fio: str, action: str):
+        """Добавляет запись в журнал действий"""
+        # Поправка времени: SQLite использует UTC, можно будет поправить на фронте
+        await self.conn.execute(
+            "INSERT INTO logs (tg_id, fio, action, timestamp) VALUES (?, ?, ?, datetime('now', 'localtime'))",
+            (tg_id, fio, action)
+        )
+        await self.conn.commit()
+
+    async def get_recent_logs(self, limit: int = 50):
+        """Получает последние записи журнала"""
+        async with self.conn.execute("SELECT * FROM logs ORDER BY id DESC LIMIT ?", (limit,)) as cursor:
+            cols = [col[0] for col in cursor.description]
+            return [dict(zip(cols, row)) for row in await cursor.fetchall()]

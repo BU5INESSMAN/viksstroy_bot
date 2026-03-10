@@ -35,6 +35,7 @@ db = DatabaseManager(db_path)
 async def startup():
     await db.init_db()
     await db.upgrade_db_for_invites()
+    await db.upgrade_db_for_logs()  # Включаем логи!
     await db.conn.execute("PRAGMA journal_mode=WAL;")
     await db.conn.commit()
 
@@ -47,10 +48,8 @@ async def shutdown():
 def check_env_roles(tg_id: int):
     super_admins = [x.strip() for x in os.getenv("SUPER_ADMIN_IDS", "").split(",") if x.strip()]
     bosses = [x.strip() for x in os.getenv("BOSS_IDS", "").split(",") if x.strip()]
-    if str(tg_id) in super_admins:
-        return "superadmin"
-    if str(tg_id) in bosses:
-        return "boss"
+    if str(tg_id) in super_admins: return "superadmin"
+    if str(tg_id) in bosses: return "boss"
     return None
 
 
@@ -76,8 +75,7 @@ async def telegram_auth(data: dict):
 
     user = await db.get_user(tg_id)
     if user:
-        if user['is_blacklisted']:
-            raise HTTPException(status_code=403, detail="Пользователь заблокирован")
+        if user['is_blacklisted']: raise HTTPException(status_code=403, detail="Пользователь заблокирован")
         return {"status": "ok", "role": user['role'], "fio": user['fio'], "tg_id": tg_id}
 
     return {"status": "needs_password", "tg_id": tg_id, "first_name": data.get('first_name', ''),
@@ -87,13 +85,11 @@ async def telegram_auth(data: dict):
 @app.post("/api/tma/auth")
 async def api_tma_auth(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form("")):
     env_role = check_env_roles(tg_id)
-    if env_role:
-        return {"status": "ok", "role": env_role, "fio": "Руководство", "tg_id": tg_id}
+    if env_role: return {"status": "ok", "role": env_role, "fio": "Руководство", "tg_id": tg_id}
 
     user = await db.get_user(tg_id)
     if user:
-        if user['is_blacklisted']:
-            raise HTTPException(status_code=403, detail="Заблокирован")
+        if user['is_blacklisted']: raise HTTPException(status_code=403, detail="Заблокирован")
         return {"status": "ok", "role": user['role'], "fio": user['fio'], "tg_id": tg_id}
 
     return {"status": "needs_password", "tg_id": tg_id, "first_name": first_name, "last_name": last_name}
@@ -112,11 +108,13 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
     elif password == os.getenv("SUPERADMIN_PASS"):
         role = "superadmin"
 
-    if not role:
-        raise HTTPException(status_code=401, detail="Неверный пароль")
+    if not role: raise HTTPException(status_code=401, detail="Неверный пароль")
 
     fio = f"{last_name} {first_name}".strip() or f"Пользователь {tg_id}"
     await db.add_user(tg_id, fio, role)
+
+    # ЛОГИРУЕМ РЕГИСТРАЦИЮ
+    await db.add_log(tg_id, fio, f"Зарегистрировался в системе (Роль: {role})")
     return {"status": "ok", "role": role, "tg_id": tg_id}
 
 
@@ -125,7 +123,6 @@ async def get_dashboard_data():
     stats = await db.get_general_statistics()
     teams = await db.get_all_teams()
     equip = await db.get_all_equipment_admin()
-
     return {
         "stats": stats,
         "teams": [{"id": t['id'], "name": t['name']} for t in teams],
@@ -133,7 +130,12 @@ async def get_dashboard_data():
     }
 
 
-# --- ИНВАЙТЫ (БЕЗ ПАРОЛЕЙ) ---
+# --- НОВЫЙ ЭНДПОИНТ ДЛЯ ЛОГОВ ---
+@app.get("/api/logs")
+async def get_logs():
+    return await db.get_recent_logs(50)
+
+
 @app.post("/api/teams/{team_id}/generate_invite")
 async def api_generate_invite(team_id: int):
     invite_code = await db.get_or_create_team_invite(team_id)
@@ -146,8 +148,7 @@ async def api_generate_invite(team_id: int):
 @app.get("/api/invite/{invite_code}")
 async def api_get_invite_info(invite_code: str):
     team = await db.get_team_by_invite(invite_code)
-    if not team:
-        raise HTTPException(status_code=404, detail="Ссылка недействительна")
+    if not team: raise HTTPException(status_code=404, detail="Ссылка недействительна")
     unclaimed = await db.get_unclaimed_workers(team['id'])
     return {"team_name": team['name'],
             "unclaimed_workers": [{"id": w['id'], "fio": w['fio'], "position": w['position']} for w in unclaimed]}
@@ -156,31 +157,34 @@ async def api_get_invite_info(invite_code: str):
 @app.post("/api/invite/join")
 async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...), tg_id: int = Form(...)):
     team = await db.get_team_by_invite(invite_code)
-    if not team:
-        raise HTTPException(status_code=404, detail="Бригада не найдена")
+    if not team: raise HTTPException(status_code=404, detail="Бригада не найдена")
 
-    # Привязываем ТГ ID к рабочему месту
     await db.conn.execute("UPDATE team_members SET tg_id = ? WHERE id = ?", (tg_id, worker_id))
 
-    # Проверяем, есть ли юзер в базе. Если нет - создаем, даем роль worker
     user = await db.get_user(tg_id)
+    fio = f"Рабочий {tg_id}"
+    async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
+        w_row = await cur.fetchone()
+        if w_row: fio = w_row[0]
+
     if not user:
-        async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
-            w_row = await cur.fetchone()
-            fio = w_row[0] if w_row else f"Рабочий {tg_id}"
         await db.add_user(tg_id, fio, "worker")
     elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
         await db.update_user_role(tg_id, "worker")
+        fio = user['fio']
 
     await db.conn.commit()
+
+    # ЛОГИРУЕМ ВСТУПЛЕНИЕ В БРИГАДУ
+    await db.add_log(tg_id, fio, f"Привязал аккаунт к бригаде «{team['name']}»")
     return {"status": "ok"}
 
 
-# --- УПРАВЛЕНИЕ БРИГАДАМИ ---
 @app.post("/api/teams/create")
-async def create_team(name: str = Form(...)):
+async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Form("Пользователь")):
     await db.conn.execute("INSERT INTO teams (name) VALUES (?)", (name,))
     await db.conn.commit()
+    await db.add_log(tg_id, fio, f"Создал новую бригаду «{name}»")
     return {"status": "ok"}
 
 
@@ -188,32 +192,31 @@ async def create_team(name: str = Form(...)):
 async def get_team_details(team_id: int):
     async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
         team_row = await cur.fetchone()
-    if not team_row:
-        raise HTTPException(404)
-
+    if not team_row: raise HTTPException(404)
     async with db.conn.execute("SELECT id, fio, position, tg_id FROM team_members WHERE team_id = ?",
                                (team_id,)) as cur:
         members = [{"id": r[0], "fio": r[1], "position": r[2], "is_linked": bool(r[3])} for r in await cur.fetchall()]
-
     return {"id": team_id, "name": team_row[0], "members": members}
 
 
 @app.post("/api/teams/{team_id}/members/add")
-async def add_team_member(team_id: int, fio: str = Form(...), position: str = Form(...)):
+async def add_team_member(team_id: int, fio: str = Form(...), position: str = Form(...), tg_id: int = Form(0),
+                          admin_fio: str = Form("Пользователь")):
     await db.conn.execute("INSERT INTO team_members (team_id, fio, position) VALUES (?, ?, ?)",
                           (team_id, fio, position))
     await db.conn.commit()
+    await db.add_log(tg_id, admin_fio, f"Добавил рабочего «{fio}» в бригаду #{team_id}")
     return {"status": "ok"}
 
 
 @app.post("/api/teams/members/{member_id}/delete")
-async def delete_team_member(member_id: int):
+async def delete_team_member(member_id: int, tg_id: int = Form(0), admin_fio: str = Form("Пользователь")):
     await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
     await db.conn.commit()
+    await db.add_log(tg_id, admin_fio, f"Удалил участника #{member_id} из бригады")
     return {"status": "ok"}
 
 
-# --- ЗАЯВКИ ---
 @app.post("/api/applications/create")
 async def create_app(
         tg_id: int = Form(...), team_id: int = Form(...), equip_id: int = Form(...),
@@ -230,11 +233,12 @@ async def create_app(
                           """,
                           (tg_id, fio, team_id, equip_id, date_target, object_address, time_start, time_end, comment))
     await db.conn.commit()
+    await db.add_log(tg_id, fio, f"Создал заявку на выезд ({date_target}, {object_address})")
     return {"status": "ok"}
 
 
 @app.post("/api/applications/publish")
-async def publish_apps():
+async def publish_apps(tg_id: int = Form(0)):
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     if not group_id: raise HTTPException(status_code=500, detail="Группа не настроена")
@@ -263,6 +267,10 @@ async def publish_apps():
                 if resp.status == 200:
                     await db.mark_app_as_published(app_id)
                     count += 1
+
+    user = await db.get_user(tg_id)
+    fio = user['fio'] if user else "Руководство"
+    await db.add_log(tg_id, fio, f"Опубликовал {count} нарядов в группу")
     return {"status": "ok", "published": count}
 
 
