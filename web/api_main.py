@@ -318,3 +318,42 @@ async def get_active_app(tg_id: int):
         row = await cursor.fetchone()
         if row: return dict(zip([col[0] for col in cursor.description], row))
         return None
+
+
+# --- УПРАВЛЕНИЕ ТЕХНИКОЙ (НОВОЕ) ---
+@app.get("/api/equipment/admin_list")
+async def admin_equip_list():
+    async with db.conn.execute("SELECT id, name, category, is_active FROM equipment ORDER BY category, name") as cur:
+        rows = await cur.fetchall()
+    return [{"id": r[0], "name": r[1], "category": r[2], "is_active": bool(r[3])} for r in rows]
+
+
+@app.post("/api/equipment/add")
+async def add_equipment(name: str = Form(...), category: str = Form(...), tg_id: int = Form(0)):
+    await db.conn.execute("INSERT INTO equipment (name, category, is_active) VALUES (?, ?, 1)", (name, category))
+    await db.conn.commit()
+    user = await db.get_user(tg_id)
+    admin_fio = user['fio'] if user else "Система"
+    await db.add_log(tg_id, admin_fio, f"Добавил новую технику: {name} ({category})")
+    return {"status": "ok"}
+
+
+@app.post("/api/equipment/{equip_id}/toggle")
+async def toggle_equipment(equip_id: int, is_active: int = Form(...), tg_id: int = Form(0)):
+    await db.conn.execute("UPDATE equipment SET is_active = ? WHERE id = ?", (is_active, equip_id))
+    await db.conn.commit()
+    user = await db.get_user(tg_id)
+    admin_fio = user['fio'] if user else "Система"
+    status_str = "Включил" if is_active else "Отключил"
+    await db.add_log(tg_id, admin_fio, f"{status_str} технику ID:{equip_id}")
+    return {"status": "ok"}
+
+
+@app.post("/api/equipment/{equip_id}/delete")
+async def delete_equipment(equip_id: int, tg_id: int = Form(0)):
+    await db.conn.execute("DELETE FROM equipment WHERE id = ?", (equip_id,))
+    await db.conn.commit()
+    user = await db.get_user(tg_id)
+    admin_fio = user['fio'] if user else "Система"
+    await db.add_log(tg_id, admin_fio, f"Удалил технику ID:{equip_id}")
+    return {"status": "ok"}
