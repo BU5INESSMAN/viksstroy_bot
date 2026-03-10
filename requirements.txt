@@ -1,4 +1,7 @@
-aiogram==3.17.0
-aiosqlite==0.20.0
-python-dotenv==1.0.1
-apscheduler==3.10.4
+aiogram
+aiosqlite
+apscheduler
+python-dotenv
+fastapi
+uvicorn
+python-multipart
