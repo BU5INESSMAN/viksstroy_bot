@@ -32,12 +32,25 @@ async def startup():
     await db.upgrade_db_for_invites()
     await db.upgrade_db_for_logs()
     await db.upgrade_db_for_profiles()
-    await db.upgrade_db_for_foreman()  # <--- Обновление БД для бригадиров
 
-    try:
-        await db.conn.execute("ALTER TABLE applications ADD COLUMN selected_members TEXT")
-    except:
-        pass
+    # Защита от ошибки, если метод не был добавлен
+    if hasattr(db, 'upgrade_db_for_foreman'):
+        await db.upgrade_db_for_foreman()
+
+    # --- ПАТЧ: АВТО-ОБНОВЛЕНИЕ БАЗЫ ДАННЫХ ДЛЯ ЗАЯВОК ---
+    columns_to_add = [
+        ("equip_id", "INTEGER DEFAULT 0"),
+        ("time_start", "TEXT DEFAULT '08'"),
+        ("time_end", "TEXT DEFAULT '17'"),
+        ("comment", "TEXT"),
+        ("selected_members", "TEXT")
+    ]
+
+    for col_name, col_type in columns_to_add:
+        try:
+            await db.conn.execute(f"ALTER TABLE applications ADD COLUMN {col_name} {col_type}")
+        except Exception:
+            pass  # Если колонка уже существует, просто идем дальше
 
     await db.conn.execute("PRAGMA journal_mode=WAL;")
     await db.conn.commit()
