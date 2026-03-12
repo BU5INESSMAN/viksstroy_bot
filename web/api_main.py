@@ -33,11 +33,9 @@ async def startup():
     await db.upgrade_db_for_invites()
     await db.upgrade_db_for_logs()
     await db.upgrade_db_for_profiles()
-
     if hasattr(db, 'upgrade_db_for_foreman'):
         await db.upgrade_db_for_foreman()
 
-    # Авто-обновление базы данных (Патч для всех недостающих колонок)
     columns_to_add = [
         ("foreman_id", "INTEGER"),
         ("foreman_name", "TEXT"),
@@ -303,7 +301,7 @@ async def create_app(
         tg_id: int = Form(...), team_id: int = Form(...),
         date_target: str = Form(...), object_address: str = Form(...),
         comment: str = Form(""), selected_members: str = Form(""),
-        equipment_data: str = Form("")  # JSON со списком техники
+        equipment_data: str = Form("")
 ):
     user = await db.get_user(tg_id)
     fio = user['fio'] if user else "Web-Пользователь"
@@ -319,31 +317,95 @@ async def create_app(
     return {"status": "ok"}
 
 
+# --- НОВАЯ ЛОГИКА: ПАНЕЛЬ МОДЕРАЦИИ ---
+@app.get("/api/applications/review")
+async def get_review_apps():
+    """Получает все заявки со статусами waiting и approved для модерации"""
+    async with db.conn.execute("""
+                               SELECT a.*, t.name as team_name
+                               FROM applications a
+                                        LEFT JOIN teams t ON a.team_id = t.id
+                               WHERE a.status IN ('waiting', 'approved')
+                               ORDER BY a.id DESC
+                               """) as cursor:
+        rows = await cursor.fetchall()
+
+    result = []
+    for row in rows:
+        cols = [col[0] for col in cursor.description]
+        app_dict = dict(zip(cols, row))
+
+        # Форматируем технику для красивого вывода в списке
+        eq_data_str = app_dict.get('equipment_data', '')
+        equip_text = ""
+        if eq_data_str:
+            try:
+                eq_list = json.loads(eq_data_str)
+                if eq_list:
+                    equip_text = ", ".join([f"{e['name']} ({e['time_start']}:00-{e['time_end']}:00)" for e in eq_list])
+            except:
+                pass
+        app_dict['formatted_equip'] = equip_text or "Не требуется"
+
+        result.append(app_dict)
+    return result
+
+
+@app.post("/api/applications/{app_id}/review")
+async def review_app(app_id: int, new_status: str = Form(...), tg_id: int = Form(0)):
+    """Модератор одобряет или отклоняет заявку"""
+    if new_status not in ['approved', 'rejected']:
+        raise HTTPException(400, "Неверный статус")
+
+    await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
+    await db.conn.commit()
+
+    user = await db.get_user(tg_id)
+    admin_fio = user['fio'] if user else "Модератор"
+    action_text = "Одобрил" if new_status == 'approved' else "Отклонил"
+    await db.add_log(tg_id, admin_fio, f"{action_text} заявку №{app_id}")
+    return {"status": "ok"}
+
+
+# --- ОБНОВЛЕННАЯ ФУНКЦИЯ ОТПРАВКИ (РАБОТАЕТ НАПРЯМУЮ С БД ДЛЯ НАДЕЖНОСТИ) ---
 @app.post("/api/applications/publish")
 async def publish_apps(tg_id: int = Form(0)):
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
-    apps = await db.get_approved_apps_for_publish()
-    if not apps: raise HTTPException(status_code=400, detail="Нет заявок для публикации")
+    if not group_id: raise HTTPException(status_code=500, detail="Группа не настроена")
+
+    # Берем только одобренные заявки
+    async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved'") as cur:
+        cols = [col[0] for col in cur.description]
+        apps = [dict(zip(cols, row)) for row in await cur.fetchall()]
+
+    if not apps: raise HTTPException(status_code=400, detail="Нет одобренных заявок для публикации")
+
     count = 0
     async with aiohttp.ClientSession() as session:
-        for row in apps:
-            app_id = row['id']
-            data = await db.get_application_details(app_id)
-            details = data['details']
+        for app_dict in apps:
+            app_id = app_dict['id']
+            team_id = app_dict['team_id']
 
-            async with db.conn.execute("SELECT selected_members, equipment_data FROM applications WHERE id = ?",
-                                       (app_id,)) as cur:
-                extra_row = await cur.fetchone()
-                selected = extra_row[0] if extra_row and extra_row[0] else ""
-                eq_data_str = extra_row[1] if extra_row and len(extra_row) > 1 and extra_row[1] else ""
+            async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
+                t_row = await cur.fetchone()
+                team_name = t_row[0] if t_row else "Неизвестно"
 
-            selected_list = [int(x.strip()) for x in selected.split(',')] if selected else []
-            if selected_list: data['staff'] = [s for s in data['staff'] if s['id'] in selected_list]
+            selected_members = app_dict.get('selected_members', '')
+            selected_list = [int(x.strip()) for x in selected_members.split(',')] if selected_members else []
 
-            staff_str = "\n".join([f"  ├ {s['fio']} (<i>{s['position']}</i>)" for s in data['staff']]) if data[
-                'staff'] else "  ├ Состав не выбран"
+            if selected_list:
+                placeholders = ','.join('?' for _ in selected_list)
+                async with db.conn.execute(f"SELECT fio, position FROM team_members WHERE id IN ({placeholders})",
+                                           selected_list) as cur:
+                    staff_rows = await cur.fetchall()
+            else:
+                staff_rows = []
 
+            staff_str = "\n".join(
+                [f"  ├ {r[0]} (<i>{r[1]}</i>)" for r in staff_rows]) if staff_rows else "  ├ Состав не выбран"
+
+            eq_data_str = app_dict.get('equipment_data', '')
             equip_text = ""
             if eq_data_str:
                 try:
@@ -354,23 +416,24 @@ async def publish_apps(tg_id: int = Form(0)):
                             equip_text += f"  ├ {eq['name']} (⏰ <i>{eq['time_start']}:00 - {eq['time_end']}:00</i>)\n"
                 except:
                     pass
-
             if not equip_text: equip_text = "🚜 <b>Техника:</b> Не требуется\n"
 
             text = (
                 f"🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n🏢 <b>ВИКС Расписание</b>\n━━━━━━━━━━━━━━━\n"
-                f"📅 <b>Дата:</b> <code>{details['date_target']}</code>\n📍 <b>Объект:</b> {details['object_address']}\n"
+                f"📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n"
                 f"{equip_text}\n"
-                f"👷‍♂️ <b>Прораб:</b> <b>{details['foreman_name']}</b>\n\n👥 <b>Бригада «{details['team_name']}»:</b>\n{staff_str}\n"
+                f"👷‍♂️ <b>Прораб:</b> <b>{app_dict['foreman_name']}</b>\n\n👥 <b>Бригада «{team_name}»:</b>\n{staff_str}\n"
             )
-            if details['comment'] and details[
-                'comment'].lower() != 'нет': text += f"\n💬 <b>Комментарий:</b> {details['comment']}"
+            if app_dict.get('comment') and app_dict['comment'].lower() != 'нет':
+                text += f"\n💬 <b>Комментарий:</b> {app_dict['comment']}"
 
             url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
             async with session.post(url, json={"chat_id": group_id, "text": text, "parse_mode": "HTML"}) as resp:
                 if resp.status == 200:
-                    await db.mark_app_as_published(app_id)
+                    await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))
+                    await db.conn.commit()
                     count += 1
+
     user = await db.get_user(tg_id)
     await db.add_log(tg_id, user['fio'] if user else "Руководство", f"Опубликовал {count} нарядов в группу")
     return {"status": "ok", "published": count}
