@@ -70,9 +70,9 @@ export default function TMAAuth() {
         </div>
       ) : needsPassword ? (
         <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl w-full max-w-sm border border-transparent dark:border-gray-700">
-          <h2 className="text-xl font-bold mb-4 text-center dark:text-white">Требуется регистрация</h2>
+          <h2 className="text-xl font-bold mb-4 text-center dark:text-white">Регистрация</h2>
           <form onSubmit={handleRegister} className="space-y-4">
-            <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">Введите пароль, который вам выдал администратор, чтобы получить доступ.</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 text-center mb-4">Введите пароль от администратора.</p>
             <input
                 type="password"
                 value={password}

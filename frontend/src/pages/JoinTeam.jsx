@@ -34,7 +34,7 @@ export default function JoinTeam() {
       };
       const script = document.createElement('script');
       script.src = 'https://telegram.org/js/telegram-widget.js?22';
-      script.setAttribute('data-telegram-login', 'viksstroy_bot'); // ЗАМЕНИТЬ НА НИК БОТА
+      script.setAttribute('data-telegram-login', 'viksstroy_bot');
       script.setAttribute('data-size', 'large');
       script.setAttribute('data-onauth', 'onTelegramAuthInvite(user)');
       script.async = true;
@@ -46,7 +46,11 @@ export default function JoinTeam() {
 
   const handleConfirmJoin = async () => {
     try {
-      const formData = new FormData(); formData.append('invite_code', code); formData.append('worker_id', selectedWorker.id); formData.append('tg_id', tgId);
+      const formData = new FormData();
+      formData.append('invite_code', code);
+      formData.append('worker_id', selectedWorker.id);
+      formData.append('tg_id', tgId);
+
       await axios.post('/api/invite/join', formData);
       navigate('/dashboard');
     } catch (err) {
@@ -105,13 +109,15 @@ export default function JoinTeam() {
       </div>
 
       {isConfirmModalOpen && selectedWorker && (
-        <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl transition-colors">
-                <h3 className="text-xl font-bold mb-2 dark:text-white">Подтверждение</h3>
-                <p className="text-gray-600 dark:text-gray-400 mb-6">Привязать аккаунт к профилю: <br/><b className="text-lg text-gray-900 dark:text-gray-100">{selectedWorker.fio}</b>?</p>
-                <div className="flex space-x-3">
-                    <button onClick={() => setConfirmModalOpen(false)} className="w-1/2 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl font-medium text-gray-700 dark:text-gray-300">Отмена</button>
-                    <button onClick={handleConfirmJoin} className="w-1/2 bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 shadow-md">Да, это я</button>
+        <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
+            <div className="flex min-h-screen items-center justify-center p-4">
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl transition-colors">
+                    <h3 className="text-xl font-bold mb-2 dark:text-white">Подтверждение</h3>
+                    <p className="text-gray-600 dark:text-gray-400 mb-6">Привязать аккаунт к профилю: <br/><b className="text-lg text-gray-900 dark:text-gray-100">{selectedWorker.fio}</b>?</p>
+                    <div className="flex space-x-3">
+                        <button onClick={() => setConfirmModalOpen(false)} className="w-1/2 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl font-medium text-gray-700 dark:text-gray-300">Отмена</button>
+                        <button onClick={handleConfirmJoin} className="w-1/2 bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 shadow-md">Да, это я</button>
+                    </div>
                 </div>
             </div>
         </div>
