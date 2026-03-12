@@ -57,7 +57,12 @@ export default function Dashboard() {
   const [editProfile, setEditProfile] = useState({});
   const [isEquipModalOpen, setEquipModalOpen] = useState(false);
   const [equipList, setEquipList] = useState([]);
-  const [newEquip, setNewEquip] = useState({ name: '', category: '' });
+
+  // УПРАВЛЕНИЕ ТЕХНИКОЙ
+  const [equipAddMode, setEquipAddMode] = useState('single'); // 'single' или 'bulk'
+  const [bulkEquipText, setBulkEquipText] = useState(''); // Текст для массового добавления
+  const [newEquip, setNewEquip] = useState({ name: '', driver: '', category: '' });
+
   const [customCategory, setCustomCategory] = useState('');
   const [isAppModalOpen, setAppModalOpen] = useState(false);
   const [teamMembers, setTeamMembers] = useState([]);
@@ -118,7 +123,9 @@ export default function Dashboard() {
       setAppForm(prev => {
           const exists = prev.equipment.find(e => e.id === equip.id);
           if (exists) return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id) };
-          return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: equip.name, time_start: '08', time_end: '17' }] };
+          // При выборе техники формируем красивое название для заявки: Название (ФИО)
+          const displayName = equip.driver ? `${equip.name} (${equip.driver})` : equip.name;
+          return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: '08', time_end: '17' }] };
       });
   };
 
@@ -224,14 +231,47 @@ export default function Dashboard() {
           const fd = new FormData();
           fd.append('name', newEquip.name);
           fd.append('category', finalCategory);
+          fd.append('driver', newEquip.driver || '');
           fd.append('tg_id', tgId);
+
           await axios.post('/api/equipment/add', fd);
-          setNewEquip({ name: '', category: data.equip_categories?.[0] || '' });
+
+          setNewEquip({ name: '', driver: '', category: data.equip_categories?.[0] || '' });
           setCustomCategory('');
           const res = await axios.get('/api/equipment/admin_list');
           setEquipList(res.data || []);
           fetchData();
       } catch (e) { alert("Ошибка"); }
+  };
+
+  // МАССОВОЕ ДОБАВЛЕНИЕ ТЕХНИКИ
+  const handleBulkAddEquip = async (e) => {
+      e.preventDefault();
+      const lines = bulkEquipText.split('\n').filter(line => line.trim() !== '');
+      if (lines.length === 0) return alert("Введите хотя бы одну строку");
+
+      const items = lines.map(line => {
+          // Формат: Категория ; Название ; ФИО водителя
+          const parts = line.split(';').map(p => p.trim());
+          return {
+              category: parts[0] || 'Другое',
+              name: parts[1] || 'Без названия',
+              driver: parts[2] || ''
+          };
+      });
+
+      try {
+          await axios.post('/api/equipment/bulk_add', { items, tg_id: tgId });
+          setBulkEquipText('');
+          setEquipAddMode('single');
+          alert(`Успешно добавлено ${items.length} ед. техники!`);
+
+          const res = await axios.get('/api/equipment/admin_list');
+          setEquipList(res.data || []);
+          fetchData();
+      } catch (err) {
+          alert("Ошибка массового добавления");
+      }
   };
 
   const handleToggleEquip = async (id, currentStatus) => {
@@ -670,9 +710,12 @@ export default function Dashboard() {
                                     <div className="flex flex-wrap gap-2">
                                         {data.equipment?.filter(e => e.category === activeEqCategory || (activeEqCategory === 'Другое' && !data.equip_categories.includes(e.category))).map(e => {
                                             const isSelected = appForm.equipment.some(eq => eq.id === e.id);
+                                            // ВАЖНО: Здесь уже подставляется ФИО водителя, если он есть
+                                            const displayName = e.driver ? `${e.name} (${e.driver})` : e.name;
+
                                             return (
-                                                <button key={e.id} type="button" onClick={() => toggleEquipmentSelection(e)} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100'}`}>
-                                                    {isSelected && <span className="mr-1.5 font-bold">✓</span>} {e.name}
+                                                <button key={e.id} type="button" onClick={() => toggleEquipmentSelection({id: e.id, name: displayName})} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100'}`}>
+                                                    {isSelected && <span className="mr-1.5 font-bold">✓</span>} {displayName}
                                                 </button>
                                             );
                                         })}
@@ -772,7 +815,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 3. УПРАВЛЕНИЕ АВТОПАРКОМ */}
+      {/* 3. УПРАВЛЕНИЕ АВТОПАРКОМ (С ВКЛАДКАМИ МАССОВОГО ДОБАВЛЕНИЯ) */}
       {isEquipModalOpen && (
         <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm">
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
@@ -787,7 +830,10 @@ export default function Dashboard() {
                             {equipList?.map(eq => (
                                 <div key={eq.id} className={`flex flex-col sm:flex-row justify-between sm:items-center p-3 mb-2 rounded-lg border dark:border-gray-600 shadow-sm transition-colors ${eq.is_active ? 'bg-white dark:bg-gray-700' : 'bg-gray-100 dark:bg-gray-800 opacity-60'}`}>
                                     <div className="mb-2 sm:mb-0">
-                                        <p className="font-bold text-gray-800 dark:text-gray-200">{eq.name}</p>
+                                        <p className="font-bold text-gray-800 dark:text-gray-200">
+                                            {eq.name}
+                                            {eq.driver && <span className="ml-2 text-sm font-normal text-gray-500 dark:text-gray-400">({eq.driver})</span>}
+                                        </p>
                                         <p className="text-xs text-gray-500 dark:text-gray-400 uppercase">{eq.category}</p>
                                     </div>
                                     <div className="flex items-center space-x-2">
@@ -800,27 +846,54 @@ export default function Dashboard() {
                             ))}
                         </div>
 
-                        <form onSubmit={handleAddEquip} className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-xl border border-blue-100 dark:border-blue-800">
-                            <h4 className="font-bold text-blue-800 dark:text-blue-400 mb-3 text-sm uppercase">Добавить новую технику</h4>
-                            <div className="mb-3">
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Название (например: Кран Ивановец 25т)</label>
-                                <input type="text" required value={newEquip.name} onChange={e => setNewEquip({...newEquip, name: e.target.value})} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none shadow-sm" />
+                        <div className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-xl border border-blue-100 dark:border-blue-800">
+                            <div className="flex space-x-2 mb-4 border-b border-blue-200 dark:border-blue-700/50 pb-2">
+                                <button onClick={() => setEquipAddMode('single')} className={`px-4 py-2 font-bold text-sm rounded-t-lg transition ${equipAddMode === 'single' ? 'text-blue-700 dark:text-blue-300 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Добавить одну</button>
+                                <button onClick={() => setEquipAddMode('bulk')} className={`px-4 py-2 font-bold text-sm rounded-t-lg transition ${equipAddMode === 'bulk' ? 'text-blue-700 dark:text-blue-300 border-b-2 border-blue-600' : 'text-gray-500 hover:text-gray-700'}`}>Массово (Списком)</button>
                             </div>
-                            <div className="mb-4">
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">Категория</label>
-                                <div className="flex flex-wrap gap-2">
-                                    {displayCategories.map(cat => (
-                                        <button key={cat} type="button" onClick={() => setNewEquip({...newEquip, category: cat})} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${newEquip.category === cat ? 'bg-blue-500 text-white border-blue-600 shadow-sm' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'}`}>
-                                            {cat}
-                                        </button>
-                                    ))}
-                                </div>
-                                {newEquip.category === 'Другое' && (
-                                    <input type="text" required placeholder="Введите свою категорию..." value={customCategory} onChange={e => setCustomCategory(e.target.value)} className="mt-3 w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none shadow-sm" />
-                                )}
-                            </div>
-                            <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700">Добавить в автопарк</button>
-                        </form>
+
+                            {equipAddMode === 'single' ? (
+                                <form onSubmit={handleAddEquip}>
+                                    <div className="flex flex-col sm:flex-row gap-3 mb-3">
+                                        <div className="w-full sm:w-1/2">
+                                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Название (Кран 25т)</label>
+                                            <input type="text" required value={newEquip.name} onChange={e => setNewEquip({...newEquip, name: e.target.value})} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none shadow-sm" />
+                                        </div>
+                                        <div className="w-full sm:w-1/2">
+                                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО водителя</label>
+                                            <input type="text" value={newEquip.driver} onChange={e => setNewEquip({...newEquip, driver: e.target.value})} placeholder="Необязательно" className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none shadow-sm" />
+                                        </div>
+                                    </div>
+                                    <div className="mb-4">
+                                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">Категория</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            {displayCategories.map(cat => (
+                                                <button key={cat} type="button" onClick={() => setNewEquip({...newEquip, category: cat})} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${newEquip.category === cat ? 'bg-blue-500 text-white border-blue-600 shadow-sm' : 'bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600'}`}>
+                                                    {cat}
+                                                </button>
+                                            ))}
+                                        </div>
+                                        {newEquip.category === 'Другое' && (
+                                            <input type="text" required placeholder="Введите свою категорию..." value={customCategory} onChange={e => setCustomCategory(e.target.value)} className="mt-3 w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none shadow-sm" />
+                                        )}
+                                    </div>
+                                    <button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-blue-700">Добавить в автопарк</button>
+                                </form>
+                            ) : (
+                                <form onSubmit={handleBulkAddEquip}>
+                                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Скопируйте из Excel. Формат строго: <b className="text-blue-600 dark:text-blue-400">Категория ; Название техники ; ФИО водителя</b></p>
+                                    <textarea
+                                        required
+                                        rows="5"
+                                        value={bulkEquipText}
+                                        onChange={e => setBulkEquipText(e.target.value)}
+                                        placeholder="Экскаватор; JCB 3CX; Иванов И.И.&#10;Кран; Ивановец 25т; Петров П.П.&#10;Самосвал; КАМАЗ;"
+                                        className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none shadow-sm mb-4 font-mono text-sm"
+                                    />
+                                    <button type="submit" className="w-full bg-emerald-600 text-white py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-emerald-700">Загрузить списком</button>
+                                </form>
+                            )}
+                        </div>
                     </div>
                 </div>
             </div>
