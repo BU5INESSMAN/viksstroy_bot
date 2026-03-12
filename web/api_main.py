@@ -37,14 +37,17 @@ async def startup():
     if hasattr(db, 'upgrade_db_for_foreman'):
         await db.upgrade_db_for_foreman()
 
-    # Авто-обновление базы данных (добавление колонки equipment_data)
+    # Авто-обновление базы данных (Патч для всех недостающих колонок)
     columns_to_add = [
+        ("foreman_id", "INTEGER"),
+        ("foreman_name", "TEXT"),
         ("equip_id", "INTEGER DEFAULT 0"),
         ("time_start", "TEXT DEFAULT '08'"),
         ("time_end", "TEXT DEFAULT '17'"),
         ("comment", "TEXT"),
         ("selected_members", "TEXT"),
-        ("equipment_data", "TEXT")  # Хранит JSON выбранной техники с их временем
+        ("equipment_data", "TEXT"),
+        ("status", "TEXT DEFAULT 'waiting'")
     ]
 
     for col_name, col_type in columns_to_add:
@@ -341,7 +344,6 @@ async def publish_apps(tg_id: int = Form(0)):
             staff_str = "\n".join([f"  ├ {s['fio']} (<i>{s['position']}</i>)" for s in data['staff']]) if data[
                 'staff'] else "  ├ Состав не выбран"
 
-            # Генерируем красивый текст для техники
             equip_text = ""
             if eq_data_str:
                 try:
