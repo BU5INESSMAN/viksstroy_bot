@@ -39,7 +39,7 @@ export default function Guide() {
         </div>
 
         <p className="text-lg text-gray-600 dark:text-gray-300 mb-8 leading-relaxed">
-            Добро пожаловать в справочное руководство <b>«ВИКС Расписание»</b>. Здесь подробно описаны все возможности Web-платформы и Telegram-бота для каждой должности.
+            Добро пожаловать в справочное руководство <b>«ВИКС Расписание»</b>. Здесь подробно описаны все возможности Web-платформы для каждой должности, а также инструкции по установке на телефон.
         </p>
 
         {/* 1. РЕГИСТРАЦИЯ И ВХОД */}
@@ -52,7 +52,7 @@ export default function Guide() {
             </Block>
 
             <Block title="Вход через Telegram Mini App (Бот)">
-                <p>В Telegram-боте нажмите кнопку <b>«Меню платформы»</b> (слева внизу). Приложение откроется прямо внутри мессенджера без необходимости вводить логин.</p>
+                <p>В Telegram-боте нажмите кнопку <b>«📱 Открыть платформу»</b>. Приложение откроется прямо внутри мессенджера без необходимости вводить логин.</p>
                 <p>При первом входе также может потребоваться системный пароль.</p>
             </Block>
 
@@ -85,7 +85,7 @@ export default function Guide() {
                 <ul className="list-disc pl-5 space-y-1 mt-2">
                     <li>Создание новых бригад.</li>
                     <li>Добавление людей в бригаду и назначение <b>⭐️ Бригадиров</b>.</li>
-                    <li>Генерация пригласительных ссылок для привязки рабочих к боту.</li>
+                    <li>Генерация пригласительных ссылок для привязки рабочих к платформе.</li>
                     <li><b>Создание заявок на выезд</b> (с выбором даты, адреса, техники и конкретных людей).</li>
                 </ul>
             </Block>
@@ -103,7 +103,7 @@ export default function Guide() {
                 <p>Полный контроль над всей платформой:</p>
                 <ul className="list-disc pl-5 space-y-1 mt-2">
                     <li>Просмотр детальной статистики (Одобрено/Отклонено/Ожидают).</li>
-                    <li><b>Панель управления техникой:</b> добавление автопарка по категориям, отправка техники «В ремонт» (отключение из списков выбора).</li>
+                    <li><b>Панель управления техникой:</b> добавление автопарка (по одной или массово списком), отправка техники «В ремонт».</li>
                     <li><b>CRM Пользователей:</b> Редактирование ФИО, Ролей и Бригад любых сотрудников. Полное удаление аккаунтов.</li>
                     <li>Доступ к глобальному <b>Журналу действий (Логам)</b> системы.</li>
                 </ul>
@@ -137,31 +137,92 @@ export default function Guide() {
                 <p>Как только заявка одобрена, на главной кнопке <b>«📤 Отправить наряды в группу»</b> появляется красный счетчик. Нажатие этой кнопки формирует красивый текст и отправляет все одобренные наряды в Telegram.</p>
             </Block>
 
-            <Block title="Управление Автопарком">
-                <p>Руководство может добавлять новую технику, выбирая стандартные категории (Кран, Экскаватор) или создавая свои через кнопку <b>«Другое»</b>.</p>
+            <Block title="Управление Автопарком (Для Админов)">
+                <p>Вы можете добавлять новую технику по одной, указывая категорию, название и ФИО водителя. Либо использовать вкладку <b>«Массово»</b>, просто скопировав список из Excel.</p>
                 <p>Если машина сломалась, нажмите кнопку <b>«В ремонт»</b> — она сразу же исчезнет из формы создания заявки у прорабов, чтобы предотвратить ошибки планирования.</p>
             </Block>
         </div>
 
-        {/* 4. ТЕЛЕГРАМ БОТ */}
-        <SectionTitle icon="🤖" title="Telegram Бот (@viksstroy_bot)" />
-        <div className="bg-blue-50 dark:bg-blue-900/10 p-6 rounded-xl border border-blue-200 dark:border-blue-800 shadow-sm">
-            <p className="mb-4">Наш Telegram-бот — это связующее звено между рабочими объектами и Web-системой. Он выполняет несколько ключевых функций:</p>
+        {/* 4. УСТАНОВКА PWA (ДОБАВЛЕНИЕ НА ГЛАВНЫЙ ЭКРАН) */}
+        <SectionTitle icon="📱" title="Установка на экран телефона (Приложение)" />
+        <div className="bg-blue-50 dark:bg-blue-900/10 p-6 rounded-xl border border-blue-200 dark:border-blue-800 shadow-sm mb-8">
+            <p className="mb-6 text-gray-700 dark:text-gray-300">
+                Вы можете установить нашу платформу прямо на рабочий стол вашего смартфона. Она будет открываться как полноценное приложение на весь экран (без адресной строки браузера). Выберите ваше устройство и браузер ниже:
+            </p>
 
-            <div className="space-y-4">
-                <div>
-                    <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center"><span className="mr-2">📲</span> 1. Уведомления и Рассылки</h4>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1">Все утвержденные модератором наряды автоматически публикуются ботом в главную рабочую группу. Текст сообщения красиво отформатирован, содержит эмодзи, адреса, точное время техники и список <b>только тех рабочих</b>, которые были выбраны на выезд.</p>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* БЛОК IOS */}
+                <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                    <h3 className="font-bold text-xl text-gray-900 dark:text-white flex items-center mb-4 border-b dark:border-gray-700 pb-2">
+                        🍎 Устройства Apple (iOS)
+                    </h3>
+                    <p className="font-semibold text-blue-700 dark:text-blue-400 mb-2">Браузер Safari (Рекомендуется):</p>
+                    <ol className="list-decimal pl-5 space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                        <li>Откройте сайт платформы в браузере <b>Safari</b>.</li>
+                        <li>В самом низу экрана по центру найдите и нажмите значок <b>«Поделиться»</b> (выглядит как квадрат со стрелочкой, направленной вверх ⬆️).</li>
+                        <li>В открывшемся меню прокрутите немного вниз и выберите пункт <b>«На экран "Домой"»</b> (рядом будет иконка квадрата с плюсиком ➕).</li>
+                        <li>В правом верхнем углу нажмите синюю кнопку <b>«Добавить»</b>.</li>
+                        <li className="font-medium text-green-600 dark:text-green-400">Готово! Иконка системы появится среди других ваших приложений.</li>
+                    </ol>
                 </div>
 
-                <div>
-                    <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center"><span className="mr-2">🔗</span> 2. Инвайт-система</h4>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1">Если рабочий переходит по Telegram-ссылке приглашения (вида <code>t.me/viksstroy_bot?start=team_XXX</code>), бот автоматически приветствует его, показывает название бригады и выдает интерактивные кнопки для привязки аккаунта в один клик.</p>
-                </div>
+                {/* БЛОК ANDROID */}
+                <div className="bg-white dark:bg-gray-800 p-5 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
+                    <h3 className="font-bold text-xl text-gray-900 dark:text-white flex items-center mb-4 border-b dark:border-gray-700 pb-2">
+                        🤖 Устройства Android
+                    </h3>
 
-                <div>
-                    <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center"><span className="mr-2">📱</span> 3. Mini App Integration</h4>
-                    <p className="text-gray-600 dark:text-gray-400 mt-1">Кнопка «Меню платформы» (или Web App кнопка рядом со скрепкой) открывает этот сайт в виде всплывающего окна внутри Telegram. Система мгновенно считывает ваш <code>telegram_id</code>, аватарку и пускает в дашборд без ввода логинов и паролей.</p>
+                    <div className="space-y-5">
+                        {/* Chrome */}
+                        <div>
+                            <p className="font-semibold text-blue-700 dark:text-blue-400 mb-1">Google Chrome:</p>
+                            <ol className="list-decimal pl-5 text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                                <li>Нажмите на <b>Три точки (⋮)</b> в правом верхнем углу браузера.</li>
+                                <li>В меню выберите пункт <b>«Добавить на главный экран»</b>.</li>
+                                <li>Подтвердите действие, нажав <b>«Добавить»</b>.</li>
+                            </ol>
+                        </div>
+
+                        {/* Yandex */}
+                        <div>
+                            <p className="font-semibold text-blue-700 dark:text-blue-400 mb-1">Яндекс Браузер:</p>
+                            <ol className="list-decimal pl-5 text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                                <li>Нажмите на <b>Три точки (⋮)</b> в адресной строке (или три полоски внизу).</li>
+                                <li>Выберите пункт <b>«Добавить на домашний экран»</b> (иногда называется «Ярлык на рабочий стол»).</li>
+                                <li>Нажмите <b>«Добавить»</b>.</li>
+                            </ol>
+                        </div>
+
+                        {/* Firefox */}
+                        <div>
+                            <p className="font-semibold text-blue-700 dark:text-blue-400 mb-1">Mozilla Firefox:</p>
+                            <ol className="list-decimal pl-5 text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                                <li>Нажмите на <b>Три точки (⋮)</b> рядом с адресной строкой.</li>
+                                <li>Выберите пункт <b>«Добавить на домашний экран»</b>.</li>
+                                <li>Подтвердите добавление ярлыка.</li>
+                            </ol>
+                        </div>
+
+                        {/* Samsung Internet */}
+                        <div>
+                            <p className="font-semibold text-blue-700 dark:text-blue-400 mb-1">Samsung Internet (Стандартный браузер):</p>
+                            <ol className="list-decimal pl-5 text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                                <li>Нажмите на значок меню (<b>три горизонтальные полоски ≡</b> в правом нижнем углу).</li>
+                                <li>Выберите пункт <b>«Добавить страницу в»</b>.</li>
+                                <li>Выберите <b>«Домашний экран»</b> и нажмите «Добавить».</li>
+                            </ol>
+                        </div>
+
+                        {/* Opera */}
+                        <div>
+                            <p className="font-semibold text-blue-700 dark:text-blue-400 mb-1">Opera / Opera GX:</p>
+                            <ol className="list-decimal pl-5 text-sm text-gray-700 dark:text-gray-300 space-y-1">
+                                <li>Нажмите на <b>Три точки (⋮)</b> в правом верхнем углу.</li>
+                                <li>Прокрутите вниз и выберите <b>«Домашний экран»</b>.</li>
+                                <li>Подтвердите действие.</li>
+                            </ol>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
