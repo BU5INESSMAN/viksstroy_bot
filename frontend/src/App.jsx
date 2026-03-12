@@ -14,15 +14,8 @@ function App() {
         <Route path="/tma" element={<TMAAuth />} />
         <Route path="/invite/:code" element={<JoinTeam />} />
         <Route path="/guide" element={<Guide />} />
-
-        <Route path="/dashboard" element={
-          <ProtectedRoute>
-            <Dashboard />
-          </ProtectedRoute>
-        } />
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       </Routes>
-
-      {/* Кнопка техподдержки будет отображаться поверх всех страниц */}
       <SupportButton />
     </Router>
   );
