@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import time
 import aiohttp
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,24 +34,24 @@ async def startup():
     await db.upgrade_db_for_logs()
     await db.upgrade_db_for_profiles()
 
-    # Защита от ошибки, если метод не был добавлен
     if hasattr(db, 'upgrade_db_for_foreman'):
         await db.upgrade_db_for_foreman()
 
-    # --- ПАТЧ: АВТО-ОБНОВЛЕНИЕ БАЗЫ ДАННЫХ ДЛЯ ЗАЯВОК ---
+    # Авто-обновление базы данных (добавление колонки equipment_data)
     columns_to_add = [
         ("equip_id", "INTEGER DEFAULT 0"),
         ("time_start", "TEXT DEFAULT '08'"),
         ("time_end", "TEXT DEFAULT '17'"),
         ("comment", "TEXT"),
-        ("selected_members", "TEXT")
+        ("selected_members", "TEXT"),
+        ("equipment_data", "TEXT")  # Хранит JSON выбранной техники с их временем
     ]
 
     for col_name, col_type in columns_to_add:
         try:
             await db.conn.execute(f"ALTER TABLE applications ADD COLUMN {col_name} {col_type}")
         except Exception:
-            pass  # Если колонка уже существует, просто идем дальше
+            pass
 
     await db.conn.execute("PRAGMA journal_mode=WAL;")
     await db.conn.commit()
@@ -257,7 +258,6 @@ async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Fo
 async def get_team_details(team_id: int):
     async with db.conn.execute("SELECT name FROM teams WHERE id = ?",
                                (team_id,)) as cur: team_row = await cur.fetchone()
-    # Сортируем: сначала бригадиры, потом остальные
     async with db.conn.execute(
             "SELECT id, fio, position, tg_id, is_foreman FROM team_members WHERE team_id = ? ORDER BY is_foreman DESC, id ASC",
             (team_id,)) as cur:
@@ -297,21 +297,20 @@ async def delete_team_member(member_id: int, tg_id: int = Form(0), admin_fio: st
 
 @app.post("/api/applications/create")
 async def create_app(
-        tg_id: int = Form(...), team_id: int = Form(...), equip_id: int = Form(0),
+        tg_id: int = Form(...), team_id: int = Form(...),
         date_target: str = Form(...), object_address: str = Form(...),
-        time_start: str = Form("08"), time_end: str = Form("17"), comment: str = Form(""),
-        selected_members: str = Form("")
+        comment: str = Form(""), selected_members: str = Form(""),
+        equipment_data: str = Form("")  # JSON со списком техники
 ):
     user = await db.get_user(tg_id)
     fio = user['fio'] if user else "Web-Пользователь"
     await db.conn.execute("""
                           INSERT INTO applications
                           (foreman_id, foreman_name, team_id, equip_id, date_target, object_address, time_start,
-                           time_end, comment, status, selected_members)
-                          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'waiting', ?)
+                           time_end, comment, status, selected_members, equipment_data)
+                          VALUES (?, ?, ?, 0, ?, ?, '08', '17', ?, 'waiting', ?, ?)
                           """,
-                          (tg_id, fio, team_id, equip_id, date_target, object_address, time_start, time_end, comment,
-                           selected_members))
+                          (tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
     await db.add_log(tg_id, fio, f"Создал заявку на выезд ({date_target}, {object_address})")
     return {"status": "ok"}
@@ -330,29 +329,38 @@ async def publish_apps(tg_id: int = Form(0)):
             data = await db.get_application_details(app_id)
             details = data['details']
 
-            async with db.conn.execute("SELECT selected_members FROM applications WHERE id = ?", (app_id,)) as cur:
-                sel_row = await cur.fetchone()
-                selected = sel_row[0] if sel_row and sel_row[0] else ""
+            async with db.conn.execute("SELECT selected_members, equipment_data FROM applications WHERE id = ?",
+                                       (app_id,)) as cur:
+                extra_row = await cur.fetchone()
+                selected = extra_row[0] if extra_row and extra_row[0] else ""
+                eq_data_str = extra_row[1] if extra_row and len(extra_row) > 1 and extra_row[1] else ""
 
             selected_list = [int(x.strip()) for x in selected.split(',')] if selected else []
-            if selected_list:
-                data['staff'] = [s for s in data['staff'] if s['id'] in selected_list]
+            if selected_list: data['staff'] = [s for s in data['staff'] if s['id'] in selected_list]
 
             staff_str = "\n".join([f"  ├ {s['fio']} (<i>{s['position']}</i>)" for s in data['staff']]) if data[
                 'staff'] else "  ├ Состав не выбран"
-            equip_str = details['equip_name'] if details.get('equip_id') and details[
-                'equip_id'] != 0 else "Не требуется"
-            time_str = f"{details['time_start']}:00 - {details['time_end']}:00" if details.get('equip_id') and details[
-                'equip_id'] != 0 else "Весь день"
+
+            # Генерируем красивый текст для техники
+            equip_text = ""
+            if eq_data_str:
+                try:
+                    eq_list = json.loads(eq_data_str)
+                    if eq_list:
+                        equip_text = "🚜 <b>Техника:</b>\n"
+                        for eq in eq_list:
+                            equip_text += f"  ├ {eq['name']} (⏰ <i>{eq['time_start']}:00 - {eq['time_end']}:00</i>)\n"
+                except:
+                    pass
+
+            if not equip_text: equip_text = "🚜 <b>Техника:</b> Не требуется\n"
 
             text = (
                 f"🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n🏢 <b>ВИКС Расписание</b>\n━━━━━━━━━━━━━━━\n"
                 f"📅 <b>Дата:</b> <code>{details['date_target']}</code>\n📍 <b>Объект:</b> {details['object_address']}\n"
-                f"🚜 <b>Техника:</b> {equip_str}\n"
+                f"{equip_text}\n"
+                f"👷‍♂️ <b>Прораб:</b> <b>{details['foreman_name']}</b>\n\n👥 <b>Бригада «{details['team_name']}»:</b>\n{staff_str}\n"
             )
-            if details.get('equip_id') and details['equip_id'] != 0: text += f"⏰ <b>Время техники:</b> {time_str}\n"
-
-            text += f"👷‍♂️ <b>Прораб:</b> <b>{details['foreman_name']}</b>\n\n👥 <b>Бригада «{details['team_name']}»:</b>\n{staff_str}\n"
             if details['comment'] and details[
                 'comment'].lower() != 'нет': text += f"\n💬 <b>Комментарий:</b> {details['comment']}"
 
