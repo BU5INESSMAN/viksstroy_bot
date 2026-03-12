@@ -31,7 +31,7 @@ db = DatabaseManager(db_path)
 async def startup():
     await db.init_db()
 
-    # Авто-обновление базы данных (Патч для всех колонок)
+    # Авто-обновление базы данных для заявок
     columns_to_add = [
         ("foreman_id", "INTEGER"),
         ("foreman_name", "TEXT"),
@@ -48,6 +48,12 @@ async def startup():
             await db.conn.execute(f"ALTER TABLE applications ADD COLUMN {col_name} {col_type}")
         except Exception:
             pass
+
+    # Авто-обновление базы данных для ТЕХНИКИ (добавляем водителя)
+    try:
+        await db.conn.execute("ALTER TABLE equipment ADD COLUMN driver TEXT DEFAULT ''")
+    except Exception:
+        pass
 
     await db.conn.execute("PRAGMA journal_mode=WAL;")
     await db.conn.commit()
@@ -172,10 +178,12 @@ async def get_dashboard_data():
         if cat and cat not in categories:
             categories.append(cat)
 
+    # Проверяем наличие ключа 'driver' безопасно
     return {
         "stats": stats,
         "teams": [{"id": t['id'], "name": t['name']} for t in teams],
-        "equipment": [{"id": e['id'], "name": e['name'], "category": e['category']} for e in equip if e['is_active']],
+        "equipment": [{"id": e['id'], "name": e['name'], "category": e['category'],
+                       "driver": e['driver'] if 'driver' in e.keys() else ""} for e in equip if e['is_active']],
         "equip_categories": categories
     }
 
@@ -486,19 +494,53 @@ async def get_active_app(tg_id: int):
 
 @app.get("/api/equipment/admin_list")
 async def admin_equip_list():
+    # Теперь запрашиваем driver из базы
     async with db.conn.execute(
-            "SELECT id, name, category, is_active FROM equipment ORDER BY category, name") as cur:
+            "SELECT id, name, category, is_active, driver FROM equipment ORDER BY category, name") as cur:
         rows = await cur.fetchall()
-    return [{"id": r[0], "name": r[1], "category": r[2], "is_active": bool(r[3])} for r in rows]
+
+    # Безопасное извлечение driver, если колонка вдруг не успела создаться
+    result = []
+    for r in rows:
+        driver = r[4] if len(r) > 4 and r[4] else ""
+        result.append({"id": r[0], "name": r[1], "category": r[2], "is_active": bool(r[3]), "driver": driver})
+    return result
 
 
 @app.post("/api/equipment/add")
-async def add_equipment(name: str = Form(...), category: str = Form(...), tg_id: int = Form(0)):
-    await db.conn.execute("INSERT INTO equipment (name, category, is_active) VALUES (?, ?, 1)", (name, category))
+async def add_equipment(name: str = Form(...), category: str = Form(...), driver: str = Form(""), tg_id: int = Form(0)):
+    # Сохраняем имя и водителя отдельно, как вы и просили
+    await db.conn.execute("INSERT INTO equipment (name, category, driver, is_active) VALUES (?, ?, ?, 1)",
+                          (name, category, driver))
     await db.conn.commit()
     user = await db.get_user(tg_id)
     await db.add_log(tg_id, user['fio'] if user else "Система", f"Добавил новую технику: {name}")
     return {"status": "ok"}
+
+
+@app.post("/api/equipment/bulk_add")
+async def bulk_add_equipment(request: Request):
+    """Новый эндпоинт для массового добавления техники (JSON)"""
+    data = await request.json()
+    items = data.get("items", [])
+    tg_id = data.get("tg_id", 0)
+
+    count = 0
+    for item in items:
+        name = item.get("name", "").strip()
+        category = item.get("category", "Другое").strip()
+        driver = item.get("driver", "").strip()
+
+        if name:
+            await db.conn.execute("INSERT INTO equipment (name, category, driver, is_active) VALUES (?, ?, ?, 1)",
+                                  (name, category, driver))
+            count += 1
+
+    await db.conn.commit()
+
+    user = await db.get_user(tg_id)
+    await db.add_log(tg_id, user['fio'] if user else "Система", f"Массово добавил {count} ед. техники")
+    return {"status": "ok", "added": count}
 
 
 @app.post("/api/equipment/{equip_id}/toggle")
