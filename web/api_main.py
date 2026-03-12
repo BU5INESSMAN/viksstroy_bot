@@ -31,29 +31,71 @@ db = DatabaseManager(db_path)
 async def startup():
     await db.init_db()
 
-    # Авто-обновление базы данных для заявок
+    # СУПЕР-ПАТЧ: Принудительное создание таблиц, если они отсутствуют в старой БД
+    await db.conn.execute("""
+                          CREATE TABLE IF NOT EXISTS logs
+                          (
+                              id
+                              INTEGER
+                              PRIMARY
+                              KEY
+                              AUTOINCREMENT,
+                              tg_id
+                              INTEGER,
+                              fio
+                              TEXT,
+                              action
+                              TEXT,
+                              timestamp
+                              DATETIME
+                              DEFAULT
+                              CURRENT_TIMESTAMP
+                          )
+                          """)
+    await db.conn.execute("""
+                          CREATE TABLE IF NOT EXISTS equipment
+                          (
+                              id
+                              INTEGER
+                              PRIMARY
+                              KEY
+                              AUTOINCREMENT,
+                              name
+                              TEXT,
+                              category
+                              TEXT,
+                              is_active
+                              INTEGER
+                              DEFAULT
+                              1,
+                              driver
+                              TEXT
+                              DEFAULT
+                              ''
+                          )
+                          """)
+
+    # Авто-обновление базы данных (Патч для абсолютно всех недостающих колонок)
     columns_to_add = [
-        ("foreman_id", "INTEGER"),
-        ("foreman_name", "TEXT"),
-        ("equip_id", "INTEGER DEFAULT 0"),
-        ("time_start", "TEXT DEFAULT '08'"),
-        ("time_end", "TEXT DEFAULT '17'"),
-        ("comment", "TEXT"),
-        ("selected_members", "TEXT"),
-        ("equipment_data", "TEXT"),
-        ("status", "TEXT DEFAULT 'waiting'")
+        ("applications", "foreman_id", "INTEGER"),
+        ("applications", "foreman_name", "TEXT"),
+        ("applications", "equip_id", "INTEGER DEFAULT 0"),
+        ("applications", "time_start", "TEXT DEFAULT '08'"),
+        ("applications", "time_end", "TEXT DEFAULT '17'"),
+        ("applications", "comment", "TEXT"),
+        ("applications", "selected_members", "TEXT"),
+        ("applications", "equipment_data", "TEXT"),
+        ("applications", "status", "TEXT DEFAULT 'waiting'"),
+        ("team_members", "tg_id", "INTEGER"),
+        ("team_members", "is_foreman", "INTEGER DEFAULT 0"),
+        ("users", "avatar_url", "TEXT"),
+        ("equipment", "driver", "TEXT DEFAULT ''")
     ]
-    for col_name, col_type in columns_to_add:
+    for table, col_name, col_type in columns_to_add:
         try:
-            await db.conn.execute(f"ALTER TABLE applications ADD COLUMN {col_name} {col_type}")
+            await db.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
         except Exception:
             pass
-
-    # Авто-обновление базы данных для ТЕХНИКИ (добавляем водителя)
-    try:
-        await db.conn.execute("ALTER TABLE equipment ADD COLUMN driver TEXT DEFAULT ''")
-    except Exception:
-        pass
 
     await db.conn.execute("PRAGMA journal_mode=WAL;")
     await db.conn.commit()
@@ -494,12 +536,10 @@ async def get_active_app(tg_id: int):
 
 @app.get("/api/equipment/admin_list")
 async def admin_equip_list():
-    # Теперь запрашиваем driver из базы
     async with db.conn.execute(
             "SELECT id, name, category, is_active, driver FROM equipment ORDER BY category, name") as cur:
         rows = await cur.fetchall()
 
-    # Безопасное извлечение driver, если колонка вдруг не успела создаться
     result = []
     for r in rows:
         driver = r[4] if len(r) > 4 and r[4] else ""
@@ -509,7 +549,6 @@ async def admin_equip_list():
 
 @app.post("/api/equipment/add")
 async def add_equipment(name: str = Form(...), category: str = Form(...), driver: str = Form(""), tg_id: int = Form(0)):
-    # Сохраняем имя и водителя отдельно, как вы и просили
     await db.conn.execute("INSERT INTO equipment (name, category, driver, is_active) VALUES (?, ?, ?, 1)",
                           (name, category, driver))
     await db.conn.commit()
@@ -520,7 +559,6 @@ async def add_equipment(name: str = Form(...), category: str = Form(...), driver
 
 @app.post("/api/equipment/bulk_add")
 async def bulk_add_equipment(request: Request):
-    """Новый эндпоинт для массового добавления техники (JSON)"""
     data = await request.json()
     items = data.get("items", [])
     tg_id = data.get("tg_id", 0)
