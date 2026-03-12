@@ -31,51 +31,27 @@ db = DatabaseManager(db_path)
 async def startup():
     await db.init_db()
 
-    # СУПЕР-ПАТЧ: Принудительное создание таблиц, если они отсутствуют в старой БД
+    # СУПЕР-ПАТЧ: Принудительное создание таблиц
     await db.conn.execute("""
-                          CREATE TABLE IF NOT EXISTS logs
-                          (
-                              id
-                              INTEGER
-                              PRIMARY
-                              KEY
-                              AUTOINCREMENT,
-                              tg_id
-                              INTEGER,
-                              fio
-                              TEXT,
-                              action
-                              TEXT,
-                              timestamp
-                              DATETIME
-                              DEFAULT
-                              CURRENT_TIMESTAMP
-                          )
-                          """)
+        CREATE TABLE IF NOT EXISTS logs(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            tg_id INTEGER,
+            fio TEXT,
+            action TEXT,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
     await db.conn.execute("""
-                          CREATE TABLE IF NOT EXISTS equipment
-                          (
-                              id
-                              INTEGER
-                              PRIMARY
-                              KEY
-                              AUTOINCREMENT,
-                              name
-                              TEXT,
-                              category
-                              TEXT,
-                              is_active
-                              INTEGER
-                              DEFAULT
-                              1,
-                              driver
-                              TEXT
-                              DEFAULT
-                              ''
-                          )
-                          """)
+        CREATE TABLE IF NOT EXISTS equipment (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT,
+            category TEXT,
+            is_active INTEGER DEFAULT 1,
+            driver TEXT DEFAULT ''
+        )
+    """)
 
-    # Авто-обновление базы данных (Патч для абсолютно всех недостающих колонок)
+    # Авто-обновление базы данных (Патч для всех колонок)
     columns_to_add = [
         ("applications", "foreman_id", "INTEGER"),
         ("applications", "foreman_name", "TEXT"),
@@ -137,12 +113,15 @@ async def telegram_auth(data: dict):
             raise HTTPException(status_code=403, detail="Пользователь заблокирован")
         if photo_url:
             await db.update_user_avatar(tg_id, photo_url)
+
+        # ИСПРАВЛЕНИЕ: преобразуем user в dict для безопасного .get()
+        user_dict = dict(user)
         return {
             "status": "ok",
-            "role": user['role'],
-            "fio": user['fio'],
+            "role": user_dict['role'],
+            "fio": user_dict['fio'],
             "tg_id": tg_id,
-            "avatar_url": user.get('avatar_url', photo_url)
+            "avatar_url": user_dict.get('avatar_url', photo_url)
         }
 
     env_role = check_env_roles(tg_id)
@@ -220,12 +199,10 @@ async def get_dashboard_data():
         if cat and cat not in categories:
             categories.append(cat)
 
-    # Проверяем наличие ключа 'driver' безопасно
     return {
         "stats": stats,
         "teams": [{"id": t['id'], "name": t['name']} for t in teams],
-        "equipment": [{"id": e['id'], "name": e['name'], "category": e['category'],
-                       "driver": e['driver'] if 'driver' in e.keys() else ""} for e in equip if e['is_active']],
+        "equipment": [{"id": e['id'], "name": e['name'], "category": e['category'], "driver": e['driver'] if 'driver' in e.keys() else ""} for e in equip if e['is_active']],
         "equip_categories": categories
     }
 
@@ -238,8 +215,18 @@ async def get_logs():
 @app.get("/api/users")
 async def api_get_users():
     users = await db.get_all_users()
-    return [{"user_id": u['user_id'], "fio": u['fio'], "role": u['role'], "is_blacklisted": u['is_blacklisted'],
-             "avatar_url": u.get('avatar_url', '')} for u in users]
+    # ИСПРАВЛЕНИЕ: Преобразуем каждую строку БД в словарь (dict), чтобы работал метод .get()
+    result = []
+    for u in users:
+        u_dict = dict(u)
+        result.append({
+            "user_id": u_dict['user_id'],
+            "fio": u_dict['fio'],
+            "role": u_dict['role'],
+            "is_blacklisted": u_dict['is_blacklisted'],
+            "avatar_url": u_dict.get('avatar_url', '')
+        })
+    return result
 
 
 @app.get("/api/users/{target_id}/profile")
@@ -549,8 +536,7 @@ async def admin_equip_list():
 
 @app.post("/api/equipment/add")
 async def add_equipment(name: str = Form(...), category: str = Form(...), driver: str = Form(""), tg_id: int = Form(0)):
-    await db.conn.execute("INSERT INTO equipment (name, category, driver, is_active) VALUES (?, ?, ?, 1)",
-                          (name, category, driver))
+    await db.conn.execute("INSERT INTO equipment (name, category, driver, is_active) VALUES (?, ?, ?, 1)", (name, category, driver))
     await db.conn.commit()
     user = await db.get_user(tg_id)
     await db.add_log(tg_id, user['fio'] if user else "Система", f"Добавил новую технику: {name}")
@@ -570,8 +556,7 @@ async def bulk_add_equipment(request: Request):
         driver = item.get("driver", "").strip()
 
         if name:
-            await db.conn.execute("INSERT INTO equipment (name, category, driver, is_active) VALUES (?, ?, ?, 1)",
-                                  (name, category, driver))
+            await db.conn.execute("INSERT INTO equipment (name, category, driver, is_active) VALUES (?, ?, ?, 1)", (name, category, driver))
             count += 1
 
     await db.conn.commit()
