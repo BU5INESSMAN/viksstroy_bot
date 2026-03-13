@@ -18,6 +18,8 @@ const getSmartDates = () => {
 export default function Dashboard() {
   const smartDates = getSmartDates();
 
+  const [activeTab, setActiveTab] = useState('home'); // НОВОЕ: Система вкладок
+
   const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [] });
   const [activeApp, setActiveApp] = useState(null);
   const [logs, setLogs] = useState([]);
@@ -59,8 +61,8 @@ export default function Dashboard() {
   const [equipList, setEquipList] = useState([]);
 
   // УПРАВЛЕНИЕ ТЕХНИКОЙ
-  const [equipAddMode, setEquipAddMode] = useState('single'); // 'single' или 'bulk'
-  const [bulkEquipText, setBulkEquipText] = useState(''); // Текст для массового добавления
+  const [equipAddMode, setEquipAddMode] = useState('single');
+  const [bulkEquipText, setBulkEquipText] = useState('');
   const [newEquip, setNewEquip] = useState({ name: '', driver: '', category: '' });
 
   const [customCategory, setCustomCategory] = useState('');
@@ -123,7 +125,6 @@ export default function Dashboard() {
       setAppForm(prev => {
           const exists = prev.equipment.find(e => e.id === equip.id);
           if (exists) return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id) };
-          // При выборе техники формируем красивое название для заявки: Название (ФИО)
           const displayName = equip.driver ? `${equip.name} (${equip.driver})` : equip.name;
           return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: '08', time_end: '17' }] };
       });
@@ -244,14 +245,12 @@ export default function Dashboard() {
       } catch (e) { alert("Ошибка"); }
   };
 
-  // МАССОВОЕ ДОБАВЛЕНИЕ ТЕХНИКИ
   const handleBulkAddEquip = async (e) => {
       e.preventDefault();
       const lines = bulkEquipText.split('\n').filter(line => line.trim() !== '');
       if (lines.length === 0) return alert("Введите хотя бы одну строку");
 
       const items = lines.map(line => {
-          // Формат: Категория ; Название ; ФИО водителя
           const parts = line.split(';').map(p => p.trim());
           return {
               category: parts[0] || 'Другое',
@@ -446,11 +445,12 @@ export default function Dashboard() {
   if (loading) return <div className="flex items-center justify-center min-h-screen text-gray-800 dark:text-gray-200"><div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600 dark:border-blue-900 dark:border-t-blue-500"></div></div>;
 
   return (
-    <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-10 transition-colors duration-200">
+    <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
 
-      {/* НАВИГАЦИЯ */}
+      {/* НАВИГАЦИЯ ВЕРХНЯЯ */}
       <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 px-4 sm:px-6 py-4 flex justify-between items-center mb-6 transition-colors duration-200">
-        <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">ВИКС Расписание</h1>
+        <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400 hidden sm:block">ВИКС Расписание</h1>
+        <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400 sm:hidden">ВИКС</h1>
         <div className="flex items-center space-x-2 sm:space-x-4">
           <button onClick={toggleTheme} className="text-xl w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition" title={themeTitle}>{themeIcon}</button>
           <button onClick={() => navigate('/guide')} className="flex items-center space-x-2 hover:bg-gray-50 dark:hover:bg-gray-700 px-3 py-1.5 rounded-lg transition border border-transparent hover:border-gray-200 dark:hover:border-gray-600">
@@ -469,79 +469,82 @@ export default function Dashboard() {
 
       <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
-        {/* СТАТИСТИКА */}
-        {showStats && (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
-              <StatCard title="Заявок сегодня" value={data?.stats?.today_total || 0} color="blue" />
-              <StatCard title="Одобрено" value={data?.stats?.today_approved || 0} color="green" text="text-green-600 dark:text-green-400" />
-              <StatCard title="Отклонено" value={data?.stats?.today_rejected || 0} color="red" text="text-red-600 dark:text-red-400" />
-              <StatCard title="Ожидают" value={data?.stats?.waiting_publish || 0} color="yellow" text="text-yellow-600 dark:text-yellow-400" />
+        {/* --- ВКЛАДКА 1: ГЛАВНАЯ --- */}
+        {activeTab === 'home' && (
+            <div className="space-y-6">
+                {showStats && (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                      <StatCard title="Заявок сегодня" value={data?.stats?.today_total || 0} color="blue" />
+                      <StatCard title="Одобрено" value={data?.stats?.today_approved || 0} color="green" text="text-green-600 dark:text-green-400" />
+                      <StatCard title="Отклонено" value={data?.stats?.today_rejected || 0} color="red" text="text-red-600 dark:text-red-400" />
+                      <StatCard title="Ожидают" value={data?.stats?.waiting_publish || 0} color="yellow" text="text-yellow-600 dark:text-yellow-400" />
+                    </div>
+                )}
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {showActiveOrder && (
+                        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border-l-4 border-blue-500 relative transition-colors duration-200 h-fit">
+                            <h2 className="text-lg font-bold mb-2 flex items-center">📋 Действующий наряд</h2>
+                            {activeApp ? (
+                                <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-sm space-y-2">
+                                   <p><b>Дата:</b> {activeApp?.date_target}</p>
+                                   <p><b>Объект:</b> {activeApp?.object_address}</p>
+                                   <p><b>Техника:</b> {activeEquipText}</p>
+                                   <p><b>Бригада:</b> {activeApp?.team_name}</p>
+                                </div>
+                            ) : (<p className="text-center text-blue-600 dark:text-blue-400 font-medium text-sm p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">Активных нарядов пока нет.</p>)}
+                        </div>
+                    )}
+
+                    {(showCreateOrder || showPublishOrder || showAdminPanel) && (
+                        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200 h-fit">
+                            <h2 className="text-lg font-bold mb-4 flex items-center">⚙️ Панель действий</h2>
+                            <div className="space-y-3">
+                            {showCreateOrder && (<button onClick={() => setAppModalOpen(true)} className="w-full bg-blue-600 text-white py-3 rounded-lg shadow hover:bg-blue-700 font-medium">📝 Создать заявку</button>)}
+
+                            {showPublishOrder && (
+                                <button onClick={handlePublishAppsClick} className="relative w-full bg-emerald-500 text-white py-3 rounded-lg shadow hover:bg-emerald-600 font-medium flex items-center justify-center transition">
+                                    📤 Отправить наряды в группу
+                                    {approvedAppsCount > 0 && (
+                                        <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-lg border-2 border-white dark:border-gray-800 animate-bounce">
+                                            {approvedAppsCount}
+                                        </span>
+                                    )}
+                                </button>
+                            )}
+
+                            {showAdminPanel && (<button onClick={openEquipModal} className="w-full bg-gray-800 dark:bg-gray-700 text-white py-3 rounded-lg shadow hover:bg-gray-900 dark:hover:bg-gray-600 font-medium">🛠 Панель управления техникой</button>)}
+                            </div>
+                        </div>
+                    )}
+                </div>
             </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* БРИГАДЫ */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
-            <h2 className="text-lg font-bold mb-4 flex items-center">👥 {showTeamManagement ? "Управление бригадами" : "Моя бригада"}</h2>
-            {data?.teams?.length > 0 ? (
-                <ul className="space-y-3">
-                {data.teams.map(t => (
-                    <li key={t.id} className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-colors">
-                        <span className="font-medium text-gray-800 dark:text-gray-200">🏗 {t.name}</span>
-                        <div className="flex space-x-2 w-full sm:w-auto mt-2 sm:mt-0">
-                            {showTeamManagement && (<button onClick={() => handleGenerateInvite(t.id)} className="flex-1 sm:flex-none text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-3 py-1.5 rounded hover:bg-green-200 dark:hover:bg-green-900/60 text-sm font-medium transition">🔗 Ссылка</button>)}
-                            <button onClick={() => openManageModal(t.id)} className="flex-1 sm:flex-none text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-3 py-1.5 rounded hover:bg-blue-200 dark:hover:bg-blue-900/60 text-sm font-medium transition">Управлять</button>
-                        </div>
-                    </li>
-                ))}
-                </ul>
-            ) : (<p className="text-gray-500 dark:text-gray-400 text-sm">Список пуст.</p>)}
-            {showTeamManagement && (<button onClick={() => setTeamModalOpen(true)} className="mt-5 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 py-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 font-medium transition-colors">+ Создать новую бригаду</button>)}
-          </div>
+        {/* --- ВКЛАДКА 2: БРИГАДЫ --- */}
+        {activeTab === 'teams' && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
+              <h2 className="text-lg font-bold mb-4 flex items-center">👥 {showTeamManagement ? "Управление бригадами" : "Моя бригада"}</h2>
+              {data?.teams?.length > 0 ? (
+                  <ul className="space-y-3">
+                  {data.teams.map(t => (
+                      <li key={t.id} className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-colors">
+                          <span className="font-medium text-gray-800 dark:text-gray-200">🏗 {t.name}</span>
+                          <div className="flex space-x-2 w-full sm:w-auto mt-2 sm:mt-0">
+                              {showTeamManagement && (<button onClick={() => handleGenerateInvite(t.id)} className="flex-1 sm:flex-none text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-3 py-1.5 rounded hover:bg-green-200 dark:hover:bg-green-900/60 text-sm font-medium transition">🔗 Ссылка</button>)}
+                              <button onClick={() => openManageModal(t.id)} className="flex-1 sm:flex-none text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-3 py-1.5 rounded hover:bg-blue-200 dark:hover:bg-blue-900/60 text-sm font-medium transition">Управлять</button>
+                          </div>
+                      </li>
+                  ))}
+                  </ul>
+              ) : (<p className="text-gray-500 dark:text-gray-400 text-sm">Список пуст.</p>)}
+              {showTeamManagement && (<button onClick={() => setTeamModalOpen(true)} className="mt-5 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 py-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 font-medium transition-colors">+ Создать новую бригаду</button>)}
+            </div>
+        )}
 
-          {/* ПАНЕЛЬ АКТИВНОГО НАРЯДА И ДЕЙСТВИЙ */}
-          <div className="space-y-6">
-            {showActiveOrder && (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border-l-4 border-blue-500 relative transition-colors duration-200">
-                    <h2 className="text-lg font-bold mb-2 flex items-center">📋 Действующий наряд</h2>
-                    {activeApp ? (
-                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-100 dark:border-blue-800 text-sm space-y-2">
-                           <p><b>Дата:</b> {activeApp?.date_target}</p>
-                           <p><b>Объект:</b> {activeApp?.object_address}</p>
-                           <p><b>Техника:</b> {activeEquipText}</p>
-                           <p><b>Бригада:</b> {activeApp?.team_name}</p>
-                        </div>
-                    ) : (<p className="text-center text-blue-600 dark:text-blue-400 font-medium text-sm p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">Активных нарядов пока нет.</p>)}
-                </div>
-            )}
-
-            {(showCreateOrder || showPublishOrder || showAdminPanel) && (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
-                    <h2 className="text-lg font-bold mb-4 flex items-center">⚙️ Панель действий</h2>
-                    <div className="space-y-3">
-                    {showCreateOrder && (<button onClick={() => setAppModalOpen(true)} className="w-full bg-blue-600 text-white py-3 rounded-lg shadow hover:bg-blue-700 font-medium">📝 Создать заявку</button>)}
-
-                    {showPublishOrder && (
-                        <button onClick={handlePublishAppsClick} className="relative w-full bg-emerald-500 text-white py-3 rounded-lg shadow hover:bg-emerald-600 font-medium flex items-center justify-center transition">
-                            📤 Отправить наряды в группу
-                            {approvedAppsCount > 0 && (
-                                <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-lg border-2 border-white dark:border-gray-800 animate-bounce">
-                                    {approvedAppsCount}
-                                </span>
-                            )}
-                        </button>
-                    )}
-
-                    {showAdminPanel && (<button onClick={openEquipModal} className="w-full bg-gray-800 dark:bg-gray-700 text-white py-3 rounded-lg shadow hover:bg-gray-900 dark:hover:bg-gray-600 font-medium">🛠 Панель управления техникой</button>)}
-                    </div>
-                </div>
-            )}
-          </div>
-        </div>
-
-        {/* ЗАЯВКИ НА РАССМОТРЕНИИ */}
-        {showReviewPanel && (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 mt-6 transition-colors duration-200">
+        {/* --- ВКЛАДКА 3: МОДЕРАЦИЯ --- */}
+        {activeTab === 'review' && showReviewPanel && (
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6">
                     <h2 className="text-lg font-bold flex items-center text-gray-800 dark:text-gray-100">
                         <span className="text-2xl mr-2">📋</span> Заявки на рассмотрении
@@ -587,49 +590,85 @@ export default function Dashboard() {
             </div>
         )}
 
-        {/* ПОЛЬЗОВАТЕЛИ */}
-        {showUsersAndLogs && (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 mt-6 transition-colors duration-200">
-                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">👨‍💼</span> Пользователи системы</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                    {users?.map(u => (
-                        <div key={u.user_id} onClick={() => openProfile(u.user_id)} className="flex items-center p-3 border border-gray-200 dark:border-gray-600 rounded-xl hover:shadow-md cursor-pointer transition bg-white dark:bg-gray-700 group hover:border-blue-300 dark:hover:border-blue-500">
-                            <div className="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-600 mr-3 flex-shrink-0 overflow-hidden bg-cover bg-center" style={{ backgroundImage: u.avatar_url ? `url(${u.avatar_url})` : 'none' }}>
-                                {!u.avatar_url && <span className="flex items-center justify-center w-full h-full text-xl text-gray-400 dark:text-gray-300">👤</span>}
+        {/* --- ВКЛАДКА 4: СИСТЕМА --- */}
+        {activeTab === 'system' && showUsersAndLogs && (
+            <div className="space-y-6">
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
+                    <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">👨‍💼</span> Пользователи системы</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                        {users?.map(u => (
+                            <div key={u.user_id} onClick={() => openProfile(u.user_id)} className="flex items-center p-3 border border-gray-200 dark:border-gray-600 rounded-xl hover:shadow-md cursor-pointer transition bg-white dark:bg-gray-700 group hover:border-blue-300 dark:hover:border-blue-500">
+                                <div className="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-600 mr-3 flex-shrink-0 overflow-hidden bg-cover bg-center" style={{ backgroundImage: u.avatar_url ? `url(${u.avatar_url})` : 'none' }}>
+                                    {!u.avatar_url && <span className="flex items-center justify-center w-full h-full text-xl text-gray-400 dark:text-gray-300">👤</span>}
+                                </div>
+                                <div className="overflow-hidden">
+                                    <p className="font-bold text-gray-800 dark:text-gray-200 text-sm truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">{u.fio}</p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 uppercase mt-0.5">{roleNames[u.role]}</p>
+                                </div>
                             </div>
-                            <div className="overflow-hidden">
-                                <p className="font-bold text-gray-800 dark:text-gray-200 text-sm truncate group-hover:text-blue-600 dark:group-hover:text-blue-400">{u.fio}</p>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase mt-0.5">{roleNames[u.role]}</p>
-                            </div>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
+
+                {['boss', 'superadmin'].includes(role) && (
+                    <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
+                        <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📜</span> Журнал действий системы</h2>
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                                <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700">
+                                    <tr><th className="px-6 py-3">Время</th><th className="px-6 py-3">Пользователь</th><th className="px-6 py-3">Действие</th></tr>
+                                </thead>
+                                <tbody>
+                                    {logs?.map((log) => (
+                                        <tr key={log.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                            <td className="px-6 py-4 whitespace-nowrap">{log.timestamp ? new Date(log.timestamp).toLocaleString('ru-RU') : ''}</td>
+                                            <td className="px-6 py-4 font-medium text-gray-900 dark:text-gray-200">{log.fio}</td>
+                                            <td className="px-6 py-4 text-blue-600 dark:text-blue-400">{log.action}</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
             </div>
         )}
 
-        {/* ЛОГИ */}
-        {['boss', 'superadmin'].includes(role) && (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 mt-6 transition-colors duration-200">
-                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📜</span> Журнал действий системы</h2>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-                        <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700">
-                            <tr><th className="px-6 py-3">Время</th><th className="px-6 py-3">Пользователь</th><th className="px-6 py-3">Действие</th></tr>
-                        </thead>
-                        <tbody>
-                            {logs?.map((log) => (
-                                <tr key={log.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                    <td className="px-6 py-4 whitespace-nowrap">{log.timestamp ? new Date(log.timestamp).toLocaleString('ru-RU') : ''}</td>
-                                    <td className="px-6 py-4 font-medium text-gray-900 dark:text-gray-200">{log.fio}</td>
-                                    <td className="px-6 py-4 text-blue-600 dark:text-blue-400">{log.action}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-        )}
       </main>
+
+      {/* НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ */}
+      <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-40 flex justify-around items-center pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] transition-colors">
+          <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center py-3 w-full transition-colors ${activeTab === 'home' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+              <span className="text-2xl mb-1">🏠</span>
+              <span className="text-[10px] font-bold uppercase tracking-wide">Главная</span>
+          </button>
+
+          <button onClick={() => setActiveTab('teams')} className={`flex flex-col items-center py-3 w-full transition-colors ${activeTab === 'teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+              <span className="text-2xl mb-1">👥</span>
+              <span className="text-[10px] font-bold uppercase tracking-wide">Бригады</span>
+          </button>
+
+          {showReviewPanel && (
+              <button onClick={() => setActiveTab('review')} className={`flex flex-col items-center py-3 w-full relative transition-colors ${activeTab === 'review' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                  <span className="text-2xl mb-1 relative">
+                      📋
+                      {reviewApps.filter(a => a.status === 'waiting').length > 0 && (
+                          <span className="absolute -top-1 -right-2 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white dark:border-gray-800">
+                              {reviewApps.filter(a => a.status === 'waiting').length}
+                          </span>
+                      )}
+                  </span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide">Заявки</span>
+              </button>
+          )}
+
+          {showUsersAndLogs && (
+              <button onClick={() => setActiveTab('system')} className={`flex flex-col items-center py-3 w-full transition-colors ${activeTab === 'system' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                  <span className="text-2xl mb-1">⚙️</span>
+                  <span className="text-[10px] font-bold uppercase tracking-wide">Система</span>
+              </button>
+          )}
+      </div>
 
       {/* --- МОДАЛЬНЫЕ ОКНА --- */}
 
@@ -710,11 +749,10 @@ export default function Dashboard() {
                                     <div className="flex flex-wrap gap-2">
                                         {data.equipment?.filter(e => e.category === activeEqCategory || (activeEqCategory === 'Другое' && !data.equip_categories.includes(e.category))).map(e => {
                                             const isSelected = appForm.equipment.some(eq => eq.id === e.id);
-                                            // ВАЖНО: Здесь уже подставляется ФИО водителя, если он есть
                                             const displayName = e.driver ? `${e.name} (${e.driver})` : e.name;
 
                                             return (
-                                                <button key={e.id} type="button" onClick={() => toggleEquipmentSelection({id: e.id, name: displayName})} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100'}`}>
+                                                <button key={e.id} type="button" onClick={() => toggleEquipmentSelection({id: e.id, name: displayName, driver: e.driver})} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100'}`}>
                                                     {isSelected && <span className="mr-1.5 font-bold">✓</span>} {displayName}
                                                 </button>
                                             );
@@ -815,7 +853,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* 3. УПРАВЛЕНИЕ АВТОПАРКОМ (С ВКЛАДКАМИ МАССОВОГО ДОБАВЛЕНИЯ) */}
+      {/* 3. УПРАВЛЕНИЕ АВТОПАРКОМ */}
       {isEquipModalOpen && (
         <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm">
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
