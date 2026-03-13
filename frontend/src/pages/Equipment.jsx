@@ -11,17 +11,17 @@ export default function Equipment() {
     const [categories, setCategories] = useState([]);
     const [loading, setLoading] = useState(true);
 
-    const [activeTab, setActiveTab] = useState('list'); // 'list', 'add_single', 'add_bulk'
+    const [activeTab, setActiveTab] = useState('list');
 
-    // Form states
     const [newEquip, setNewEquip] = useState({ name: '', driver: '', category: '' });
     const [customCategory, setCustomCategory] = useState('');
     const [bulkText, setBulkText] = useState('');
 
-    // Modal states
     const [selectedEquip, setSelectedEquip] = useState(null);
     const [inviteInfo, setInviteInfo] = useState(null);
     const [copiedLink, setCopiedLink] = useState('');
+
+    const canEditEquipment = ['moderator', 'boss', 'superadmin'].includes(role);
 
     const fetchData = async () => {
         try {
@@ -43,7 +43,7 @@ export default function Equipment() {
     };
 
     useEffect(() => {
-        if (!['boss', 'superadmin'].includes(role)) {
+        if (!['foreman', 'moderator', 'boss', 'superadmin'].includes(role)) {
             navigate('/dashboard');
         } else {
             fetchData();
@@ -76,11 +76,7 @@ export default function Equipment() {
 
         const items = lines.map(line => {
             const parts = line.split(';').map(p => p.trim());
-            return {
-                category: parts[0] || 'Другое',
-                name: parts[1] || 'Без названия',
-                driver: parts[2] || ''
-            };
+            return { category: parts[0] || 'Другое', name: parts[1] || 'Без названия', driver: parts[2] || '' };
         });
 
         try {
@@ -94,6 +90,7 @@ export default function Equipment() {
 
     const handleUpdateEquip = async (e) => {
         e.preventDefault();
+        if(!canEditEquipment) return;
         try {
             const fd = new FormData();
             fd.append('name', selectedEquip.name);
@@ -111,6 +108,7 @@ export default function Equipment() {
     };
 
     const handleDeleteEquip = async () => {
+        if(!canEditEquipment) return;
         if (!window.confirm(`Удалить технику ${selectedEquip.name}? Это действие нельзя отменить.`)) return;
         try {
             const fd = new FormData();
@@ -122,13 +120,13 @@ export default function Equipment() {
     };
 
     const handleUpdatePhoto = () => {
+        if(!canEditEquipment) return;
         const url = prompt("Введите прямую URL-ссылку на фотографию техники:", selectedEquip.photo_url || "");
-        if (url !== null) {
-            setSelectedEquip({ ...selectedEquip, photo_url: url });
-        }
+        if (url !== null) setSelectedEquip({ ...selectedEquip, photo_url: url });
     };
 
     const handleGenerateInvite = async () => {
+        if(!canEditEquipment) return;
         try {
             const res = await axios.post(`/api/equipment/${selectedEquip.id}/generate_invite`);
             setInviteInfo(res.data);
@@ -136,6 +134,7 @@ export default function Equipment() {
     };
 
     const handleUnlinkDriver = async () => {
+        if(!canEditEquipment) return;
         if (!window.confirm("Отвязать текущего водителя (Telegram профиль) от этой техники?")) return;
         try {
             const fd = new FormData();
@@ -168,10 +167,13 @@ export default function Equipment() {
     const displayCategories = [...categories];
     if (!displayCategories.includes('Другое')) displayCategories.push('Другое');
 
+    const showReviewPanel = ['moderator', 'boss', 'superadmin'].includes(role);
+    const showUsersAndLogs = ['boss', 'superadmin', 'moderator'].includes(role);
+
     if (loading) return <div className="flex items-center justify-center min-h-screen"><div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div></div>;
 
     return (
-        <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-10 transition-colors duration-200 font-sans">
+        <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200 font-sans">
 
             <div className="bg-white dark:bg-gray-800 shadow-sm border-b dark:border-gray-700 px-6 py-4 flex justify-between items-center sticky top-0 z-10">
                 <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400 flex items-center">
@@ -184,17 +186,20 @@ export default function Equipment() {
 
             <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
 
-                {/* Tabs */}
                 <div className="flex space-x-2 mb-6 overflow-x-auto pb-2">
                     <button onClick={() => setActiveTab('list')} className={`px-5 py-2.5 rounded-xl font-bold whitespace-nowrap transition-colors ${activeTab === 'list' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                         📋 Список техники ({equipment.length})
                     </button>
-                    <button onClick={() => setActiveTab('add_single')} className={`px-5 py-2.5 rounded-xl font-bold whitespace-nowrap transition-colors ${activeTab === 'add_single' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
-                        ➕ Добавить одну
-                    </button>
-                    <button onClick={() => setActiveTab('add_bulk')} className={`px-5 py-2.5 rounded-xl font-bold whitespace-nowrap transition-colors ${activeTab === 'add_bulk' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
-                        📦 Массовая загрузка
-                    </button>
+                    {canEditEquipment && (
+                        <>
+                            <button onClick={() => setActiveTab('add_single')} className={`px-5 py-2.5 rounded-xl font-bold whitespace-nowrap transition-colors ${activeTab === 'add_single' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                                ➕ Добавить одну
+                            </button>
+                            <button onClick={() => setActiveTab('add_bulk')} className={`px-5 py-2.5 rounded-xl font-bold whitespace-nowrap transition-colors ${activeTab === 'add_bulk' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                                📦 Массовая загрузка
+                            </button>
+                        </>
+                    )}
                 </div>
 
                 {activeTab === 'list' && (
@@ -217,7 +222,7 @@ export default function Equipment() {
                     </div>
                 )}
 
-                {activeTab === 'add_single' && (
+                {activeTab === 'add_single' && canEditEquipment && (
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 max-w-2xl">
                         <h3 className="text-xl font-bold mb-6 text-gray-800 dark:text-white">Добавление новой техники</h3>
                         <form onSubmit={handleAddSingle} className="space-y-5">
@@ -251,7 +256,7 @@ export default function Equipment() {
                     </div>
                 )}
 
-                {activeTab === 'add_bulk' && (
+                {activeTab === 'add_bulk' && canEditEquipment && (
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 max-w-2xl">
                         <h3 className="text-xl font-bold mb-2 text-gray-800 dark:text-white">Массовая загрузка</h3>
                         <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">Скопируйте таблицу (например, из Excel) и вставьте ниже. <br/>Формат строк строго: <b className="text-blue-600 dark:text-blue-400">Категория ; Название техники ; ФИО водителя</b></p>
@@ -278,38 +283,38 @@ export default function Equipment() {
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                         <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden transition-colors">
 
-                            {/* Шапка профиля техники */}
                             <div className="bg-gradient-to-br from-gray-800 to-gray-900 p-6 relative flex flex-col items-center justify-center text-white">
                                 <button onClick={() => setSelectedEquip(null)} className="absolute top-4 right-5 text-gray-300 hover:text-white text-3xl leading-none font-light">&times;</button>
 
-                                <div className="relative group cursor-pointer mt-4 mb-4" onClick={handleUpdatePhoto}>
+                                <div className={`relative mt-4 mb-4 ${canEditEquipment ? 'group cursor-pointer' : ''}`} onClick={handleUpdatePhoto}>
                                     <div className="w-32 h-32 rounded-2xl bg-gray-700 border-4 border-gray-600 shadow-xl bg-cover bg-center flex items-center justify-center overflow-hidden transition-transform group-hover:scale-105" style={{ backgroundImage: selectedEquip.photo_url ? `url(${selectedEquip.photo_url})` : 'none' }}>
                                         {!selectedEquip.photo_url && <span className="text-5xl opacity-50">🚜</span>}
                                     </div>
-                                    <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <span className="text-xs font-bold text-white text-center px-2">Изменить фото</span>
-                                    </div>
+                                    {canEditEquipment && (
+                                        <div className="absolute inset-0 bg-black/50 rounded-2xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <span className="text-xs font-bold text-white text-center px-2">Изменить фото</span>
+                                        </div>
+                                    )}
                                 </div>
 
-                                <input type="text" value={selectedEquip.name} onChange={e => setSelectedEquip({...selectedEquip, name: e.target.value})} className="bg-transparent text-center text-2xl font-bold border-b border-transparent focus:border-white outline-none w-full mb-1" />
-                                <span className={`text-xs font-extrabold uppercase px-3 py-1 rounded-full border ${getStatusColor(selectedEquip.status)}`}>
+                                <input type="text" disabled={!canEditEquipment} value={selectedEquip.name} onChange={e => setSelectedEquip({...selectedEquip, name: e.target.value})} className="bg-transparent text-center text-2xl font-bold border-b border-transparent focus:border-white outline-none w-full mb-1 disabled:opacity-100" />
+                                <span className={`text-xs font-extrabold uppercase px-3 py-1 rounded-full border mt-2 ${getStatusColor(selectedEquip.status)}`}>
                                     {getStatusLabel(selectedEquip.status)}
                                 </span>
                             </div>
 
-                            {/* Форма редактирования */}
                             <div className="p-6 space-y-6">
                                 <form onSubmit={handleUpdateEquip} className="space-y-4">
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                         <div>
                                             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Категория</label>
-                                            <select value={selectedEquip.category} onChange={e => setSelectedEquip({...selectedEquip, category: e.target.value})} className="w-full p-2.5 border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium">
+                                            <select disabled={!canEditEquipment} value={selectedEquip.category} onChange={e => setSelectedEquip({...selectedEquip, category: e.target.value})} className="w-full p-2.5 border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium disabled:opacity-70">
                                                 {displayCategories.map(c => <option key={c} value={c}>{c}</option>)}
                                             </select>
                                         </div>
                                         <div>
                                             <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Статус машины</label>
-                                            <select value={selectedEquip.status} onChange={e => setSelectedEquip({...selectedEquip, status: e.target.value})} className="w-full p-2.5 border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium">
+                                            <select disabled={!canEditEquipment} value={selectedEquip.status} onChange={e => setSelectedEquip({...selectedEquip, status: e.target.value})} className="w-full p-2.5 border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium disabled:opacity-70">
                                                 <option value="free">🟢 Свободна (Доступна)</option>
                                                 <option value="work">🔵 В работе на объекте</option>
                                                 <option value="repair">🔴 В ремонте (Скрыта)</option>
@@ -319,10 +324,9 @@ export default function Equipment() {
 
                                     <div>
                                         <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Текстовое ФИО (по умолчанию)</label>
-                                        <input type="text" value={selectedEquip.driver} onChange={e => setSelectedEquip({...selectedEquip, driver: e.target.value})} placeholder="Напр.: Иванов И." className="w-full p-2.5 border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium" />
+                                        <input type="text" disabled={!canEditEquipment} value={selectedEquip.driver} onChange={e => setSelectedEquip({...selectedEquip, driver: e.target.value})} placeholder="Напр.: Иванов И." className="w-full p-2.5 border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-sm font-medium disabled:opacity-70" />
                                     </div>
 
-                                    {/* Блок привязки водителя через Telegram */}
                                     <div className="bg-blue-50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-800 p-4 rounded-xl">
                                         <h4 className="text-sm font-bold text-blue-800 dark:text-blue-300 mb-2">Привязка Telegram аккаунта водителя</h4>
                                         {selectedEquip.tg_id ? (
@@ -330,21 +334,27 @@ export default function Equipment() {
                                                 <div className="flex items-center text-sm font-medium text-gray-800 dark:text-gray-200">
                                                     <span className="text-green-500 mr-2 text-lg">✓</span> Профиль привязан
                                                 </div>
-                                                <button type="button" onClick={handleUnlinkDriver} className="text-xs font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-lg hover:bg-red-100 transition">Отвязать</button>
+                                                {canEditEquipment && <button type="button" onClick={handleUnlinkDriver} className="text-xs font-bold text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-1.5 rounded-lg hover:bg-red-100 transition">Отвязать</button>}
                                             </div>
                                         ) : (
                                             <div className="flex flex-col sm:flex-row gap-2">
-                                                <button type="button" onClick={handleGenerateInvite} className="flex-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-400 text-xs font-bold py-2.5 rounded-lg shadow-sm hover:bg-blue-100 transition">
-                                                    🔗 Сгенерировать ссылку для водителя
-                                                </button>
+                                                {canEditEquipment ? (
+                                                    <button type="button" onClick={handleGenerateInvite} className="flex-1 bg-white dark:bg-gray-800 border border-blue-300 dark:border-blue-700 text-blue-700 dark:text-blue-400 text-xs font-bold py-2.5 rounded-lg shadow-sm hover:bg-blue-100 transition">
+                                                        🔗 Сгенерировать ссылку для водителя
+                                                    </button>
+                                                ) : (
+                                                    <p className="text-xs text-gray-500">Нет привязанного профиля.</p>
+                                                )}
                                             </div>
                                         )}
                                     </div>
 
-                                    <div className="flex justify-between items-center pt-4 border-t dark:border-gray-700 mt-6">
-                                        <button type="button" onClick={handleDeleteEquip} className="text-red-500 dark:text-red-400 font-bold text-sm bg-red-50 dark:bg-red-900/20 px-4 py-2.5 rounded-xl hover:bg-red-100 transition">🗑 Удалить машину</button>
-                                        <button type="submit" className="bg-blue-600 text-white font-bold text-sm px-6 py-2.5 rounded-xl shadow-md hover:bg-blue-700 transition">💾 Сохранить изменения</button>
-                                    </div>
+                                    {canEditEquipment && (
+                                        <div className="flex justify-between items-center pt-4 border-t dark:border-gray-700 mt-6">
+                                            <button type="button" onClick={handleDeleteEquip} className="text-red-500 dark:text-red-400 font-bold text-sm bg-red-50 dark:bg-red-900/20 px-4 py-2.5 rounded-xl hover:bg-red-100 transition">🗑 Удалить машину</button>
+                                            <button type="submit" className="bg-blue-600 text-white font-bold text-sm px-6 py-2.5 rounded-xl shadow-md hover:bg-blue-700 transition">💾 Сохранить изменения</button>
+                                        </div>
+                                    )}
                                 </form>
                             </div>
                         </div>
@@ -370,6 +380,34 @@ export default function Equipment() {
                     </div>
                 </div>
             )}
+
+            {/* НИЖНЯЯ ПАНЕЛЬ НАВИГАЦИИ КАК В ДАШБОРДЕ */}
+            <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-40 flex justify-around items-center pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] transition-colors">
+                <button onClick={() => navigate('/dashboard')} className={`flex flex-col items-center py-3 w-full transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200`}>
+                    <span className="text-2xl mb-1">🏠</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wide">Главная</span>
+                </button>
+                <button className={`flex flex-col items-center py-3 w-full transition-colors text-blue-600 dark:text-blue-400`}>
+                    <span className="text-2xl mb-1">🚜</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wide">Автопарк</span>
+                </button>
+                <button onClick={() => navigate('/dashboard')} className={`flex flex-col items-center py-3 w-full transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200`}>
+                    <span className="text-2xl mb-1">👥</span>
+                    <span className="text-[10px] font-bold uppercase tracking-wide">Бригады</span>
+                </button>
+                {showReviewPanel && (
+                    <button onClick={() => navigate('/dashboard')} className={`flex flex-col items-center py-3 w-full relative transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200`}>
+                        <span className="text-2xl mb-1 relative">📋</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wide">Заявки</span>
+                    </button>
+                )}
+                {showUsersAndLogs && (
+                    <button onClick={() => navigate('/dashboard')} className={`flex flex-col items-center py-3 w-full transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200`}>
+                        <span className="text-2xl mb-1">⚙️</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wide">Система</span>
+                    </button>
+                )}
+            </div>
         </div>
     );
 }

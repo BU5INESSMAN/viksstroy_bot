@@ -18,7 +18,7 @@ const getSmartDates = () => {
 export default function Dashboard() {
   const smartDates = getSmartDates();
   const [activeTab, setActiveTab] = useState('home');
-  const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [] });
+  const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], active_apps: [] });
   const [activeApp, setActiveApp] = useState(null);
   const [logs, setLogs] = useState([]);
   const [users, setUsers] = useState([]);
@@ -61,7 +61,7 @@ export default function Dashboard() {
   const navigate = useNavigate();
 
   const fetchData = () => {
-    axios.get('/api/dashboard').then(res => setData(res.data || { stats: {}, teams: [], equipment: [], equip_categories: [] })).catch(() => {});
+    axios.get('/api/dashboard').then(res => setData(res.data || { stats: {}, teams: [], equipment: [], equip_categories: [], active_apps: [] })).catch(() => {});
     if (tgId !== '0') axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => setActiveApp(res.data)).catch(() => setActiveApp(null));
     if (['boss', 'superadmin', 'moderator'].includes(role)) {
         axios.get('/api/users').then(res => setUsers(res.data || [])).catch(() => {});
@@ -84,7 +84,33 @@ export default function Dashboard() {
   }, [appForm.team_id]);
 
   const toggleAppMember = (id) => { setAppForm(prev => ({ ...prev, members: prev.members?.includes(id) ? prev.members.filter(m => m !== id) : [...(prev.members || []), id] })); };
-  const toggleEquipmentSelection = (equip) => { setAppForm(prev => { const exists = prev.equipment.find(e => e.id === equip.id); if (exists) return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id) }; const displayName = equip.driver ? `${equip.name} (${equip.driver})` : equip.name; return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: '08', time_end: '17' }] }; }); };
+
+  // Умная логика проверки занятости техники
+  const checkEquipStatus = (equip, date) => {
+      if (equip.status === 'repair') return { state: 'repair', message: 'Эта техника сейчас находится в ремонте.' };
+
+      if (data.active_apps) {
+          const appsOnDate = data.active_apps.filter(a => a.date_target === date);
+          for (const a of appsOnDate) {
+              try {
+                  const eqList = JSON.parse(a.equipment_data || '[]');
+                  if (eqList.some(e => e.id === equip.id)) {
+                      return { state: 'busy', message: `Техника занята в этот день на объекте:\n📍 ${a.object_address}` };
+                  }
+              } catch(e) {}
+          }
+      }
+      return { state: 'free' };
+  };
+
+  const toggleEquipmentSelection = (equip) => {
+      setAppForm(prev => {
+          const exists = prev.equipment.find(e => e.id === equip.id);
+          if (exists) return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id) };
+          const displayName = equip.driver ? `${equip.name} (${equip.driver})` : equip.name;
+          return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: '08', time_end: '17' }] };
+      });
+  };
   const updateEquipmentTime = (id, field, value) => { setAppForm(prev => ({ ...prev, equipment: prev.equipment.map(e => e.id === id ? { ...e, [field]: value } : e) })); };
   const handleLogout = () => { localStorage.removeItem('user_role'); localStorage.removeItem('tg_id'); navigate('/'); };
   const copyToClipboard = (text, type) => { navigator.clipboard.writeText(text); setCopiedLink(type); setTimeout(() => setCopiedLink(''), 2000); };
@@ -108,13 +134,16 @@ export default function Dashboard() {
   const showTeamManagement = ['foreman', 'boss', 'superadmin', 'moderator'].includes(role);
   const showCreateOrder = ['foreman', 'boss', 'superadmin'].includes(role);
   const showPublishOrder = ['moderator', 'boss', 'superadmin'].includes(role);
-  const showAdminPanel = ['boss', 'superadmin'].includes(role);
   const showActiveOrder = ['worker', 'foreman'].includes(role);
   const showReviewPanel = ['moderator', 'boss', 'superadmin'].includes(role);
   const showUsersAndLogs = ['boss', 'superadmin', 'moderator'].includes(role);
   const canEditUsers = ['boss', 'superadmin', 'moderator'].includes(role);
+  const showEquipmentNav = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role); // Новая навигация
 
   const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'Гость': 'Гость' };
+
+  const displayCategories = [...(data?.equip_categories || [])];
+  if (!displayCategories.includes('Другое')) displayCategories.push('Другое');
 
   let activeEquipText = activeApp?.equip_name || 'Не требуется';
   if (activeApp?.equipment_data) { try { const eqList = JSON.parse(activeApp.equipment_data); if (eqList && eqList.length > 0) activeEquipText = eqList.map(e => `${e.name} (${e.time_start}:00-${e.time_end}:00)`).join(', '); } catch(e){} }
@@ -159,7 +188,7 @@ export default function Dashboard() {
                             ) : (<p className="text-center text-blue-600 dark:text-blue-400 font-medium text-sm p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">Активных нарядов пока нет.</p>)}
                         </div>
                     )}
-                    {(showCreateOrder || showPublishOrder || showAdminPanel) && (
+                    {(showCreateOrder || showPublishOrder) && (
                         <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200 h-fit">
                             <h2 className="text-lg font-bold mb-4 flex items-center">⚙️ Панель действий</h2>
                             <div className="space-y-3">
@@ -170,8 +199,6 @@ export default function Dashboard() {
                                     {approvedAppsCount > 0 && (<span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full shadow-lg border-2 border-white dark:border-gray-800 animate-bounce">{approvedAppsCount}</span>)}
                                 </button>
                             )}
-                            {/* КНОПКА УПРАВЛЕНИЯ ТЕХНИКОЙ ТЕПЕРЬ ВЕДЕТ НА НОВУЮ СТРАНИЦУ */}
-                            {showAdminPanel && (<button onClick={() => navigate('/equipment')} className="w-full bg-gray-800 dark:bg-gray-700 text-white py-3 rounded-lg shadow hover:bg-gray-900 dark:hover:bg-gray-600 font-medium">🛠 Панель управления техникой</button>)}
                             </div>
                         </div>
                     )}
@@ -264,7 +291,13 @@ export default function Dashboard() {
 
       <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-40 flex justify-around items-center pb-safe shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] transition-colors">
           <button onClick={() => setActiveTab('home')} className={`flex flex-col items-center py-3 w-full transition-colors ${activeTab === 'home' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-1">🏠</span><span className="text-[10px] font-bold uppercase tracking-wide">Главная</span></button>
+
+          {showEquipmentNav && (
+            <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center py-3 w-full transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200`}><span className="text-2xl mb-1">🚜</span><span className="text-[10px] font-bold uppercase tracking-wide">Автопарк</span></button>
+          )}
+
           <button onClick={() => setActiveTab('teams')} className={`flex flex-col items-center py-3 w-full transition-colors ${activeTab === 'teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-1">👥</span><span className="text-[10px] font-bold uppercase tracking-wide">Бригады</span></button>
+
           {showReviewPanel && (
               <button onClick={() => setActiveTab('review')} className={`flex flex-col items-center py-3 w-full relative transition-colors ${activeTab === 'review' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-1 relative">📋{reviewApps.filter(a => a.status === 'waiting').length > 0 && (<span className="absolute -top-1 -right-2 bg-red-500 text-white text-[9px] font-bold w-4 h-4 flex items-center justify-center rounded-full border border-white dark:border-gray-800">{reviewApps.filter(a => a.status === 'waiting').length}</span>)}</span><span className="text-[10px] font-bold uppercase tracking-wide">Заявки</span></button>
           )}
@@ -274,7 +307,48 @@ export default function Dashboard() {
       </div>
 
       {isAppModalOpen && (
-        <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity"><div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24"><div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden"><div className="flex justify-between items-center px-6 py-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50"><h3 className="text-xl font-bold dark:text-white">Создание заявки</h3><button onClick={() => setAppModalOpen(false)} className="text-gray-400 hover:text-red-500 text-2xl font-bold transition">&times;</button></div><form onSubmit={handleCreateApp} className="p-6 space-y-6 text-sm"><div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📅 Дата выезда</label><input type="date" required value={appForm.date_target} onChange={e => setAppForm({...appForm, date_target: e.target.value})} className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-2.5 rounded-lg outline-none font-bold text-gray-800 dark:text-gray-100 shadow-sm mb-2" /><div className="flex flex-wrap gap-2">{smartDates.map(d => (<button key={d.val} type="button" onClick={() => setAppForm({...appForm, date_target: d.val})} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${appForm.date_target === d.val ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 shadow-sm' : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>{d.label}</button>))}</div></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📍 Адрес объекта</label><input type="text" required value={appForm.object_address} onChange={e => setAppForm({...appForm, object_address: e.target.value})} placeholder="г. Москва, ул. Ленина, 10" className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-2.5 rounded-lg outline-none font-medium dark:text-white shadow-sm" /></div></div><hr className="dark:border-gray-700" /><div className="space-y-3"><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">👥 Выбор Бригады</label><div className="flex flex-wrap gap-2">{data?.teams?.map(t => (<button key={t.id} type="button" onClick={() => setAppForm({...appForm, team_id: t.id})} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${Number(appForm.team_id) === t.id ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>🏗 {t.name}</button>))}</div>{teamMembers?.length > 0 && (<div className="mt-3 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800/50 shadow-inner"><label className="block text-xs font-bold text-blue-800 dark:text-blue-300 mb-3 uppercase tracking-wide">Состав на выезд</label><div className="flex flex-wrap gap-2">{teamMembers.map(m => { const isSelected = appForm?.members?.includes(m.id); return (<button key={m.id} type="button" onClick={() => toggleAppMember(m.id)} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>{isSelected ? <span className="mr-1.5 text-white font-bold">✓</span> : <span className="mr-1.5 opacity-0">✓</span>} {m.fio}</button>);})}</div></div>)}</div><hr className="dark:border-gray-700" /><div className="space-y-3"><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">🚜 Требуемая техника</label><div className="flex flex-wrap gap-2 mb-2">{data?.equip_categories?.map(cat => (<button key={cat} type="button" onClick={() => setActiveEqCategory(activeEqCategory === cat ? null : cat)} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${activeEqCategory === cat ? 'bg-indigo-500 text-white border-indigo-600 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>{cat}</button>))}</div>{activeEqCategory && (<div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600 shadow-inner"><p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">Техника в категории «{activeEqCategory}»:</p><div className="flex flex-wrap gap-2">{data.equipment?.filter(e => e.category === activeEqCategory || (activeEqCategory === 'Другое' && !data.equip_categories.includes(e.category))).map(e => { const isSelected = appForm.equipment.some(eq => eq.id === e.id); return (<button key={e.id} type="button" onClick={() => toggleEquipmentSelection(e)} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100'}`}>{isSelected && <span className="mr-1.5 font-bold">✓</span>} {e.name}</button>); })}{data.equipment?.filter(e => e.category === activeEqCategory).length === 0 && <p className="text-xs text-gray-400 italic">Нет доступной техники</p>}</div></div>)}{appForm.equipment.length > 0 && (<div className="mt-4 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 shadow-inner"><label className="block text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wide border-b border-indigo-200 dark:border-indigo-800 pb-2 mb-3">Время работы для каждой машины:</label>{appForm.equipment.map(eq => (<div key={eq.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-indigo-100 dark:border-indigo-700/50 shadow-sm gap-3"><p className="font-bold text-gray-800 dark:text-gray-200 text-sm">🚜 {eq.name}</p><div className="flex items-center space-x-2"><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">С</span><input type="number" min="0" max="23" value={eq.time_start} onChange={e => updateEquipmentTime(eq.id, 'time_start', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold focus:outline-none dark:bg-gray-800 dark:text-white" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div><span className="text-gray-400 font-bold">—</span><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">ДО</span><input type="number" min="0" max="23" value={eq.time_end} onChange={e => updateEquipmentTime(eq.id, 'time_end', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold focus:outline-none dark:bg-gray-800 dark:text-white" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div></div></div>))}</div>)}</div><hr className="dark:border-gray-700" /><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" value={appForm.comment} onChange={e => setAppForm({...appForm, comment: e.target.value})} placeholder="Дополнительная информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-lg outline-none dark:text-white shadow-sm" /></div><div className="flex space-x-3 pt-4"><button type="button" onClick={() => setAppModalOpen(false)} className="w-1/3 bg-gray-100 dark:bg-gray-700 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition">Отмена</button><button type="submit" className="w-2/3 bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition transform hover:scale-[1.02]">Отправить заявку</button></div></form></div></div></div>
+        <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity"><div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24"><div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden"><div className="flex justify-between items-center px-6 py-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50"><h3 className="text-xl font-bold dark:text-white">Создание заявки</h3><button onClick={() => setAppModalOpen(false)} className="text-gray-400 hover:text-red-500 text-2xl font-bold transition">&times;</button></div><form onSubmit={handleCreateApp} className="p-6 space-y-6 text-sm"><div className="space-y-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📅 Дата выезда</label><input type="date" required value={appForm.date_target} onChange={e => setAppForm({...appForm, date_target: e.target.value})} className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-2.5 rounded-lg outline-none font-bold text-gray-800 dark:text-gray-100 shadow-sm mb-2" /><div className="flex flex-wrap gap-2">{smartDates.map(d => (<button key={d.val} type="button" onClick={() => setAppForm({...appForm, date_target: d.val})} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${appForm.date_target === d.val ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 shadow-sm' : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>{d.label}</button>))}</div></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📍 Адрес объекта</label><input type="text" required value={appForm.object_address} onChange={e => setAppForm({...appForm, object_address: e.target.value})} placeholder="г. Москва, ул. Ленина, 10" className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-2.5 rounded-lg outline-none font-medium dark:text-white shadow-sm" /></div></div><hr className="dark:border-gray-700" /><div className="space-y-3"><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">👥 Выбор Бригады</label><div className="flex flex-wrap gap-2">{data?.teams?.map(t => (<button key={t.id} type="button" onClick={() => setAppForm({...appForm, team_id: t.id})} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${Number(appForm.team_id) === t.id ? 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>🏗 {t.name}</button>))}</div>{teamMembers?.length > 0 && (<div className="mt-3 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800/50 shadow-inner"><label className="block text-xs font-bold text-blue-800 dark:text-blue-300 mb-3 uppercase tracking-wide">Состав на выезд</label><div className="flex flex-wrap gap-2">{teamMembers.map(m => { const isSelected = appForm?.members?.includes(m.id); return (<button key={m.id} type="button" onClick={() => toggleAppMember(m.id)} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>{isSelected ? <span className="mr-1.5 text-white font-bold">✓</span> : <span className="mr-1.5 opacity-0">✓</span>} {m.fio}</button>);})}</div></div>)}</div><hr className="dark:border-gray-700" /><div className="space-y-3"><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">🚜 Требуемая техника</label><div className="flex flex-wrap gap-2 mb-2">{data?.equip_categories?.map(cat => (<button key={cat} type="button" onClick={() => setActiveEqCategory(activeEqCategory === cat ? null : cat)} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${activeEqCategory === cat ? 'bg-indigo-500 text-white border-indigo-600 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>{cat}</button>))}</div>{activeEqCategory && (<div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600 shadow-inner"><p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2">Техника в категории «{activeEqCategory}»:</p><div className="flex flex-wrap gap-2">{data.equipment?.filter(e => e.category === activeEqCategory || (activeEqCategory === 'Другое' && !data.equip_categories.includes(e.category))).map(e => {
+
+                                            // УМНАЯ ЛОГИКА СТАТУСА ДЛЯ КНОПОК ТЕХНИКИ
+                                            let statusState = 'free';
+                                            let alertMsg = '';
+                                            if (e.status === 'repair') {
+                                                statusState = 'repair';
+                                                alertMsg = 'Эта техника находится в ремонте и недоступна для выбора.';
+                                            } else if (data.active_apps) {
+                                                const appsOnDate = data.active_apps.filter(a => a.date_target === appForm.date_target);
+                                                for (const a of appsOnDate) {
+                                                    try {
+                                                        const eqList = JSON.parse(a.equipment_data || '[]');
+                                                        if (eqList.some(eqq => eqq.id === e.id)) {
+                                                            statusState = 'busy';
+                                                            alertMsg = `Техника уже занята в этот день на объекте:\n📍 ${a.object_address}`;
+                                                            break;
+                                                        }
+                                                    } catch(err) {}
+                                                }
+                                            }
+
+                                            const isSelected = appForm.equipment.some(eq => eq.id === e.id);
+                                            const displayName = e.driver ? `${e.name} (${e.driver})` : e.name;
+
+                                            let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100';
+                                            if (statusState === 'repair') btnStyles = 'bg-red-50 border-red-300 text-red-600 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400 cursor-not-allowed opacity-75';
+                                            else if (statusState === 'busy') btnStyles = 'bg-yellow-50 border-yellow-300 text-yellow-700 dark:bg-yellow-900/30 dark:border-yellow-800 dark:text-yellow-500 cursor-not-allowed opacity-80';
+                                            else if (isSelected) btnStyles = 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm';
+
+                                            return (
+                                                <button key={e.id} type="button" onClick={() => {
+                                                    if (statusState !== 'free') return alert(alertMsg);
+                                                    toggleEquipmentSelection({id: e.id, name: displayName, driver: e.driver});
+                                                }} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${btnStyles}`}>
+                                                    {isSelected && <span className="mr-1.5 font-bold">✓</span>}
+                                                    {statusState === 'repair' && <span className="mr-1.5">🛠</span>}
+                                                    {statusState === 'busy' && <span className="mr-1.5">⏳</span>}
+                                                    {displayName}
+                                                </button>
+                                            );
+                                        })}{data.equipment?.filter(e => e.category === activeEqCategory).length === 0 && <p className="text-xs text-gray-400 italic">Нет доступной техники</p>}</div></div>)}{appForm.equipment.length > 0 && (<div className="mt-4 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 shadow-inner"><label className="block text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wide border-b border-indigo-200 dark:border-indigo-800 pb-2 mb-3">Время работы для каждой машины:</label>{appForm.equipment.map(eq => (<div key={eq.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-indigo-100 dark:border-indigo-700/50 shadow-sm gap-3"><p className="font-bold text-gray-800 dark:text-gray-200 text-sm">🚜 {eq.name}</p><div className="flex items-center space-x-2"><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">С</span><input type="number" min="0" max="23" value={eq.time_start} onChange={e => updateEquipmentTime(eq.id, 'time_start', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold focus:outline-none dark:bg-gray-800 dark:text-white" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div><span className="text-gray-400 font-bold">—</span><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">ДО</span><input type="number" min="0" max="23" value={eq.time_end} onChange={e => updateEquipmentTime(eq.id, 'time_end', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold focus:outline-none dark:bg-gray-800 dark:text-white" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div></div></div>))}</div>)}</div><hr className="dark:border-gray-700" /><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" value={appForm.comment} onChange={e => setAppForm({...appForm, comment: e.target.value})} placeholder="Дополнительная информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-lg outline-none dark:text-white shadow-sm" /></div><div className="flex space-x-3 pt-4"><button type="button" onClick={() => setAppModalOpen(false)} className="w-1/3 bg-gray-100 dark:bg-gray-700 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition">Отмена</button><button type="submit" className="w-2/3 bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition transform hover:scale-[1.02]">Отправить заявку</button></div></form></div></div></div>
       )}
 
       {isManageModalOpen && manageTeamData && (
