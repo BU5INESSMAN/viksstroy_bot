@@ -7,6 +7,7 @@ import hmac
 import time
 import aiohttp
 import json
+import uuid
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -31,25 +32,48 @@ db = DatabaseManager(db_path)
 async def startup():
     await db.init_db()
 
-    # СУПЕР-ПАТЧ: Принудительное создание таблиц
     await db.conn.execute("""
-        CREATE TABLE IF NOT EXISTS logs(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            tg_id INTEGER,
-            fio TEXT,
-            action TEXT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
+                          CREATE TABLE IF NOT EXISTS logs
+                          (
+                              id
+                              INTEGER
+                              PRIMARY
+                              KEY
+                              AUTOINCREMENT,
+                              tg_id
+                              INTEGER,
+                              fio
+                              TEXT,
+                              action
+                              TEXT,
+                              timestamp
+                              DATETIME
+                              DEFAULT
+                              CURRENT_TIMESTAMP
+                          )
+                          """)
     await db.conn.execute("""
-        CREATE TABLE IF NOT EXISTS equipment (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT,
-            category TEXT,
-            is_active INTEGER DEFAULT 1,
-            driver TEXT DEFAULT ''
-        )
-    """)
+                          CREATE TABLE IF NOT EXISTS equipment
+                          (
+                              id
+                              INTEGER
+                              PRIMARY
+                              KEY
+                              AUTOINCREMENT,
+                              name
+                              TEXT,
+                              category
+                              TEXT,
+                              is_active
+                              INTEGER
+                              DEFAULT
+                              1,
+                              driver
+                              TEXT
+                              DEFAULT
+                              ''
+                          )
+                          """)
 
     # Авто-обновление базы данных (Патч для всех колонок)
     columns_to_add = [
@@ -65,7 +89,11 @@ async def startup():
         ("team_members", "tg_id", "INTEGER"),
         ("team_members", "is_foreman", "INTEGER DEFAULT 0"),
         ("users", "avatar_url", "TEXT"),
-        ("equipment", "driver", "TEXT DEFAULT ''")
+        ("equipment", "driver", "TEXT DEFAULT ''"),
+        ("equipment", "status", "TEXT DEFAULT 'free'"),  # free, work, repair
+        ("equipment", "tg_id", "INTEGER"),
+        ("equipment", "invite_code", "TEXT"),
+        ("equipment", "photo_url", "TEXT")
     ]
     for table, col_name, col_type in columns_to_add:
         try:
@@ -114,7 +142,6 @@ async def telegram_auth(data: dict):
         if photo_url:
             await db.update_user_avatar(tg_id, photo_url)
 
-        # ИСПРАВЛЕНИЕ: преобразуем user в dict для безопасного .get()
         user_dict = dict(user)
         return {
             "status": "ok",
@@ -187,7 +214,9 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
 async def get_dashboard_data():
     stats = await db.get_general_statistics()
     teams = await db.get_all_teams()
-    equip = await db.get_all_equipment_admin()
+
+    async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur:
+        equip = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
     async with db.conn.execute(
             "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur:
@@ -199,10 +228,13 @@ async def get_dashboard_data():
         if cat and cat not in categories:
             categories.append(cat)
 
+    # Выдаем технику, только если она НЕ в ремонте (status != 'repair')
+    available_equipment = [e for e in equip if e.get('status', 'free') != 'repair']
+
     return {
         "stats": stats,
         "teams": [{"id": t['id'], "name": t['name']} for t in teams],
-        "equipment": [{"id": e['id'], "name": e['name'], "category": e['category'], "driver": e['driver'] if 'driver' in e.keys() else ""} for e in equip if e['is_active']],
+        "equipment": available_equipment,
         "equip_categories": categories
     }
 
@@ -215,7 +247,6 @@ async def get_logs():
 @app.get("/api/users")
 async def api_get_users():
     users = await db.get_all_users()
-    # ИСПРАВЛЕНИЕ: Преобразуем каждую строку БД в словарь (dict), чтобы работал метод .get()
     result = []
     for u in users:
         u_dict = dict(u)
@@ -503,6 +534,16 @@ async def publish_apps(tg_id: int = Form(0)):
             async with session.post(url, json={"chat_id": group_id, "text": text, "parse_mode": "HTML"}) as resp:
                 if resp.status == 200:
                     await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))
+
+                    # Отмечаем технику как "в работе", если она была выбрана
+                    if eq_data_str:
+                        try:
+                            eq_l = json.loads(eq_data_str)
+                            for e in eq_l:
+                                await db.conn.execute("UPDATE equipment SET status = 'work' WHERE id = ?", (e['id'],))
+                        except:
+                            pass
+
                     await db.conn.commit()
                     count += 1
 
@@ -521,25 +562,36 @@ async def get_active_app(tg_id: int):
         return None
 
 
+# --- НОВЫЕ ЭНДПОИНТЫ ДЛЯ ТЕХНИКИ ---
 @app.get("/api/equipment/admin_list")
 async def admin_equip_list():
-    async with db.conn.execute(
-            "SELECT id, name, category, is_active, driver FROM equipment ORDER BY category, name") as cur:
+    async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur:
         rows = await cur.fetchall()
 
     result = []
     for r in rows:
-        driver = r[4] if len(r) > 4 and r[4] else ""
-        result.append({"id": r[0], "name": r[1], "category": r[2], "is_active": bool(r[3]), "driver": driver})
+        d = dict(zip([c[0] for c in cur.description], r))
+        # Защита от отсутствия полей в старых БД
+        result.append({
+            "id": d.get('id'),
+            "name": d.get('name'),
+            "category": d.get('category'),
+            "driver": d.get('driver', ''),
+            "status": d.get('status', 'free'),
+            "tg_id": d.get('tg_id'),
+            "photo_url": d.get('photo_url', ''),
+            "invite_code": d.get('invite_code', '')
+        })
     return result
 
 
 @app.post("/api/equipment/add")
 async def add_equipment(name: str = Form(...), category: str = Form(...), driver: str = Form(""), tg_id: int = Form(0)):
-    await db.conn.execute("INSERT INTO equipment (name, category, driver, is_active) VALUES (?, ?, ?, 1)", (name, category, driver))
+    await db.conn.execute("INSERT INTO equipment (name, category, driver, status) VALUES (?, ?, ?, 'free')",
+                          (name, category, driver))
     await db.conn.commit()
     user = await db.get_user(tg_id)
-    await db.add_log(tg_id, user['fio'] if user else "Система", f"Добавил новую технику: {name}")
+    await db.add_log(tg_id, user['fio'] if user else "Система", f"Добавил технику: {name}")
     return {"status": "ok"}
 
 
@@ -556,20 +608,24 @@ async def bulk_add_equipment(request: Request):
         driver = item.get("driver", "").strip()
 
         if name:
-            await db.conn.execute("INSERT INTO equipment (name, category, driver, is_active) VALUES (?, ?, ?, 1)", (name, category, driver))
+            await db.conn.execute("INSERT INTO equipment (name, category, driver, status) VALUES (?, ?, ?, 'free')",
+                                  (name, category, driver))
             count += 1
 
     await db.conn.commit()
-
     user = await db.get_user(tg_id)
     await db.add_log(tg_id, user['fio'] if user else "Система", f"Массово добавил {count} ед. техники")
     return {"status": "ok", "added": count}
 
 
-@app.post("/api/equipment/{equip_id}/toggle")
-async def toggle_equipment(equip_id: int, is_active: int = Form(...), tg_id: int = Form(0)):
-    await db.conn.execute("UPDATE equipment SET is_active = ? WHERE id = ?", (is_active, equip_id))
+@app.post("/api/equipment/{equip_id}/update")
+async def update_equipment(equip_id: int, name: str = Form(...), category: str = Form(...), driver: str = Form(""),
+                           status: str = Form("free"), photo_url: str = Form(""), tg_id: int = Form(0)):
+    await db.conn.execute("UPDATE equipment SET name=?, category=?, driver=?, status=?, photo_url=? WHERE id=?",
+                          (name, category, driver, status, photo_url, equip_id))
     await db.conn.commit()
+    user = await db.get_user(tg_id)
+    await db.add_log(tg_id, user['fio'] if user else "Система", f"Обновил профиль техники ID:{equip_id}")
     return {"status": "ok"}
 
 
@@ -577,4 +633,58 @@ async def toggle_equipment(equip_id: int, is_active: int = Form(...), tg_id: int
 async def delete_equipment(equip_id: int, tg_id: int = Form(0)):
     await db.conn.execute("DELETE FROM equipment WHERE id = ?", (equip_id,))
     await db.conn.commit()
+    user = await db.get_user(tg_id)
+    await db.add_log(tg_id, user['fio'] if user else "Система", f"Удалил технику ID:{equip_id}")
+    return {"status": "ok"}
+
+
+@app.post("/api/equipment/{equip_id}/generate_invite")
+async def generate_equip_invite(equip_id: int):
+    async with db.conn.execute("SELECT invite_code FROM equipment WHERE id = ?", (equip_id,)) as cursor:
+        row = await cursor.fetchone()
+        if row and row[0]:
+            code = row[0]
+        else:
+            code = str(uuid.uuid4())[:8]
+            await db.conn.execute("UPDATE equipment SET invite_code = ? WHERE id = ?", (code, equip_id))
+            await db.conn.commit()
+
+    return {
+        "invite_link": f"https://islandvpn.sbs/equip-invite/{code}",
+        "tg_bot_link": f"https://t.me/{os.getenv('BOT_USERNAME', 'viksstroy_bot')}?start=equip_{code}"
+    }
+
+
+@app.get("/api/equipment/invite/{invite_code}")
+async def get_equip_invite_info(invite_code: str):
+    async with db.conn.execute("SELECT * FROM equipment WHERE invite_code = ?", (invite_code,)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Ссылка недействительна")
+    return dict(zip([c[0] for c in cur.description], row))
+
+
+@app.post("/api/equipment/invite/join")
+async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
+    async with db.conn.execute("SELECT id, name FROM equipment WHERE invite_code = ?", (invite_code,)) as cur:
+        eq_row = await cur.fetchone()
+
+    if not eq_row:
+        raise HTTPException(status_code=404, detail="Техника не найдена")
+
+    await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (tg_id, eq_row[0]))
+    await db.conn.commit()
+
+    user = await db.get_user(tg_id)
+    fio = user['fio'] if user else f"Пользователь {tg_id}"
+    await db.add_log(tg_id, fio, f"Привязал аккаунт водителя к технике «{eq_row[1]}»")
+    return {"status": "ok"}
+
+
+@app.post("/api/equipment/{equip_id}/unlink")
+async def unlink_equipment(equip_id: int, tg_id: int = Form(0)):
+    await db.conn.execute("UPDATE equipment SET tg_id = NULL WHERE id = ?", (equip_id,))
+    await db.conn.commit()
+    user = await db.get_user(tg_id)
+    await db.add_log(tg_id, user['fio'] if user else "Система", f"Отвязал водителя от техники ID:{equip_id}")
     return {"status": "ok"}
