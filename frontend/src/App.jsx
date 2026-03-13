@@ -1,12 +1,15 @@
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
-import Dashboard from './pages/Dashboard';
 import TMAAuth from './pages/TMAAuth';
 import JoinTeam from './pages/JoinTeam';
 import JoinEquipment from './pages/JoinEquipment';
-import Equipment from './pages/Equipment';
 import Guide from './pages/Guide';
-import SupportButton from './components/SupportButton';
+import Layout from './components/Layout';
+import Home from './pages/Home';
+import Teams from './pages/Teams';
+import Review from './pages/Review';
+import System from './pages/System';
+import Equipment from './pages/Equipment';
 
 function App() {
   return (
@@ -17,10 +20,15 @@ function App() {
         <Route path="/invite/:code" element={<JoinTeam />} />
         <Route path="/equip-invite/:code" element={<JoinEquipment />} />
         <Route path="/guide" element={<Guide />} />
-        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/equipment" element={<ProtectedRoute><Equipment /></ProtectedRoute>} />
+
+        <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route path="dashboard" element={<Home />} />
+            <Route path="teams" element={<Teams />} />
+            <Route path="review" element={<Review />} />
+            <Route path="system" element={<System />} />
+            <Route path="equipment" element={<Equipment />} />
+        </Route>
       </Routes>
-      <SupportButton />
     </Router>
   );
 }
