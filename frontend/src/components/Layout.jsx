@@ -7,14 +7,13 @@ export default function Layout() {
     const location = useLocation();
     const role = localStorage.getItem('user_role') || 'Гость';
     const tgId = localStorage.getItem('tg_id') || '0';
-    const realRole = localStorage.getItem('real_role'); // Для возврата суперадмина
+    const realRole = localStorage.getItem('real_role');
 
     const [theme, setTheme] = useState(localStorage.getItem('theme') || 'system');
     const [isProfileModalOpen, setProfileModalOpen] = useState(false);
     const [profileData, setProfileData] = useState(null);
     const [editProfile, setEditProfile] = useState({});
 
-    // Глобальное состояние для модалки заявки (чтобы открывать кнопкой + из Layout)
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
 
     useEffect(() => {
@@ -68,45 +67,43 @@ export default function Layout() {
         } catch (e) { alert("Ошибка сохранения"); }
     };
 
-    const showEquipNav = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
-    const showReviewNav = ['moderator', 'boss', 'superadmin'].includes(role);
-    const showSystemNav = ['boss', 'superadmin', 'moderator'].includes(role);
-    const canCreateOrder = ['foreman', 'boss', 'superadmin'].includes(role);
-    const canEditUsers = ['boss', 'superadmin', 'moderator'].includes(role);
-    const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'Гость': 'Гость' };
+    const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
+
+    // ЛОГИКА НАВИГАЦИИ
+    const isWorkerOrDriver = ['worker', 'driver'].includes(role);
+    const isForeman = role === 'foreman';
+    const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
 
     return (
         <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
 
             {realRole && (
                 <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4">
-                    <span>Вы тестируете роль: {roleNames[role]}</span>
+                    <span>Тест роли: {roleNames[role]}</span>
                     <button onClick={endRoleTest} className="bg-black/20 hover:bg-black/30 px-3 py-1 rounded-lg text-xs transition">Вернуться</button>
                 </div>
             )}
 
             <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 px-4 sm:px-6 py-3 flex justify-between items-center mb-6">
-                <div className="flex items-center space-x-3">
-                    <img src="/logo.png" alt="Logo" className="w-8 h-8 rounded-lg object-cover bg-blue-100 hidden sm:block" />
-                    <h1 className="text-xl font-bold text-blue-600 dark:text-blue-400">ВИКС</h1>
+
+                {/* ЛОГОТИП */}
+                <div className="flex-1 flex items-center">
+                    <div className="w-32 h-8 bg-blue-600 dark:bg-blue-400" style={{
+                        WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
+                        WebkitMaskSize: 'contain', maskSize: 'contain',
+                        WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+                        WebkitMaskPosition: 'left center', maskPosition: 'left center'
+                    }}></div>
                 </div>
 
                 <div className="flex items-center space-x-1 sm:space-x-2">
                     <button onClick={toggleTheme} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg">{themeIcon}</button>
-
-                    <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg" title="Техподдержка">
-                        💬
-                    </a>
-
-                    <button onClick={() => navigate('/guide')} className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg" title="Инструкция">
-                        📖
-                    </button>
-
+                    <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg" title="Техподдержка">💬</a>
+                    <button onClick={() => navigate('/guide')} className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg" title="Инструкция">📖</button>
                     <button onClick={() => openProfile(tgId)} className="flex items-center space-x-2 hover:bg-gray-50 dark:hover:bg-gray-700 px-2 py-1.5 rounded-lg transition ml-2">
                         <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center overflow-hidden border border-blue-200 dark:border-blue-700">
                             <span className="text-blue-600 dark:text-blue-300 font-bold text-xs">👤</span>
                         </div>
-                        <span className="text-sm font-bold hidden sm:block truncate max-w-[100px]">{roleNames[role]}</span>
                     </button>
                 </div>
             </nav>
@@ -117,9 +114,14 @@ export default function Layout() {
 
                 <button onClick={() => navigate('/dashboard')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/dashboard' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">🏠</span><span className="text-[10px] font-bold uppercase tracking-wide">Главная</span></button>
 
-                {showEquipNav && <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">🚜</span><span className="text-[10px] font-bold uppercase tracking-wide">Автопарк</span></button>}
+                {isWorkerOrDriver && <button onClick={() => navigate('/my-apps')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/my-apps' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">📋</span><span className="text-[10px] font-bold uppercase tracking-wide">Заявки</span></button>}
 
-                {canCreateOrder && (
+                {isModOrBoss && <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">🚜</span><span className="text-[10px] font-bold uppercase tracking-wide">Автопарк</span></button>}
+
+                {!isWorkerOrDriver && <button onClick={() => navigate('/teams')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">👥</span><span className="text-[10px] font-bold uppercase tracking-wide">Бригады</span></button>}
+
+                {/* ЦЕНТРАЛЬНАЯ КНОПКА "СОЗДАТЬ" ТОЛЬКО ДЛЯ ПРОРАБОВ */}
+                {isForeman && (
                     <div className="relative w-full flex justify-center h-full">
                         <button onClick={() => {navigate('/dashboard'); setGlobalCreateAppOpen(true);}} className="absolute -top-5 bg-blue-600 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg border-4 border-gray-100 dark:border-gray-900 transform hover:scale-105 transition-transform z-50">
                             <span className="text-3xl font-light leading-none mb-1">+</span>
@@ -128,11 +130,9 @@ export default function Layout() {
                     </div>
                 )}
 
-                <button onClick={() => navigate('/teams')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">👥</span><span className="text-[10px] font-bold uppercase tracking-wide">Бригады</span></button>
+                {isModOrBoss && <button onClick={() => navigate('/review')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/review' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">📋</span><span className="text-[10px] font-bold uppercase tracking-wide">Заявки</span></button>}
 
-                {showReviewNav && <button onClick={() => navigate('/review')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/review' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5 relative">📋</span><span className="text-[10px] font-bold uppercase tracking-wide">Заявки</span></button>}
-
-                {showSystemNav && !showReviewNav && <button onClick={() => navigate('/system')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/system' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">⚙️</span><span className="text-[10px] font-bold uppercase tracking-wide">Система</span></button>}
+                {isModOrBoss && <button onClick={() => navigate('/system')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/system' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">⚙️</span><span className="text-[10px] font-bold uppercase tracking-wide">Система</span></button>}
             </div>
 
             {/* ПРОФИЛЬ (МОДАЛКА ИЗ LAYOUT) */}
@@ -143,7 +143,7 @@ export default function Layout() {
                         <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-xs font-bold text-white text-center px-2">Изменить</span></div>
                         <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                     </label>
-                <div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p></div></div></div><div className="p-6 space-y-6"><div className="space-y-4"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div></div>{canEditUsers && (<div className="flex justify-end pt-4 mt-2 border-t dark:border-gray-700"><button onClick={handleSaveProfile} className="bg-blue-600 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-md hover:bg-blue-700 transition">Сохранить</button></div>)}</div></div></div></div></div>
+                <div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">Должность в системе</p></div></div></div><div className="p-6 space-y-6"><div className="space-y-4"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div></div>{canEditUsers && (<div className="flex justify-end pt-4 mt-2 border-t dark:border-gray-700"><button onClick={handleSaveProfile} className="bg-blue-600 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-md hover:bg-blue-700 transition">Сохранить</button></div>)}</div></div></div></div></div>
             )}
         </div>
     );
