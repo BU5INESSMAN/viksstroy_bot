@@ -11,16 +11,17 @@ import Teams from './pages/Teams';
 import Review from './pages/Review';
 import System from './pages/System';
 import Equipment from './pages/Equipment';
+import MyApps from './pages/MyApps'; // НОВЫЙ ФАЙЛ
 
 function App() {
-  // ОПТИМИЗАЦИЯ ДЛЯ ТЕЛЕГРАМ: отключаем свайп вниз
+  // Оптимизация для Telegram (отключение свайпа вниз)
   useEffect(() => {
       const tg = window.Telegram?.WebApp;
       if (tg) {
           tg.expand();
           if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
       }
-      document.body.style.overscrollBehaviorY = 'none'; // защита для мобильных браузеров
+      document.body.style.overscrollBehaviorY = 'none';
   }, []);
 
   return (
@@ -34,6 +35,7 @@ function App() {
 
         <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="dashboard" element={<Home />} />
+            <Route path="my-apps" element={<MyApps />} />
             <Route path="teams" element={<Teams />} />
             <Route path="review" element={<Review />} />
             <Route path="system" element={<System />} />
