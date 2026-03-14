@@ -41,6 +41,7 @@ export default function Home() {
     const { isGlobalCreateAppOpen, setGlobalCreateAppOpen } = useOutletContext();
 
     const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], kanban_apps: [] });
+    const [activeApp, setActiveApp] = useState(null);
     const [loading, setLoading] = useState(true);
 
     const [teamMembers, setTeamMembers] = useState([]);
@@ -49,13 +50,11 @@ export default function Home() {
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
 
     const fetchData = () => {
-        axios.get('/api/dashboard').then(res => {
-            setData(res.data);
-            setLoading(false);
-        }).catch(() => setLoading(false));
+        axios.get('/api/dashboard').then(res => setData(res.data)).catch(() => {});
+        axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApp(res.data); setLoading(false); }).catch(() => { setActiveApp(null); setLoading(false); });
     };
 
-    useEffect(() => { fetchData(); }, []);
+    useEffect(() => { fetchData(); }, [tgId]);
 
     useEffect(() => {
         if (appForm.team_id) {
@@ -118,6 +117,20 @@ export default function Home() {
         axios.post('/api/applications/publish', fd).then(res => { alert(`Опубликовано: ${res.data.published}`); fetchData(); }).catch(() => alert("Ошибка публикации"));
     };
 
+    // ФУНКЦИЯ ДЛЯ ВОДИТЕЛЕЙ: ОСВОБОЖДЕНИЕ ТЕХНИКИ
+    const handleFreeEquipment = async () => {
+        if (!window.confirm("Завершить работу на объекте и освободить свою технику?")) return;
+        try {
+            const fd = new FormData(); fd.append('tg_id', tgId);
+            await axios.post('/api/equipment/set_free', fd);
+            alert("Техника успешно переведена в статус 'Свободна'!");
+            fetchData();
+        } catch (e) { alert("Ошибка при освобождении техники."); }
+    };
+
+    let activeEquipText = 'Не требуется';
+    if (activeApp?.equipment_data) { try { const eqList = JSON.parse(activeApp.equipment_data); if (eqList && eqList.length > 0) activeEquipText = eqList.map(e => `${e.name} (${e.time_start}:00-${e.time_end}:00)`).join(', '); } catch(e){} }
+
     const appsMap = { waiting: [], approved: [], published: [], completed: [] };
     if (data.kanban_apps) { data.kanban_apps.forEach(a => { if (appsMap[a.status]) appsMap[a.status].push(a); }); }
 
@@ -125,6 +138,20 @@ export default function Home() {
 
     return (
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-blue-500 relative">
+                <h2 className="text-lg font-bold mb-2 flex items-center dark:text-white">📋 Ближайший наряд</h2>
+                {activeApp ? (
+                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-sm space-y-2 text-gray-800 dark:text-gray-200">
+                       <p><b>Дата:</b> {activeApp.date_target}</p><p><b>Объект:</b> {activeApp.object_address}</p><p><b>Техника:</b> {activeEquipText}</p><p><b>Бригада:</b> {activeApp.team_id ? activeApp.team_name : 'Только техника'}</p>
+                       {role === 'driver' && (
+                           <button onClick={handleFreeEquipment} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
+                               ✅ Готово (Освободить технику)
+                           </button>
+                       )}
+                    </div>
+                ) : (<p className="text-blue-600 dark:text-blue-400 font-medium text-sm p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">Предстоящих нарядов пока нет.</p>)}
+            </div>
 
             {['moderator', 'boss', 'superadmin', 'foreman'].includes(role) && (
                 <div className="space-y-4">
@@ -178,4 +205,9 @@ export default function Home() {
             )}
         </main>
     );
+}
+
+function StatCard({ title, value, color, text = "text-gray-900 dark:text-gray-100" }) {
+  const borders = { blue: 'border-blue-500', green: 'border-emerald-500', red: 'border-red-500', yellow: 'border-yellow-500' };
+  return (<div className={`bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border-l-4 ${borders[color]}`}><p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase">{title}</p><p className={`text-3xl font-bold ${text}`}>{value}</p></div>);
 }
