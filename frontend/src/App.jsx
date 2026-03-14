@@ -11,15 +11,20 @@ import Teams from './pages/Teams';
 import Review from './pages/Review';
 import System from './pages/System';
 import Equipment from './pages/Equipment';
-import MyApps from './pages/MyApps'; // НОВЫЙ ФАЙЛ
+import MyApps from './pages/MyApps';
 
 function App() {
-  // Оптимизация для Telegram (отключение свайпа вниз)
+  // Оптимизация для Telegram
   useEffect(() => {
       const tg = window.Telegram?.WebApp;
       if (tg) {
           tg.expand();
-          if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+          try {
+              // ИСПРАВЛЕНИЕ ОШИБКИ ТЕЛЕГРАМА (Безопасный вызов)
+              if (tg.isVersionAtLeast && tg.isVersionAtLeast('7.7') && tg.disableVerticalSwipes) {
+                  tg.disableVerticalSwipes();
+              }
+          } catch(e) {}
       }
       document.body.style.overscrollBehaviorY = 'none';
   }, []);

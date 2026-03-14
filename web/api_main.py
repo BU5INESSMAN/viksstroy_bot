@@ -41,6 +41,7 @@ async def startup():
     await db.conn.execute(
         "CREATE TABLE IF NOT EXISTS equipment (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, category TEXT, is_active INTEGER DEFAULT 1, driver TEXT DEFAULT '')")
 
+    # ИСПРАВЛЕНИЕ: Добавлены колонки для таблиц teams (invite_code)
     columns_to_add = [
         ("applications", "foreman_id", "INTEGER"), ("applications", "foreman_name", "TEXT"),
         ("applications", "equip_id", "INTEGER DEFAULT 0"),
@@ -51,7 +52,8 @@ async def startup():
         ("team_members", "tg_id", "INTEGER"), ("team_members", "is_foreman", "INTEGER DEFAULT 0"),
         ("users", "avatar_url", "TEXT"),
         ("equipment", "driver", "TEXT DEFAULT ''"), ("equipment", "status", "TEXT DEFAULT 'free'"),
-        ("equipment", "tg_id", "INTEGER"), ("equipment", "invite_code", "TEXT"), ("equipment", "photo_url", "TEXT")
+        ("equipment", "tg_id", "INTEGER"), ("equipment", "invite_code", "TEXT"), ("equipment", "photo_url", "TEXT"),
+        ("teams", "invite_code", "TEXT")
     ]
     for table, col_name, col_type in columns_to_add:
         try:
@@ -94,9 +96,13 @@ async def telegram_auth(data: dict):
 
         user = await db.get_user(tg_id)
         if user:
-            if user['is_blacklisted']: raise HTTPException(status_code=403, detail="Пользователь заблокирован")
-            if photo_url and not user.get('avatar_url'): await db.update_user_avatar(tg_id, photo_url)
-            user_dict = dict(user)
+            user_dict = dict(user)  # ИСПРАВЛЕНИЕ: Преобразуем Row в dict перед использованием
+            if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Пользователь заблокирован")
+
+            if photo_url and not user_dict.get('avatar_url'):
+                await db.update_user_avatar(tg_id, photo_url)
+                user_dict['avatar_url'] = photo_url
+
             return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": tg_id,
                     "avatar_url": user_dict.get('avatar_url', photo_url)}
 
@@ -107,15 +113,16 @@ async def telegram_auth(data: dict):
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=400, detail=f"Ошибка валидации: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"Ошибка: {str(e)}")
 
 
 @app.post("/api/tma/auth")
 async def api_tma_auth(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form("")):
     user = await db.get_user(tg_id)
     if user:
-        if user['is_blacklisted']: raise HTTPException(status_code=403, detail="Заблокирован")
-        return {"status": "ok", "role": user['role'], "fio": user['fio'], "tg_id": tg_id}
+        user_dict = dict(user)
+        if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
+        return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": tg_id}
     return {"status": "needs_password", "tg_id": tg_id, "first_name": first_name, "last_name": last_name}
 
 
@@ -449,7 +456,7 @@ async def publish_apps(tg_id: int = Form(0)):
 async def get_active_app(tg_id: int):
     user = await db.get_user(tg_id)
     if not user: return None
-    role = user['role']
+    role = dict(user).get('role')
     if role in ['superadmin', 'boss', 'moderator']: return None
 
     async with db.conn.execute(
@@ -484,7 +491,8 @@ async def get_active_app(tg_id: int):
 async def get_my_apps(tg_id: int):
     user = await db.get_user(tg_id)
     if not user: return []
-    role = user['role']
+    role = dict(user).get('role')
+
     async with db.conn.execute(
             "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE a.status = 'completed' ORDER BY a.date_target DESC") as cursor:
         rows = await cursor.fetchall()
@@ -523,7 +531,7 @@ async def set_equipment_free(tg_id: int = Form(...)):
     await db.conn.execute("UPDATE equipment SET status = 'free' WHERE tg_id = ?", (tg_id,))
     await db.conn.commit()
     user = await db.get_user(tg_id)
-    if user: await db.add_log(tg_id, user['fio'], "Освободил свою технику")
+    if user: await db.add_log(tg_id, dict(user).get('fio', ''), "Освободил свою технику")
     return {"status": "ok"}
 
 
@@ -613,12 +621,15 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
         eq_row = await cur.fetchone()
     if not eq_row: raise HTTPException(status_code=404, detail="Техника не найдена")
     await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (tg_id, eq_row[0]))
+
     user = await db.get_user(tg_id)
-    fio = user['fio'] if user else f"Пользователь {tg_id}"
     if not user:
-        await db.add_user(tg_id, fio, "driver")
-    elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
-        await db.update_user_role(tg_id, "driver")
+        await db.add_user(tg_id, f"Пользователь {tg_id}", "driver")
+    else:
+        user_dict = dict(user)
+        if user_dict['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
+            await db.update_user_role(tg_id, "driver")
+
     await db.conn.commit()
     return {"status": "ok"}
 
