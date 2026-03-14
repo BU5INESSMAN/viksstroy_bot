@@ -143,13 +143,8 @@ async def get_dashboard_data():
         "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur: cat_rows = await cur.fetchall()
     categories = [r[0].strip().capitalize() for r in cat_rows if r[0].strip()]
 
-    async with db.conn.execute("""
-                               SELECT a.*, t.name as team_name
-                               FROM applications a
-                                        LEFT JOIN teams t ON a.team_id = t.id
-                               WHERE date_target >= date ('now', '-14 days')
-                               ORDER BY a.id DESC
-                               """) as cur:
+    async with db.conn.execute(
+            "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE date_target >= date('now', '-14 days') ORDER BY a.id DESC") as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
     return {"stats": stats, "teams": [{"id": t['id'], "name": t['name']} for t in teams], "equipment": equip,
@@ -257,7 +252,6 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
     elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
         await db.update_user_role(tg_id, "worker")
     await db.conn.commit()
-    await db.add_log(tg_id, fio, f"Привязал аккаунт к бригаде «{team['name']}»")
     return {"status": "ok"}
 
 
@@ -334,8 +328,8 @@ async def get_review_apps():
         if eq_data_str:
             try:
                 eq_list = json.loads(eq_data_str)
-                if eq_list: equip_text = ", ".join(
-                    [f"{e['name']} ({e['time_start']}:00-{e['time_end']}:00)" for e in eq_list])
+                if eq_list: equip_text = ", ".join([f"{e['name']} ({e['time_start']}:00-{e['time_end']}:00)" for e in
+                                                    eq_list])
             except:
                 pass
         app_dict['formatted_equip'] = equip_text or "Не требуется"
@@ -347,7 +341,6 @@ async def get_review_apps():
 async def review_app(app_id: int, new_status: str = Form(...), tg_id: int = Form(0)):
     if new_status not in ['approved', 'rejected', 'completed']: raise HTTPException(400, "Неверный статус")
     await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
-
     if new_status in ['completed', 'rejected']:
         async with db.conn.execute("SELECT equipment_data FROM applications WHERE id = ?", (app_id,)) as cur:
             app_row = await cur.fetchone()
@@ -358,8 +351,9 @@ async def review_app(app_id: int, new_status: str = Form(...), tg_id: int = Form
                                                             (e['id'],))
                 except:
                     pass
-
     await db.conn.commit()
+    user = await db.get_user(tg_id)
+    await db.add_log(tg_id, user['fio'] if user else "Модератор", f"Изменил статус заявки №{app_id} на {new_status}")
     return {"status": "ok"}
 
 
@@ -427,29 +421,66 @@ async def publish_apps(tg_id: int = Form(0)):
     return {"status": "ok", "published": count}
 
 
+# --- УМНАЯ ЛОГИКА АКТИВНОЙ ЗАЯВКИ ---
 @app.get("/api/applications/active")
 async def get_active_app(tg_id: int):
+    user = await db.get_user(tg_id)
+    if not user: return None
+    role = user['role']
+
+    # Берем все активные/одобренные заявки, сортируем по дате (самые ближние первыми)
     async with db.conn.execute(
-            "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id LEFT JOIN team_members tm ON tm.team_id = t.id WHERE (a.foreman_id = ? OR tm.tg_id = ?) AND a.status IN ('approved', 'published') ORDER BY a.id DESC LIMIT 1",
-            (tg_id, tg_id)) as cursor:
-        row = await cursor.fetchone()
-        if row: return dict(zip([col[0] for col in cursor.description], row))
-        return None
+            "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE a.status IN ('approved', 'published') ORDER BY a.date_target ASC") as cursor:
+        rows = await cursor.fetchall()
+
+    for row in rows:
+        app_dict = dict(zip([col[0] for col in cursor.description], row))
+        involved = False
+
+        if role in ['superadmin', 'boss', 'moderator']:
+            return app_dict  # Админам просто отдаем самую ближайшую общую
+
+        if role == 'foreman' and app_dict['foreman_id'] == tg_id:
+            involved = True
+
+        if role in ['worker', 'foreman']:
+            async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_id = ?", (tg_id,)) as cur:
+                tm_row = await cur.fetchone()
+                if tm_row and tm_row[0] == app_dict['team_id']:
+                    involved = True
+
+        if role == 'driver':
+            async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (tg_id,)) as cur:
+                eq_row = await cur.fetchone()
+                if eq_row:
+                    my_eq_id = eq_row[0]
+                    eq_data_str = app_dict.get('equipment_data', '')
+                    if eq_data_str:
+                        try:
+                            eq_list = json.loads(eq_data_str)
+                            if any(e['id'] == my_eq_id for e in eq_list):
+                                involved = True
+                        except:
+                            pass
+
+        if involved: return app_dict
+
+    return None
 
 
-# --- НОВЫЙ ЭНДПОИНТ: МОИ ЗАЯВКИ (ДЛЯ ВОДИТЕЛЕЙ И РАБОЧИХ) ---
 @app.get("/api/applications/my")
 async def get_my_apps(tg_id: int):
     user = await db.get_user(tg_id)
     if not user: return []
     role = user['role']
 
+    # Отдаем ТОЛЬКО завершенные заявки для истории
     async with db.conn.execute("""
                                SELECT a.*, t.name as team_name
                                FROM applications a
                                         LEFT JOIN teams t ON a.team_id = t.id
-                               WHERE a.status IN ('approved', 'published')
-                               ORDER BY a.id DESC
+                               WHERE a.status = 'completed'
+                               ORDER BY a.date_target DESC
                                """) as cursor:
         rows = await cursor.fetchall()
 
@@ -495,7 +526,7 @@ async def set_equipment_free(tg_id: int = Form(...)):
     await db.conn.execute("UPDATE equipment SET status = 'free' WHERE tg_id = ?", (tg_id,))
     await db.conn.commit()
     user = await db.get_user(tg_id)
-    if user: await db.add_log(tg_id, user['fio'], "Освободил свою технику")
+    if user: await db.add_log(tg_id, user['fio'], "Освободил свою технику с объекта")
     return {"status": "ok"}
 
 
@@ -586,7 +617,6 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
     if not eq_row: raise HTTPException(status_code=404, detail="Техника не найдена")
     await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (tg_id, eq_row[0]))
 
-    # Делаем юзера водителем, если он был рабочим или гостем
     user = await db.get_user(tg_id)
     fio = user['fio'] if user else f"Пользователь {tg_id}"
     if not user:
