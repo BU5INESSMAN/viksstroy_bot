@@ -14,8 +14,30 @@ export default function System() {
         axios.get('/api/logs').then(res => setLogs(res.data || [])).catch(() => {});
     }, []);
 
+    const handleTestRole = (testRole) => {
+        if (!localStorage.getItem('real_role')) {
+            localStorage.setItem('real_role', role);
+        }
+        localStorage.setItem('user_role', testRole);
+        window.location.reload();
+    };
+
     return (
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+
+            {role === 'superadmin' && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
+                    <h2 className="text-lg font-bold mb-4 text-gray-800 dark:text-gray-100 flex items-center"><span className="text-2xl mr-2">🎭</span> Тестирование ролей</h2>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Выберите роль для имитации интерфейса. Чтобы вернуться, нажмите кнопку на желтом баннере сверху.</p>
+                    <div className="flex flex-wrap gap-3">
+                        <button onClick={() => handleTestRole('moderator')} className="px-4 py-2 bg-indigo-50 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-400 rounded-lg font-bold">Модератор</button>
+                        <button onClick={() => handleTestRole('foreman')} className="px-4 py-2 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 rounded-lg font-bold">Прораб</button>
+                        <button onClick={() => handleTestRole('worker')} className="px-4 py-2 bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-400 rounded-lg font-bold">Рабочий бригады</button>
+                        <button onClick={() => handleTestRole('driver')} className="px-4 py-2 bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400 rounded-lg font-bold">Водитель техники</button>
+                    </div>
+                </div>
+            )}
+
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
                 <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">👨‍💼</span> Пользователи системы</h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
@@ -27,21 +49,20 @@ export default function System() {
                     ))}
                 </div>
             </div>
-            {['boss', 'superadmin'].includes(role) && (
-                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
-                    <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📜</span> Журнал действий системы</h2>
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-                            <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700"><tr><th className="px-6 py-3">Время</th><th className="px-6 py-3">Пользователь</th><th className="px-6 py-3">Действие</th></tr></thead>
-                            <tbody>
-                                {logs.map((log) => (
-                                    <tr key={log.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"><td className="px-6 py-4 whitespace-nowrap">{log.timestamp ? new Date(log.timestamp).toLocaleString('ru-RU') : ''}</td><td className="px-6 py-4 font-medium text-gray-900 dark:text-gray-200">{log.fio}</td><td className="px-6 py-4 text-blue-600 dark:text-blue-400">{log.action}</td></tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
+
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
+                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📜</span> Журнал действий системы</h2>
+                <div className="overflow-x-auto">
+                    <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
+                        <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700"><tr><th className="px-6 py-3">Время</th><th className="px-6 py-3">Пользователь</th><th className="px-6 py-3">Действие</th></tr></thead>
+                        <tbody>
+                            {logs.map((log) => (
+                                <tr key={log.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"><td className="px-6 py-4 whitespace-nowrap">{log.timestamp ? new Date(log.timestamp).toLocaleString('ru-RU') : ''}</td><td className="px-6 py-4 font-medium text-gray-900 dark:text-gray-200">{log.fio}</td><td className="px-6 py-4 text-blue-600 dark:text-blue-400">{log.action}</td></tr>
+                            ))}
+                        </tbody>
+                    </table>
                 </div>
-            )}
+            </div>
         </main>
     );
 }
