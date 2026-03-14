@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import Login from './pages/Login';
 import TMAAuth from './pages/TMAAuth';
@@ -12,6 +13,16 @@ import System from './pages/System';
 import Equipment from './pages/Equipment';
 
 function App() {
+  // ОПТИМИЗАЦИЯ ДЛЯ ТЕЛЕГРАМ: отключаем свайп вниз
+  useEffect(() => {
+      const tg = window.Telegram?.WebApp;
+      if (tg) {
+          tg.expand();
+          if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+      }
+      document.body.style.overscrollBehaviorY = 'none'; // защита для мобильных браузеров
+  }, []);
+
   return (
     <Router>
       <Routes>

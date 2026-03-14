@@ -10,7 +10,7 @@ export default function Review() {
     useEffect(() => { fetchData(); }, []);
 
     const handleReviewApp = async (appId, status) => {
-        if (!window.confirm(status === 'approved' ? 'Одобрить заявку?' : 'Отклонить заявку?')) return;
+        if (!window.confirm('Обновить статус заявки?')) return;
         try { const fd = new FormData(); fd.append('new_status', status); fd.append('tg_id', tgId); await axios.post(`/api/applications/${appId}/review`, fd); fetchData(); } catch (err) { alert("Ошибка при обновлении статуса"); }
     };
 
@@ -34,9 +34,13 @@ export default function Review() {
                                     {app.comment && <p className="mt-2"><span className="text-gray-500 dark:text-gray-400">Комментарий:</span> <span className="italic dark:text-gray-300">{app.comment}</span></p>}
                                 </div>
                                 <div className="flex flex-col items-end justify-between min-w-[140px] border-t dark:border-gray-600 md:border-t-0 pt-3 md:pt-0">
-                                    {app.status === 'waiting' ? (<span className="bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 text-xs font-bold px-3 py-1.5 rounded-lg mb-3 shadow-sm border border-yellow-200 dark:border-yellow-700/50">Ожидает проверки</span>) : (<span className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-bold px-3 py-1.5 rounded-lg mb-3 shadow-sm border border-green-200 dark:border-green-700/50">Одобрено</span>)}
+                                    {app.status === 'waiting' && <span className="bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 text-xs font-bold px-3 py-1.5 rounded-lg mb-3 shadow-sm border border-yellow-200 dark:border-yellow-700/50">Ожидает проверки</span>}
+                                    {app.status === 'approved' && <span className="bg-green-100 dark:bg-green-900/40 text-green-700 dark:text-green-400 text-xs font-bold px-3 py-1.5 rounded-lg mb-3 shadow-sm border border-green-200 dark:border-green-700/50">Одобрено</span>}
                                     {role === 'moderator' && app.status === 'waiting' && (
                                         <div className="flex w-full space-x-2 mt-auto"><button onClick={() => handleReviewApp(app.id, 'rejected')} className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 dark:bg-red-900/40 dark:hover:bg-red-900/60 dark:text-red-400 py-2 rounded-lg font-bold transition border border-red-200 dark:border-red-800">❌</button><button onClick={() => handleReviewApp(app.id, 'approved')} className="flex-1 bg-emerald-500 hover:bg-emerald-600 text-white py-2 rounded-lg font-bold shadow-md transition">✅ Одобрить</button></div>
+                                    )}
+                                    {role === 'moderator' && app.status === 'approved' && (
+                                        <div className="flex w-full mt-auto"><button onClick={() => handleReviewApp(app.id, 'completed')} className="w-full bg-blue-500 hover:bg-blue-600 text-white py-2 rounded-lg font-bold shadow-md transition">🏁 Завершить наряд</button></div>
                                     )}
                                 </div>
                             </div>

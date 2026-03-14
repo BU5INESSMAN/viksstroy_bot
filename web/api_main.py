@@ -29,7 +29,6 @@ app.add_middleware(
 db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
 
-# Создаем папку для картинок и раздаем ее как статику
 os.makedirs("data/uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 
@@ -37,7 +36,6 @@ app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 @app.on_event("startup")
 async def startup():
     await db.init_db()
-    # СУПЕР-ПАТЧ: Принудительное создание таблиц
     await db.conn.execute(
         "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, tg_id INTEGER, fio TEXT, action TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
     await db.conn.execute(
@@ -70,7 +68,14 @@ async def shutdown():
     await db.close()
 
 
-# --- АВТОРИЗАЦИЯ (ИЗМЕНЕНО: ВСЕ ЧЕРЕЗ ПАРОЛЬ) ---
+def check_env_roles(tg_id: int):
+    super_admins = [x.strip() for x in os.getenv("SUPER_ADMIN_IDS", "").split(",") if x.strip()]
+    bosses = [x.strip() for x in os.getenv("BOSS_IDS", "").split(",") if x.strip()]
+    if str(tg_id) in super_admins: return "superadmin"
+    if str(tg_id) in bosses: return "boss"
+    return None
+
+
 @app.post("/api/telegram_auth")
 async def telegram_auth(data: dict):
     bot_token = os.getenv("BOT_TOKEN")
@@ -94,7 +99,6 @@ async def telegram_auth(data: dict):
         return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": tg_id,
                 "avatar_url": user_dict.get('avatar_url', photo_url)}
 
-    # Никаких исключений! Если юзера нет в БД - требуем пароль
     return {"status": "needs_password", "tg_id": tg_id, "first_name": data.get('first_name', ''),
             "last_name": data.get('last_name', ''), "photo_url": photo_url}
 
@@ -125,7 +129,7 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
     fio = f"{last_name} {first_name}".strip() or f"Пользователь {tg_id}"
     await db.add_user(tg_id, fio, role)
     if photo_url: await db.update_user_avatar(tg_id, photo_url)
-    await db.add_log(tg_id, fio, f"Зарегистрировался в системе (Роль: {role})")
+    await db.add_log(tg_id, fio, f"Зарегистрировался (Роль: {role})")
     return {"status": "ok", "role": role, "tg_id": tg_id}
 
 
@@ -138,12 +142,24 @@ async def get_dashboard_data():
     async with db.conn.execute(
         "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur: cat_rows = await cur.fetchall()
     categories = [r[0].strip().capitalize() for r in cat_rows if r[0].strip()]
-    async with db.conn.execute(
-            "SELECT id, date_target, object_address, equipment_data FROM applications WHERE status IN ('approved', 'published')") as cur:
-        active_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
-    return {"stats": stats, "teams": [{"id": t['id'], "name": t['name']} for t in teams], "equipment": equip,
-            "equip_categories": list(set(categories)), "active_apps": active_apps}
+    # КАНБАН: Берем все заявки за последние 14 дней для доски
+    async with db.conn.execute("""
+                               SELECT a.*, t.name as team_name
+                               FROM applications a
+                                        LEFT JOIN teams t ON a.team_id = t.id
+                               WHERE date_target >= date ('now', '-14 days')
+                               ORDER BY a.id DESC
+                               """) as cur:
+        all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
+
+    return {
+        "stats": stats,
+        "teams": [{"id": t['id'], "name": t['name']} for t in teams],
+        "equipment": equip,
+        "equip_categories": list(set(categories)),
+        "kanban_apps": all_apps
+    }
 
 
 @app.get("/api/logs")
@@ -164,7 +180,6 @@ async def api_get_profile(target_id: int):
     return {"profile": profile, "logs": await db.get_specific_user_logs(target_id)}
 
 
-# --- ЗАГРУЗКА ФОТО ---
 def process_base64_image(base64_str: str, prefix: str) -> str:
     if not base64_str: return ""
     try:
@@ -187,8 +202,6 @@ async def api_update_avatar(target_id: int, avatar_url: str = Form(""), avatar_b
     if avatar_base64: final_url = process_base64_image(avatar_base64, f"avatar_{target_id}") or avatar_url
     if final_url:
         await db.update_user_avatar(target_id, final_url)
-        user = await db.get_user(tg_id)
-        await db.add_log(tg_id, user['fio'] if user else "Система", f"Обновил аватар профиля ID:{target_id}")
     return {"status": "ok", "avatar_url": final_url}
 
 
@@ -210,18 +223,14 @@ async def api_update_profile(target_id: int, tg_id: int = Form(...), fio: str = 
         await db.conn.execute("INSERT INTO team_members (team_id, fio, position, tg_id) VALUES (?, ?, ?, ?)",
                               (team_id, fio, position, target_id))
     await db.conn.commit()
-    await db.add_log(tg_id, admin['fio'], f"Изменил данные профиля ID:{target_id}")
     return {"status": "ok"}
 
 
 @app.post("/api/users/{target_id}/delete")
 async def api_delete_user(target_id: int, tg_id: int = Form(...)):
-    admin = await db.get_user(tg_id)
-    if not admin or admin['role'] not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403, "Нет прав")
     await db.conn.execute("DELETE FROM users WHERE user_id = ?", (target_id,))
     await db.conn.execute("DELETE FROM team_members WHERE tg_id = ?", (target_id,))
     await db.conn.commit()
-    await db.add_log(tg_id, admin['fio'], f"Удалил пользователя ID:{target_id}")
     return {"status": "ok"}
 
 
@@ -254,7 +263,6 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
     elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
         await db.update_user_role(tg_id, "worker")
     await db.conn.commit()
-    await db.add_log(tg_id, fio, f"Привязал аккаунт к бригаде «{team['name']}»")
     return {"status": "ok"}
 
 
@@ -262,7 +270,6 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
 async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Form("Пользователь")):
     await db.conn.execute("INSERT INTO teams (name) VALUES (?)", (name,))
     await db.conn.commit()
-    await db.add_log(tg_id, fio, f"Создал бригаду «{name}»")
     return {"status": "ok"}
 
 
@@ -284,7 +291,6 @@ async def add_team_member(team_id: int, fio: str = Form(...), position: str = Fo
     await db.conn.execute("INSERT INTO team_members (team_id, fio, position, is_foreman) VALUES (?, ?, ?, ?)",
                           (team_id, fio, position, is_foreman))
     await db.conn.commit()
-    await db.add_log(tg_id, admin_fio, f"Добавил участника «{fio}» в бригаду #{team_id}")
     return {"status": "ok"}
 
 
@@ -293,7 +299,6 @@ async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int
                          admin_fio: str = Form("Пользователь")):
     await db.conn.execute("UPDATE team_members SET is_foreman = ? WHERE id = ?", (is_foreman, member_id))
     await db.conn.commit()
-    await db.add_log(tg_id, admin_fio, f"Изменил статус бригадира для #{member_id}")
     return {"status": "ok"}
 
 
@@ -301,7 +306,6 @@ async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int
 async def delete_team_member(member_id: int, tg_id: int = Form(0), admin_fio: str = Form("Пользователь")):
     await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
     await db.conn.commit()
-    await db.add_log(tg_id, admin_fio, f"Удалил участника #{member_id} из бригады")
     return {"status": "ok"}
 
 
@@ -319,7 +323,6 @@ async def create_app(tg_id: int = Form(...), team_id: int = Form(0), date_target
                           """,
                           (tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
-    await db.add_log(tg_id, fio, f"Создал заявку на выезд ({date_target}, {object_address})")
     return {"status": "ok"}
 
 
@@ -347,12 +350,24 @@ async def get_review_apps():
 
 @app.post("/api/applications/{app_id}/review")
 async def review_app(app_id: int, new_status: str = Form(...), tg_id: int = Form(0)):
-    if new_status not in ['approved', 'rejected']: raise HTTPException(400, "Неверный статус")
+    if new_status not in ['approved', 'rejected', 'completed']: raise HTTPException(400, "Неверный статус")
     await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
+
+    # Если завершили наряд - освобождаем технику
+    if new_status in ['completed', 'rejected']:
+        async with db.conn.execute("SELECT equipment_data FROM applications WHERE id = ?", (app_id,)) as cur:
+            app_row = await cur.fetchone()
+            if app_row and app_row[0]:
+                try:
+                    eq_list = json.loads(app_row[0])
+                    for e in eq_list: await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?",
+                                                            (e['id'],))
+                except:
+                    pass
+
     await db.conn.commit()
     user = await db.get_user(tg_id)
-    await db.add_log(tg_id, user['fio'] if user else "Модератор",
-                     f"{'Одобрил' if new_status == 'approved' else 'Отклонил'} заявку №{app_id}")
+    await db.add_log(tg_id, user['fio'] if user else "Модератор", f"Изменил статус заявки №{app_id} на {new_status}")
     return {"status": "ok"}
 
 
@@ -417,8 +432,6 @@ async def publish_apps(tg_id: int = Form(0)):
                             pass
                     await db.conn.commit()
                     count += 1
-    user = await db.get_user(tg_id)
-    await db.add_log(tg_id, user['fio'] if user else "Руководство", f"Опубликовал {count} нарядов в группу")
     return {"status": "ok", "published": count}
 
 
@@ -443,8 +456,6 @@ async def add_equipment(name: str = Form(...), category: str = Form(...), driver
     await db.conn.execute("INSERT INTO equipment (name, category, driver, status) VALUES (?, ?, ?, 'free')",
                           (name, category, driver))
     await db.conn.commit()
-    user = await db.get_user(tg_id)
-    await db.add_log(tg_id, user['fio'] if user else "Система", f"Добавил технику: {name}")
     return {"status": "ok"}
 
 
@@ -463,8 +474,6 @@ async def bulk_add_equipment(request: Request):
                                   (name, category, driver))
             count += 1
     await db.conn.commit()
-    user = await db.get_user(tg_id)
-    await db.add_log(tg_id, user['fio'] if user else "Система", f"Массово добавил {count} ед. техники")
     return {"status": "ok", "added": count}
 
 
@@ -484,8 +493,6 @@ async def update_equipment(equip_id: int, name: str = Form(...), category: str =
     await db.conn.execute("UPDATE equipment SET name=?, category=?, driver=?, status=? WHERE id=?",
                           (name, category, driver, status, equip_id))
     await db.conn.commit()
-    user = await db.get_user(tg_id)
-    await db.add_log(tg_id, user['fio'] if user else "Система", f"Обновил профиль техники ID:{equip_id}")
     return {"status": "ok"}
 
 
@@ -493,8 +500,6 @@ async def update_equipment(equip_id: int, name: str = Form(...), category: str =
 async def delete_equipment(equip_id: int, tg_id: int = Form(0)):
     await db.conn.execute("DELETE FROM equipment WHERE id = ?", (equip_id,))
     await db.conn.commit()
-    user = await db.get_user(tg_id)
-    await db.add_log(tg_id, user['fio'] if user else "Система", f"Удалил технику ID:{equip_id}")
     return {"status": "ok"}
 
 
@@ -527,9 +532,6 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
     if not eq_row: raise HTTPException(status_code=404, detail="Техника не найдена")
     await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (tg_id, eq_row[0]))
     await db.conn.commit()
-    user = await db.get_user(tg_id)
-    fio = user['fio'] if user else f"Пользователь {tg_id}"
-    await db.add_log(tg_id, fio, f"Привязал аккаунт водителя к технике «{eq_row[1]}»")
     return {"status": "ok"}
 
 
@@ -537,6 +539,4 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
 async def unlink_equipment(equip_id: int, tg_id: int = Form(0)):
     await db.conn.execute("UPDATE equipment SET tg_id = NULL WHERE id = ?", (equip_id,))
     await db.conn.commit()
-    user = await db.get_user(tg_id)
-    await db.add_log(tg_id, user['fio'] if user else "Система", f"Отвязал водителя от техники ID:{equip_id}")
     return {"status": "ok"}
