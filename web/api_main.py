@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Form, HTTPException, status, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 from database.db_manager import DatabaseManager
 import os
 import hashlib
@@ -10,6 +11,7 @@ import aiohttp
 import json
 import uuid
 import base64
+import traceback
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -33,6 +35,75 @@ os.makedirs("data/uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 
 
+# --- СИСТЕМА УВЕДОМЛЕНИЙ ТЕЛЕГРАМ ---
+async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None):
+    """
+    Отправляет уведомление списку ролей или конкретным tg_id.
+    url_path: 'dashboard', 'review', 'teams', 'equipment', 'my-apps', 'system'
+    """
+    bot_token = os.getenv("BOT_TOKEN")
+    group_report_id = os.getenv("GROUP_REPORT_ID") or os.getenv("GROUP_CHAT_ID")
+
+    if not bot_token: return
+
+    chat_ids = set()
+
+    # 1. Добавляем группу отчетов
+    if "report_group" in target_roles and group_report_id:
+        chat_ids.add(str(group_report_id))
+
+    # 2. Ищем пользователей с нужной ролью
+    roles_to_fetch = [r for r in target_roles if r != "report_group"]
+    if roles_to_fetch:
+        pl = ','.join(['?'] * len(roles_to_fetch))
+        try:
+            async with db.conn.execute(f"SELECT user_id FROM users WHERE role IN ({pl}) AND is_blacklisted = 0",
+                                       roles_to_fetch) as cur:
+                for row in await cur.fetchall():
+                    if row[0]: chat_ids.add(str(row[0]))
+        except:
+            pass
+
+    # 3. Добавляем конкретных пользователей (Прорабы, Рабочие)
+    if extra_tg_ids:
+        for tid in extra_tg_ids:
+            if tid: chat_ids.add(str(tid))
+
+    if not chat_ids: return
+
+    # Кнопка открытия приложения на нужной странице
+    markup = {
+        "inline_keyboard": [[
+            {"text": "📱 Открыть платформу", "web_app": {"url": f"https://islandvpn.sbs/{url_path}"}}
+        ]]
+    }
+
+    async with aiohttp.ClientSession() as session:
+        for cid in chat_ids:
+            payload = {"chat_id": cid, "text": text, "parse_mode": "HTML", "reply_markup": markup}
+            try:
+                await session.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json=payload)
+            except:
+                pass
+
+
+# --- ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК ОШИБОК ---
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    try:
+        # Пытаемся достать последнее действие из логов
+        async with db.conn.execute("SELECT fio, action FROM logs ORDER BY id DESC LIMIT 1") as cur:
+            row = await cur.fetchone()
+            last_user = row[0] if row else "Неизвестно"
+            last_action = row[1] if row else "Нет данных"
+
+        err_msg = f"🚨 <b>ОШИБКА СИСТЕМЫ (500)</b>\n\n👤 <b>Последний юзер:</b> {last_user}\n👣 <b>Последнее действие:</b> {last_action}\n❌ <b>Текст ошибки:</b> {str(exc)}"
+        await notify_users(["report_group"], err_msg, "system")
+    except:
+        pass
+    return JSONResponse(status_code=500, content={"detail": f"Внутренняя ошибка сервера"})
+
+
 @app.on_event("startup")
 async def startup():
     await db.init_db()
@@ -41,7 +112,6 @@ async def startup():
     await db.conn.execute(
         "CREATE TABLE IF NOT EXISTS equipment (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, category TEXT, is_active INTEGER DEFAULT 1, driver TEXT DEFAULT '')")
 
-    # ИСПРАВЛЕНИЕ: Добавлены колонки для таблиц teams (invite_code)
     columns_to_add = [
         ("applications", "foreman_id", "INTEGER"), ("applications", "foreman_name", "TEXT"),
         ("applications", "equip_id", "INTEGER DEFAULT 0"),
@@ -96,13 +166,11 @@ async def telegram_auth(data: dict):
 
         user = await db.get_user(tg_id)
         if user:
-            user_dict = dict(user)  # ИСПРАВЛЕНИЕ: Преобразуем Row в dict перед использованием
+            user_dict = dict(user)
             if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Пользователь заблокирован")
-
             if photo_url and not user_dict.get('avatar_url'):
                 await db.update_user_avatar(tg_id, photo_url)
                 user_dict['avatar_url'] = photo_url
-
             return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": tg_id,
                     "avatar_url": user_dict.get('avatar_url', photo_url)}
 
@@ -111,8 +179,6 @@ async def telegram_auth(data: dict):
     except HTTPException:
         raise
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         raise HTTPException(status_code=400, detail=f"Ошибка: {str(e)}")
 
 
@@ -143,7 +209,12 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
     fio = f"{last_name} {first_name}".strip() or f"Пользователь {tg_id}"
     await db.add_user(tg_id, fio, role)
     if photo_url: await db.update_user_avatar(tg_id, photo_url)
+
     await db.add_log(tg_id, fio, f"Зарегистрировался (Роль: {role})")
+
+    # УВЕДОМЛЕНИЕ: Регистрация
+    await notify_users(["report_group", "moderator"],
+                       f"🆕 <b>Новая регистрация</b>\n👤 Пользователь: {fio}\n💼 Должность: {role}", "system")
     return {"status": "ok", "role": role, "tg_id": tg_id}
 
 
@@ -158,13 +229,8 @@ async def get_dashboard_data(tg_id: int = 0):
         cat_rows = await cur.fetchall()
     categories = [r[0].strip().capitalize() for r in cat_rows if r[0].strip()]
 
-    async with db.conn.execute("""
-                               SELECT a.*, t.name as team_name
-                               FROM applications a
-                                        LEFT JOIN teams t ON a.team_id = t.id
-                               WHERE date_target >= date ('now', '-14 days')
-                               ORDER BY a.id DESC
-                               """) as cur:
+    async with db.conn.execute(
+            "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE date_target >= date('now', '-14 days') ORDER BY a.id DESC") as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
     recent_addresses = []
@@ -209,7 +275,7 @@ def process_base64_image(base64_str: str, prefix: str) -> str:
         with open(filepath, "wb") as f:
             f.write(base64.b64decode(encoded))
         return f"/uploads/{filename}"
-    except Exception:
+    except:
         return ""
 
 
@@ -218,8 +284,7 @@ async def api_update_avatar(target_id: int, avatar_url: str = Form(""), avatar_b
                             tg_id: int = Form(0)):
     final_url = avatar_url
     if avatar_base64: final_url = process_base64_image(avatar_base64, f"avatar_{target_id}") or avatar_url
-    if final_url:
-        await db.update_user_avatar(target_id, final_url)
+    if final_url: await db.update_user_avatar(target_id, final_url)
     return {"status": "ok", "avatar_url": final_url}
 
 
@@ -241,6 +306,7 @@ async def api_update_profile(target_id: int, tg_id: int = Form(...), fio: str = 
         await db.conn.execute("INSERT INTO team_members (team_id, fio, position, tg_id) VALUES (?, ?, ?, ?)",
                               (team_id, fio, position, target_id))
     await db.conn.commit()
+    await db.add_log(tg_id, admin['fio'], f"Изменил данные профиля ID:{target_id}")
     return {"status": "ok"}
 
 
@@ -281,6 +347,12 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
     elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
         await db.update_user_role(tg_id, "worker")
     await db.conn.commit()
+    await db.add_log(tg_id, fio, f"Привязал аккаунт к бригаде «{team['name']}»")
+
+    # УВЕДОМЛЕНИЕ: Инвайт Бригада
+    await notify_users(["report_group"],
+                       f"🔗 <b>Привязка аккаунта</b>\nРабочий {fio} успешно привязал свой Telegram к бригаде «{team['name']}».",
+                       "teams")
     return {"status": "ok"}
 
 
@@ -288,6 +360,7 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
 async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Form("Пользователь")):
     await db.conn.execute("INSERT INTO teams (name) VALUES (?)", (name,))
     await db.conn.commit()
+    await notify_users(["report_group"], f"🏗 <b>Новая бригада</b>\n{fio} создал бригаду «{name}»", "teams")
     return {"status": "ok"}
 
 
@@ -309,6 +382,9 @@ async def add_team_member(team_id: int, fio: str = Form(...), position: str = Fo
     await db.conn.execute("INSERT INTO team_members (team_id, fio, position, is_foreman) VALUES (?, ?, ?, ?)",
                           (team_id, fio, position, is_foreman))
     await db.conn.commit()
+    await notify_users(["report_group"],
+                       f"👥 <b>Изменение состава бригады</b>\n{admin_fio} добавил участника {fio} ({position}).",
+                       "teams")
     return {"status": "ok"}
 
 
@@ -324,6 +400,8 @@ async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int
 async def delete_team_member(member_id: int, tg_id: int = Form(0), admin_fio: str = Form("Пользователь")):
     await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
     await db.conn.commit()
+    await notify_users(["report_group"], f"🗑 <b>Удаление из бригады</b>\n{admin_fio} удалил участника #{member_id}.",
+                       "teams")
     return {"status": "ok"}
 
 
@@ -332,7 +410,7 @@ async def create_app(tg_id: int = Form(...), team_id: int = Form(0), date_target
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form("")):
     user = await db.get_user(tg_id)
-    fio = user['fio'] if user else "Web-Пользователь"
+    fio = dict(user).get('fio', 'Web-Пользователь') if user else "Web-Пользователь"
     await db.conn.execute("""
                           INSERT INTO applications (foreman_id, foreman_name, team_id, equip_id, date_target,
                                                     object_address, time_start, time_end, comment, status,
@@ -341,6 +419,11 @@ async def create_app(tg_id: int = Form(...), team_id: int = Form(0), date_target
                           """,
                           (tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
+
+    # УВЕДОМЛЕНИЕ: Новая заявка на модерацию
+    await notify_users(["report_group", "moderator"],
+                       f"📝 <b>Новая заявка на выезд</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}",
+                       "review")
     return {"status": "ok"}
 
 
@@ -367,24 +450,69 @@ async def get_review_apps():
 
 
 @app.post("/api/applications/{app_id}/review")
-async def review_app(app_id: int, new_status: str = Form(...), tg_id: int = Form(0)):
+async def review_app(app_id: int, new_status: str = Form(...), reason: str = Form(""), tg_id: int = Form(0)):
     if new_status not in ['approved', 'rejected', 'completed']: raise HTTPException(400, "Неверный статус")
+
+    # Достаем заявку ДО обновления для информации
+    async with db.conn.execute("SELECT * FROM applications WHERE id = ?", (app_id,)) as cur:
+        app_row = await cur.fetchone()
+    if not app_row: raise HTTPException(404, "Заявка не найдена")
+    app_dict = dict(zip([c[0] for c in cur.description], app_row))
+
     await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
 
     if new_status in ['completed', 'rejected']:
-        async with db.conn.execute("SELECT equipment_data FROM applications WHERE id = ?", (app_id,)) as cur:
-            app_row = await cur.fetchone()
-            if app_row and app_row[0]:
-                try:
-                    eq_list = json.loads(app_row[0])
-                    for e in eq_list: await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?",
-                                                            (e['id'],))
-                except:
-                    pass
+        if app_dict.get('equipment_data'):
+            try:
+                eq_list = json.loads(app_dict['equipment_data'])
+                for e in eq_list: await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (e['id'],))
+            except:
+                pass
 
     await db.conn.commit()
     user = await db.get_user(tg_id)
-    await db.add_log(tg_id, user['fio'] if user else "Модератор", f"Изменил статус заявки №{app_id} на {new_status}")
+    mod_fio = dict(user).get('fio', 'Модератор') if user else 'Модератор'
+
+    # 1. Уведомление в Группу отчетов
+    status_ru = "✅ Одобрена" if new_status == 'approved' else (
+        "❌ Отклонена" if new_status == 'rejected' else "🏁 Завершена")
+    msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Модератор: {mod_fio}\n📍 Объект: {app_dict['object_address']}"
+    if reason: msg_group += f"\n💬 Причина: {reason}"
+    await notify_users(["report_group"], msg_group, "review")
+
+    # 2. Уведомление Прорабу
+    if new_status in ['approved', 'rejected']:
+        msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
+        if reason: msg_foreman += f"\n💬 Причина: {reason}"
+        await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']])
+
+    # 3. Уведомление Рабочим и Водителям (Только при одобрении)
+    if new_status == 'approved':
+        workers_ids, drivers_ids = [], []
+        if app_dict.get('selected_members'):
+            sel = [int(x.strip()) for x in str(app_dict['selected_members']).split(',')]
+            if sel:
+                pl = ','.join(['?'] * len(sel))
+                async with db.conn.execute(f"SELECT tg_id FROM team_members WHERE id IN ({pl}) AND tg_id IS NOT NULL",
+                                           sel) as cur:
+                    for r in await cur.fetchall(): workers_ids.append(r[0])
+
+        if app_dict.get('equipment_data'):
+            try:
+                eq_ids = [e['id'] for e in json.loads(app_dict['equipment_data'])]
+                if eq_ids:
+                    pl = ','.join(['?'] * len(eq_ids))
+                    async with db.conn.execute(f"SELECT tg_id FROM equipment WHERE id IN ({pl}) AND tg_id IS NOT NULL",
+                                               eq_ids) as cur:
+                        for r in await cur.fetchall(): drivers_ids.append(r[0])
+            except:
+                pass
+
+        all_involved = list(set(workers_ids + drivers_ids))
+        if all_involved:
+            msg_inv = f"👷‍♂️ <b>Вас добавили в наряд!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
+            await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved)
+
     return {"status": "ok"}
 
 
@@ -531,7 +659,12 @@ async def set_equipment_free(tg_id: int = Form(...)):
     await db.conn.execute("UPDATE equipment SET status = 'free' WHERE tg_id = ?", (tg_id,))
     await db.conn.commit()
     user = await db.get_user(tg_id)
-    if user: await db.add_log(tg_id, dict(user).get('fio', ''), "Освободил свою технику")
+    if user:
+        fio = dict(user).get('fio', '')
+        await db.add_log(tg_id, fio, "Освободил свою технику")
+        await notify_users(["report_group"],
+                           f"🟢 <b>Техника освобождена</b>\nВодитель {fio} завершил работу и освободил свою машину.",
+                           "equipment")
     return {"status": "ok"}
 
 
@@ -546,6 +679,7 @@ async def add_equipment(name: str = Form(...), category: str = Form(...), driver
     await db.conn.execute("INSERT INTO equipment (name, category, driver, status) VALUES (?, ?, ?, 'free')",
                           (name, category, driver))
     await db.conn.commit()
+    await notify_users(["report_group"], f"🚜 <b>Автопарк изменен</b>\nДобавлена новая техника: {name}", "equipment")
     return {"status": "ok"}
 
 
@@ -564,6 +698,7 @@ async def bulk_add_equipment(request: Request):
                                   (name, category, driver))
             count += 1
     await db.conn.commit()
+    await notify_users(["report_group"], f"🚜 <b>Массовая загрузка</b>\nДобавлено {count} единиц техники.", "equipment")
     return {"status": "ok", "added": count}
 
 
@@ -623,14 +758,15 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
     await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (tg_id, eq_row[0]))
 
     user = await db.get_user(tg_id)
+    fio = dict(user).get('fio', f"Пользователь {tg_id}") if user else f"Пользователь {tg_id}"
     if not user:
-        await db.add_user(tg_id, f"Пользователь {tg_id}", "driver")
-    else:
-        user_dict = dict(user)
-        if user_dict['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
-            await db.update_user_role(tg_id, "driver")
-
+        await db.add_user(tg_id, fio, "driver")
+    elif dict(user)['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
+        await db.update_user_role(tg_id, "driver")
     await db.conn.commit()
+
+    await notify_users(["report_group"],
+                       f"🔗 <b>Привязка аккаунта</b>\nВодитель {fio} привязан к технике «{eq_row[1]}».", "equipment")
     return {"status": "ok"}
 
 
