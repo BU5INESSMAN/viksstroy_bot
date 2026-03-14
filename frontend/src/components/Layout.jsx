@@ -77,41 +77,44 @@ export default function Layout() {
     return (
         <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
 
-            {realRole && (
-                <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-50">
-                    <span>Тест роли: {roleNames[role]}</span>
-                    <button onClick={endRoleTest} className="bg-black/20 hover:bg-black/30 px-3 py-1 rounded-lg text-xs transition">Вернуться</button>
-                </div>
-            )}
+            {/* ИСПРАВЛЕНИЕ ОСТУПА (pt-28 для мобилок, pt-0 для ПК) */}
+            <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 pt-28 sm:pt-0">
+                {realRole && (
+                    <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-50">
+                        <span>Тест роли: {roleNames[role]}</span>
+                        <button onClick={endRoleTest} className="bg-black/20 hover:bg-black/30 px-3 py-1 rounded-lg text-xs transition">Вернуться</button>
+                    </div>
+                )}
 
-            {/* ИСПРАВЛЕНИЕ: ДОБАВЛЕН pt-16 ЧТОБЫ НЕ ПЕРЕКРЫВАЛОСЬ В ТЕЛЕГРАММЕ */}
-            <nav className="bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 px-4 sm:px-6 pt-16 pb-3 sm:pt-4 flex justify-between items-center mb-6">
+                <nav className="px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
 
-                <div className="flex-1 flex items-center">
-                    {/* ДИНАМИЧЕСКИЙ ЛОГОТИП */}
-                    <div className="w-28 h-8 bg-blue-600 dark:bg-blue-400 transition-colors" style={{
-                        WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
-                        WebkitMaskSize: 'contain', maskSize: 'contain',
-                        WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
-                        WebkitMaskPosition: 'left center', maskPosition: 'left center'
-                    }}></div>
-                </div>
+                    {/* ЛОГОТИП */}
+                    <div className="flex-1 flex items-center">
+                        <div className="w-28 h-8 bg-blue-600 dark:bg-blue-400 transition-colors" style={{
+                            WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
+                            WebkitMaskSize: 'contain', maskSize: 'contain',
+                            WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+                            WebkitMaskPosition: 'left center', maskPosition: 'left center'
+                        }}></div>
+                    </div>
 
-                <div className="flex items-center space-x-1 sm:space-x-2">
-                    <button onClick={toggleTheme} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg">{themeIcon}</button>
-                    <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg" title="Техподдержка">💬</a>
-                    <button onClick={() => navigate('/guide')} className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg" title="Инструкция">📖</button>
-                    <button onClick={() => openProfile(tgId)} className="flex items-center space-x-2 hover:bg-gray-50 dark:hover:bg-gray-700 px-2 py-1.5 rounded-lg transition ml-2">
-                        <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center overflow-hidden border border-blue-200 dark:border-blue-700">
-                            <span className="text-blue-600 dark:text-blue-300 font-bold text-xs">👤</span>
-                        </div>
-                    </button>
-                </div>
-            </nav>
+                    <div className="flex items-center space-x-1 sm:space-x-2">
+                        <button onClick={toggleTheme} className="w-9 h-9 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg">{themeIcon}</button>
+                        <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg" title="Техподдержка">💬</a>
+                        <button onClick={() => navigate('/guide')} className="flex items-center justify-center w-9 h-9 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition text-lg" title="Инструкция">📖</button>
+                        <button onClick={() => openProfile(tgId)} className="flex items-center space-x-2 hover:bg-gray-50 dark:hover:bg-gray-700 px-2 py-1.5 rounded-lg transition ml-2">
+                            <div className="w-7 h-7 rounded-full bg-blue-100 dark:bg-blue-900 flex items-center justify-center overflow-hidden border border-blue-200 dark:border-blue-700">
+                                <span className="text-blue-600 dark:text-blue-300 font-bold text-xs">👤</span>
+                            </div>
+                        </button>
+                    </div>
+                </nav>
+            </header>
 
             <Outlet context={{ openProfile, isGlobalCreateAppOpen, setGlobalCreateAppOpen }} />
 
             <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-40 flex justify-around items-end pb-safe shadow-[0_-10px_20px_-5px_rgba(0,0,0,0.05)] transition-colors h-16">
+
                 <button onClick={() => navigate('/dashboard')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/dashboard' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">🏠</span><span className="text-[10px] font-bold uppercase tracking-wide">Главная</span></button>
 
                 {isWorkerOrDriver && <button onClick={() => navigate('/my-apps')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/my-apps' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">📋</span><span className="text-[10px] font-bold uppercase tracking-wide">Мои заявки</span></button>}
@@ -134,7 +137,6 @@ export default function Layout() {
                 {isModOrBoss && <button onClick={() => navigate('/system')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/system' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">⚙️</span><span className="text-[10px] font-bold uppercase tracking-wide">Система</span></button>}
             </div>
 
-            {/* ПРОФИЛЬ (МОДАЛКА ИЗ LAYOUT) */}
             {isProfileModalOpen && profileData && (
                 <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm"><div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24"><div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden transition-colors"><div className="bg-gradient-to-r from-blue-600 to-blue-800 dark:from-blue-800 dark:to-blue-900 px-6 py-8 text-white relative"><button onClick={() => setProfileModalOpen(false)} className="absolute top-4 right-4 text-white text-3xl font-bold leading-none">&times;</button><div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-6">
                     <label className="relative group cursor-pointer block">
