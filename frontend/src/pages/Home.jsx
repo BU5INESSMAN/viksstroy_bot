@@ -42,6 +42,7 @@ export default function Home() {
 
     const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], kanban_apps: [], recent_addresses: [] });
     const [activeApp, setActiveApp] = useState(null);
+    const [myTeam, setMyTeam] = useState(null); // НОВЫЙ СТЕЙТ
     const [loading, setLoading] = useState(true);
 
     const [teamMembers, setTeamMembers] = useState([]);
@@ -52,9 +53,18 @@ export default function Home() {
     const fetchData = () => {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
         axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApp(res.data); setLoading(false); }).catch(() => { setActiveApp(null); setLoading(false); });
+
+        // ПОДГРУЗКА БРИГАДЫ ДЛЯ РАБОЧИХ И ПРОРАБОВ
+        if (['worker', 'foreman'].includes(role)) {
+            axios.get(`/api/users/${tgId}/profile`).then(res => {
+                if (res.data.profile.team_id) {
+                    axios.get(`/api/teams/${res.data.profile.team_id}/details`).then(tRes => setMyTeam(tRes.data));
+                }
+            }).catch(()=>{});
+        }
     };
 
-    useEffect(() => { fetchData(); }, [tgId]);
+    useEffect(() => { fetchData(); }, [tgId, role]);
 
     useEffect(() => {
         if (appForm.team_id) {
@@ -133,29 +143,50 @@ export default function Home() {
     const appsMap = { waiting: [], approved: [], published: [], completed: [] };
     if (data.kanban_apps) { data.kanban_apps.forEach(a => { if (appsMap[a.status]) appsMap[a.status].push(a); }); }
 
-    if (loading) return <div className="text-center mt-20">Загрузка...</div>;
-
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
+
+    if (loading) return <div className="text-center mt-20">Загрузка...</div>;
 
     return (
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
-            {/* БЛИЖАЙШИЙ НАРЯД ТОЛЬКО ДЛЯ РАБОЧИХ/ВОДИТЕЛЕЙ И ПРОРАБОВ */}
-            {['worker', 'driver', 'foreman'].includes(role) && (
-                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-blue-500 relative">
-                    <h2 className="text-lg font-bold mb-2 flex items-center dark:text-white">📋 Ближайший наряд</h2>
-                    {activeApp ? (
-                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-sm space-y-2 text-gray-800 dark:text-gray-200">
-                           <p><b>Дата:</b> {activeApp.date_target}</p><p><b>Объект:</b> {activeApp.object_address}</p><p><b>Техника:</b> {activeEquipText}</p><p><b>Бригада:</b> {activeApp.team_id ? activeApp.team_name : 'Только техника'}</p>
-                           {role === 'driver' && (
-                               <button onClick={handleFreeEquipment} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
-                                   ✅ Готово (Освободить технику)
-                               </button>
-                           )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                {/* БЛИЖАЙШИЙ НАРЯД ТОЛЬКО ДЛЯ РАБОЧИХ/ВОДИТЕЛЕЙ И ПРОРАБОВ */}
+                {['worker', 'driver', 'foreman'].includes(role) && (
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-blue-500 relative h-fit">
+                        <h2 className="text-lg font-bold mb-2 flex items-center dark:text-white">📋 Ближайший наряд</h2>
+                        {activeApp ? (
+                            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-sm space-y-2 text-gray-800 dark:text-gray-200">
+                               <p><b>Дата:</b> {activeApp.date_target}</p><p><b>Объект:</b> {activeApp.object_address}</p><p><b>Техника:</b> {activeEquipText}</p><p><b>Бригада:</b> {activeApp.team_id ? activeApp.team_name : 'Только техника'}</p>
+                               {role === 'driver' && (
+                                   <button onClick={handleFreeEquipment} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
+                                       ✅ Готово (Освободить технику)
+                                   </button>
+                               )}
+                            </div>
+                        ) : (<p className="text-blue-600 dark:text-blue-400 font-medium text-sm p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">Предстоящих нарядов пока нет.</p>)}
+                    </div>
+                )}
+
+                {/* НОВЫЙ БЛОК: МОЯ БРИГАДА */}
+                {myTeam && (
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-indigo-500 relative h-fit">
+                        <h2 className="text-lg font-bold mb-4 flex items-center dark:text-white">🧑‍🤝‍🧑 Бригада: {myTeam.name}</h2>
+                        <div className="space-y-2">
+                            {myTeam.members.map(m => (
+                                <div key={m.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
+                                    <div>
+                                        <span className="font-bold text-gray-800 dark:text-gray-200 text-sm">{m.fio}</span>
+                                        {m.is_foreman ? <span className="ml-2 text-[10px] font-extrabold bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded shadow-sm">БРИГАДИР</span> : null}
+                                    </div>
+                                    <span className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">{m.position}</span>
+                                </div>
+                            ))}
                         </div>
-                    ) : (<p className="text-blue-600 dark:text-blue-400 font-medium text-sm p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">Предстоящих нарядов пока нет.</p>)}
-                </div>
-            )}
+                    </div>
+                )}
+            </div>
 
             {/* КАНБАН ДОСКА ТОЛЬКО ДЛЯ РУКОВОДСТВА */}
             {!isWorkerOrDriver && (
@@ -225,4 +256,9 @@ export default function Home() {
             )}
         </main>
     );
+}
+
+function StatCard({ title, value, color, text = "text-gray-900 dark:text-gray-100" }) {
+  const borders = { blue: 'border-blue-500', green: 'border-emerald-500', red: 'border-red-500', yellow: 'border-yellow-500' };
+  return (<div className={`bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border-l-4 ${borders[color]}`}><p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase">{title}</p><p className={`text-3xl font-bold ${text}`}>{value}</p></div>);
 }

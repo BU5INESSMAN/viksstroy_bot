@@ -20,24 +20,38 @@ export default function JoinEquipment() {
   }, [code]);
 
   useEffect(() => {
-    if (equipData && !tgId && telegramWrapperRef.current && telegramWrapperRef.current.children.length === 0) {
-      window.onTelegramAuthEquip = async (user) => {
-        try {
-          const response = await axios.post('/api/telegram_auth', user);
-          setTgId(response.data.tg_id);
-          localStorage.setItem('tg_id', response.data.tg_id);
-          localStorage.setItem('user_role', response.data.role);
-        } catch (err) {
-          setError(err.response?.data?.detail || 'Ошибка авторизации');
-        }
-      };
-      const script = document.createElement('script');
-      script.src = 'https://telegram.org/js/telegram-widget.js?22';
-      script.setAttribute('data-telegram-login', 'viksstroy_bot'); // ВНИМАНИЕ: ЮЗЕРНЕЙМ ВАШЕГО БОТА
-      script.setAttribute('data-size', 'large');
-      script.setAttribute('data-onauth', 'onTelegramAuthEquip(user)');
-      script.async = true;
-      telegramWrapperRef.current.appendChild(script);
+    const tg = window.Telegram?.WebApp;
+    const tgUser = tg?.initDataUnsafe?.user;
+
+    // ЕСЛИ ОТКРЫТО В ТЕЛЕГРАМ - АВТОМАТИЧЕСКАЯ АВТОРИЗАЦИЯ
+    if (tgUser && tgUser.id && !tgId) {
+        const formData = new FormData();
+        formData.append('tg_id', tgUser.id);
+        formData.append('first_name', tgUser.first_name || '');
+        formData.append('last_name', tgUser.last_name || '');
+        axios.post('/api/tma/auth', formData).then(res => {
+            setTgId(tgUser.id);
+            localStorage.setItem('tg_id', tgUser.id);
+            if (res.data.role) localStorage.setItem('user_role', res.data.role);
+        }).catch(() => setError("Ошибка авторизации TMA"));
+    }
+    // ЕСЛИ ОТКРЫТО В БРАУЗЕРЕ (САФАРИ/ХРОМ) - ПОКАЗЫВАЕМ ВИДЖЕТ
+    else if (equipData && !tgId && telegramWrapperRef.current && telegramWrapperRef.current.children.length === 0) {
+        window.onTelegramAuthEquip = async (user) => {
+            try {
+              const response = await axios.post('/api/telegram_auth', user);
+              setTgId(response.data.tg_id);
+              localStorage.setItem('tg_id', response.data.tg_id);
+              if (response.data.role) localStorage.setItem('user_role', response.data.role);
+            } catch (err) { setError(err.response?.data?.detail || 'Ошибка авторизации'); }
+        };
+        const script = document.createElement('script');
+        script.src = 'https://telegram.org/js/telegram-widget.js?22';
+        script.setAttribute('data-telegram-login', 'viksstroy_bot');
+        script.setAttribute('data-size', 'large');
+        script.setAttribute('data-onauth', 'onTelegramAuthEquip(user)');
+        script.async = true;
+        telegramWrapperRef.current.appendChild(script);
     }
   }, [tgId, equipData]);
 

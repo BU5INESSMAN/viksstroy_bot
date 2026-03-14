@@ -78,29 +78,36 @@ def check_env_roles(tg_id: int):
 
 @app.post("/api/telegram_auth")
 async def telegram_auth(data: dict):
-    bot_token = os.getenv("BOT_TOKEN")
-    received_hash = data.pop('hash', None)
-    if time.time() - int(data.get('auth_date', 0)) > 86400: raise HTTPException(status_code=403,
-                                                                                detail="Данные устарели")
+    try:
+        bot_token = os.getenv("BOT_TOKEN")
+        received_hash = data.pop('hash', None)
+        if time.time() - int(data.get('auth_date', 0)) > 86400: raise HTTPException(status_code=403,
+                                                                                    detail="Данные устарели")
 
-    data_check_string = "\n".join([f"{k}={data[k]}" for k in sorted(data.keys()) if data[k] is not None])
-    secret_key = hashlib.sha256(bot_token.encode()).digest()
-    hash_calc = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-    if hash_calc != received_hash: raise HTTPException(status_code=403, detail="Неверная подпись")
+        data_check_string = "\n".join([f"{k}={data[k]}" for k in sorted(data.keys()) if data[k] is not None])
+        secret_key = hashlib.sha256(bot_token.encode()).digest()
+        hash_calc = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
+        if hash_calc != received_hash: raise HTTPException(status_code=403, detail="Неверная подпись")
 
-    tg_id = int(data['id'])
-    photo_url = data.get('photo_url', '')
+        tg_id = int(data['id'])
+        photo_url = data.get('photo_url', '')
 
-    user = await db.get_user(tg_id)
-    if user:
-        if user['is_blacklisted']: raise HTTPException(status_code=403, detail="Пользователь заблокирован")
-        if photo_url and not user.get('avatar_url'): await db.update_user_avatar(tg_id, photo_url)
-        user_dict = dict(user)
-        return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": tg_id,
-                "avatar_url": user_dict.get('avatar_url', photo_url)}
+        user = await db.get_user(tg_id)
+        if user:
+            if user['is_blacklisted']: raise HTTPException(status_code=403, detail="Пользователь заблокирован")
+            if photo_url and not user.get('avatar_url'): await db.update_user_avatar(tg_id, photo_url)
+            user_dict = dict(user)
+            return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": tg_id,
+                    "avatar_url": user_dict.get('avatar_url', photo_url)}
 
-    return {"status": "needs_password", "tg_id": tg_id, "first_name": data.get('first_name', ''),
-            "last_name": data.get('last_name', ''), "photo_url": photo_url}
+        return {"status": "needs_password", "tg_id": tg_id, "first_name": data.get('first_name', ''),
+                "last_name": data.get('last_name', ''), "photo_url": photo_url}
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=400, detail=f"Ошибка валидации: {str(e)}")
 
 
 @app.post("/api/tma/auth")
@@ -153,7 +160,6 @@ async def get_dashboard_data(tg_id: int = 0):
                                """) as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
-    # Ищем последние 5 адресов для конкретного прораба
     recent_addresses = []
     if tg_id > 0:
         async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
@@ -163,14 +169,8 @@ async def get_dashboard_data(tg_id: int = 0):
                     recent_addresses.append(r[0])
                 if len(recent_addresses) >= 5: break
 
-    return {
-        "stats": stats,
-        "teams": [{"id": t['id'], "name": t['name']} for t in teams],
-        "equipment": equip,
-        "equip_categories": list(set(categories)),
-        "kanban_apps": all_apps,
-        "recent_addresses": recent_addresses
-    }
+    return {"stats": stats, "teams": [{"id": t['id'], "name": t['name']} for t in teams], "equipment": equip,
+            "equip_categories": list(set(categories)), "kanban_apps": all_apps, "recent_addresses": recent_addresses}
 
 
 @app.get("/api/logs")
@@ -445,18 +445,13 @@ async def publish_apps(tg_id: int = Form(0)):
     return {"status": "ok", "published": count}
 
 
-# --- ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ БЛОК БЛИЖАЙШЕЙ ЗАЯВКИ ---
 @app.get("/api/applications/active")
 async def get_active_app(tg_id: int):
     user = await db.get_user(tg_id)
     if not user: return None
     role = user['role']
+    if role in ['superadmin', 'boss', 'moderator']: return None
 
-    # Админам вообще не показываем "свой" наряд, чтобы не захламлять их меню
-    if role in ['superadmin', 'boss', 'moderator']:
-        return None
-
-    # Выбираем все активные заявки, сортируем по дате (самая ближняя первая)
     async with db.conn.execute(
             "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE a.status IN ('approved', 'published') ORDER BY a.date_target ASC") as cursor:
         rows = await cursor.fetchall()
@@ -464,16 +459,11 @@ async def get_active_app(tg_id: int):
     for row in rows:
         app_dict = dict(zip([col[0] for col in cursor.description], row))
         involved = False
-
-        if role == 'foreman' and app_dict['foreman_id'] == tg_id:
-            involved = True
-
+        if role == 'foreman' and app_dict['foreman_id'] == tg_id: involved = True
         if role in ['worker', 'foreman']:
             async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_id = ?", (tg_id,)) as cur:
                 tm_row = await cur.fetchone()
-                if tm_row and tm_row[0] == app_dict['team_id']:
-                    involved = True
-
+                if tm_row and tm_row[0] == app_dict['team_id']: involved = True
         if role == 'driver':
             async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (tg_id,)) as cur:
                 eq_row = await cur.fetchone()
@@ -483,14 +473,10 @@ async def get_active_app(tg_id: int):
                     if eq_data_str:
                         try:
                             eq_list = json.loads(eq_data_str)
-                            if any(e['id'] == my_eq_id for e in eq_list):
-                                involved = True
+                            if any(e['id'] == my_eq_id for e in eq_list): involved = True
                         except:
                             pass
-
-        # Возвращаем первую же заявку, в которой участвует этот человек
         if involved: return app_dict
-
     return None
 
 
@@ -499,29 +485,20 @@ async def get_my_apps(tg_id: int):
     user = await db.get_user(tg_id)
     if not user: return []
     role = user['role']
-
-    async with db.conn.execute("""
-                               SELECT a.*, t.name as team_name
-                               FROM applications a
-                                        LEFT JOIN teams t ON a.team_id = t.id
-                               WHERE a.status = 'completed'
-                               ORDER BY a.date_target DESC
-                               """) as cursor:
+    async with db.conn.execute(
+            "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE a.status = 'completed' ORDER BY a.date_target DESC") as cursor:
         rows = await cursor.fetchall()
 
     result = []
     for row in rows:
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         eq_data_str = app_dict.get('equipment_data', '')
-
-        equip_text = ""
-        equip_list = []
+        equip_text, equip_list = "", []
         if eq_data_str:
             try:
                 equip_list = json.loads(eq_data_str)
-                if equip_list:
-                    equip_text = ", ".join(
-                        [f"{e['name']} ({e['time_start']}:00-{e['time_end']}:00)" for e in equip_list])
+                if equip_list: equip_text = ", ".join(
+                    [f"{e['name']} ({e['time_start']}:00-{e['time_end']}:00)" for e in equip_list])
             except:
                 pass
         app_dict['formatted_equip'] = equip_text or "Не требуется"
@@ -530,19 +507,14 @@ async def get_my_apps(tg_id: int):
         if role in ['worker', 'foreman']:
             async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_id = ?", (tg_id,)) as cur:
                 tm_row = await cur.fetchone()
-                if tm_row and tm_row[0] == app_dict['team_id']:
-                    involved = True
-
+                if tm_row and tm_row[0] == app_dict['team_id']: involved = True
         if role in ['driver']:
             async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (tg_id,)) as cur:
                 eq_row = await cur.fetchone()
                 if eq_row:
                     my_eq_id = eq_row[0]
-                    if any(e['id'] == my_eq_id for e in equip_list):
-                        involved = True
-
+                    if any(e['id'] == my_eq_id for e in equip_list): involved = True
         if involved: result.append(app_dict)
-
     return result
 
 
@@ -641,14 +613,12 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
         eq_row = await cur.fetchone()
     if not eq_row: raise HTTPException(status_code=404, detail="Техника не найдена")
     await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (tg_id, eq_row[0]))
-
     user = await db.get_user(tg_id)
     fio = user['fio'] if user else f"Пользователь {tg_id}"
     if not user:
         await db.add_user(tg_id, fio, "driver")
     elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
         await db.update_user_role(tg_id, "driver")
-
     await db.conn.commit()
     return {"status": "ok"}
 
