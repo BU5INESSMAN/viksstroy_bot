@@ -42,7 +42,9 @@ export default function Home() {
 
     const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], kanban_apps: [], recent_addresses: [] });
     const [activeApp, setActiveApp] = useState(null);
-    const [myTeam, setMyTeam] = useState(null); // НОВЫЙ СТЕЙТ
+
+    // ИСПРАВЛЕНИЕ: Стейт для участников бригады
+    const [myTeam, setMyTeam] = useState(null);
     const [loading, setLoading] = useState(true);
 
     const [teamMembers, setTeamMembers] = useState([]);
@@ -54,10 +56,10 @@ export default function Home() {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
         axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApp(res.data); setLoading(false); }).catch(() => { setActiveApp(null); setLoading(false); });
 
-        // ПОДГРУЗКА БРИГАДЫ ДЛЯ РАБОЧИХ И ПРОРАБОВ
+        // ЗАГРУЗКА ДАННЫХ ВАШЕЙ БРИГАДЫ
         if (['worker', 'foreman'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {
-                if (res.data.profile.team_id) {
+                if (res.data?.profile?.team_id) {
                     axios.get(`/api/teams/${res.data.profile.team_id}/details`).then(tRes => setMyTeam(tRes.data));
                 }
             }).catch(()=>{});
@@ -169,11 +171,11 @@ export default function Home() {
                     </div>
                 )}
 
-                {/* НОВЫЙ БЛОК: МОЯ БРИГАДА */}
+                {/* НОВЫЙ БЛОК: МОЯ БРИГАДА (ДЛЯ РАБОЧИХ И ПРОРАБОВ) */}
                 {myTeam && (
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-indigo-500 relative h-fit">
                         <h2 className="text-lg font-bold mb-4 flex items-center dark:text-white">🧑‍🤝‍🧑 Бригада: {myTeam.name}</h2>
-                        <div className="space-y-2">
+                        <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                             {myTeam.members.map(m => (
                                 <div key={m.id} className="flex justify-between items-center p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl border border-gray-100 dark:border-gray-600">
                                     <div>
@@ -256,9 +258,4 @@ export default function Home() {
             )}
         </main>
     );
-}
-
-function StatCard({ title, value, color, text = "text-gray-900 dark:text-gray-100" }) {
-  const borders = { blue: 'border-blue-500', green: 'border-emerald-500', red: 'border-red-500', yellow: 'border-yellow-500' };
-  return (<div className={`bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border-l-4 ${borders[color]}`}><p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase">{title}</p><p className={`text-3xl font-bold ${text}`}>{value}</p></div>);
 }
