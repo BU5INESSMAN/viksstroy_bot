@@ -40,7 +40,7 @@ export default function Home() {
     const role = localStorage.getItem('user_role') || 'Гость';
     const { isGlobalCreateAppOpen, setGlobalCreateAppOpen } = useOutletContext();
 
-    const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], kanban_apps: [] });
+    const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], kanban_apps: [], recent_addresses: [] });
     const [activeApp, setActiveApp] = useState(null);
     const [loading, setLoading] = useState(true);
 
@@ -50,7 +50,7 @@ export default function Home() {
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
 
     const fetchData = () => {
-        axios.get('/api/dashboard').then(res => setData(res.data)).catch(() => {});
+        axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
         axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApp(res.data); setLoading(false); }).catch(() => { setActiveApp(null); setLoading(false); });
     };
 
@@ -117,7 +117,6 @@ export default function Home() {
         axios.post('/api/applications/publish', fd).then(res => { alert(`Опубликовано: ${res.data.published}`); fetchData(); }).catch(() => alert("Ошибка публикации"));
     };
 
-    // ФУНКЦИЯ ДЛЯ ВОДИТЕЛЕЙ: ОСВОБОЖДЕНИЕ ТЕХНИКИ
     const handleFreeEquipment = async () => {
         if (!window.confirm("Завершить работу на объекте и освободить свою технику?")) return;
         try {
@@ -136,24 +135,30 @@ export default function Home() {
 
     if (loading) return <div className="text-center mt-20">Загрузка...</div>;
 
+    const isWorkerOrDriver = ['worker', 'driver'].includes(role);
+
     return (
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-blue-500 relative">
-                <h2 className="text-lg font-bold mb-2 flex items-center dark:text-white">📋 Ближайший наряд</h2>
-                {activeApp ? (
-                    <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-sm space-y-2 text-gray-800 dark:text-gray-200">
-                       <p><b>Дата:</b> {activeApp.date_target}</p><p><b>Объект:</b> {activeApp.object_address}</p><p><b>Техника:</b> {activeEquipText}</p><p><b>Бригада:</b> {activeApp.team_id ? activeApp.team_name : 'Только техника'}</p>
-                       {role === 'driver' && (
-                           <button onClick={handleFreeEquipment} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
-                               ✅ Готово (Освободить технику)
-                           </button>
-                       )}
-                    </div>
-                ) : (<p className="text-blue-600 dark:text-blue-400 font-medium text-sm p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">Предстоящих нарядов пока нет.</p>)}
-            </div>
+            {/* БЛИЖАЙШИЙ НАРЯД ТОЛЬКО ДЛЯ РАБОЧИХ/ВОДИТЕЛЕЙ И ПРОРАБОВ */}
+            {['worker', 'driver', 'foreman'].includes(role) && (
+                <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-blue-500 relative">
+                    <h2 className="text-lg font-bold mb-2 flex items-center dark:text-white">📋 Ближайший наряд</h2>
+                    {activeApp ? (
+                        <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-sm space-y-2 text-gray-800 dark:text-gray-200">
+                           <p><b>Дата:</b> {activeApp.date_target}</p><p><b>Объект:</b> {activeApp.object_address}</p><p><b>Техника:</b> {activeEquipText}</p><p><b>Бригада:</b> {activeApp.team_id ? activeApp.team_name : 'Только техника'}</p>
+                           {role === 'driver' && (
+                               <button onClick={handleFreeEquipment} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
+                                   ✅ Готово (Освободить технику)
+                               </button>
+                           )}
+                        </div>
+                    ) : (<p className="text-blue-600 dark:text-blue-400 font-medium text-sm p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">Предстоящих нарядов пока нет.</p>)}
+                </div>
+            )}
 
-            {['moderator', 'boss', 'superadmin', 'foreman'].includes(role) && (
+            {/* КАНБАН ДОСКА ТОЛЬКО ДЛЯ РУКОВОДСТВА */}
+            {!isWorkerOrDriver && (
                 <div className="space-y-4">
                     <div className="flex justify-between items-center mb-2 mt-2">
                         <h2 className="text-xl font-bold text-gray-800 dark:text-white">📊 Канбан заявок (14 дней)</h2>
@@ -169,6 +174,7 @@ export default function Home() {
                 </div>
             )}
 
+            {/* МОДАЛКА ЗАЯВКИ */}
             {isGlobalCreateAppOpen && (
                 <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
@@ -180,7 +186,21 @@ export default function Home() {
                             <form onSubmit={handleCreateApp} className="p-6 space-y-6 text-sm">
                                 <div className="space-y-4">
                                     <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📅 Дата выезда</label><input type="date" required value={appForm.date_target} onChange={e => handleFormChange('date_target', e.target.value)} className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-bold text-gray-800 dark:text-gray-100 shadow-sm mb-3" /><div className="flex flex-wrap gap-2">{smartDates.map(d => (<button key={d.val} type="button" onClick={() => handleFormChange('date_target', d.val)} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${appForm.date_target === d.val ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 shadow-sm' : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>{d.label}</button>))}</div></div>
-                                    <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📍 Адрес объекта</label><input type="text" required value={appForm.object_address} onChange={e => handleFormChange('object_address', e.target.value)} placeholder="г. Москва, ул. Ленина, 10" className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-medium dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500" /></div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📍 Адрес объекта</label>
+                                        <input type="text" required value={appForm.object_address} onChange={e => handleFormChange('object_address', e.target.value)} placeholder="г. Москва, ул. Ленина, 10" className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-medium dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500" />
+
+                                        {/* ПЛИТКИ С ПРОШЛЫМИ АДРЕСАМИ */}
+                                        {data.recent_addresses && data.recent_addresses.length > 0 && (
+                                            <div className="flex flex-wrap gap-2 mt-3">
+                                                {data.recent_addresses.map((addr, idx) => (
+                                                    <button key={idx} type="button" onClick={() => handleFormChange('object_address', addr)} className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm border border-gray-200 dark:border-gray-600 truncate max-w-full">
+                                                        {addr}
+                                                    </button>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
@@ -205,9 +225,4 @@ export default function Home() {
             )}
         </main>
     );
-}
-
-function StatCard({ title, value, color, text = "text-gray-900 dark:text-gray-100" }) {
-  const borders = { blue: 'border-blue-500', green: 'border-emerald-500', red: 'border-red-500', yellow: 'border-yellow-500' };
-  return (<div className={`bg-white dark:bg-gray-800 p-5 rounded-2xl shadow-sm border-l-4 ${borders[color]}`}><p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1 uppercase">{title}</p><p className={`text-3xl font-bold ${text}`}>{value}</p></div>);
 }

@@ -134,21 +134,43 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
 
 
 @app.get("/api/dashboard")
-async def get_dashboard_data():
+async def get_dashboard_data(tg_id: int = 0):
     stats = await db.get_general_statistics()
     teams = await db.get_all_teams()
-    async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur: equip = [
-        dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
+    async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur:
+        equip = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
     async with db.conn.execute(
-        "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur: cat_rows = await cur.fetchall()
+        "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur:
+        cat_rows = await cur.fetchall()
     categories = [r[0].strip().capitalize() for r in cat_rows if r[0].strip()]
 
-    async with db.conn.execute(
-            "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE date_target >= date('now', '-14 days') ORDER BY a.id DESC") as cur:
+    async with db.conn.execute("""
+                               SELECT a.*, t.name as team_name
+                               FROM applications a
+                                        LEFT JOIN teams t ON a.team_id = t.id
+                               WHERE date_target >= date ('now', '-14 days')
+                               ORDER BY a.id DESC
+                               """) as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
-    return {"stats": stats, "teams": [{"id": t['id'], "name": t['name']} for t in teams], "equipment": equip,
-            "equip_categories": list(set(categories)), "kanban_apps": all_apps}
+    # Ищем последние 5 адресов для конкретного прораба
+    recent_addresses = []
+    if tg_id > 0:
+        async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
+                                   (tg_id,)) as cur:
+            for r in await cur.fetchall():
+                if r[0] and r[0] not in recent_addresses:
+                    recent_addresses.append(r[0])
+                if len(recent_addresses) >= 5: break
+
+    return {
+        "stats": stats,
+        "teams": [{"id": t['id'], "name": t['name']} for t in teams],
+        "equipment": equip,
+        "equip_categories": list(set(categories)),
+        "kanban_apps": all_apps,
+        "recent_addresses": recent_addresses
+    }
 
 
 @app.get("/api/logs")
@@ -328,8 +350,8 @@ async def get_review_apps():
         if eq_data_str:
             try:
                 eq_list = json.loads(eq_data_str)
-                if eq_list: equip_text = ", ".join([f"{e['name']} ({e['time_start']}:00-{e['time_end']}:00)" for e in
-                                                    eq_list])
+                if eq_list: equip_text = ", ".join(
+                    [f"{e['name']} ({e['time_start']}:00-{e['time_end']}:00)" for e in eq_list])
             except:
                 pass
         app_dict['formatted_equip'] = equip_text or "Не требуется"
@@ -341,6 +363,7 @@ async def get_review_apps():
 async def review_app(app_id: int, new_status: str = Form(...), tg_id: int = Form(0)):
     if new_status not in ['approved', 'rejected', 'completed']: raise HTTPException(400, "Неверный статус")
     await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
+
     if new_status in ['completed', 'rejected']:
         async with db.conn.execute("SELECT equipment_data FROM applications WHERE id = ?", (app_id,)) as cur:
             app_row = await cur.fetchone()
@@ -351,6 +374,7 @@ async def review_app(app_id: int, new_status: str = Form(...), tg_id: int = Form
                                                             (e['id'],))
                 except:
                     pass
+
     await db.conn.commit()
     user = await db.get_user(tg_id)
     await db.add_log(tg_id, user['fio'] if user else "Модератор", f"Изменил статус заявки №{app_id} на {new_status}")
@@ -421,14 +445,18 @@ async def publish_apps(tg_id: int = Form(0)):
     return {"status": "ok", "published": count}
 
 
-# --- УМНАЯ ЛОГИКА АКТИВНОЙ ЗАЯВКИ ---
+# --- ПОЛНОСТЬЮ ИСПРАВЛЕННЫЙ БЛОК БЛИЖАЙШЕЙ ЗАЯВКИ ---
 @app.get("/api/applications/active")
 async def get_active_app(tg_id: int):
     user = await db.get_user(tg_id)
     if not user: return None
     role = user['role']
 
-    # Берем все активные/одобренные заявки, сортируем по дате (самые ближние первыми)
+    # Админам вообще не показываем "свой" наряд, чтобы не захламлять их меню
+    if role in ['superadmin', 'boss', 'moderator']:
+        return None
+
+    # Выбираем все активные заявки, сортируем по дате (самая ближняя первая)
     async with db.conn.execute(
             "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE a.status IN ('approved', 'published') ORDER BY a.date_target ASC") as cursor:
         rows = await cursor.fetchall()
@@ -436,9 +464,6 @@ async def get_active_app(tg_id: int):
     for row in rows:
         app_dict = dict(zip([col[0] for col in cursor.description], row))
         involved = False
-
-        if role in ['superadmin', 'boss', 'moderator']:
-            return app_dict  # Админам просто отдаем самую ближайшую общую
 
         if role == 'foreman' and app_dict['foreman_id'] == tg_id:
             involved = True
@@ -463,6 +488,7 @@ async def get_active_app(tg_id: int):
                         except:
                             pass
 
+        # Возвращаем первую же заявку, в которой участвует этот человек
         if involved: return app_dict
 
     return None
@@ -474,7 +500,6 @@ async def get_my_apps(tg_id: int):
     if not user: return []
     role = user['role']
 
-    # Отдаем ТОЛЬКО завершенные заявки для истории
     async with db.conn.execute("""
                                SELECT a.*, t.name as team_name
                                FROM applications a
@@ -526,7 +551,7 @@ async def set_equipment_free(tg_id: int = Form(...)):
     await db.conn.execute("UPDATE equipment SET status = 'free' WHERE tg_id = ?", (tg_id,))
     await db.conn.commit()
     user = await db.get_user(tg_id)
-    if user: await db.add_log(tg_id, user['fio'], "Освободил свою технику с объекта")
+    if user: await db.add_log(tg_id, user['fio'], "Освободил свою технику")
     return {"status": "ok"}
 
 
