@@ -11,7 +11,11 @@ import aiohttp
 import json
 import uuid
 import base64
-import traceback
+import urllib.request
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from PIL import Image, ImageDraw, ImageFont
+import io
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,14 +23,8 @@ load_dotenv()
 app = FastAPI(title="ВИКС Расписание API")
 
 origins = ["*"]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"],
+                   allow_headers=["*"])
 
 db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
@@ -34,25 +32,65 @@ db = DatabaseManager(db_path)
 os.makedirs("data/uploads", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 
+TZ_BARNAUL = ZoneInfo("Asia/Barnaul")
 
-# --- СИСТЕМА УВЕДОМЛЕНИЙ ТЕЛЕГРАМ ---
+
+# --- ГЕНЕРАТОР КАРТИНОК ---
+def get_font(size):
+    font_path = "data/Roboto-Bold.ttf"
+    if not os.path.exists(font_path):
+        try:
+            url = "https://github.com/google/fonts/raw/main/ofl/roboto/Roboto-Bold.ttf"
+            urllib.request.urlretrieve(url, font_path)
+        except:
+            return ImageFont.load_default()
+    return ImageFont.truetype(font_path, size)
+
+
+def create_app_image(date_str, address, foreman, team_name, equip_text):
+    img = Image.new('RGB', (800, 500), color=(243, 244, 246))
+    draw = ImageDraw.Draw(img)
+
+    # Синяя шапка
+    draw.rectangle([0, 0, 800, 80], fill=(37, 99, 235))
+    font_title = get_font(36)
+    font_text = get_font(26)
+    font_small = get_font(22)
+
+    draw.text((30, 18), "📋 НАРЯД НА ВЫЕЗД", fill=(255, 255, 255), font=font_title)
+
+    draw.text((30, 110), f"📅 Дата: {date_str}", fill=(31, 41, 55), font=font_text)
+    draw.text((30, 160), f"📍 Объект: {address}", fill=(31, 41, 55), font=font_text)
+    draw.text((30, 210), f"👷‍♂️ Прораб: {foreman}", fill=(31, 41, 55), font=font_text)
+    draw.text((30, 260), f"👥 Бригада: {team_name}", fill=(31, 41, 55), font=font_text)
+
+    draw.text((30, 330), "🚜 Техника:", fill=(37, 99, 235), font=font_text)
+    y = 370
+    if not equip_text or equip_text == "Не требуется":
+        draw.text((50, y), "Без техники", fill=(75, 85, 99), font=font_small)
+    else:
+        for line in equip_text.split('\n'):
+            clean_line = line.replace('├', '').strip()
+            if clean_line:
+                draw.text((50, y), f"• {clean_line}", fill=(75, 85, 99), font=font_small)
+                y += 35
+
+    draw.text((670, 440), "ВИКС", fill=(209, 213, 219), font=get_font(40))
+
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+    return buf
+
+
+# --- УВЕДОМЛЕНИЯ ---
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None):
-    """
-    Отправляет уведомление списку ролей или конкретным tg_id.
-    url_path: 'dashboard', 'review', 'teams', 'equipment', 'my-apps', 'system'
-    """
     bot_token = os.getenv("BOT_TOKEN")
     group_report_id = os.getenv("GROUP_REPORT_ID") or os.getenv("GROUP_CHAT_ID")
-
     if not bot_token: return
-
     chat_ids = set()
+    if "report_group" in target_roles and group_report_id: chat_ids.add(str(group_report_id))
 
-    # 1. Добавляем группу отчетов
-    if "report_group" in target_roles and group_report_id:
-        chat_ids.add(str(group_report_id))
-
-    # 2. Ищем пользователей с нужной ролью
     roles_to_fetch = [r for r in target_roles if r != "report_group"]
     if roles_to_fetch:
         pl = ','.join(['?'] * len(roles_to_fetch))
@@ -64,40 +102,31 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         except:
             pass
 
-    # 3. Добавляем конкретных пользователей (Прорабы, Рабочие)
     if extra_tg_ids:
         for tid in extra_tg_ids:
             if tid: chat_ids.add(str(tid))
 
     if not chat_ids: return
-
-    # Кнопка открытия приложения на нужной странице
     markup = {
-        "inline_keyboard": [[
-            {"text": "📱 Открыть платформу", "web_app": {"url": f"https://islandvpn.sbs/{url_path}"}}
-        ]]
-    }
+        "inline_keyboard": [[{"text": "📱 Открыть платформу", "web_app": {"url": f"https://islandvpn.sbs/{url_path}"}}]]}
 
     async with aiohttp.ClientSession() as session:
         for cid in chat_ids:
-            payload = {"chat_id": cid, "text": text, "parse_mode": "HTML", "reply_markup": markup}
             try:
-                await session.post(f"https://api.telegram.org/bot{bot_token}/sendMessage", json=payload)
+                await session.post(f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                                   json={"chat_id": cid, "text": text, "parse_mode": "HTML", "reply_markup": markup})
             except:
                 pass
 
 
-# --- ГЛОБАЛЬНЫЙ ПЕРЕХВАТЧИК ОШИБОК ---
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     try:
-        # Пытаемся достать последнее действие из логов
         async with db.conn.execute("SELECT fio, action FROM logs ORDER BY id DESC LIMIT 1") as cur:
             row = await cur.fetchone()
             last_user = row[0] if row else "Неизвестно"
             last_action = row[1] if row else "Нет данных"
-
-        err_msg = f"🚨 <b>ОШИБКА СИСТЕМЫ (500)</b>\n\n👤 <b>Последний юзер:</b> {last_user}\n👣 <b>Последнее действие:</b> {last_action}\n❌ <b>Текст ошибки:</b> {str(exc)}"
+        err_msg = f"🚨 <b>ОШИБКА СИСТЕМЫ (500)</b>\n\n👤 <b>Юзер:</b> {last_user}\n👣 <b>Действие:</b> {last_action}\n❌ <b>Ошибка:</b> {str(exc)}"
         await notify_users(["report_group"], err_msg, "system")
     except:
         pass
@@ -111,7 +140,6 @@ async def startup():
         "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, tg_id INTEGER, fio TEXT, action TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
     await db.conn.execute(
         "CREATE TABLE IF NOT EXISTS equipment (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, category TEXT, is_active INTEGER DEFAULT 1, driver TEXT DEFAULT '')")
-
     columns_to_add = [
         ("applications", "foreman_id", "INTEGER"), ("applications", "foreman_name", "TEXT"),
         ("applications", "equip_id", "INTEGER DEFAULT 0"),
@@ -128,9 +156,8 @@ async def startup():
     for table, col_name, col_type in columns_to_add:
         try:
             await db.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
-        except Exception:
+        except:
             pass
-
     await db.conn.execute("PRAGMA journal_mode=WAL;")
     await db.conn.commit()
 
@@ -155,7 +182,6 @@ async def telegram_auth(data: dict):
         received_hash = data.pop('hash', None)
         if time.time() - int(data.get('auth_date', 0)) > 86400: raise HTTPException(status_code=403,
                                                                                     detail="Данные устарели")
-
         data_check_string = "\n".join([f"{k}={data[k]}" for k in sorted(data.keys()) if data[k] is not None])
         secret_key = hashlib.sha256(bot_token.encode()).digest()
         hash_calc = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
@@ -167,13 +193,12 @@ async def telegram_auth(data: dict):
         user = await db.get_user(tg_id)
         if user:
             user_dict = dict(user)
-            if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Пользователь заблокирован")
+            if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
             if photo_url and not user_dict.get('avatar_url'):
                 await db.update_user_avatar(tg_id, photo_url)
                 user_dict['avatar_url'] = photo_url
             return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": tg_id,
                     "avatar_url": user_dict.get('avatar_url', photo_url)}
-
         return {"status": "needs_password", "tg_id": tg_id, "first_name": data.get('first_name', ''),
                 "last_name": data.get('last_name', ''), "photo_url": photo_url}
     except HTTPException:
@@ -209,12 +234,8 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
     fio = f"{last_name} {first_name}".strip() or f"Пользователь {tg_id}"
     await db.add_user(tg_id, fio, role)
     if photo_url: await db.update_user_avatar(tg_id, photo_url)
-
     await db.add_log(tg_id, fio, f"Зарегистрировался (Роль: {role})")
-
-    # УВЕДОМЛЕНИЕ: Регистрация
-    await notify_users(["report_group", "moderator"],
-                       f"🆕 <b>Новая регистрация</b>\n👤 Пользователь: {fio}\n💼 Должность: {role}", "system")
+    await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация</b>\n👤 {fio}\n💼 {role}", "system")
     return {"status": "ok", "role": role, "tg_id": tg_id}
 
 
@@ -228,20 +249,16 @@ async def get_dashboard_data(tg_id: int = 0):
         "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur:
         cat_rows = await cur.fetchall()
     categories = [r[0].strip().capitalize() for r in cat_rows if r[0].strip()]
-
     async with db.conn.execute(
             "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE date_target >= date('now', '-14 days') ORDER BY a.id DESC") as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-
     recent_addresses = []
     if tg_id > 0:
         async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
                                    (tg_id,)) as cur:
             for r in await cur.fetchall():
-                if r[0] and r[0] not in recent_addresses:
-                    recent_addresses.append(r[0])
+                if r[0] and r[0] not in recent_addresses: recent_addresses.append(r[0])
                 if len(recent_addresses) >= 5: break
-
     return {"stats": stats, "teams": [{"id": t['id'], "name": t['name']} for t in teams], "equipment": equip,
             "equip_categories": list(set(categories)), "kanban_apps": all_apps, "recent_addresses": recent_addresses}
 
@@ -293,7 +310,7 @@ async def api_update_profile(target_id: int, tg_id: int = Form(...), fio: str = 
                              team_id: int = Form(0), position: str = Form("")):
     admin = await db.get_user(tg_id)
     if not admin or admin['role'] not in ['superadmin', 'boss', 'moderator']: raise HTTPException(status_code=403,
-                                                                                                  detail="Недостаточно прав")
+                                                                                                  detail="Нет прав")
     await db.update_user_profile_data(target_id, fio, role)
     profile = await db.get_user_full_profile(target_id)
     if profile['member_id']:
@@ -306,7 +323,6 @@ async def api_update_profile(target_id: int, tg_id: int = Form(...), fio: str = 
         await db.conn.execute("INSERT INTO team_members (team_id, fio, position, tg_id) VALUES (?, ?, ?, ?)",
                               (team_id, fio, position, target_id))
     await db.conn.commit()
-    await db.add_log(tg_id, admin['fio'], f"Изменил данные профиля ID:{target_id}")
     return {"status": "ok"}
 
 
@@ -347,11 +363,8 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
     elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
         await db.update_user_role(tg_id, "worker")
     await db.conn.commit()
-    await db.add_log(tg_id, fio, f"Привязал аккаунт к бригаде «{team['name']}»")
-
-    # УВЕДОМЛЕНИЕ: Инвайт Бригада
     await notify_users(["report_group"],
-                       f"🔗 <b>Привязка аккаунта</b>\nРабочий {fio} успешно привязал свой Telegram к бригаде «{team['name']}».",
+                       f"🔗 <b>Привязка аккаунта</b>\nРабочий {fio} привязал Telegram к бригаде «{team['name']}».",
                        "teams")
     return {"status": "ok"}
 
@@ -382,9 +395,6 @@ async def add_team_member(team_id: int, fio: str = Form(...), position: str = Fo
     await db.conn.execute("INSERT INTO team_members (team_id, fio, position, is_foreman) VALUES (?, ?, ?, ?)",
                           (team_id, fio, position, is_foreman))
     await db.conn.commit()
-    await notify_users(["report_group"],
-                       f"👥 <b>Изменение состава бригады</b>\n{admin_fio} добавил участника {fio} ({position}).",
-                       "teams")
     return {"status": "ok"}
 
 
@@ -400,8 +410,6 @@ async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int
 async def delete_team_member(member_id: int, tg_id: int = Form(0), admin_fio: str = Form("Пользователь")):
     await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
     await db.conn.commit()
-    await notify_users(["report_group"], f"🗑 <b>Удаление из бригады</b>\n{admin_fio} удалил участника #{member_id}.",
-                       "teams")
     return {"status": "ok"}
 
 
@@ -419,8 +427,6 @@ async def create_app(tg_id: int = Form(...), team_id: int = Form(0), date_target
                           """,
                           (tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
-
-    # УВЕДОМЛЕНИЕ: Новая заявка на модерацию
     await notify_users(["report_group", "moderator"],
                        f"📝 <b>Новая заявка на выезд</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}",
                        "review")
@@ -453,7 +459,6 @@ async def get_review_apps():
 async def review_app(app_id: int, new_status: str = Form(...), reason: str = Form(""), tg_id: int = Form(0)):
     if new_status not in ['approved', 'rejected', 'completed']: raise HTTPException(400, "Неверный статус")
 
-    # Достаем заявку ДО обновления для информации
     async with db.conn.execute("SELECT * FROM applications WHERE id = ?", (app_id,)) as cur:
         app_row = await cur.fetchone()
     if not app_row: raise HTTPException(404, "Заявка не найдена")
@@ -473,47 +478,111 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
     user = await db.get_user(tg_id)
     mod_fio = dict(user).get('fio', 'Модератор') if user else 'Модератор'
 
-    # 1. Уведомление в Группу отчетов
     status_ru = "✅ Одобрена" if new_status == 'approved' else (
         "❌ Отклонена" if new_status == 'rejected' else "🏁 Завершена")
-    msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Модератор: {mod_fio}\n📍 Объект: {app_dict['object_address']}"
+    msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Кто: {mod_fio}\n📍 Объект: {app_dict['object_address']}"
     if reason: msg_group += f"\n💬 Причина: {reason}"
     await notify_users(["report_group"], msg_group, "review")
 
-    # 2. Уведомление Прорабу
     if new_status in ['approved', 'rejected']:
         msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
         if reason: msg_foreman += f"\n💬 Причина: {reason}"
         await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']])
 
-    # 3. Уведомление Рабочим и Водителям (Только при одобрении)
-    if new_status == 'approved':
-        workers_ids, drivers_ids = [], []
-        if app_dict.get('selected_members'):
-            sel = [int(x.strip()) for x in str(app_dict['selected_members']).split(',')]
-            if sel:
-                pl = ','.join(['?'] * len(sel))
-                async with db.conn.execute(f"SELECT tg_id FROM team_members WHERE id IN ({pl}) AND tg_id IS NOT NULL",
-                                           sel) as cur:
-                    for r in await cur.fetchall(): workers_ids.append(r[0])
-
-        if app_dict.get('equipment_data'):
-            try:
-                eq_ids = [e['id'] for e in json.loads(app_dict['equipment_data'])]
-                if eq_ids:
-                    pl = ','.join(['?'] * len(eq_ids))
-                    async with db.conn.execute(f"SELECT tg_id FROM equipment WHERE id IN ({pl}) AND tg_id IS NOT NULL",
-                                               eq_ids) as cur:
-                        for r in await cur.fetchall(): drivers_ids.append(r[0])
-            except:
-                pass
-
-        all_involved = list(set(workers_ids + drivers_ids))
-        if all_involved:
-            msg_inv = f"👷‍♂️ <b>Вас добавили в наряд!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
-            await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved)
-
     return {"status": "ok"}
+
+
+# --- ГЛОБАЛЬНАЯ ПУБЛИКАЦИЯ КАРТИНКОЙ + ЦИТАТОЙ ---
+async def execute_app_publish(app_dict, bot_token, group_id):
+    app_id = app_dict['id']
+    team_name = "Без бригады"
+    if app_dict['team_id']:
+        async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (app_dict['team_id'],)) as cur:
+            t_row = await cur.fetchone()
+            if t_row: team_name = t_row[0]
+
+    selected = app_dict.get('selected_members', '')
+    selected_list = [int(x.strip()) for x in selected.split(',')] if selected else []
+    staff_rows = []
+    if selected_list:
+        pl = ','.join('?' for _ in selected_list)
+        async with db.conn.execute(f"SELECT fio, position, tg_id FROM team_members WHERE id IN ({pl})",
+                                   selected_list) as cur:
+            staff_rows = await cur.fetchall()
+
+    # Формируем текст с кликабельными профилями (Mentions)
+    staff_str = ""
+    workers_ids = []
+    if staff_rows:
+        for r in staff_rows:
+            w_tg_id = r[2]
+            if w_tg_id:
+                staff_str += f"\n  ├ <a href='tg://user?id={w_tg_id}'>{r[0]}</a> (<i>{r[1]}</i>)"
+                workers_ids.append(w_tg_id)
+            else:
+                staff_str += f"\n  ├ {r[0]} (<i>{r[1]}</i>)"
+    else:
+        staff_str = "\n  ├ Только техника"
+
+    eq_data_str = app_dict.get('equipment_data', '')
+    equip_text = ""
+    drivers_ids = []
+    if eq_data_str:
+        try:
+            eq_list = json.loads(eq_data_str)
+            if eq_list:
+                for eq in eq_list:
+                    equip_text += f"  ├ {eq['name']} (⏰ <i>{eq['time_start']}:00 - {eq['time_end']}:00</i>)\n"
+                    # Ищем tg_id водителя
+                    async with db.conn.execute("SELECT tg_id FROM equipment WHERE id = ?", (eq['id'],)) as cur:
+                        eq_db_row = await cur.fetchone()
+                        if eq_db_row and eq_db_row[0]: drivers_ids.append(eq_db_row[0])
+        except:
+            pass
+    if not equip_text: equip_text = "Не требуется\n"
+
+    # 1. ГЕНЕРАЦИЯ КАРТИНКИ
+    img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
+                               equip_text)
+
+    # 2. ФОРМИРОВАНИЕ ЦИТАТЫ (СПОЙЛЕРА)
+    comment_text = f"\n💬 <b>Комментарий:</b> {app_dict['comment']}" if app_dict.get('comment') and app_dict[
+        'comment'].lower() != 'нет' else ""
+
+    html_caption = f"""<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>
+📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>
+📍 <b>Объект:</b> {app_dict['object_address']}
+🚜 <b>Техника:</b>
+{equip_text}👷‍♂️ <b>Прораб:</b> <a href='tg://user?id={app_dict['foreman_id']}'>{app_dict['foreman_name']}</a>
+👥 <b>Бригада «{team_name}»:</b>{staff_str}{comment_text}</blockquote>"""
+
+    # 3. ОТПРАВКА В ТЕЛЕГРАМ
+    async with aiohttp.ClientSession() as session:
+        data = aiohttp.FormData()
+        data.add_field('chat_id', str(group_id))
+        data.add_field('photo', img_buf, filename='app.png', content_type='image/png')
+        data.add_field('caption', html_caption)
+        data.add_field('parse_mode', 'HTML')
+
+        async with session.post(f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=data) as resp:
+            if resp.status == 200:
+                await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))
+                # Занимаем технику
+                if eq_data_str:
+                    try:
+                        for e in json.loads(eq_data_str): await db.conn.execute(
+                            "UPDATE equipment SET status = 'work' WHERE id = ?", (e['id'],))
+                    except:
+                        pass
+                await db.conn.commit()
+
+                # Рассылка участникам
+                all_involved = list(set(workers_ids + drivers_ids))
+                if all_involved:
+                    msg_inv = f"👷‍♂️ <b>Вас добавили в наряд!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
+                    await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved)
+                return True
+    return False
 
 
 @app.post("/api/applications/publish")
@@ -523,61 +592,86 @@ async def publish_apps(tg_id: int = Form(0)):
     if not group_id: raise HTTPException(status_code=500, detail="Группа не настроена")
     async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved'") as cur:
         apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-    if not apps: raise HTTPException(status_code=400, detail="Нет одобренных заявок для публикации")
+    if not apps: raise HTTPException(status_code=400, detail="Нет одобренных заявок")
 
     count = 0
-    async with aiohttp.ClientSession() as session:
-        for app_dict in apps:
-            app_id = app_dict['id']
-            team_name = "Без бригады"
-            if app_dict['team_id']:
-                async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (app_dict['team_id'],)) as cur:
-                    t_row = await cur.fetchone()
-                    if t_row: team_name = t_row[0]
+    for app_dict in apps:
+        success = await execute_app_publish(app_dict, bot_token, group_id)
+        if success: count += 1
 
-            selected = app_dict.get('selected_members', '')
-            selected_list = [int(x.strip()) for x in selected.split(',')] if selected else []
-            staff_rows = []
-            if selected_list:
-                placeholders = ','.join('?' for _ in selected_list)
-                async with db.conn.execute(f"SELECT fio, position FROM team_members WHERE id IN ({placeholders})",
-                                           selected_list) as cur:
-                    staff_rows = await cur.fetchall()
-
-            staff_str = "\n".join(
-                [f"  ├ {r[0]} (<i>{r[1]}</i>)" for r in staff_rows]) if staff_rows else "  ├ Только техника"
-            eq_data_str = app_dict.get('equipment_data', '')
-            equip_text = ""
-            if eq_data_str:
-                try:
-                    eq_list = json.loads(eq_data_str)
-                    if eq_list:
-                        equip_text = "🚜 <b>Техника:</b>\n"
-                        for eq in eq_list: equip_text += f"  ├ {eq['name']} (⏰ <i>{eq['time_start']}:00 - {eq['time_end']}:00</i>)\n"
-                except:
-                    pass
-            if not equip_text: equip_text = "🚜 <b>Техника:</b> Не требуется\n"
-
-            text = (f"🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n🏢 <b>ВИКС Расписание</b>\n━━━━━━━━━━━━━━━\n"
-                    f"📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n"
-                    f"{equip_text}\n👷‍♂️ <b>Прораб:</b> <b>{app_dict['foreman_name']}</b>\n\n👥 <b>Бригада «{team_name}»:</b>\n{staff_str}\n")
-            if app_dict.get('comment') and app_dict[
-                'comment'].lower() != 'нет': text += f"\n💬 <b>Комментарий:</b> {app_dict['comment']}"
-
-            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-            async with session.post(url, json={"chat_id": group_id, "text": text, "parse_mode": "HTML"}) as resp:
-                if resp.status == 200:
-                    await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))
-                    if eq_data_str:
-                        try:
-                            eq_l = json.loads(eq_data_str)
-                            for e in eq_l: await db.conn.execute("UPDATE equipment SET status = 'work' WHERE id = ?",
-                                                                 (e['id'],))
-                        except:
-                            pass
-                    await db.conn.commit()
-                    count += 1
+    user = await db.get_user(tg_id)
+    await db.add_log(tg_id, dict(user).get('fio', 'Руководство') if user else "Руководство",
+                     f"Опубликовал {count} нарядов в группу")
     return {"status": "ok", "published": count}
+
+
+# --- КРОН (ВНУТРЕННИЕ ЭНДПОИНТЫ ДЛЯ БОТА) ---
+@app.post("/api/cron/start_day")
+async def cron_start_day():
+    """Переводит заявки НА СЕГОДНЯ в статус 'В работе' (published) и отправляет в чат"""
+    bot_token = os.getenv("BOT_TOKEN")
+    group_id = os.getenv("GROUP_CHAT_ID")
+    now_date = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
+
+    async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved' AND date_target = ?",
+                               (now_date,)) as cur:
+        apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
+
+    for app_dict in apps:
+        await execute_app_publish(app_dict, bot_token, group_id)
+    return {"status": "ok"}
+
+
+@app.post("/api/cron/end_day")
+async def cron_end_day():
+    """Завершает заявки НА СЕГОДНЯ и освобождает технику"""
+    now_date = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
+
+    async with db.conn.execute("SELECT * FROM applications WHERE status = 'published' AND date_target = ?",
+                               (now_date,)) as cur:
+        apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
+
+    for app_dict in apps:
+        app_id = app_dict['id']
+        await db.conn.execute("UPDATE applications SET status = 'completed' WHERE id = ?", (app_id,))
+        if app_dict.get('equipment_data'):
+            try:
+                eq_list = json.loads(app_dict['equipment_data'])
+                for e in eq_list: await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (e['id'],))
+            except:
+                pass
+    await db.conn.commit()
+    return {"status": "ok"}
+
+
+@app.post("/api/cron/check_timeouts")
+async def cron_check_timeouts():
+    """Проверяет время техники. Если вышло - напоминает водителю"""
+    now = datetime.now(TZ_BARNAUL)
+    now_date = now.strftime("%Y-%m-%d")
+    current_hour = now.hour
+
+    async with db.conn.execute(
+            "SELECT equipment_data, object_address FROM applications WHERE status = 'published' AND date_target = ?",
+            (now_date,)) as cur:
+        apps = await cur.fetchall()
+
+    for row in apps:
+        eq_str, address = row[0], row[1]
+        if not eq_str: continue
+        try:
+            for eq in json.loads(eq_str):
+                end_hour = int(eq['time_end'])
+                if current_hour >= end_hour:  # Время вышло
+                    # Находим водителя
+                    async with db.conn.execute("SELECT tg_id, status FROM equipment WHERE id = ?", (eq['id'],)) as cur2:
+                        eq_db = await cur2.fetchone()
+                        if eq_db and eq_db[0] and eq_db[1] == 'work':
+                            msg = f"⏳ <b>Время работы вышло!</b>\nПо графику работа вашей техники на объекте ({address}) завершена.\n\nПожалуйста, нажмите кнопку <b>✅ Готово (Освободить технику)</b> в приложении."
+                            await notify_users([], msg, "my-apps", extra_tg_ids=[eq_db[0]])
+        except:
+            pass
+    return {"status": "ok"}
 
 
 @app.get("/api/applications/active")
@@ -592,7 +686,7 @@ async def get_active_app(tg_id: int):
         rows = await cursor.fetchall()
 
     for row in rows:
-        app_dict = dict(zip([col[0] for col in cursor.description], row))
+        app_dict = dict(zip([col[0] for c in cursor.description], row))
         involved = False
         if role == 'foreman' and app_dict['foreman_id'] == tg_id: involved = True
         if role in ['worker', 'foreman']:
@@ -620,7 +714,6 @@ async def get_my_apps(tg_id: int):
     user = await db.get_user(tg_id)
     if not user: return []
     role = dict(user).get('role')
-
     async with db.conn.execute(
             "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE a.status = 'completed' ORDER BY a.date_target DESC") as cursor:
         rows = await cursor.fetchall()
@@ -662,8 +755,7 @@ async def set_equipment_free(tg_id: int = Form(...)):
     if user:
         fio = dict(user).get('fio', '')
         await db.add_log(tg_id, fio, "Освободил свою технику")
-        await notify_users(["report_group"],
-                           f"🟢 <b>Техника освобождена</b>\nВодитель {fio} завершил работу и освободил свою машину.",
+        await notify_users(["report_group"], f"🟢 <b>Техника освобождена</b>\nВодитель {fio} завершил работу.",
                            "equipment")
     return {"status": "ok"}
 
@@ -764,7 +856,6 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
     elif dict(user)['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
         await db.update_user_role(tg_id, "driver")
     await db.conn.commit()
-
     await notify_users(["report_group"],
                        f"🔗 <b>Привязка аккаунта</b>\nВодитель {fio} привязан к технике «{eq_row[1]}».", "equipment")
     return {"status": "ok"}
