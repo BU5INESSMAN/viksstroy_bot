@@ -17,7 +17,19 @@ export default function Teams() {
     const fetchData = () => { axios.get('/api/dashboard').then(res => setTeams(res.data.teams || [])).catch(()=>{}); };
     useEffect(() => { fetchData(); }, []);
 
-    const handleCreateTeam = async (e) => { e.preventDefault(); try { const fd = new FormData(); fd.append('name', newTeamName); fd.append('tg_id', tgId); await axios.post('/api/teams/create', fd); setTeamModalOpen(false); setNewTeamName(''); fetchData(); } catch (err) { alert("Ошибка"); } };
+    const handleCreateTeam = async (e) => { 
+        e.preventDefault(); 
+        try { 
+            const fd = new FormData(); 
+            fd.append('name', newTeamName); 
+            fd.append('tg_id', tgId); 
+            await axios.post('/api/teams/create', fd); 
+            setTeamModalOpen(false); 
+            setNewTeamName(''); 
+            fetchData(); 
+        } catch (err) { alert("Ошибка"); } 
+    };
+    
     const openManageModal = async (teamId) => { try { const res = await axios.get(`/api/teams/${teamId}/details`); setManageTeamData(res.data); setManageModalOpen(true); } catch (err) { alert("Ошибка"); } };
     const handleGenerateInvite = async (teamId) => { try { const res = await axios.post(`/api/teams/${teamId}/generate_invite`); setInviteInfo(res.data); } catch (err) { alert("Ошибка!"); } };
     const handleAddMember = async (e) => { e.preventDefault(); try { const fd = new FormData(); fd.append('fio', newMember.fio); fd.append('position', newMember.position); fd.append('is_foreman', newMember.is_foreman ? 1 : 0); fd.append('tg_id', tgId); await axios.post(`/api/teams/${manageTeamData.id}/members/add`, fd); setNewMember({ fio: '', position: 'Рабочий', is_foreman: false }); const res = await axios.get(`/api/teams/${manageTeamData.id}/details`); setManageTeamData(res.data); fetchData(); } catch (err) { alert("Ошибка"); } };
@@ -57,11 +69,27 @@ export default function Teams() {
               <button onClick={() => setTeamModalOpen(true)} className="mt-5 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 py-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 font-medium transition-colors">+ Создать новую бригаду</button>
             </div>
 
+            {/* ОКНО СОЗДАНИЯ НОВОЙ БРИГАДЫ */}
+            {isTeamModalOpen && (
+                <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-2xl w-full max-w-sm relative transition-colors">
+                        <div className="flex justify-between items-center mb-6">
+                            <h3 className="text-xl font-bold dark:text-white">Новая бригада</h3>
+                            <button onClick={() => setTeamModalOpen(false)} className="text-gray-400 hover:text-red-500 text-3xl leading-none transition">&times;</button>
+                        </div>
+                        <form onSubmit={handleCreateTeam}>
+                            <input type="text" required value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="Название бригады" className="w-full px-4 py-3 border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl mb-4 outline-none dark:text-white focus:ring-2 focus:ring-blue-500" />
+                            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition">Создать</button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {isManageModalOpen && manageTeamData && (
                 <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                         <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl w-full max-w-lg relative transition-colors">
-
+                            
                             <div className="flex justify-between items-center mb-6">
                                 <h3 className="text-xl font-bold dark:text-white">Бригада «{manageTeamData?.name}»</h3>
                                 <div className="flex items-center space-x-3">
@@ -71,10 +99,10 @@ export default function Teams() {
                                     <button onClick={() => setManageModalOpen(false)} className="text-gray-400 hover:text-red-500 text-3xl leading-none transition">&times;</button>
                                 </div>
                             </div>
-
+                            
                             <div className="mb-6"><h4 className="font-bold text-gray-700 dark:text-gray-300 mb-3">Состав ({manageTeamData?.members?.length || 0} чел.)</h4><div className="max-h-64 overflow-y-auto space-y-2 border dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-900/50">{manageTeamData?.members?.map(m => (<div key={m.id} className={`flex justify-between items-center p-3 rounded-lg border shadow-sm text-sm transition-colors ${m.is_foreman ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-700/50' : 'bg-white dark:bg-gray-700 dark:border-gray-600'}`}><div><p className="font-bold text-gray-800 dark:text-gray-200">{m.fio}{m.is_foreman && <span className="ml-2 bg-yellow-100 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 text-[10px] uppercase font-extrabold px-2 py-0.5 rounded shadow-sm">⭐️ Бригадир</span>}</p><p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mt-1.5">{m.position} {m.is_linked ? <span className="text-green-600 font-bold ml-1">✓ Привязан</span> : ''}</p></div><div className="flex flex-col space-y-1"><button onClick={() => handleToggleForeman(m.id, m.is_foreman)} className={`font-bold px-2 py-1 rounded-md text-xs transition ${m.is_foreman ? 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300' : 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-200'}`}>{m.is_foreman ? 'Снять статус' : '⭐️ Назначить'}</button><button onClick={() => handleDeleteMember(m.id)} className="text-red-500 dark:text-red-400 font-bold px-2 py-1 bg-red-50 dark:bg-red-900/20 rounded-md hover:bg-red-100 transition">Удалить</button></div></div>))}</div></div><form onSubmit={handleAddMember} className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-xl border border-blue-100 dark:border-blue-800"><h4 className="font-bold text-blue-800 dark:text-blue-400 mb-3 text-sm uppercase tracking-wide">Добавить участника</h4><div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-3"><input type="text" required value={newMember.fio} onChange={e => setNewMember({...newMember, fio: e.target.value})} placeholder="ФИО" className="w-full sm:w-2/3 px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-sm outline-none shadow-sm" /><input type="text" required value={newMember.position} onChange={e => setNewMember({...newMember, position: e.target.value})} placeholder="Должность" className="w-full sm:w-1/3 px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-sm outline-none shadow-sm" /></div><div className="flex items-center mb-4"><input type="checkbox" id="is_foreman_cb" checked={newMember.is_foreman} onChange={e => setNewMember({...newMember, is_foreman: e.target.checked})} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" /><label htmlFor="is_foreman_cb" className="ml-2 text-sm font-bold text-gray-700 dark:text-gray-300 cursor-pointer">⭐️ Назначить бригадиром</label></div><button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-md">Добавить в состав</button></form></div></div></div>
             )}
-
+            
             {inviteInfo && (
                 <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-2xl w-full max-w-md">
