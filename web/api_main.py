@@ -285,6 +285,7 @@ async def background_scheduler():
             rem_time = settings.get('foreman_reminder_time', '')
             rem_weekends = settings.get('foreman_reminder_weekends', '0') == '1'
 
+            # Автоматическая публикация заявок НА СЕГОДНЯ
             if auto_pub_time and current_time_str == auto_pub_time and last_auto_publish_date != current_date_str:
                 last_auto_publish_date = current_date_str
                 async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved' AND date_target = ?",
@@ -303,6 +304,7 @@ async def background_scheduler():
                                        f"⚠️ <b>Авто-публикация</b>\nНа сегодня ({current_date_str}) нет одобренных заявок для автоматической публикации.",
                                        "review")
 
+            # Напоминание прорабам
             if rem_time and current_time_str == rem_time and last_reminder_date != current_date_str:
                 if not is_weekend or rem_weekends:
                     last_reminder_date = current_date_str
@@ -324,7 +326,6 @@ async def startup():
         "CREATE TABLE IF NOT EXISTS equipment (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, category TEXT, is_active INTEGER DEFAULT 1, driver TEXT DEFAULT '')")
     await db.conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 
-    # Базовые настройки
     await db.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_publish_time', '07:00')")
     await db.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('foreman_reminder_time', '18:00')")
     await db.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('foreman_reminder_weekends', '0')")
@@ -543,8 +544,11 @@ async def api_update_profile(target_id: int, tg_id: int = Form(...), fio: str = 
 
 @app.post("/api/users/{target_id}/delete")
 async def api_delete_user(target_id: int, tg_id: int = Form(...)):
+    admin = await db.get_user(tg_id)
+    if not admin or admin['role'] not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403, "Нет прав")
     await db.conn.execute("DELETE FROM users WHERE user_id = ?", (target_id,))
     await db.conn.execute("DELETE FROM team_members WHERE tg_id = ?", (target_id,))
+    await db.conn.execute("UPDATE equipment SET tg_id = NULL WHERE tg_id = ?", (target_id,))
     await db.conn.commit()
     return {"status": "ok"}
 
@@ -625,6 +629,26 @@ async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int
 async def delete_team_member(member_id: int, tg_id: int = Form(0), admin_fio: str = Form("Пользователь")):
     await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
     await db.conn.commit()
+    return {"status": "ok"}
+
+
+@app.post("/api/teams/{team_id}/delete")
+async def delete_entire_team(team_id: int, tg_id: int = Form(0)):
+    user = await db.get_user(tg_id)
+    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
+        raise HTTPException(status_code=403, detail="Нет прав")
+
+    async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
+        t_row = await cur.fetchone()
+        t_name = t_row[0] if t_row else f"ID:{team_id}"
+
+    await db.conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
+    await db.conn.execute("DELETE FROM team_members WHERE team_id = ?", (team_id,))
+    await db.conn.execute("UPDATE applications SET team_id = 0 WHERE team_id = ?", (team_id,))
+    await db.conn.commit()
+
+    fio = dict(user).get('fio', 'Система')
+    await db.add_log(tg_id, fio, f"Удалил бригаду «{t_name}»")
     return {"status": "ok"}
 
 
@@ -811,7 +835,6 @@ async def execute_app_publish(app_dict, bot_token, group_id):
 async def publish_apps(app_ids: str = Form(...), tg_id: int = Form(0)):
     ids = [int(x) for x in app_ids.split(',') if x.strip().isdigit()]
     if not ids: raise HTTPException(400, "Нет выбранных заявок")
-
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     if not group_id: raise HTTPException(status_code=500, detail="Группа не настроена")
@@ -819,13 +842,11 @@ async def publish_apps(app_ids: str = Form(...), tg_id: int = Form(0)):
     pl = ','.join(['?'] * len(ids))
     async with db.conn.execute(f"SELECT * FROM applications WHERE status = 'approved' AND id IN ({pl})", ids) as cur:
         apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-
-    if not apps: raise HTTPException(status_code=400, detail="Выбранные заявки не найдены или уже опубликованы")
+    if not apps: raise HTTPException(status_code=400, detail="Заявки не найдены")
 
     count = 0
     for app_dict in apps:
-        success = await execute_app_publish(app_dict, bot_token, group_id)
-        if success: count += 1
+        if await execute_app_publish(app_dict, bot_token, group_id): count += 1
 
     user = await db.get_user(tg_id)
     await db.add_log(tg_id, dict(user).get('fio', 'Руководство') if user else "Руководство",
