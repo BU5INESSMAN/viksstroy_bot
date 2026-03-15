@@ -37,7 +37,7 @@ app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 TZ_BARNAUL = ZoneInfo("Asia/Barnaul")
 
 
-# --- НОВЫЙ ГЕНЕРАТОР КАРТИНОК НАРЯДОВ (АВТО-ПЕРЕНОС ТЕКСТА) ---
+# --- ИДЕАЛЬНЫЙ ГЕНЕРАТОР КАРТИНОК НАРЯДОВ ---
 def download_font(url, filename):
     if not os.path.exists(filename) or os.path.getsize(filename) < 10000:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -62,12 +62,13 @@ def get_fonts():
 
     try:
         font_header = ImageFont.truetype(bold_path, 36)
-        font_label = ImageFont.truetype(reg_path, 26)
-        font_value = ImageFont.truetype(bold_path, 32)
+        font_label = ImageFont.truetype(reg_path, 28)
+        font_value = ImageFont.truetype(bold_path, 34)
+        font_time = ImageFont.truetype(reg_path, 28)  # Шрифт для времени (такой же как лэйбл)
     except:
-        font_header = font_label = font_value = ImageFont.load_default()
+        font_header = font_label = font_value = font_time = ImageFont.load_default()
 
-    return font_header, font_label, font_value
+    return font_header, font_label, font_value, font_time
 
 
 def clean_text(text):
@@ -76,7 +77,6 @@ def clean_text(text):
 
 
 def wrap_text(text, font, max_width, draw):
-    """Умный перенос строк, если текст шире блока"""
     lines = []
     for paragraph in text.split('\n'):
         words = paragraph.split(' ')
@@ -95,11 +95,11 @@ def wrap_text(text, font, max_width, draw):
     return lines
 
 
-def create_app_image(date_str, address, foreman, team_name, equip_text, comment_str=""):
-    font_header, font_label, font_value = get_fonts()
+def create_app_image(date_str, address, foreman, team_name, equip_list, comment_str=""):
+    font_header, font_label, font_value, font_time = get_fonts()
 
     img_w = 900
-    img_h = 2400  # Большой запас высоты, потом обрежем
+    img_h = 2400
     img = Image.new('RGB', (img_w, img_h), color=(243, 244, 246))
     draw = ImageDraw.Draw(img)
 
@@ -146,23 +146,51 @@ def create_app_image(date_str, address, foreman, team_name, equip_text, comment_
         if is_first: box_h += 65
 
         for lbl, val in content_pairs:
-            val_clean = clean_text(val).strip()
-            wrapped_val = wrap_text(val_clean, font_value, max_text_w, draw)
+            # Если это список техники
+            if isinstance(val, list):
+                bbox_lbl = draw.textbbox((0, 0), lbl.upper(), font=font_label)
+                lbl_h = bbox_lbl[3] - bbox_lbl[1]
 
-            # Считаем высоту
-            bbox_lbl = draw.textbbox((0, 0), lbl.upper(), font=font_label)
-            lbl_h = bbox_lbl[3] - bbox_lbl[1]
+                val_h = 0
+                if not val:
+                    bbox_val = draw.textbbox((0, 0), "Без техники", font=font_value)
+                    val_h = (bbox_val[3] - bbox_val[1]) + 12
+                    parsed_content.append((lbl, "Без техники", (bbox_val[3] - bbox_val[1]) + 12, "text"))
+                else:
+                    items_parsed = []
+                    for eq in val:
+                        eq_name = clean_text(eq.get('name', ''))
+                        eq_time = f"⏰ {eq.get('time_start', '08')}:00 - {eq.get('time_end', '17')}:00"
 
-            val_h = 0
-            line_h = 0
-            if wrapped_val:
-                bbox_val = draw.textbbox((0, 0), wrapped_val[0], font=font_value)
-                line_h = (bbox_val[3] - bbox_val[1]) + 12
-                val_h = len(wrapped_val) * line_h
+                        bbox_name = draw.textbbox((0, 0), eq_name, font=font_value)
+                        name_h = (bbox_name[3] - bbox_name[1]) + 12
 
-            block_h = lbl_h + 15 + val_h + 30
-            box_h += block_h
-            parsed_content.append((lbl, wrapped_val, line_h))
+                        bbox_time = draw.textbbox((0, 0), eq_time, font=font_time)
+                        time_h = (bbox_time[3] - bbox_time[1]) + 12
+
+                        items_parsed.append((eq_name, eq_time, name_h, time_h))
+                        val_h += name_h + time_h + 15  # отступ между техникой
+
+                    parsed_content.append((lbl, items_parsed, 0, "list"))
+
+                block_h = lbl_h + 15 + val_h + 30
+                box_h += block_h
+
+            else:
+                # Обычный текст
+                val_clean = clean_text(val).strip()
+                wrapped_val = wrap_text(val_clean, font_value, max_text_w, draw)
+                bbox_lbl = draw.textbbox((0, 0), lbl.upper(), font=font_label)
+                lbl_h = bbox_lbl[3] - bbox_lbl[1]
+                val_h = 0
+                line_h = 0
+                if wrapped_val:
+                    bbox_val = draw.textbbox((0, 0), wrapped_val[0], font=font_value)
+                    line_h = (bbox_val[3] - bbox_val[1]) + 12
+                    val_h = len(wrapped_val) * line_h
+                block_h = lbl_h + 15 + val_h + 30
+                box_h += block_h
+                parsed_content.append((lbl, wrapped_val, line_h, "text"))
 
         draw.rounded_rectangle([40, current_y, img_w - 40, current_y + box_h], radius=24, fill=(255, 255, 255))
 
@@ -174,14 +202,25 @@ def create_app_image(date_str, address, foreman, team_name, equip_text, comment_
         else:
             text_y = current_y + padding_y
 
-        for lbl, val_lines, line_h in parsed_content:
+        for lbl, val_data, line_h, val_type in parsed_content:
             draw.text((80, text_y), lbl.upper(), fill=(156, 163, 175), font=font_label)
             text_y += 35
-            for line in val_lines:
-                if line.strip():
-                    color = (37, 99, 235) if "ТЕХНИКА" in lbl else (17, 24, 39)
-                    draw.text((80, text_y), line.strip(), fill=color, font=font_value)
+
+            if val_type == "text":
+                if isinstance(val_data, str):
+                    draw.text((80, text_y), val_data, fill=(107, 114, 128), font=font_value)
                     text_y += line_h
+                else:
+                    for line in val_data:
+                        if line.strip():
+                            draw.text((80, text_y), line.strip(), fill=(17, 24, 39), font=font_value)
+                            text_y += line_h
+            elif val_type == "list":
+                for eq_name, eq_time, n_h, t_h in val_data:
+                    draw.text((80, text_y), eq_name, fill=(37, 99, 235), font=font_value)
+                    text_y += n_h
+                    draw.text((80, text_y), eq_time, fill=(107, 114, 128), font=font_time)
+                    text_y += t_h + 15
             text_y += 20
 
         return current_y + box_h + 20
@@ -189,8 +228,7 @@ def create_app_image(date_str, address, foreman, team_name, equip_text, comment_
     y_offset = draw_block([("ДАТА ВЫЕЗДА", date_str), ("АДРЕС ОБЪЕКТА", address)], y_offset, is_first=True)
     y_offset = draw_block([("ВЫБОР БРИГАДЫ", f"{team_name}\n(Прораб: {foreman})")], y_offset)
 
-    eq_text = "Не требуется" if not equip_text else equip_text
-    y_offset = draw_block([("ТРЕБУЕМАЯ ТЕХНИКА", eq_text)], y_offset)
+    y_offset = draw_block([("ТРЕБУЕМАЯ ТЕХНИКА", equip_list)], y_offset)
 
     if comment_str and comment_str.lower() != 'нет':
         y_offset = draw_block([("КОММЕНТАРИЙ", comment_str)], y_offset)
@@ -266,6 +304,7 @@ async def startup():
         ("applications", "selected_members", "TEXT"), ("applications", "equipment_data", "TEXT"),
         ("applications", "status", "TEXT DEFAULT 'waiting'"),
         ("applications", "approved_by", "TEXT DEFAULT ''"),
+        ("applications", "approved_by_id", "INTEGER DEFAULT 0"),  # НОВАЯ КОЛОНКА ДЛЯ КЛИКАБЕЛЬНОГО МОДЕРАТОРА
         ("team_members", "tg_id", "INTEGER"), ("team_members", "is_foreman", "INTEGER DEFAULT 0"),
         ("users", "avatar_url", "TEXT"),
         ("equipment", "driver", "TEXT DEFAULT ''"), ("equipment", "status", "TEXT DEFAULT 'free'"),
@@ -560,16 +599,6 @@ async def get_review_apps():
     result = []
     for row in rows:
         app_dict = dict(zip([c[0] for c in cursor.description], row))
-        eq_data_str = app_dict.get('equipment_data', '')
-        equip_text = ""
-        if eq_data_str:
-            try:
-                eq_list = json.loads(eq_data_str)
-                if eq_list: equip_text = ", ".join(
-                    [f"{e['name']} ({e['time_start']}:00-{e['time_end']}:00)" for e in eq_list])
-            except:
-                pass
-        app_dict['formatted_equip'] = equip_text or "Не требуется"
         result.append(app_dict)
     return result
 
@@ -587,8 +616,8 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
     mod_fio = dict(user).get('fio', 'Модератор') if user else 'Модератор'
 
     if new_status == 'approved':
-        await db.conn.execute("UPDATE applications SET status = ?, approved_by = ? WHERE id = ?",
-                              (new_status, mod_fio, app_id))
+        await db.conn.execute("UPDATE applications SET status = ?, approved_by = ?, approved_by_id = ? WHERE id = ?",
+                              (new_status, mod_fio, tg_id, app_id))
     else:
         await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
 
@@ -648,35 +677,38 @@ async def execute_app_publish(app_dict, bot_token, group_id):
         staff_str = "\n  ├ Только техника"
 
     eq_data_str = app_dict.get('equipment_data', '')
-    equip_text = ""
+    equip_list = []
     drivers_ids = []
+    equip_html = ""
     if eq_data_str:
         try:
-            eq_list = json.loads(eq_data_str)
-            if eq_list:
-                for eq in eq_list:
-                    equip_text += f"{eq['name']} (⏰ {eq['time_start']}:00 - {eq['time_end']}:00)\n"
+            equip_list = json.loads(eq_data_str)
+            if equip_list:
+                for eq in equip_list:
+                    equip_html += f"  ├ {eq['name']}\n  │   ⏰ {eq['time_start']}:00 - {eq['time_end']}:00\n"
                     async with db.conn.execute("SELECT tg_id FROM equipment WHERE id = ?", (eq['id'],)) as cur:
                         eq_db_row = await cur.fetchone()
                         if eq_db_row and eq_db_row[0]: drivers_ids.append(eq_db_row[0])
         except:
             pass
 
+    if not equip_html: equip_html = "  ├ Не требуется\n"
+
     comment_text = app_dict.get('comment', '')
 
+    # ПЕРЕДАЕМ СПИСОК ТЕХНИКИ В ГЕНЕРАТОР
     img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
-                               equip_text, comment_text)
+                               equip_list, comment_text)
 
     comment_html = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
-    equip_html = ""
-    if equip_text:
-        for line in equip_text.split('\n'):
-            if line.strip(): equip_html += f"  ├ {line.strip()}\n"
-    else:
-        equip_html = "  ├ Не требуется\n"
 
-    approved_by_str = f"\n🛡 <b>Одобрил(а):</b> {app_dict.get('approved_by', 'Модератор')}" if app_dict.get(
-        'approved_by') else ""
+    # КЛИКАБЕЛЬНЫЙ МОДЕРАТОР
+    approved_by_str = ""
+    if app_dict.get('approved_by'):
+        if app_dict.get('approved_by_id'):
+            approved_by_str = f"\n🛡 <b>Одобрил(а):</b> <a href='tg://user?id={app_dict['approved_by_id']}'>{app_dict['approved_by']}</a>"
+        else:
+            approved_by_str = f"\n🛡 <b>Одобрил(а):</b> {app_dict['approved_by']}"
 
     html_caption = f"""<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>
 📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>
