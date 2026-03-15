@@ -32,6 +32,7 @@ export default function Layout() {
     const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light');
     const themeIcon = theme === 'light' ? '🌞' : theme === 'dark' ? '🌙' : '💻';
 
+    const handleLogout = () => { localStorage.removeItem('user_role'); localStorage.removeItem('tg_id'); localStorage.removeItem('real_role'); navigate('/'); };
     const endRoleTest = () => { localStorage.setItem('user_role', realRole); localStorage.removeItem('real_role'); window.location.reload(); };
 
     const openProfile = async (targetId) => {
