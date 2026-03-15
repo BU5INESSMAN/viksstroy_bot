@@ -47,15 +47,18 @@ export default function Home() {
 
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
-    const [appForm, setAppForm] = useState({ date_target: smartDates[0].val, object_address: '', team_id: '', members: [], equipment: [], comment: '', isViewOnly: false });
+    const [appForm, setAppForm] = useState({ id: null, date_target: smartDates[0].val, object_address: '', team_id: '', members: [], equipment: [], comment: '', isViewOnly: false });
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
 
     const fetchData = () => {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
         axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApp(res.data); setLoading(false); }).catch(() => { setActiveApp(null); setLoading(false); });
+
         if (['worker', 'foreman'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {
-                if (res.data?.profile?.team_id) axios.get(`/api/teams/${res.data.profile.team_id}/details`).then(tRes => setMyTeam(tRes.data));
+                if (res.data?.profile?.team_id) {
+                    axios.get(`/api/teams/${res.data.profile.team_id}/details`).then(tRes => setMyTeam(tRes.data));
+                }
             }).catch(()=>{});
         }
     };
@@ -64,7 +67,8 @@ export default function Home() {
 
     useEffect(() => {
         if (!isGlobalCreateAppOpen) {
-            setAppForm({ date_target: smartDates[0].val, object_address: '', team_id: '', members: [], equipment: [], comment: '', isViewOnly: false });
+            setAppForm({ id: null, date_target: smartDates[0].val, object_address: '', team_id: '', members: [], equipment: [], comment: '', isViewOnly: false });
+            setActiveEqCategory(null);
         }
     }, [isGlobalCreateAppOpen]);
 
@@ -80,7 +84,6 @@ export default function Home() {
     const handleFormChange = (field, value) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, [field]: value })); };
     const toggleAppMember = (id) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, members: prev.members?.includes(id) ? prev.members.filter(m => m !== id) : [...(prev.members || []), id] })); };
 
-    // БЛОКИРОВКА БРИГАДЫ
     const checkTeamStatus = (team_id) => {
         if (data.kanban_apps) {
             const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && ['approved', 'published'].includes(a.status));
@@ -220,6 +223,7 @@ export default function Home() {
                 </div>
             )}
 
+            {/* МОДАЛКА ЗАЯВКИ */}
             {isGlobalCreateAppOpen && (
                 <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
@@ -230,10 +234,10 @@ export default function Home() {
                             </div>
                             <form onSubmit={handleCreateApp} className="p-6 space-y-6 text-sm">
                                 <div className="space-y-4">
-                                    <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📅 Дата выезда</label><input type="date" disabled={appForm.isViewOnly} required value={appForm.date_target} onChange={e => handleFormChange('date_target', e.target.value)} className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-bold text-gray-800 dark:text-gray-100 shadow-sm mb-3 disabled:opacity-80" />{!appForm.isViewOnly && <div className="flex flex-wrap gap-2">{smartDates.map(d => (<button key={d.val} type="button" onClick={() => handleFormChange('date_target', d.val)} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${appForm.date_target === d.val ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 shadow-sm' : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>{d.label}</button>))}</div>}</div>
+                                    <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📅 Дата выезда</label><input type="date" disabled={appForm.isViewOnly} required value={appForm.date_target} onChange={e => handleFormChange('date_target', e.target.value)} className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-bold text-gray-800 dark:text-gray-100 shadow-sm mb-3 disabled:opacity-80 bg-transparent" />{!appForm.isViewOnly && <div className="flex flex-wrap gap-2">{smartDates.map(d => (<button key={d.val} type="button" onClick={() => handleFormChange('date_target', d.val)} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${appForm.date_target === d.val ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 shadow-sm' : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>{d.label}</button>))}</div>}</div>
                                     <div>
                                         <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📍 Адрес объекта</label>
-                                        <input type="text" disabled={appForm.isViewOnly} required value={appForm.object_address} onChange={e => handleFormChange('object_address', e.target.value)} placeholder="г. Москва, ул. Ленина, 10" className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-medium dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80" />
+                                        <input type="text" disabled={appForm.isViewOnly} required value={appForm.object_address} onChange={e => handleFormChange('object_address', e.target.value)} placeholder="г. Москва, ул. Ленина, 10" className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-medium dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" />
                                         {!appForm.isViewOnly && data.recent_addresses && data.recent_addresses.length > 0 && (
                                             <div className="flex flex-wrap gap-2 mt-3">
                                                 {data.recent_addresses.map((addr, idx) => (
@@ -272,7 +276,7 @@ export default function Home() {
                                     {appForm.equipment.length > 0 ? (<div className="mt-4 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 shadow-inner"><label className="block text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wide border-b border-indigo-200 dark:border-indigo-800 pb-2 mb-3">Время работы машин:</label>{appForm.equipment.map(eq => (<div key={eq.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-indigo-100 dark:border-indigo-700/50 shadow-sm gap-3"><p className="font-bold text-gray-800 dark:text-gray-200 text-sm">🚜 {eq.name}</p><div className="flex items-center space-x-2"><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">С</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_start} onChange={e => updateEquipmentTime(eq.id, 'time_start', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div><span className="text-gray-400 font-bold">—</span><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">ДО</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_end} onChange={e => updateEquipmentTime(eq.id, 'time_end', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div></div></div>))}</div>) : (appForm.isViewOnly && <p className="text-gray-500 text-sm">Техника не требуется</p>)}
                                 </div>
                                 <hr className="dark:border-gray-700" />
-                                <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" disabled={appForm.isViewOnly} value={appForm.comment} onChange={e => handleFormChange('comment', e.target.value)} placeholder="Доп. информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80" /></div>
+                                <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" disabled={appForm.isViewOnly} value={appForm.comment} onChange={e => handleFormChange('comment', e.target.value)} placeholder="Доп. информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" /></div>
 
                                 <div className="flex space-x-3 pt-4">
                                     <button type="button" onClick={() => setGlobalCreateAppOpen(false)} className={`w-full bg-gray-100 dark:bg-gray-700 py-4 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition ${appForm.isViewOnly ? '' : 'w-1/3'}`}>Закрыть</button>
