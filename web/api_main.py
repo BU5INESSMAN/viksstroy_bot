@@ -37,17 +37,14 @@ app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 TZ_BARNAUL = ZoneInfo("Asia/Barnaul")
 
 
-# --- НОВЫЙ ГЕНЕРАТОР КАРТИНОК НАРЯДОВ (КРУПНЫЙ И КРАСИВЫЙ) ---
+# --- ИДЕАЛЬНЫЙ ГЕНЕРАТОР КАРТИНОК НАРЯДОВ ---
 def download_font(url, filename):
-    # Скачиваем, только если файла нет или он сломан (меньше 10 КБ)
     if not os.path.exists(filename) or os.path.getsize(filename) < 10000:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         try:
-            # Обход проблем с SSL сертификатами в Docker
             ctx = ssl.create_default_context()
             ctx.check_hostname = False
             ctx.verify_mode = ssl.CERT_NONE
-            # Подделываем User-Agent, чтобы Github не блокировал
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
             with urllib.request.urlopen(req, context=ctx) as response, open(filename, 'wb') as out_file:
                 out_file.write(response.read())
@@ -60,79 +57,54 @@ def get_fonts():
     reg_path = os.path.join(font_dir, "Roboto-Regular.ttf")
     bold_path = os.path.join(font_dir, "Roboto-Bold.ttf")
 
-    # Прямые сырые ссылки на шрифты Google (надежные)
     download_font("https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf", reg_path)
     download_font("https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Bold.ttf", bold_path)
 
     try:
-        # Сильно увеличенные размеры шрифтов для читаемости
-        font_title = ImageFont.truetype(bold_path, 46)
         font_header = ImageFont.truetype(bold_path, 36)
         font_label = ImageFont.truetype(reg_path, 28)
         font_value = ImageFont.truetype(bold_path, 34)
-    except Exception as e:
-        print("Failed to load fonts:", e)
-        font_title = font_header = font_label = font_value = ImageFont.load_default()
+    except:
+        font_header = font_label = font_value = ImageFont.load_default()
 
-    return font_title, font_header, font_label, font_value
+    return font_header, font_label, font_value
 
 
 def clean_text(text):
-    """Удаляет ломающие эмодзи для Pillow"""
     if not text: return ""
     return re.sub(r'[^\w\sА-Яа-яЁёA-Za-z0-9,.:\-!/()«»]', '', str(text))
 
 
 def create_app_image(date_str, address, foreman, team_name, equip_text, comment_str=""):
-    font_title, font_header, font_label, font_value = get_fonts()
+    font_header, font_label, font_value = get_fonts()
 
     img_w = 900
-    img_h = 1600  # Высота с запасом (обрежем в конце)
-    img = Image.new('RGB', (img_w, img_h), color=(243, 244, 246))  # bg-gray-100
+    img_h = 1600
+    img = Image.new('RGB', (img_w, img_h), color=(243, 244, 246))
     draw = ImageDraw.Draw(img)
 
     header_h = 140
-    # Рисуем синюю шапку с закруглением сверху
     draw.rounded_rectangle([40, 40, img_w - 40, 40 + header_h], radius=24, fill=(37, 99, 235))
-    # Заквадрачиваем низ шапки, чтобы она сливалась с карточкой
     draw.rectangle([40, 40 + header_h - 24, img_w - 40, 40 + header_h], fill=(37, 99, 235))
 
     logo_path = "frontend/public/logo.png"
-    header_text = "ВИКС РАСПИСАНИЕ"
 
-    # Центрирование логотипа и текста
-    logo_drawn = False
     if os.path.exists(logo_path):
         try:
             logo_img = Image.open(logo_path).convert("RGBA")
             aspect = logo_img.width / logo_img.height
-            new_h = 70
+            new_h = 80
             new_w = int(new_h * aspect)
             logo_img = logo_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-            # Перекрашиваем прозрачный логотип в чисто БЕЛЫЙ цвет
             r, g, b, a = logo_img.split()
             white_logo = Image.merge("RGBA", (Image.new('L', a.size, 255), Image.new('L', a.size, 255),
                                               Image.new('L', a.size, 255), a))
 
-            # Расчет центра
-            text_bbox = draw.textbbox((0, 0), header_text, font=font_title)
-            text_w = text_bbox[2] - text_bbox[0]
-            total_w = new_w + 25 + text_w
-            start_x = (img_w - total_w) // 2
-
+            start_x = (img_w - new_w) // 2
             img.paste(white_logo, (start_x, 40 + (header_h - new_h) // 2), white_logo)
-            draw.text((start_x + new_w + 25, 40 + (header_h - (text_bbox[3] - text_bbox[1])) // 2 - 5), header_text,
-                      fill=(255, 255, 255), font=font_title)
-            logo_drawn = True
-        except Exception as e:
-            print("Logo error:", e)
-
-    if not logo_drawn:
-        text_bbox = draw.textbbox((0, 0), header_text, font=font_title)
-        text_w = text_bbox[2] - text_bbox[0]
-        draw.text(((img_w - text_w) // 2, 40 + (header_h - (text_bbox[3] - text_bbox[1])) // 2 - 5), header_text,
-                  fill=(255, 255, 255), font=font_title)
+        except:
+            pass
 
     y_offset = 40 + header_h
 
@@ -146,30 +118,26 @@ def create_app_image(date_str, address, foreman, team_name, equip_text, comment_
             val_lines = clean_text(val).strip().split('\n')
             box_h += len(val_lines) * line_height + 20
 
-            # Рисуем белую карточку для блока
         draw.rounded_rectangle([40, current_y, img_w - 40, current_y + box_h], radius=24, fill=(255, 255, 255))
 
-        # Если это первый блок, заквадрачиваем ему верх (стык с синей шапкой)
         if current_y == 40 + header_h:
             draw.rectangle([40, current_y, img_w - 40, current_y + 24], fill=(255, 255, 255))
-
-            # Разделительная линия
-            draw.line([80, current_y + 80, img_w - 80, current_y + 80], fill=(229, 231, 235), width=3)
-            draw.text((80, current_y + 30), "ДЕТАЛИ ЗАЯВКИ", fill=(31, 41, 55), font=font_header)
-            text_y = current_y + 120
+            draw.line([80, current_y + 90, img_w - 80, current_y + 90], fill=(229, 231, 235), width=3)
+            draw.text((80, current_y + 35), "ДЕТАЛИ ЗАЯВКИ", fill=(31, 41, 55), font=font_header)
+            text_y = current_y + 130
         else:
             text_y = current_y + padding
 
         for lbl, val in content_pairs:
-            draw.text((80, text_y), lbl.upper(), fill=(156, 163, 175), font=font_label)  # Серый лэйбл
-            text_y += 40
+            draw.text((80, text_y), lbl.upper(), fill=(156, 163, 175), font=font_label)
+            text_y += 45
             val_lines = clean_text(val).strip().split('\n')
             for line in val_lines:
                 if line.strip():
                     color = (37, 99, 235) if "ТЕХНИКА" in lbl else (17, 24, 39)
                     draw.text((80, text_y), line.strip(), fill=color, font=font_value)
                     text_y += line_height
-            text_y += 25
+            text_y += 30
 
         return current_y + box_h + 20
 
@@ -182,16 +150,13 @@ def create_app_image(date_str, address, foreman, team_name, equip_text, comment_
     if comment_str and comment_str.lower() != 'нет':
         y_offset = draw_block([("КОММЕНТАРИЙ", comment_str)], y_offset)
 
-    # Обрезаем картинку по контенту
     img = img.crop((0, 0, img_w, y_offset + 30))
-
     buf = io.BytesIO()
     img.save(buf, format='PNG')
     buf.seek(0)
     return buf
 
 
-# --- УВЕДОМЛЕНИЯ ---
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None):
     bot_token = os.getenv("BOT_TOKEN")
     group_report_id = os.getenv("GROUP_REPORT_ID") or os.getenv("GROUP_CHAT_ID")
@@ -255,6 +220,7 @@ async def startup():
         ("applications", "comment", "TEXT"),
         ("applications", "selected_members", "TEXT"), ("applications", "equipment_data", "TEXT"),
         ("applications", "status", "TEXT DEFAULT 'waiting'"),
+        ("applications", "approved_by", "TEXT DEFAULT ''"),  # НОВАЯ КОЛОНКА
         ("team_members", "tg_id", "INTEGER"), ("team_members", "is_foreman", "INTEGER DEFAULT 0"),
         ("users", "avatar_url", "TEXT"),
         ("equipment", "driver", "TEXT DEFAULT ''"), ("equipment", "status", "TEXT DEFAULT 'free'"),
@@ -357,9 +323,11 @@ async def get_dashboard_data(tg_id: int = 0):
         "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur:
         cat_rows = await cur.fetchall()
     categories = [r[0].strip().capitalize() for r in cat_rows if r[0].strip()]
+
     async with db.conn.execute(
             "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE date_target >= date('now', '-14 days') ORDER BY a.id DESC") as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
+
     recent_addresses = []
     if tg_id > 0:
         async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
@@ -367,6 +335,7 @@ async def get_dashboard_data(tg_id: int = 0):
             for r in await cur.fetchall():
                 if r[0] and r[0] not in recent_addresses: recent_addresses.append(r[0])
                 if len(recent_addresses) >= 5: break
+
     return {"stats": stats, "teams": [{"id": t['id'], "name": t['name']} for t in teams], "equipment": equip,
             "equip_categories": list(set(categories)), "kanban_apps": all_apps, "recent_addresses": recent_addresses}
 
@@ -544,7 +513,7 @@ async def create_app(tg_id: int = Form(...), team_id: int = Form(0), date_target
 @app.get("/api/applications/review")
 async def get_review_apps():
     async with db.conn.execute(
-            "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE a.status IN ('waiting', 'approved') ORDER BY a.id DESC") as cursor:
+            "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE a.status IN ('waiting', 'approved', 'published') ORDER BY a.id DESC") as cursor:
         rows = await cursor.fetchall()
     result = []
     for row in rows:
@@ -572,7 +541,14 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
     if not app_row: raise HTTPException(404, "Заявка не найдена")
     app_dict = dict(zip([c[0] for c in cur.description], app_row))
 
-    await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
+    user = await db.get_user(tg_id)
+    mod_fio = dict(user).get('fio', 'Модератор') if user else 'Модератор'
+
+    if new_status == 'approved':
+        await db.conn.execute("UPDATE applications SET status = ?, approved_by = ? WHERE id = ?",
+                              (new_status, mod_fio, app_id))
+    else:
+        await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
 
     if new_status in ['completed', 'rejected']:
         if app_dict.get('equipment_data'):
@@ -583,11 +559,9 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
                 pass
 
     await db.conn.commit()
-    user = await db.get_user(tg_id)
-    mod_fio = dict(user).get('fio', 'Модератор') if user else 'Модератор'
 
     status_ru = "✅ Одобрена" if new_status == 'approved' else (
-        "❌ Отклонена" if new_status == 'rejected' else "🏁 Завершена")
+        "❌ Отклонена / Отозвана" if new_status == 'rejected' else "🏁 Досрочно завершена")
     msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Кто: {mod_fio}\n📍 Объект: {app_dict['object_address']}"
     if reason: msg_group += f"\n💬 Причина: {reason}"
     await notify_users(["report_group"], msg_group, "review")
@@ -647,7 +621,6 @@ async def execute_app_publish(app_dict, bot_token, group_id):
             pass
 
     comment_text = app_dict.get('comment', '')
-
     img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
                                equip_text, comment_text)
 
@@ -659,12 +632,15 @@ async def execute_app_publish(app_dict, bot_token, group_id):
     else:
         equip_html = "  ├ Не требуется\n"
 
+    approved_by_str = f"\n🛡 <b>Одобрил(а):</b> {app_dict.get('approved_by', 'Модератор')}" if app_dict.get(
+        'approved_by') else ""
+
     html_caption = f"""<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>
 📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>
 📍 <b>Объект:</b> {app_dict['object_address']}
 🚜 <b>Техника:</b>
 {equip_html}👷‍♂️ <b>Прораб:</b> <a href='tg://user?id={app_dict['foreman_id']}'>{app_dict['foreman_name']}</a>
-👥 <b>Бригада «{team_name}»:</b>{staff_str}{comment_html}</blockquote>"""
+👥 <b>Бригада «{team_name}»:</b>{staff_str}{comment_html}{approved_by_str}</blockquote>"""
 
     async with aiohttp.ClientSession() as session:
         data = aiohttp.FormData()
