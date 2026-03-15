@@ -41,19 +41,21 @@ export default function Home() {
     const { isGlobalCreateAppOpen, setGlobalCreateAppOpen } = useOutletContext();
 
     const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], kanban_apps: [], recent_addresses: [] });
-    const [activeApp, setActiveApp] = useState(null);
+    const [activeApps, setActiveApps] = useState([]); // Изменено на массив для вывода всех активных заявок
     const [myTeam, setMyTeam] = useState(null);
     const [loading, setLoading] = useState(true);
 
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
-    const [appForm, setAppForm] = useState({ id: null, date_target: smartDates[0].val, object_address: '', team_id: '', members: [], equipment: [], comment: '', isViewOnly: false });
+    
+    // ИСПРАВЛЕНИЕ: team_ids вместо team_id
+    const [appForm, setAppForm] = useState({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false });
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
 
     const fetchData = () => {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
-        axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApp(res.data); setLoading(false); }).catch(() => { setActiveApp(null); setLoading(false); });
-
+        axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApps(res.data || []); setLoading(false); }).catch(() => { setActiveApps([]); setLoading(false); });
+        
         if (['worker', 'foreman'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {
                 if (res.data?.profile?.team_id) {
@@ -67,28 +69,51 @@ export default function Home() {
 
     useEffect(() => {
         if (!isGlobalCreateAppOpen) {
-            setAppForm({ id: null, date_target: smartDates[0].val, object_address: '', team_id: '', members: [], equipment: [], comment: '', isViewOnly: false });
+            setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false });
             setActiveEqCategory(null);
+            setTeamMembers([]);
         }
     }, [isGlobalCreateAppOpen]);
 
+    // Загрузка рабочих из всех выбранных бригад
     useEffect(() => {
-        if (appForm.team_id) {
-            axios.get(`/api/teams/${appForm.team_id}/details`).then(res => {
-                setTeamMembers(res.data?.members || []);
-                if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, members: (res.data?.members || []).map(m => m.id) }));
-            }).catch(() => setTeamMembers([]));
-        } else setTeamMembers([]);
-    }, [appForm.team_id]);
+        if (appForm.team_ids && appForm.team_ids.length > 0) {
+            Promise.all(appForm.team_ids.map(id => axios.get(`/api/teams/${id}/details`)))
+                .then(responses => {
+                    const allMembers = responses.flatMap(res => res.data?.members || []);
+                    // Убираем дубликаты
+                    const uniqueMembers = Array.from(new Map(allMembers.map(m => [m.id, m])).values());
+                    setTeamMembers(uniqueMembers);
+                    
+                    // Если создаем новую заявку (а не смотрим старую), выделяем всех рабочих автоматически
+                    if(!appForm.isViewOnly && !appForm.id) {
+                        setAppForm(prev => ({ ...prev, members: uniqueMembers.map(m => m.id) }));
+                    }
+                }).catch(() => setTeamMembers([]));
+        } else {
+            setTeamMembers([]);
+        }
+    }, [appForm.team_ids.join(',')]);
 
     const handleFormChange = (field, value) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, [field]: value })); };
-    const toggleAppMember = (id) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, members: prev.members?.includes(id) ? prev.members.filter(m => m !== id) : [...(prev.members || []), id] })); };
+    
+    // Переключатель нескольких бригад
+    const toggleTeamSelection = (id) => {
+        if(appForm.isViewOnly) return;
+        setAppForm(prev => {
+            const newIds = prev.team_ids.includes(id) ? prev.team_ids.filter(x => x !== id) : [...prev.team_ids, id];
+            return { ...prev, team_ids: newIds };
+        });
+    };
 
+    const toggleAppMember = (id) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, members: prev.members?.includes(id) ? prev.members.filter(m => m !== id) : [...(prev.members || []), id] })); };
+    
     const checkTeamStatus = (team_id) => {
         if (data.kanban_apps) {
             const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && ['approved', 'published'].includes(a.status));
             for (const a of appsOnDate) {
-                if (a.team_id === team_id && appForm.id !== a.id) return { state: 'busy', message: `Эта бригада уже занята в этот день на объекте:\n📍 ${a.object_address}` };
+                const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
+                if (tIds.includes(team_id) && appForm.id !== a.id) return { state: 'busy', message: `Эта бригада уже занята в этот день на объекте:\n📍 ${a.object_address}` };
             }
         }
         return { state: 'free' };
@@ -122,18 +147,27 @@ export default function Home() {
     const handleCreateApp = async (e) => {
         e.preventDefault();
         if(appForm.isViewOnly) { setGlobalCreateAppOpen(false); return; }
-        if (!appForm.team_id && appForm.equipment.length === 0) return alert("Выберите бригаду или технику!");
-        if (!appForm.team_id && !window.confirm("Создать заявку ТОЛЬКО на технику (без людей)?")) return;
-        if (appForm.team_id && appForm.members.length === 0) return alert("Выберите хотя бы одного рабочего из бригады!");
-
+        if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) return alert("Выберите бригаду или технику!");
+        if (appForm.team_ids.length === 0 && !window.confirm("Создать заявку ТОЛЬКО на технику (без людей)?")) return;
+        if (appForm.team_ids.length > 0 && appForm.members.length === 0) return alert("Выберите хотя бы одного рабочего из бригады!");
+        
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId); fd.append('date_target', appForm.date_target); fd.append('object_address', appForm.object_address);
-            fd.append('team_id', appForm.team_id || '0'); fd.append('comment', appForm.comment); fd.append('selected_members', appForm.members.join(','));
+            fd.append('team_id', appForm.team_ids.join(',') || '0'); 
+            fd.append('comment', appForm.comment); fd.append('selected_members', appForm.members.join(','));
             fd.append('equipment_data', JSON.stringify(appForm.equipment));
-            await axios.post('/api/applications/create', fd);
-            setGlobalCreateAppOpen(false); fetchData(); alert("Успешно отправлено на модерацию!");
-        } catch (err) { alert("Ошибка создания"); }
+            
+            if (appForm.id) {
+                await axios.post(`/api/applications/${appForm.id}/update`, fd);
+                alert("Заявка успешно обновлена!");
+            } else {
+                await axios.post('/api/applications/create', fd);
+                alert("Успешно отправлено на модерацию!");
+            }
+
+            setGlobalCreateAppOpen(false); fetchData();
+        } catch (err) { alert(err.response?.data?.detail || "Ошибка сохранения"); }
     };
 
     const handleFreeEquipment = async () => {
@@ -149,9 +183,10 @@ export default function Home() {
     const openAppModalFromKanban = (app) => {
         setAppForm({
             id: app.id,
+            status: app.status,
             date_target: app.date_target,
             object_address: app.object_address,
-            team_id: app.team_id || '',
+            team_ids: app.team_id ? String(app.team_id).split(',').map(Number) : [],
             members: app.selected_members ? app.selected_members.split(',').map(Number) : [],
             equipment: app.equipment_data ? JSON.parse(app.equipment_data) : [],
             comment: app.comment || '',
@@ -159,9 +194,6 @@ export default function Home() {
         });
         setGlobalCreateAppOpen(true);
     };
-
-    let activeEquipText = 'Не требуется';
-    if (activeApp?.equipment_data) { try { const eqList = JSON.parse(activeApp.equipment_data); if (eqList && eqList.length > 0) activeEquipText = eqList.map(e => `${e.name} (${e.time_start}:00-${e.time_end}:00)`).join(', '); } catch(e){} }
 
     const appsMap = { waiting: [], approved: [], published: [], completed: [] };
     if (data.kanban_apps) { data.kanban_apps.forEach(a => { if (appsMap[a.status]) appsMap[a.status].push(a); }); }
@@ -172,19 +204,29 @@ export default function Home() {
 
     return (
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* БЛИЖАЙШИЙ НАРЯД ТОЛЬКО ДЛЯ РАБОЧИХ/ВОДИТЕЛЕЙ И ПРОРАБОВ */}
                 {['worker', 'driver', 'foreman'].includes(role) && (
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-blue-500 relative h-fit">
-                        <h2 className="text-lg font-bold mb-2 flex items-center dark:text-white">📋 Ближайший наряд</h2>
-                        {activeApp ? (
-                            <div className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-sm space-y-2 text-gray-800 dark:text-gray-200">
-                               <p><b>Дата:</b> {activeApp.date_target}</p><p><b>Объект:</b> {activeApp.object_address}</p><p><b>Техника:</b> {activeEquipText}</p><p><b>Бригада:</b> {activeApp.team_id ? activeApp.team_name : 'Только техника'}</p>
-                               {role === 'driver' && (
-                                   <button onClick={handleFreeEquipment} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
-                                       ✅ Готово (Освободить технику)
-                                   </button>
-                               )}
+                        <h2 className="text-lg font-bold mb-2 flex items-center dark:text-white">📋 Текущие наряды</h2>
+                        {activeApps.length > 0 ? (
+                            <div className="space-y-4">
+                                {activeApps.map(a => {
+                                    let activeEquipText = 'Не требуется';
+                                    if (a.equipment_data) { try { const eqList = JSON.parse(a.equipment_data); if (eqList && eqList.length > 0) activeEquipText = eqList.map(e => `${e.name} (${e.time_start}:00-${e.time_end}:00)`).join(', '); } catch(e){} }
+                                    
+                                    return (
+                                        <div key={a.id} className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-sm space-y-2 text-gray-800 dark:text-gray-200">
+                                            <p><b>Дата:</b> {a.date_target}</p><p><b>Объект:</b> {a.object_address}</p><p><b>Техника:</b> {activeEquipText}</p><p><b>Бригада:</b> {a.team_name || 'Только техника'}</p>
+                                            {role === 'driver' && (
+                                                <button onClick={handleFreeEquipment} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
+                                                    ✅ Готово (Освободить технику)
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         ) : (<p className="text-blue-600 dark:text-blue-400 font-medium text-sm p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl">Предстоящих нарядов пока нет.</p>)}
                     </div>
@@ -213,7 +255,7 @@ export default function Home() {
                     <div className="flex justify-between items-center mb-2 mt-2">
                         <h2 className="text-xl font-bold text-gray-800 dark:text-white">📊 ЗАЯВКИ</h2>
                     </div>
-
+                    
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                         <KanbanCol title="На модерации" icon="⏳" colorClass="bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400" apps={appsMap.waiting} isOpen={openKanban.waiting} toggleOpen={() => setOpenKanban({...openKanban, waiting: !openKanban.waiting})} onAppClick={openAppModalFromKanban} />
                         <KanbanCol title="Одобрены" icon="✅" colorClass="bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400" apps={appsMap.approved} isOpen={openKanban.approved} toggleOpen={() => setOpenKanban({...openKanban, approved: !openKanban.approved})} onAppClick={openAppModalFromKanban} />
@@ -223,12 +265,13 @@ export default function Home() {
                 </div>
             )}
 
+            {/* МОДАЛКА ЗАЯВКИ (РЕДАКТИРОВАНИЕ) */}
             {isGlobalCreateAppOpen && (
                 <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                         <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden">
                             <div className="flex justify-between items-center px-6 py-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
-                                <h3 className="text-xl font-bold dark:text-white">{appForm.isViewOnly ? `Наряд №${appForm.id}` : 'Создание заявки'}</h3>
+                                <h3 className="text-xl font-bold dark:text-white">{appForm.id ? `Наряд №${appForm.id}` : 'Создание заявки'}</h3>
                                 <button type="button" onClick={() => setGlobalCreateAppOpen(false)} className="text-gray-400 hover:text-red-500 text-3xl leading-none transition">&times;</button>
                             </div>
                             <form onSubmit={handleCreateApp} className="p-6 space-y-6 text-sm">
@@ -250,20 +293,21 @@ export default function Home() {
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
-                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">👥 Выбор Бригады</label>
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">👥 Выбор Бригад</label>
                                     <div className="flex flex-wrap gap-2">
-                                        {!appForm.isViewOnly && <button type="button" onClick={() => handleFormChange('team_id', '')} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${!appForm.team_id ? 'bg-red-50 border-red-500 text-red-700 dark:bg-red-900/30' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>❌ Без бригады</button>}
+                                        {!appForm.isViewOnly && <button type="button" onClick={() => handleFormChange('team_ids', [])} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${appForm.team_ids.length === 0 ? 'bg-red-50 border-red-500 text-red-700 dark:bg-red-900/30' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>❌ Без бригады</button>}
                                         {data?.teams?.map(t => {
                                             const st = checkTeamStatus(t.id);
+                                            const isSelected = appForm.team_ids.includes(t.id);
                                             let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700';
                                             if (st.state === 'busy') btnStyles = 'bg-red-50 border-red-300 text-red-500 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400 cursor-not-allowed opacity-75';
-                                            else if (Number(appForm.team_id) === t.id) btnStyles = 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm';
+                                            else if (isSelected) btnStyles = 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm';
+                                            
+                                            if(appForm.isViewOnly && !isSelected) return null;
 
-                                            if(appForm.isViewOnly && Number(appForm.team_id) !== t.id) return null;
-
-                                            return (<button key={t.id} type="button" onClick={() => { if(appForm.isViewOnly) return; if(st.state !== 'free') return alert(st.message); handleFormChange('team_id', t.id); }} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${btnStyles}`}>🏗 {t.name}</button>);
+                                            return (<button key={t.id} type="button" onClick={() => { if(appForm.isViewOnly) return; if(st.state !== 'free') return alert(st.message); toggleTeamSelection(t.id); }} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${btnStyles}`}>🏗 {t.name}</button>);
                                         })}
-                                        {appForm.isViewOnly && !appForm.team_id && <span className="px-4 py-2 text-sm font-medium rounded-xl border bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">Только техника</span>}
+                                        {appForm.isViewOnly && appForm.team_ids.length === 0 && <span className="px-4 py-2 text-sm font-medium rounded-xl border bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">Только техника</span>}
                                     </div>
                                     {teamMembers?.length > 0 && (<div className="mt-3 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800/50 shadow-inner"><label className="block text-xs font-bold text-blue-800 dark:text-blue-300 mb-3 uppercase tracking-wide">Состав на выезд</label><div className="flex flex-wrap gap-2">{teamMembers.map(m => { const isSelected = appForm?.members?.includes(m.id); if(appForm.isViewOnly && !isSelected) return null; return (<button key={m.id} type="button" onClick={() => toggleAppMember(m.id)} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>{isSelected ? <span className="mr-1.5 text-white font-bold">✓</span> : <span className="mr-1.5 opacity-0">✓</span>} {m.fio}</button>); })}</div></div>)}
                                 </div>
@@ -276,10 +320,16 @@ export default function Home() {
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" disabled={appForm.isViewOnly} value={appForm.comment} onChange={e => handleFormChange('comment', e.target.value)} placeholder="Доп. информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" /></div>
-
+                                
                                 <div className="flex space-x-3 pt-4">
-                                    <button type="button" onClick={() => setGlobalCreateAppOpen(false)} className={`w-full bg-gray-100 dark:bg-gray-700 py-4 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition ${appForm.isViewOnly ? '' : 'w-1/3'}`}>Закрыть</button>
-                                    {!appForm.isViewOnly && <button type="submit" className="w-2/3 bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition">Отправить</button>}
+                                    <button type="button" onClick={() => setGlobalCreateAppOpen(false)} className={`w-full bg-gray-100 dark:bg-gray-700 py-4 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition ${appForm.isViewOnly && appForm.status !== 'waiting' ? '' : 'w-1/3'}`}>Закрыть</button>
+                                    
+                                    {/* ИСПРАВЛЕНИЕ: КНОПКА РЕДАКТИРОВАНИЯ */}
+                                    {appForm.isViewOnly && appForm.status === 'waiting' && ['foreman', 'moderator', 'boss', 'superadmin'].includes(role) && (
+                                        <button type="button" onClick={() => setAppForm(prev => ({...prev, isViewOnly: false}))} className="w-2/3 bg-yellow-500 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-yellow-600 transition">✏️ Редактировать</button>
+                                    )}
+
+                                    {!appForm.isViewOnly && <button type="submit" className="w-2/3 bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition">{appForm.id ? 'Сохранить изменения' : 'Отправить'}</button>}
                                 </div>
                             </form>
                         </div>
