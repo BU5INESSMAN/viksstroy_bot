@@ -285,7 +285,6 @@ async def background_scheduler():
             rem_time = settings.get('foreman_reminder_time', '')
             rem_weekends = settings.get('foreman_reminder_weekends', '0') == '1'
 
-            # Автоматическая публикация заявок НА СЕГОДНЯ
             if auto_pub_time and current_time_str == auto_pub_time and last_auto_publish_date != current_date_str:
                 last_auto_publish_date = current_date_str
                 async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved' AND date_target = ?",
@@ -304,12 +303,11 @@ async def background_scheduler():
                                        f"⚠️ <b>Авто-публикация</b>\nНа сегодня ({current_date_str}) нет одобренных заявок для автоматической публикации.",
                                        "review")
 
-            # Напоминание прорабам
             if rem_time and current_time_str == rem_time and last_reminder_date != current_date_str:
                 if not is_weekend or rem_weekends:
                     last_reminder_date = current_date_str
                     await notify_users(["foreman"],
-                                       "🔔 <b>Напоминание</b>\nПожалуйста, не забудьте заполнить и отправить заявки на следующий день!",
+                                       "🔔 <b>Напоминание</b>\nПожалуйста, не забудьте заполнить и отправить заявки на завтра!",
                                        "dashboard")
 
         except Exception as e:
@@ -320,15 +318,37 @@ async def background_scheduler():
 @app.on_event("startup")
 async def startup():
     await db.init_db()
-    await db.conn.execute(
-        "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, tg_id INTEGER, fio TEXT, action TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
-    await db.conn.execute(
-        "CREATE TABLE IF NOT EXISTS equipment (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, category TEXT, is_active INTEGER DEFAULT 1, driver TEXT DEFAULT '')")
-    await db.conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
 
-    await db.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_publish_time', '07:00')")
-    await db.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('foreman_reminder_time', '18:00')")
-    await db.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('foreman_reminder_weekends', '0')")
+    # БЕЗОПАСНАЯ ИНИЦИАЛИЗАЦИЯ БЕЗ ЗАВИСАНИЯ ТРАНЗАКЦИЙ
+    try:
+        await db.conn.execute("PRAGMA journal_mode=WAL;")
+        await db.conn.commit()
+    except:
+        await db.conn.rollback()
+
+    queries = [
+        "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, tg_id INTEGER, fio TEXT, action TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE IF NOT EXISTS equipment (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, category TEXT, is_active INTEGER DEFAULT 1, driver TEXT DEFAULT '')",
+        "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)"
+    ]
+    for q in queries:
+        try:
+            await db.conn.execute(q)
+            await db.conn.commit()
+        except:
+            await db.conn.rollback()
+
+    settings_initial = [
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_publish_time', '07:00')",
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('foreman_reminder_time', '18:00')",
+        "INSERT OR IGNORE INTO settings (key, value) VALUES ('foreman_reminder_weekends', '0')"
+    ]
+    for s in settings_initial:
+        try:
+            await db.conn.execute(s)
+            await db.conn.commit()
+        except:
+            await db.conn.rollback()
 
     columns_to_add = [
         ("applications", "foreman_id", "INTEGER"), ("applications", "foreman_name", "TEXT"),
@@ -344,13 +364,13 @@ async def startup():
         ("equipment", "tg_id", "INTEGER"), ("equipment", "invite_code", "TEXT"), ("equipment", "photo_url", "TEXT"),
         ("teams", "invite_code", "TEXT")
     ]
+
     for table, col_name, col_type in columns_to_add:
         try:
             await db.conn.execute(f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}")
+            await db.conn.commit()
         except:
-            pass
-    await db.conn.execute("PRAGMA journal_mode=WAL;")
-    await db.conn.commit()
+            await db.conn.rollback()
 
     asyncio.create_task(background_scheduler())
 
@@ -382,11 +402,17 @@ async def update_settings(auto_publish_time: str = Form(""), foreman_reminder_ti
     if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403,
                                                                                                           "Нет прав")
 
-    await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'auto_publish_time'", (auto_publish_time,))
-    await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'foreman_reminder_time'", (foreman_reminder_time,))
-    await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'foreman_reminder_weekends'",
-                          (foreman_reminder_weekends,))
-    await db.conn.commit()
+    try:
+        await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'auto_publish_time'", (auto_publish_time,))
+        await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'foreman_reminder_time'",
+                              (foreman_reminder_time,))
+        await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'foreman_reminder_weekends'",
+                              (foreman_reminder_weekends,))
+        await db.conn.commit()
+    except:
+        await db.conn.rollback()
+        raise HTTPException(500, "Database error")
+
     await db.add_log(tg_id, dict(user).get('fio'), "Обновил системные настройки")
     return {"status": "ok"}
 
@@ -545,11 +571,15 @@ async def api_update_profile(target_id: int, tg_id: int = Form(...), fio: str = 
 @app.post("/api/users/{target_id}/delete")
 async def api_delete_user(target_id: int, tg_id: int = Form(...)):
     admin = await db.get_user(tg_id)
-    if not admin or admin['role'] not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403, "Нет прав")
-    await db.conn.execute("DELETE FROM users WHERE user_id = ?", (target_id,))
-    await db.conn.execute("DELETE FROM team_members WHERE tg_id = ?", (target_id,))
-    await db.conn.execute("UPDATE equipment SET tg_id = NULL WHERE tg_id = ?", (target_id,))
-    await db.conn.commit()
+    if not admin or dict(admin).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403,
+                                                                                                            "Нет прав")
+    try:
+        await db.conn.execute("DELETE FROM users WHERE user_id = ?", (target_id,))
+        await db.conn.execute("DELETE FROM team_members WHERE tg_id = ?", (target_id,))
+        await db.conn.execute("UPDATE equipment SET tg_id = NULL WHERE tg_id = ?", (target_id,))
+        await db.conn.commit()
+    except:
+        await db.conn.rollback()
     return {"status": "ok"}
 
 
@@ -642,10 +672,13 @@ async def delete_entire_team(team_id: int, tg_id: int = Form(0)):
         t_row = await cur.fetchone()
         t_name = t_row[0] if t_row else f"ID:{team_id}"
 
-    await db.conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
-    await db.conn.execute("DELETE FROM team_members WHERE team_id = ?", (team_id,))
-    await db.conn.execute("UPDATE applications SET team_id = 0 WHERE team_id = ?", (team_id,))
-    await db.conn.commit()
+    try:
+        await db.conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
+        await db.conn.execute("DELETE FROM team_members WHERE team_id = ?", (team_id,))
+        await db.conn.execute("UPDATE applications SET team_id = 0 WHERE team_id = ?", (team_id,))
+        await db.conn.commit()
+    except:
+        await db.conn.rollback()
 
     fio = dict(user).get('fio', 'Система')
     await db.add_log(tg_id, fio, f"Удалил бригаду «{t_name}»")

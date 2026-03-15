@@ -25,7 +25,6 @@ export default function Teams() {
     const handleDeleteMember = async (memberId) => { if(!window.confirm('Удалить участника?')) return; try { const fd = new FormData(); fd.append('tg_id', tgId); await axios.post(`/api/teams/members/${memberId}/delete`, fd); const res = await axios.get(`/api/teams/${manageTeamData.id}/details`); setManageTeamData(res.data); fetchData(); } catch (err) { alert("Ошибка"); } };
     const copyToClipboard = (text, type) => { navigator.clipboard.writeText(text); setCopiedLink(type); setTimeout(() => setCopiedLink(''), 2000); };
 
-    // ФУНКЦИЯ УДАЛЕНИЯ ВСЕЙ БРИГАДЫ
     const handleDeleteEntireTeam = async () => {
         if (!window.confirm(`ВНИМАНИЕ! Вы уверены, что хотите полностью удалить бригаду «${manageTeamData.name}»? Это действие нельзя отменить.`)) return;
         try {
