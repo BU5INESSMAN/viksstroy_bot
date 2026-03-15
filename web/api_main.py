@@ -14,6 +14,7 @@ import base64
 import urllib.request
 import ssl
 import re
+import asyncio
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from PIL import Image, ImageDraw, ImageFont
@@ -37,7 +38,7 @@ app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 TZ_BARNAUL = ZoneInfo("Asia/Barnaul")
 
 
-# --- ИДЕАЛЬНЫЙ ГЕНЕРАТОР КАРТИНОК НАРЯДОВ ---
+# --- ГЕНЕРАТОР КАРТИНОК НАРЯДОВ ---
 def download_font(url, filename):
     if not os.path.exists(filename) or os.path.getsize(filename) < 10000:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -64,10 +65,9 @@ def get_fonts():
         font_header = ImageFont.truetype(bold_path, 36)
         font_label = ImageFont.truetype(reg_path, 28)
         font_value = ImageFont.truetype(bold_path, 34)
-        font_time = ImageFont.truetype(reg_path, 28)  # Шрифт для времени (такой же как лэйбл)
+        font_time = ImageFont.truetype(reg_path, 28)
     except:
         font_header = font_label = font_value = font_time = ImageFont.load_default()
-
     return font_header, font_label, font_value, font_time
 
 
@@ -97,9 +97,7 @@ def wrap_text(text, font, max_width, draw):
 
 def create_app_image(date_str, address, foreman, team_name, equip_list, comment_str=""):
     font_header, font_label, font_value, font_time = get_fonts()
-
-    img_w = 900
-    img_h = 2400
+    img_w, img_h = 900, 2400
     img = Image.new('RGB', (img_w, img_h), color=(243, 244, 246))
     draw = ImageDraw.Draw(img)
 
@@ -108,8 +106,6 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
     draw.rectangle([40, 40 + header_h - 24, img_w - 40, 40 + header_h], fill=(37, 99, 235))
 
     logo_path = "frontend/public/logo.png"
-    header_text = "ВИКС РАСПИСАНИЕ"
-
     logo_drawn = False
     if os.path.exists(logo_path):
         try:
@@ -118,11 +114,9 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
             new_h = 80
             new_w = int(new_h * aspect)
             logo_img = logo_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
-
             r, g, b, a = logo_img.split()
             white_logo = Image.merge("RGBA", (Image.new('L', a.size, 255), Image.new('L', a.size, 255),
                                               Image.new('L', a.size, 255), a))
-
             start_x = (img_w - new_w) // 2
             img.paste(white_logo, (start_x, 40 + (header_h - new_h) // 2), white_logo)
             logo_drawn = True
@@ -130,27 +124,23 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
             pass
 
     if not logo_drawn:
-        bbox = draw.textbbox((0, 0), header_text, font=font_header)
-        draw.text(((img_w - (bbox[2] - bbox[0])) // 2, 40 + (header_h - (bbox[3] - bbox[1])) // 2), header_text,
+        bbox = draw.textbbox((0, 0), "ВИКС РАСПИСАНИЕ", font=font_header)
+        draw.text(((img_w - (bbox[2] - bbox[0])) // 2, 40 + (header_h - (bbox[3] - bbox[1])) // 2), "ВИКС РАСПИСАНИЕ",
                   fill=(255, 255, 255), font=font_header)
 
     y_offset = 40 + header_h
 
     def draw_block(content_pairs, current_y, is_first=False):
-        padding_x = 40
-        padding_y = 40
+        padding_x, padding_y = 40, 40
         max_text_w = img_w - (40 * 2) - (padding_x * 2)
-
         parsed_content = []
         box_h = padding_y * 2
         if is_first: box_h += 65
 
         for lbl, val in content_pairs:
-            # Если это список техники
             if isinstance(val, list):
                 bbox_lbl = draw.textbbox((0, 0), lbl.upper(), font=font_label)
                 lbl_h = bbox_lbl[3] - bbox_lbl[1]
-
                 val_h = 0
                 if not val:
                     bbox_val = draw.textbbox((0, 0), "Без техники", font=font_value)
@@ -161,35 +151,25 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
                     for eq in val:
                         eq_name = clean_text(eq.get('name', ''))
                         eq_time = f"⏰ {eq.get('time_start', '08')}:00 - {eq.get('time_end', '17')}:00"
-
                         bbox_name = draw.textbbox((0, 0), eq_name, font=font_value)
                         name_h = (bbox_name[3] - bbox_name[1]) + 12
-
                         bbox_time = draw.textbbox((0, 0), eq_time, font=font_time)
                         time_h = (bbox_time[3] - bbox_time[1]) + 12
-
                         items_parsed.append((eq_name, eq_time, name_h, time_h))
-                        val_h += name_h + time_h + 15  # отступ между техникой
-
+                        val_h += name_h + time_h + 15
                     parsed_content.append((lbl, items_parsed, 0, "list"))
-
-                block_h = lbl_h + 15 + val_h + 30
-                box_h += block_h
-
+                box_h += lbl_h + 15 + val_h + 30
             else:
-                # Обычный текст
                 val_clean = clean_text(val).strip()
                 wrapped_val = wrap_text(val_clean, font_value, max_text_w, draw)
                 bbox_lbl = draw.textbbox((0, 0), lbl.upper(), font=font_label)
                 lbl_h = bbox_lbl[3] - bbox_lbl[1]
-                val_h = 0
-                line_h = 0
+                val_h, line_h = 0, 0
                 if wrapped_val:
                     bbox_val = draw.textbbox((0, 0), wrapped_val[0], font=font_value)
                     line_h = (bbox_val[3] - bbox_val[1]) + 12
                     val_h = len(wrapped_val) * line_h
-                block_h = lbl_h + 15 + val_h + 30
-                box_h += block_h
+                box_h += lbl_h + 15 + val_h + 30
                 parsed_content.append((lbl, wrapped_val, line_h, "text"))
 
         draw.rounded_rectangle([40, current_y, img_w - 40, current_y + box_h], radius=24, fill=(255, 255, 255))
@@ -205,7 +185,6 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
         for lbl, val_data, line_h, val_type in parsed_content:
             draw.text((80, text_y), lbl.upper(), fill=(156, 163, 175), font=font_label)
             text_y += 35
-
             if val_type == "text":
                 if isinstance(val_data, str):
                     draw.text((80, text_y), val_data, fill=(107, 114, 128), font=font_value)
@@ -222,16 +201,12 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
                     draw.text((80, text_y), eq_time, fill=(107, 114, 128), font=font_time)
                     text_y += t_h + 15
             text_y += 20
-
         return current_y + box_h + 20
 
     y_offset = draw_block([("ДАТА ВЫЕЗДА", date_str), ("АДРЕС ОБЪЕКТА", address)], y_offset, is_first=True)
     y_offset = draw_block([("ВЫБОР БРИГАДЫ", f"{team_name}\n(Прораб: {foreman})")], y_offset)
-
     y_offset = draw_block([("ТРЕБУЕМАЯ ТЕХНИКА", equip_list)], y_offset)
-
-    if comment_str and comment_str.lower() != 'нет':
-        y_offset = draw_block([("КОММЕНТАРИЙ", comment_str)], y_offset)
+    if comment_str and comment_str.lower() != 'нет': y_offset = draw_block([("КОММЕНТАРИЙ", comment_str)], y_offset)
 
     img = img.crop((0, 0, img_w, int(y_offset) + 30))
     buf = io.BytesIO()
@@ -289,6 +264,57 @@ async def global_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": f"Внутренняя ошибка сервера"})
 
 
+# --- ФОНОВЫЙ ПРОЦЕСС ДЛЯ НАСТРОЕК (АВТО-ПУБЛИКАЦИЯ И НАПОМИНАНИЯ) ---
+last_auto_publish_date = None
+last_reminder_date = None
+
+
+async def background_scheduler():
+    global last_auto_publish_date, last_reminder_date
+    while True:
+        try:
+            now = datetime.now(TZ_BARNAUL)
+            current_time_str = now.strftime("%H:%M")
+            current_date_str = now.strftime("%Y-%m-%d")
+            is_weekend = now.weekday() >= 5
+
+            async with db.conn.execute("SELECT key, value FROM settings") as cur:
+                settings = {r[0]: r[1] for r in await cur.fetchall()}
+
+            auto_pub_time = settings.get('auto_publish_time', '')
+            rem_time = settings.get('foreman_reminder_time', '')
+            rem_weekends = settings.get('foreman_reminder_weekends', '0') == '1'
+
+            if auto_pub_time and current_time_str == auto_pub_time and last_auto_publish_date != current_date_str:
+                last_auto_publish_date = current_date_str
+                async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved' AND date_target = ?",
+                                           (current_date_str,)) as cur:
+                    apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
+
+                if apps:
+                    bot_token = os.getenv("BOT_TOKEN")
+                    group_id = os.getenv("GROUP_CHAT_ID")
+                    count = 0
+                    for app_dict in apps:
+                        if await execute_app_publish(app_dict, bot_token, group_id): count += 1
+                    await db.add_log(0, "Система", f"Авто-публикация: {count} нарядов")
+                else:
+                    await notify_users(["moderator", "report_group"],
+                                       f"⚠️ <b>Авто-публикация</b>\nНа сегодня ({current_date_str}) нет одобренных заявок для автоматической публикации.",
+                                       "review")
+
+            if rem_time and current_time_str == rem_time and last_reminder_date != current_date_str:
+                if not is_weekend or rem_weekends:
+                    last_reminder_date = current_date_str
+                    await notify_users(["foreman"],
+                                       "🔔 <b>Напоминание</b>\nПожалуйста, не забудьте заполнить и отправить заявки на следующий день!",
+                                       "dashboard")
+
+        except Exception as e:
+            print(f"Bg Scheduler error: {e}")
+        await asyncio.sleep(30)
+
+
 @app.on_event("startup")
 async def startup():
     await db.init_db()
@@ -296,6 +322,13 @@ async def startup():
         "CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, tg_id INTEGER, fio TEXT, action TEXT, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP)")
     await db.conn.execute(
         "CREATE TABLE IF NOT EXISTS equipment (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT, category TEXT, is_active INTEGER DEFAULT 1, driver TEXT DEFAULT '')")
+    await db.conn.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
+
+    # Базовые настройки
+    await db.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_publish_time', '07:00')")
+    await db.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('foreman_reminder_time', '18:00')")
+    await db.conn.execute("INSERT OR IGNORE INTO settings (key, value) VALUES ('foreman_reminder_weekends', '0')")
+
     columns_to_add = [
         ("applications", "foreman_id", "INTEGER"), ("applications", "foreman_name", "TEXT"),
         ("applications", "equip_id", "INTEGER DEFAULT 0"),
@@ -303,8 +336,7 @@ async def startup():
         ("applications", "comment", "TEXT"),
         ("applications", "selected_members", "TEXT"), ("applications", "equipment_data", "TEXT"),
         ("applications", "status", "TEXT DEFAULT 'waiting'"),
-        ("applications", "approved_by", "TEXT DEFAULT ''"),
-        ("applications", "approved_by_id", "INTEGER DEFAULT 0"),  # НОВАЯ КОЛОНКА ДЛЯ КЛИКАБЕЛЬНОГО МОДЕРАТОРА
+        ("applications", "approved_by", "TEXT DEFAULT ''"), ("applications", "approved_by_id", "INTEGER DEFAULT 0"),
         ("team_members", "tg_id", "INTEGER"), ("team_members", "is_foreman", "INTEGER DEFAULT 0"),
         ("users", "avatar_url", "TEXT"),
         ("equipment", "driver", "TEXT DEFAULT ''"), ("equipment", "status", "TEXT DEFAULT 'free'"),
@@ -319,6 +351,8 @@ async def startup():
     await db.conn.execute("PRAGMA journal_mode=WAL;")
     await db.conn.commit()
 
+    asyncio.create_task(background_scheduler())
+
 
 @app.on_event("shutdown")
 async def shutdown():
@@ -331,6 +365,29 @@ def check_env_roles(tg_id: int):
     if str(tg_id) in super_admins: return "superadmin"
     if str(tg_id) in bosses: return "boss"
     return None
+
+
+@app.get("/api/settings")
+async def get_settings():
+    async with db.conn.execute("SELECT key, value FROM settings") as cur:
+        rows = await cur.fetchall()
+    return {r[0]: r[1] for r in rows}
+
+
+@app.post("/api/settings/update")
+async def update_settings(auto_publish_time: str = Form(""), foreman_reminder_time: str = Form(""),
+                          foreman_reminder_weekends: str = Form("0"), tg_id: int = Form(0)):
+    user = await db.get_user(tg_id)
+    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403,
+                                                                                                          "Нет прав")
+
+    await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'auto_publish_time'", (auto_publish_time,))
+    await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'foreman_reminder_time'", (foreman_reminder_time,))
+    await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'foreman_reminder_weekends'",
+                          (foreman_reminder_weekends,))
+    await db.conn.commit()
+    await db.add_log(tg_id, dict(user).get('fio'), "Обновил системные настройки")
+    return {"status": "ok"}
 
 
 @app.post("/api/telegram_auth")
@@ -599,6 +656,16 @@ async def get_review_apps():
     result = []
     for row in rows:
         app_dict = dict(zip([c[0] for c in cursor.description], row))
+        eq_data_str = app_dict.get('equipment_data', '')
+        equip_text = ""
+        if eq_data_str:
+            try:
+                eq_list = json.loads(eq_data_str)
+                if eq_list: equip_text = ", ".join(
+                    [f"{e['name']} ({e['time_start']}:00-{e['time_end']}:00)" for e in eq_list])
+            except:
+                pass
+        app_dict['formatted_equip'] = equip_text or "Не требуется"
         result.append(app_dict)
     return result
 
@@ -645,7 +712,6 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
     return {"status": "ok"}
 
 
-# --- ПУБЛИКАЦИЯ КАРТИНКОЙ + ЦИТАТОЙ ---
 async def execute_app_publish(app_dict, bot_token, group_id):
     app_id = app_dict['id']
     team_name = "Без бригады"
@@ -696,13 +762,11 @@ async def execute_app_publish(app_dict, bot_token, group_id):
 
     comment_text = app_dict.get('comment', '')
 
-    # ПЕРЕДАЕМ СПИСОК ТЕХНИКИ В ГЕНЕРАТОР
     img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
                                equip_list, comment_text)
 
     comment_html = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
 
-    # КЛИКАБЕЛЬНЫЙ МОДЕРАТОР
     approved_by_str = ""
     if app_dict.get('approved_by'):
         if app_dict.get('approved_by_id'):
@@ -744,13 +808,19 @@ async def execute_app_publish(app_dict, bot_token, group_id):
 
 
 @app.post("/api/applications/publish")
-async def publish_apps(tg_id: int = Form(0)):
+async def publish_apps(app_ids: str = Form(...), tg_id: int = Form(0)):
+    ids = [int(x) for x in app_ids.split(',') if x.strip().isdigit()]
+    if not ids: raise HTTPException(400, "Нет выбранных заявок")
+
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     if not group_id: raise HTTPException(status_code=500, detail="Группа не настроена")
-    async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved'") as cur:
+
+    pl = ','.join(['?'] * len(ids))
+    async with db.conn.execute(f"SELECT * FROM applications WHERE status = 'approved' AND id IN ({pl})", ids) as cur:
         apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-    if not apps: raise HTTPException(status_code=400, detail="Нет одобренных заявок")
+
+    if not apps: raise HTTPException(status_code=400, detail="Выбранные заявки не найдены или уже опубликованы")
 
     count = 0
     for app_dict in apps:
@@ -763,62 +833,17 @@ async def publish_apps(tg_id: int = Form(0)):
     return {"status": "ok", "published": count}
 
 
-# --- КРОН ---
+# --- КРОН (ВНУТРЕННИЕ ЭНДПОИНТЫ) ---
 @app.post("/api/cron/start_day")
-async def cron_start_day():
-    bot_token = os.getenv("BOT_TOKEN")
-    group_id = os.getenv("GROUP_CHAT_ID")
-    now_date = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
-    async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved' AND date_target = ?",
-                               (now_date,)) as cur:
-        apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-    for app_dict in apps: await execute_app_publish(app_dict, bot_token, group_id)
-    return {"status": "ok"}
+async def cron_start_day(): return {"status": "ok"}
 
 
 @app.post("/api/cron/end_day")
-async def cron_end_day():
-    now_date = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
-    async with db.conn.execute("SELECT * FROM applications WHERE status = 'published' AND date_target = ?",
-                               (now_date,)) as cur:
-        apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-    for app_dict in apps:
-        app_id = app_dict['id']
-        await db.conn.execute("UPDATE applications SET status = 'completed' WHERE id = ?", (app_id,))
-        if app_dict.get('equipment_data'):
-            try:
-                for e in json.loads(app_dict['equipment_data']): await db.conn.execute(
-                    "UPDATE equipment SET status = 'free' WHERE id = ?", (e['id'],))
-            except:
-                pass
-    await db.conn.commit()
-    return {"status": "ok"}
+async def cron_end_day(): return {"status": "ok"}
 
 
 @app.post("/api/cron/check_timeouts")
-async def cron_check_timeouts():
-    now = datetime.now(TZ_BARNAUL)
-    now_date = now.strftime("%Y-%m-%d")
-    current_hour = now.hour
-    async with db.conn.execute(
-            "SELECT equipment_data, object_address FROM applications WHERE status = 'published' AND date_target = ?",
-            (now_date,)) as cur:
-        apps = await cur.fetchall()
-    for row in apps:
-        eq_str, address = row[0], row[1]
-        if not eq_str: continue
-        try:
-            for eq in json.loads(eq_str):
-                end_hour = int(eq['time_end'])
-                if current_hour >= end_hour:
-                    async with db.conn.execute("SELECT tg_id, status FROM equipment WHERE id = ?", (eq['id'],)) as cur2:
-                        eq_db = await cur2.fetchone()
-                        if eq_db and eq_db[0] and eq_db[1] == 'work':
-                            msg = f"⏳ <b>Время вышло!</b>\nПо графику работа вашей техники на объекте ({address}) завершена.\n\nПожалуйста, нажмите кнопку <b>✅ Готово</b> в приложении."
-                            await notify_users([], msg, "dashboard", extra_tg_ids=[eq_db[0]])
-        except:
-            pass
-    return {"status": "ok"}
+async def cron_check_timeouts(): return {"status": "ok"}
 
 
 @app.get("/api/applications/active")

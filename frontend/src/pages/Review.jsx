@@ -7,6 +7,9 @@ export default function Review() {
     const [reviewApps, setReviewApps] = useState([]);
 
     const [selectedApp, setSelectedApp] = useState(null);
+    const [isPublishModalOpen, setPublishModalOpen] = useState(false);
+    const [publishDateFilter, setPublishDateFilter] = useState('');
+    const [selectedToPublish, setSelectedToPublish] = useState([]);
 
     const fetchData = () => {
         axios.get('/api/applications/review').then(res => setReviewApps(res.data || [])).catch(() => {});
@@ -37,18 +40,36 @@ export default function Review() {
         } catch (err) { alert("Ошибка при обновлении статуса"); }
     };
 
-    const handlePublishAppsClick = () => {
-        if(!window.confirm('Опубликовать все одобренные наряды в Telegram?')) return;
-        const fd = new FormData(); fd.append('tg_id', tgId);
-        axios.post('/api/applications/publish', fd).then(res => {
+    const openPublishModal = () => {
+        setPublishDateFilter('');
+        setSelectedToPublish(approvedApps.map(a => a.id));
+        setPublishModalOpen(true);
+    };
+
+    const togglePublishSelect = (id) => {
+        setSelectedToPublish(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+    };
+
+    const handleExecutePublish = async () => {
+        if(selectedToPublish.length === 0) return alert("Выберите хотя бы одну заявку!");
+        try {
+            const fd = new FormData();
+            fd.append('app_ids', selectedToPublish.join(','));
+            fd.append('tg_id', tgId);
+            const res = await axios.post('/api/applications/publish', fd);
             alert(`Опубликовано нарядов: ${res.data.published}`);
+            setPublishModalOpen(false);
             fetchData();
-        }).catch(() => alert("Ошибка публикации"));
+        } catch(e) { alert("Ошибка публикации"); }
     };
 
     const waitingApps = reviewApps.filter(a => a.status === 'waiting');
     const approvedApps = reviewApps.filter(a => a.status === 'approved');
     const publishedApps = reviewApps.filter(a => a.status === 'published');
+
+    const filteredForPublish = publishDateFilter
+        ? approvedApps.filter(a => a.date_target === publishDateFilter)
+        : approvedApps;
 
     const renderAppCard = (app, statusType) => {
         let equipText = 'Не требуется';
@@ -80,7 +101,7 @@ export default function Review() {
             <div className="flex justify-between items-center bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 border border-gray-100 dark:border-gray-700">
                 <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📋</span> Управление заявками</h2>
                 {approvedApps.length > 0 && (
-                    <button onClick={handlePublishAppsClick} className="bg-emerald-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-emerald-600 animate-pulse transition">
+                    <button onClick={openPublishModal} className="bg-emerald-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-emerald-600 animate-pulse transition">
                         📤 Опубликовать ({approvedApps.length})
                     </button>
                 )}
@@ -109,6 +130,48 @@ export default function Review() {
 
             {reviewApps.length === 0 && (
                 <p className="text-center p-6 bg-white dark:bg-gray-800 rounded-xl text-gray-500 dark:text-gray-400 text-sm italic border border-gray-200 dark:border-gray-700 shadow-sm">Активных заявок пока нет.</p>
+            )}
+
+            {/* МОДАЛЬНОЕ ОКНО ПУБЛИКАЦИИ */}
+            {isPublishModalOpen && (
+                <div className="fixed inset-0 z-[120] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
+                    <div className="flex min-h-screen items-center justify-center p-4">
+                        <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden">
+                            <div className="flex justify-between items-center px-6 py-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
+                                <h3 className="text-xl font-bold dark:text-white">Опубликовать заявки</h3>
+                                <button onClick={() => setPublishModalOpen(false)} className="text-gray-400 hover:text-red-500 text-3xl leading-none transition">&times;</button>
+                            </div>
+
+                            <div className="p-6 space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">Фильтр по дате:</label>
+                                    <div className="flex space-x-2">
+                                        <button onClick={() => setPublishDateFilter('')} className={`px-4 py-2 rounded-lg text-sm font-bold border transition ${!publishDateFilter ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>Все даты</button>
+                                        <input type="date" value={publishDateFilter} onChange={e => setPublishDateFilter(e.target.value)} className="flex-1 p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white outline-none" />
+                                    </div>
+                                </div>
+
+                                <div className="max-h-64 overflow-y-auto space-y-2 border dark:border-gray-700 p-2 rounded-xl bg-gray-50 dark:bg-gray-900/30">
+                                    {filteredForPublish.map(app => (
+                                        <div key={app.id} onClick={() => togglePublishSelect(app.id)} className={`p-3 rounded-lg border cursor-pointer flex items-center transition ${selectedToPublish.includes(app.id) ? 'bg-emerald-50 border-emerald-500 dark:bg-emerald-900/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                                            <input type="checkbox" checked={selectedToPublish.includes(app.id)} readOnly className="w-5 h-5 mr-3 text-emerald-600 rounded focus:ring-emerald-500" />
+                                            <div className="flex-1">
+                                                <p className="font-bold text-sm dark:text-white">{app.object_address}</p>
+                                                <p className="text-xs text-gray-500">{app.date_target} | {app.team_name || 'Только техника'}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {filteredForPublish.length === 0 && <p className="text-center text-sm text-gray-500 py-4 italic">Нет заявок по этому фильтру</p>}
+                                </div>
+
+                                <div className="flex space-x-3 pt-4 border-t dark:border-gray-700">
+                                    <button onClick={() => setPublishModalOpen(false)} className="w-1/3 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl font-bold text-gray-700 dark:text-gray-300">Отмена</button>
+                                    <button onClick={handleExecutePublish} className="w-2/3 bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-md hover:bg-emerald-600">Опубликовать выбранные ({selectedToPublish.length})</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             )}
 
             {/* МОДАЛЬНОЕ ОКНО ЗАЯВКИ */}
