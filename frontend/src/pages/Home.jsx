@@ -223,7 +223,6 @@ export default function Home() {
                 </div>
             )}
 
-            {/* МОДАЛКА ЗАЯВКИ */}
             {isGlobalCreateAppOpen && (
                 <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
