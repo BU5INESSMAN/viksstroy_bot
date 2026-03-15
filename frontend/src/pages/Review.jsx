@@ -166,7 +166,7 @@ export default function Review() {
 
                                 <div className="flex space-x-3 pt-4 border-t dark:border-gray-700">
                                     <button onClick={() => setPublishModalOpen(false)} className="w-1/3 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl font-bold text-gray-700 dark:text-gray-300">Отмена</button>
-                                    <button onClick={handleExecutePublish} className="w-2/3 bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-md hover:bg-emerald-600">Опубликовать выбранные ({selectedToPublish.length})</button>
+                                    <button onClick={handleExecutePublish} className="w-2/3 bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-md hover:bg-emerald-600">Опубликовать ({selectedToPublish.length})</button>
                                 </div>
                             </div>
                         </div>

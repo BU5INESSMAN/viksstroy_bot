@@ -72,12 +72,12 @@ export default function System() {
                         <div>
                             <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Авто-публикация заявок</label>
                             <p className="text-xs text-gray-500 mb-2">Система будет автоматически публиковать заявки НА ЭТОТ ЖЕ ДЕНЬ в указанное время.</p>
-                            <input type="time" value={settings.auto_publish_time} onChange={e => setSettings({...settings, auto_publish_time: e.target.value})} className="w-full p-3 border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                            <input type="time" value={settings.auto_publish_time} onChange={e => setSettings({...settings, auto_publish_time: e.target.value})} className="w-full p-3 border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white outline-none" />
                         </div>
-                        <div className="pt-2 border-t dark:border-gray-700">
+                        <div className="pt-4 border-t dark:border-gray-700">
                             <label className="block text-sm font-bold text-gray-700 dark:text-gray-300 mb-1">Напоминание прорабам</label>
                             <p className="text-xs text-gray-500 mb-2">Бот напомнит прорабам заполнить заявки на следующий день.</p>
-                            <input type="time" value={settings.foreman_reminder_time} onChange={e => setSettings({...settings, foreman_reminder_time: e.target.value})} className="w-full p-3 border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white mb-3" />
+                            <input type="time" value={settings.foreman_reminder_time} onChange={e => setSettings({...settings, foreman_reminder_time: e.target.value})} className="w-full p-3 border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white mb-3 outline-none" />
 
                             <div className="flex items-center">
                                 <input type="checkbox" id="weekend_rem" checked={settings.foreman_reminder_weekends} onChange={e => setSettings({...settings, foreman_reminder_weekends: e.target.checked})} className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
