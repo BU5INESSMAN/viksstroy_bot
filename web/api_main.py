@@ -37,7 +37,7 @@ app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 TZ_BARNAUL = ZoneInfo("Asia/Barnaul")
 
 
-# --- ИДЕАЛЬНЫЙ ГЕНЕРАТОР КАРТИНОК НАРЯДОВ ---
+# --- НОВЫЙ ГЕНЕРАТОР КАРТИНОК НАРЯДОВ (АВТО-ПЕРЕНОС ТЕКСТА) ---
 def download_font(url, filename):
     if not os.path.exists(filename) or os.path.getsize(filename) < 10000:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -62,8 +62,8 @@ def get_fonts():
 
     try:
         font_header = ImageFont.truetype(bold_path, 36)
-        font_label = ImageFont.truetype(reg_path, 28)
-        font_value = ImageFont.truetype(bold_path, 34)
+        font_label = ImageFont.truetype(reg_path, 26)
+        font_value = ImageFont.truetype(bold_path, 32)
     except:
         font_header = font_label = font_value = ImageFont.load_default()
 
@@ -75,11 +75,31 @@ def clean_text(text):
     return re.sub(r'[^\w\sА-Яа-яЁёA-Za-z0-9,.:\-!/()«»]', '', str(text))
 
 
+def wrap_text(text, font, max_width, draw):
+    """Умный перенос строк, если текст шире блока"""
+    lines = []
+    for paragraph in text.split('\n'):
+        words = paragraph.split(' ')
+        if not words or not words[0]:
+            lines.append('')
+            continue
+        current_line = words[0]
+        for word in words[1:]:
+            bbox = draw.textbbox((0, 0), current_line + " " + word, font=font)
+            if bbox[2] - bbox[0] <= max_width:
+                current_line += " " + word
+            else:
+                lines.append(current_line)
+                current_line = word
+        lines.append(current_line)
+    return lines
+
+
 def create_app_image(date_str, address, foreman, team_name, equip_text, comment_str=""):
     font_header, font_label, font_value = get_fonts()
 
     img_w = 900
-    img_h = 1600
+    img_h = 2400  # Большой запас высоты, потом обрежем
     img = Image.new('RGB', (img_w, img_h), color=(243, 244, 246))
     draw = ImageDraw.Draw(img)
 
@@ -88,7 +108,9 @@ def create_app_image(date_str, address, foreman, team_name, equip_text, comment_
     draw.rectangle([40, 40 + header_h - 24, img_w - 40, 40 + header_h], fill=(37, 99, 235))
 
     logo_path = "frontend/public/logo.png"
+    header_text = "ВИКС РАСПИСАНИЕ"
 
+    logo_drawn = False
     if os.path.exists(logo_path):
         try:
             logo_img = Image.open(logo_path).convert("RGBA")
@@ -103,45 +125,68 @@ def create_app_image(date_str, address, foreman, team_name, equip_text, comment_
 
             start_x = (img_w - new_w) // 2
             img.paste(white_logo, (start_x, 40 + (header_h - new_h) // 2), white_logo)
+            logo_drawn = True
         except:
             pass
 
+    if not logo_drawn:
+        bbox = draw.textbbox((0, 0), header_text, font=font_header)
+        draw.text(((img_w - (bbox[2] - bbox[0])) // 2, 40 + (header_h - (bbox[3] - bbox[1])) // 2), header_text,
+                  fill=(255, 255, 255), font=font_header)
+
     y_offset = 40 + header_h
 
-    def draw_block(content_pairs, current_y):
-        padding = 40
-        line_height = 45
+    def draw_block(content_pairs, current_y, is_first=False):
+        padding_x = 40
+        padding_y = 40
+        max_text_w = img_w - (40 * 2) - (padding_x * 2)
 
-        box_h = padding * 2
+        parsed_content = []
+        box_h = padding_y * 2
+        if is_first: box_h += 65
+
         for lbl, val in content_pairs:
-            box_h += 40
-            val_lines = clean_text(val).strip().split('\n')
-            box_h += len(val_lines) * line_height + 20
+            val_clean = clean_text(val).strip()
+            wrapped_val = wrap_text(val_clean, font_value, max_text_w, draw)
+
+            # Считаем высоту
+            bbox_lbl = draw.textbbox((0, 0), lbl.upper(), font=font_label)
+            lbl_h = bbox_lbl[3] - bbox_lbl[1]
+
+            val_h = 0
+            line_h = 0
+            if wrapped_val:
+                bbox_val = draw.textbbox((0, 0), wrapped_val[0], font=font_value)
+                line_h = (bbox_val[3] - bbox_val[1]) + 12
+                val_h = len(wrapped_val) * line_h
+
+            block_h = lbl_h + 15 + val_h + 30
+            box_h += block_h
+            parsed_content.append((lbl, wrapped_val, line_h))
 
         draw.rounded_rectangle([40, current_y, img_w - 40, current_y + box_h], radius=24, fill=(255, 255, 255))
 
-        if current_y == 40 + header_h:
+        if is_first:
             draw.rectangle([40, current_y, img_w - 40, current_y + 24], fill=(255, 255, 255))
-            draw.line([80, current_y + 90, img_w - 80, current_y + 90], fill=(229, 231, 235), width=3)
-            draw.text((80, current_y + 35), "ДЕТАЛИ ЗАЯВКИ", fill=(31, 41, 55), font=font_header)
-            text_y = current_y + 130
+            draw.line([80, current_y + 70, img_w - 80, current_y + 70], fill=(229, 231, 235), width=3)
+            draw.text((80, current_y + 25), "ДЕТАЛИ ЗАЯВКИ", fill=(31, 41, 55), font=font_header)
+            text_y = current_y + 110
         else:
-            text_y = current_y + padding
+            text_y = current_y + padding_y
 
-        for lbl, val in content_pairs:
+        for lbl, val_lines, line_h in parsed_content:
             draw.text((80, text_y), lbl.upper(), fill=(156, 163, 175), font=font_label)
-            text_y += 45
-            val_lines = clean_text(val).strip().split('\n')
+            text_y += 35
             for line in val_lines:
                 if line.strip():
                     color = (37, 99, 235) if "ТЕХНИКА" in lbl else (17, 24, 39)
                     draw.text((80, text_y), line.strip(), fill=color, font=font_value)
-                    text_y += line_height
-            text_y += 30
+                    text_y += line_h
+            text_y += 20
 
         return current_y + box_h + 20
 
-    y_offset = draw_block([("ДАТА ВЫЕЗДА", date_str), ("АДРЕС ОБЪЕКТА", address)], y_offset)
+    y_offset = draw_block([("ДАТА ВЫЕЗДА", date_str), ("АДРЕС ОБЪЕКТА", address)], y_offset, is_first=True)
     y_offset = draw_block([("ВЫБОР БРИГАДЫ", f"{team_name}\n(Прораб: {foreman})")], y_offset)
 
     eq_text = "Не требуется" if not equip_text else equip_text
@@ -150,7 +195,7 @@ def create_app_image(date_str, address, foreman, team_name, equip_text, comment_
     if comment_str and comment_str.lower() != 'нет':
         y_offset = draw_block([("КОММЕНТАРИЙ", comment_str)], y_offset)
 
-    img = img.crop((0, 0, img_w, y_offset + 30))
+    img = img.crop((0, 0, img_w, int(y_offset) + 30))
     buf = io.BytesIO()
     img.save(buf, format='PNG')
     buf.seek(0)
@@ -220,7 +265,7 @@ async def startup():
         ("applications", "comment", "TEXT"),
         ("applications", "selected_members", "TEXT"), ("applications", "equipment_data", "TEXT"),
         ("applications", "status", "TEXT DEFAULT 'waiting'"),
-        ("applications", "approved_by", "TEXT DEFAULT ''"),  # НОВАЯ КОЛОНКА
+        ("applications", "approved_by", "TEXT DEFAULT ''"),
         ("team_members", "tg_id", "INTEGER"), ("team_members", "is_foreman", "INTEGER DEFAULT 0"),
         ("users", "avatar_url", "TEXT"),
         ("equipment", "driver", "TEXT DEFAULT ''"), ("equipment", "status", "TEXT DEFAULT 'free'"),
@@ -323,11 +368,9 @@ async def get_dashboard_data(tg_id: int = 0):
         "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur:
         cat_rows = await cur.fetchall()
     categories = [r[0].strip().capitalize() for r in cat_rows if r[0].strip()]
-
     async with db.conn.execute(
             "SELECT a.*, t.name as team_name FROM applications a LEFT JOIN teams t ON a.team_id = t.id WHERE date_target >= date('now', '-14 days') ORDER BY a.id DESC") as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-
     recent_addresses = []
     if tg_id > 0:
         async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
@@ -335,7 +378,6 @@ async def get_dashboard_data(tg_id: int = 0):
             for r in await cur.fetchall():
                 if r[0] and r[0] not in recent_addresses: recent_addresses.append(r[0])
                 if len(recent_addresses) >= 5: break
-
     return {"stats": stats, "teams": [{"id": t['id'], "name": t['name']} for t in teams], "equipment": equip,
             "equip_categories": list(set(categories)), "kanban_apps": all_apps, "recent_addresses": recent_addresses}
 
@@ -621,6 +663,7 @@ async def execute_app_publish(app_dict, bot_token, group_id):
             pass
 
     comment_text = app_dict.get('comment', '')
+
     img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
                                equip_text, comment_text)
 

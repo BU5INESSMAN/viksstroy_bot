@@ -18,7 +18,7 @@ export default function Review() {
             reason = window.prompt('Укажите причину отклонения/отзыва заявки (увидит прораб):');
             if (reason === null) return;
         } else if (status === 'completed') {
-            if (!window.confirm('Завершить заявку и освободить всю технику?')) return;
+            if (!window.confirm('Завершить заявку досрочно и освободить всю технику?')) return;
         } else {
             if (!window.confirm('Одобрить заявку?')) return;
         }
