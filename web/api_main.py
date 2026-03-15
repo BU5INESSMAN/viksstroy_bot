@@ -12,6 +12,7 @@ import json
 import uuid
 import base64
 import urllib.request
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from PIL import Image, ImageDraw, ImageFont
@@ -35,47 +36,124 @@ app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 TZ_BARNAUL = ZoneInfo("Asia/Barnaul")
 
 
-# --- ГЕНЕРАТОР КАРТИНОК ---
-def get_font(size):
-    font_path = "data/Roboto-Bold.ttf"
-    if not os.path.exists(font_path):
+# --- НОВЫЙ ГЕНЕРАТОР КАРТИНОК НАРЯДОВ (ДИЗАЙН КАК НА САЙТЕ) ---
+def download_font(url, filename):
+    if not os.path.exists(filename):
+        os.makedirs(os.path.dirname(filename), exist_ok=True)
         try:
-            url = "https://github.com/google/fonts/raw/main/ofl/roboto/Roboto-Bold.ttf"
-            urllib.request.urlretrieve(url, font_path)
-        except:
-            return ImageFont.load_default()
-    return ImageFont.truetype(font_path, size)
+            urllib.request.urlretrieve(url, filename)
+        except Exception as e:
+            print(f"Font download error: {e}")
 
 
-def create_app_image(date_str, address, foreman, team_name, equip_text):
-    img = Image.new('RGB', (800, 500), color=(243, 244, 246))
+def get_fonts():
+    font_dir = "data/fonts"
+    os.makedirs(font_dir, exist_ok=True)
+    reg_path = os.path.join(font_dir, "Roboto-Regular.ttf")
+    bold_path = os.path.join(font_dir, "Roboto-Bold.ttf")
+
+    # Безопасное скачивание (обход проблем с сертификатами SSL в Docker)
+    import ssl
+    try:
+        _create_unverified_https_context = ssl._create_unverified_context
+    except AttributeError:
+        pass
+    else:
+        ssl._create_default_https_context = _create_unverified_https_context
+
+    download_font("https://github.com/google/fonts/raw/main/ofl/roboto/Roboto-Regular.ttf", reg_path)
+    download_font("https://github.com/google/fonts/raw/main/ofl/roboto/Roboto-Bold.ttf", bold_path)
+
+    try:
+        font_title = ImageFont.truetype(bold_path, 36)
+        font_label = ImageFont.truetype(reg_path, 20)
+        font_value = ImageFont.truetype(bold_path, 28)
+    except Exception as e:
+        font_title = font_label = font_value = ImageFont.load_default()
+
+    return font_title, font_label, font_value
+
+
+def clean_text(text):
+    """Удаляет эмодзи, чтобы не рисовались квадраты"""
+    if not text: return ""
+    return re.sub(r'[^\w\sА-Яа-яЁёA-Za-z0-9,.:\-!/()«»]', '', str(text))
+
+
+def create_app_image(date_str, address, foreman, team_name, equip_text, comment_str=""):
+    font_title, font_label, font_value = get_fonts()
+
+    img_w = 800
+    img_h = 1400  # Высота с запасом (потом обрезаем)
+    img = Image.new('RGB', (img_w, img_h), color=(243, 244, 246))  # Фон как на сайте bg-gray-100
     draw = ImageDraw.Draw(img)
 
-    # Синяя шапка
-    draw.rectangle([0, 0, 800, 80], fill=(37, 99, 235))
-    font_title = get_font(36)
-    font_text = get_font(26)
-    font_small = get_font(22)
+    logo_x, logo_y = 40, 40
+    logo_path = "frontend/public/logo.png"
 
-    draw.text((30, 18), "📋 НАРЯД НА ВЫЕЗД", fill=(255, 255, 255), font=font_title)
+    logo_drawn = False
+    if os.path.exists(logo_path):
+        try:
+            logo_img = Image.open(logo_path).convert("RGBA")
+            aspect = logo_img.width / logo_img.height
+            new_h = 50
+            new_w = int(new_h * aspect)
+            logo_img = logo_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-    draw.text((30, 110), f"📅 Дата: {date_str}", fill=(31, 41, 55), font=font_text)
-    draw.text((30, 160), f"📍 Объект: {address}", fill=(31, 41, 55), font=font_text)
-    draw.text((30, 210), f"👷‍♂️ Прораб: {foreman}", fill=(31, 41, 55), font=font_text)
-    draw.text((30, 260), f"👥 Бригада: {team_name}", fill=(31, 41, 55), font=font_text)
+            # Вставляем логотип (с прозрачностью)
+            img.paste(logo_img, (logo_x, logo_y), logo_img)
+            draw.text((logo_x + new_w + 15, logo_y), "ВИКС", fill=(37, 99, 235), font=font_title)
+            logo_drawn = True
+        except:
+            pass
 
-    draw.text((30, 330), "🚜 Техника:", fill=(37, 99, 235), font=font_text)
-    y = 370
-    if not equip_text or equip_text == "Не требуется":
-        draw.text((50, y), "Без техники", fill=(75, 85, 99), font=font_small)
-    else:
-        for line in equip_text.split('\n'):
-            clean_line = line.replace('├', '').strip()
-            if clean_line:
-                draw.text((50, y), f"• {clean_line}", fill=(75, 85, 99), font=font_small)
-                y += 35
+    if not logo_drawn:
+        draw.text((logo_x, logo_y), "ВИКС Расписание", fill=(37, 99, 235), font=font_title)
 
-    draw.text((670, 440), "ВИКС", fill=(209, 213, 219), font=get_font(40))
+    draw.text((logo_x, logo_y + 80), "ДЕТАЛИ ЗАЯВКИ", fill=(31, 41, 55), font=font_title)
+
+    y_offset = 190
+
+    def draw_block(content_pairs, current_y):
+        padding = 30
+        line_height = 40
+
+        box_h = padding * 2
+        for lbl, val in content_pairs:
+            box_h += 30
+            val_lines = clean_text(val).strip().split('\n')
+            box_h += len(val_lines) * line_height + 15
+
+            # Рисуем белую карточку (блок как на сайте)
+        draw.rounded_rectangle([40, current_y, 760, current_y + box_h], radius=16, fill=(255, 255, 255),
+                               outline=(229, 231, 235), width=2)
+
+        text_y = current_y + padding
+        for lbl, val in content_pairs:
+            draw.text((70, text_y), lbl.upper(), fill=(107, 114, 128), font=font_label)
+            text_y += 30
+            val_lines = clean_text(val).strip().split('\n')
+            for line in val_lines:
+                if line.strip():
+                    color = (37, 99, 235) if "ТЕХНИКА" in lbl else (31, 41, 55)
+                    draw.text((70, text_y), line.strip(), fill=color, font=font_value)
+                    text_y += line_height
+            text_y += 15
+
+        return current_y + box_h + 20
+
+    # Блоки заявки
+    y_offset = draw_block([("ДАТА ВЫЕЗДА", date_str), ("АДРЕС ОБЪЕКТА", address)], y_offset)
+    y_offset = draw_block([("ВЫБОР БРИГАДЫ", f"{team_name}\n(Прораб: {foreman})")], y_offset)
+
+    eq_text = "Не требуется" if not equip_text else equip_text
+    y_offset = draw_block([("ТРЕБУЕМАЯ ТЕХНИКА", eq_text)], y_offset)
+
+    if comment_str and comment_str.lower() != 'нет':
+        y_offset = draw_block([("КОММЕНТАРИЙ", comment_str)], y_offset)
+
+    # Обрезаем картинку по контенту
+    img = img.crop((0, 0, img_w, y_offset + 30))
 
     buf = io.BytesIO()
     img.save(buf, format='PNG')
@@ -510,7 +588,6 @@ async def execute_app_publish(app_dict, bot_token, group_id):
                                    selected_list) as cur:
             staff_rows = await cur.fetchall()
 
-    # Формируем текст с кликабельными профилями (Mentions)
     staff_str = ""
     workers_ids = []
     if staff_rows:
@@ -532,31 +609,35 @@ async def execute_app_publish(app_dict, bot_token, group_id):
             eq_list = json.loads(eq_data_str)
             if eq_list:
                 for eq in eq_list:
-                    equip_text += f"  ├ {eq['name']} (⏰ <i>{eq['time_start']}:00 - {eq['time_end']}:00</i>)\n"
-                    # Ищем tg_id водителя
+                    equip_text += f"{eq['name']} (⏰ {eq['time_start']}:00 - {eq['time_end']}:00)\n"
                     async with db.conn.execute("SELECT tg_id FROM equipment WHERE id = ?", (eq['id'],)) as cur:
                         eq_db_row = await cur.fetchone()
                         if eq_db_row and eq_db_row[0]: drivers_ids.append(eq_db_row[0])
         except:
             pass
-    if not equip_text: equip_text = "Не требуется\n"
 
-    # 1. ГЕНЕРАЦИЯ КАРТИНКИ
+    comment_text = app_dict.get('comment', '')
+
+    # 1. ГЕНЕРАЦИЯ КАРТИНКИ НОВОГО ФОРМАТА
     img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
-                               equip_text)
+                               equip_text, comment_text)
 
     # 2. ФОРМИРОВАНИЕ ЦИТАТЫ (СПОЙЛЕРА)
-    comment_text = f"\n💬 <b>Комментарий:</b> {app_dict['comment']}" if app_dict.get('comment') and app_dict[
-        'comment'].lower() != 'нет' else ""
+    comment_html = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
+    equip_html = ""
+    if equip_text:
+        for line in equip_text.split('\n'):
+            if line.strip(): equip_html += f"  ├ {line.strip()}\n"
+    else:
+        equip_html = "  ├ Не требуется\n"
 
     html_caption = f"""<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>
 📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>
 📍 <b>Объект:</b> {app_dict['object_address']}
 🚜 <b>Техника:</b>
-{equip_text}👷‍♂️ <b>Прораб:</b> <a href='tg://user?id={app_dict['foreman_id']}'>{app_dict['foreman_name']}</a>
-👥 <b>Бригада «{team_name}»:</b>{staff_str}{comment_text}</blockquote>"""
+{equip_html}👷‍♂️ <b>Прораб:</b> <a href='tg://user?id={app_dict['foreman_id']}'>{app_dict['foreman_name']}</a>
+👥 <b>Бригада «{team_name}»:</b>{staff_str}{comment_html}</blockquote>"""
 
-    # 3. ОТПРАВКА В ТЕЛЕГРАМ
     async with aiohttp.ClientSession() as session:
         data = aiohttp.FormData()
         data.add_field('chat_id', str(group_id))
@@ -567,7 +648,6 @@ async def execute_app_publish(app_dict, bot_token, group_id):
         async with session.post(f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=data) as resp:
             if resp.status == 200:
                 await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))
-                # Занимаем технику
                 if eq_data_str:
                     try:
                         for e in json.loads(eq_data_str): await db.conn.execute(
@@ -576,7 +656,6 @@ async def execute_app_publish(app_dict, bot_token, group_id):
                         pass
                 await db.conn.commit()
 
-                # Рассылка участникам
                 all_involved = list(set(workers_ids + drivers_ids))
                 if all_involved:
                     msg_inv = f"👷‍♂️ <b>Вас добавили в наряд!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
@@ -605,39 +684,32 @@ async def publish_apps(tg_id: int = Form(0)):
     return {"status": "ok", "published": count}
 
 
-# --- КРОН (ВНУТРЕННИЕ ЭНДПОИНТЫ ДЛЯ БОТА) ---
+# --- КРОН ---
 @app.post("/api/cron/start_day")
 async def cron_start_day():
-    """Переводит заявки НА СЕГОДНЯ в статус 'В работе' (published) и отправляет в чат"""
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     now_date = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
-
     async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved' AND date_target = ?",
                                (now_date,)) as cur:
         apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-
-    for app_dict in apps:
-        await execute_app_publish(app_dict, bot_token, group_id)
+    for app_dict in apps: await execute_app_publish(app_dict, bot_token, group_id)
     return {"status": "ok"}
 
 
 @app.post("/api/cron/end_day")
 async def cron_end_day():
-    """Завершает заявки НА СЕГОДНЯ и освобождает технику"""
     now_date = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
-
     async with db.conn.execute("SELECT * FROM applications WHERE status = 'published' AND date_target = ?",
                                (now_date,)) as cur:
         apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-
     for app_dict in apps:
         app_id = app_dict['id']
         await db.conn.execute("UPDATE applications SET status = 'completed' WHERE id = ?", (app_id,))
         if app_dict.get('equipment_data'):
             try:
-                eq_list = json.loads(app_dict['equipment_data'])
-                for e in eq_list: await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (e['id'],))
+                for e in json.loads(app_dict['equipment_data']): await db.conn.execute(
+                    "UPDATE equipment SET status = 'free' WHERE id = ?", (e['id'],))
             except:
                 pass
     await db.conn.commit()
@@ -646,29 +718,25 @@ async def cron_end_day():
 
 @app.post("/api/cron/check_timeouts")
 async def cron_check_timeouts():
-    """Проверяет время техники. Если вышло - напоминает водителю"""
     now = datetime.now(TZ_BARNAUL)
     now_date = now.strftime("%Y-%m-%d")
     current_hour = now.hour
-
     async with db.conn.execute(
             "SELECT equipment_data, object_address FROM applications WHERE status = 'published' AND date_target = ?",
             (now_date,)) as cur:
         apps = await cur.fetchall()
-
     for row in apps:
         eq_str, address = row[0], row[1]
         if not eq_str: continue
         try:
             for eq in json.loads(eq_str):
                 end_hour = int(eq['time_end'])
-                if current_hour >= end_hour:  # Время вышло
-                    # Находим водителя
+                if current_hour >= end_hour:
                     async with db.conn.execute("SELECT tg_id, status FROM equipment WHERE id = ?", (eq['id'],)) as cur2:
                         eq_db = await cur2.fetchone()
                         if eq_db and eq_db[0] and eq_db[1] == 'work':
-                            msg = f"⏳ <b>Время работы вышло!</b>\nПо графику работа вашей техники на объекте ({address}) завершена.\n\nПожалуйста, нажмите кнопку <b>✅ Готово (Освободить технику)</b> в приложении."
-                            await notify_users([], msg, "my-apps", extra_tg_ids=[eq_db[0]])
+                            msg = f"⏳ <b>Время вышло!</b>\nПо графику работа вашей техники на объекте ({address}) завершена.\n\nПожалуйста, нажмите кнопку <b>✅ Готово</b> в приложении."
+                            await notify_users([], msg, "dashboard", extra_tg_ids=[eq_db[0]])
         except:
             pass
     return {"status": "ok"}
@@ -686,7 +754,7 @@ async def get_active_app(tg_id: int):
         rows = await cursor.fetchall()
 
     for row in rows:
-        app_dict = dict(zip([col[0] for c in cursor.description], row))
+        app_dict = dict(zip([col[0] for col in cursor.description], row))
         involved = False
         if role == 'foreman' and app_dict['foreman_id'] == tg_id: involved = True
         if role in ['worker', 'foreman']:
@@ -856,6 +924,7 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
     elif dict(user)['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
         await db.update_user_role(tg_id, "driver")
     await db.conn.commit()
+
     await notify_users(["report_group"],
                        f"🔗 <b>Привязка аккаунта</b>\nВодитель {fio} привязан к технике «{eq_row[1]}».", "equipment")
     return {"status": "ok"}

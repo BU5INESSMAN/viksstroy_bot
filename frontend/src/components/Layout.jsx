@@ -14,6 +14,9 @@ export default function Layout() {
     const [profileData, setProfileData] = useState(null);
     const [editProfile, setEditProfile] = useState({});
 
+    // Определяем, открыто ли приложение в Telegram Mini App
+    const [isTMA, setIsTMA] = useState(false);
+
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
 
     useEffect(() => {
@@ -22,6 +25,14 @@ export default function Layout() {
         else root.classList.add(theme);
         localStorage.setItem('theme', theme);
     }, [theme]);
+
+    useEffect(() => {
+        const tg = window.Telegram?.WebApp;
+        // Если есть initData, значит это точно Mini App
+        if (tg && tg.initData) {
+            setIsTMA(true);
+        }
+    }, []);
 
     const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light');
     const themeIcon = theme === 'light' ? '🌞' : theme === 'dark' ? '🌙' : '💻';
@@ -77,8 +88,8 @@ export default function Layout() {
     return (
         <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
 
-            {/* ИСПРАВЛЕНИЕ ОСТУПА (pt-28 для мобилок, pt-0 для ПК) */}
-            <header className="bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 pt-28 sm:pt-0">
+            {/* ИСПРАВЛЕНИЕ: Отступ pt-28 только для TMA, иначе pt-4 */}
+            <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 sm:pt-0 ${isTMA ? 'pt-28' : 'pt-4'}`}>
                 {realRole && (
                     <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-50">
                         <span>Тест роли: {roleNames[role]}</span>
@@ -88,7 +99,6 @@ export default function Layout() {
 
                 <nav className="px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center">
 
-                    {/* ЛОГОТИП */}
                     <div className="flex-1 flex items-center">
                         <div className="w-28 h-8 bg-blue-600 dark:bg-blue-400 transition-colors" style={{
                             WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
