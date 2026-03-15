@@ -12,6 +12,7 @@ import json
 import uuid
 import base64
 import urllib.request
+import ssl
 import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
@@ -36,113 +37,142 @@ app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 TZ_BARNAUL = ZoneInfo("Asia/Barnaul")
 
 
-# --- НОВЫЙ ГЕНЕРАТОР КАРТИНОК НАРЯДОВ (ДИЗАЙН КАК НА САЙТЕ) ---
+# --- НОВЫЙ ГЕНЕРАТОР КАРТИНОК НАРЯДОВ (КРУПНЫЙ И КРАСИВЫЙ) ---
 def download_font(url, filename):
-    if not os.path.exists(filename):
+    # Скачиваем, только если файла нет или он сломан (меньше 10 КБ)
+    if not os.path.exists(filename) or os.path.getsize(filename) < 10000:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         try:
-            urllib.request.urlretrieve(url, filename)
+            # Обход проблем с SSL сертификатами в Docker
+            ctx = ssl.create_default_context()
+            ctx.check_hostname = False
+            ctx.verify_mode = ssl.CERT_NONE
+            # Подделываем User-Agent, чтобы Github не блокировал
+            req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+            with urllib.request.urlopen(req, context=ctx) as response, open(filename, 'wb') as out_file:
+                out_file.write(response.read())
         except Exception as e:
             print(f"Font download error: {e}")
 
 
 def get_fonts():
     font_dir = "data/fonts"
-    os.makedirs(font_dir, exist_ok=True)
     reg_path = os.path.join(font_dir, "Roboto-Regular.ttf")
     bold_path = os.path.join(font_dir, "Roboto-Bold.ttf")
 
-    # Безопасное скачивание (обход проблем с сертификатами SSL в Docker)
-    import ssl
-    try:
-        _create_unverified_https_context = ssl._create_unverified_context
-    except AttributeError:
-        pass
-    else:
-        ssl._create_default_https_context = _create_unverified_https_context
-
-    download_font("https://github.com/google/fonts/raw/main/ofl/roboto/Roboto-Regular.ttf", reg_path)
-    download_font("https://github.com/google/fonts/raw/main/ofl/roboto/Roboto-Bold.ttf", bold_path)
+    # Прямые сырые ссылки на шрифты Google (надежные)
+    download_font("https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Regular.ttf", reg_path)
+    download_font("https://raw.githubusercontent.com/googlefonts/roboto/main/src/hinted/Roboto-Bold.ttf", bold_path)
 
     try:
-        font_title = ImageFont.truetype(bold_path, 36)
-        font_label = ImageFont.truetype(reg_path, 20)
-        font_value = ImageFont.truetype(bold_path, 28)
+        # Сильно увеличенные размеры шрифтов для читаемости
+        font_title = ImageFont.truetype(bold_path, 46)
+        font_header = ImageFont.truetype(bold_path, 36)
+        font_label = ImageFont.truetype(reg_path, 28)
+        font_value = ImageFont.truetype(bold_path, 34)
     except Exception as e:
-        font_title = font_label = font_value = ImageFont.load_default()
+        print("Failed to load fonts:", e)
+        font_title = font_header = font_label = font_value = ImageFont.load_default()
 
-    return font_title, font_label, font_value
+    return font_title, font_header, font_label, font_value
 
 
 def clean_text(text):
-    """Удаляет эмодзи, чтобы не рисовались квадраты"""
+    """Удаляет ломающие эмодзи для Pillow"""
     if not text: return ""
     return re.sub(r'[^\w\sА-Яа-яЁёA-Za-z0-9,.:\-!/()«»]', '', str(text))
 
 
 def create_app_image(date_str, address, foreman, team_name, equip_text, comment_str=""):
-    font_title, font_label, font_value = get_fonts()
+    font_title, font_header, font_label, font_value = get_fonts()
 
-    img_w = 800
-    img_h = 1400  # Высота с запасом (потом обрезаем)
-    img = Image.new('RGB', (img_w, img_h), color=(243, 244, 246))  # Фон как на сайте bg-gray-100
+    img_w = 900
+    img_h = 1600  # Высота с запасом (обрежем в конце)
+    img = Image.new('RGB', (img_w, img_h), color=(243, 244, 246))  # bg-gray-100
     draw = ImageDraw.Draw(img)
 
-    logo_x, logo_y = 40, 40
-    logo_path = "frontend/public/logo.png"
+    header_h = 140
+    # Рисуем синюю шапку с закруглением сверху
+    draw.rounded_rectangle([40, 40, img_w - 40, 40 + header_h], radius=24, fill=(37, 99, 235))
+    # Заквадрачиваем низ шапки, чтобы она сливалась с карточкой
+    draw.rectangle([40, 40 + header_h - 24, img_w - 40, 40 + header_h], fill=(37, 99, 235))
 
+    logo_path = "frontend/public/logo.png"
+    header_text = "ВИКС РАСПИСАНИЕ"
+
+    # Центрирование логотипа и текста
     logo_drawn = False
     if os.path.exists(logo_path):
         try:
             logo_img = Image.open(logo_path).convert("RGBA")
             aspect = logo_img.width / logo_img.height
-            new_h = 50
+            new_h = 70
             new_w = int(new_h * aspect)
             logo_img = logo_img.resize((new_w, new_h), Image.Resampling.LANCZOS)
 
-            # Вставляем логотип (с прозрачностью)
-            img.paste(logo_img, (logo_x, logo_y), logo_img)
-            draw.text((logo_x + new_w + 15, logo_y), "ВИКС", fill=(37, 99, 235), font=font_title)
+            # Перекрашиваем прозрачный логотип в чисто БЕЛЫЙ цвет
+            r, g, b, a = logo_img.split()
+            white_logo = Image.merge("RGBA", (Image.new('L', a.size, 255), Image.new('L', a.size, 255),
+                                              Image.new('L', a.size, 255), a))
+
+            # Расчет центра
+            text_bbox = draw.textbbox((0, 0), header_text, font=font_title)
+            text_w = text_bbox[2] - text_bbox[0]
+            total_w = new_w + 25 + text_w
+            start_x = (img_w - total_w) // 2
+
+            img.paste(white_logo, (start_x, 40 + (header_h - new_h) // 2), white_logo)
+            draw.text((start_x + new_w + 25, 40 + (header_h - (text_bbox[3] - text_bbox[1])) // 2 - 5), header_text,
+                      fill=(255, 255, 255), font=font_title)
             logo_drawn = True
-        except:
-            pass
+        except Exception as e:
+            print("Logo error:", e)
 
     if not logo_drawn:
-        draw.text((logo_x, logo_y), "ВИКС Расписание", fill=(37, 99, 235), font=font_title)
+        text_bbox = draw.textbbox((0, 0), header_text, font=font_title)
+        text_w = text_bbox[2] - text_bbox[0]
+        draw.text(((img_w - text_w) // 2, 40 + (header_h - (text_bbox[3] - text_bbox[1])) // 2 - 5), header_text,
+                  fill=(255, 255, 255), font=font_title)
 
-    draw.text((logo_x, logo_y + 80), "ДЕТАЛИ ЗАЯВКИ", fill=(31, 41, 55), font=font_title)
-
-    y_offset = 190
+    y_offset = 40 + header_h
 
     def draw_block(content_pairs, current_y):
-        padding = 30
-        line_height = 40
+        padding = 40
+        line_height = 45
 
         box_h = padding * 2
         for lbl, val in content_pairs:
-            box_h += 30
+            box_h += 40
             val_lines = clean_text(val).strip().split('\n')
-            box_h += len(val_lines) * line_height + 15
+            box_h += len(val_lines) * line_height + 20
 
-            # Рисуем белую карточку (блок как на сайте)
-        draw.rounded_rectangle([40, current_y, 760, current_y + box_h], radius=16, fill=(255, 255, 255),
-                               outline=(229, 231, 235), width=2)
+            # Рисуем белую карточку для блока
+        draw.rounded_rectangle([40, current_y, img_w - 40, current_y + box_h], radius=24, fill=(255, 255, 255))
 
-        text_y = current_y + padding
+        # Если это первый блок, заквадрачиваем ему верх (стык с синей шапкой)
+        if current_y == 40 + header_h:
+            draw.rectangle([40, current_y, img_w - 40, current_y + 24], fill=(255, 255, 255))
+
+            # Разделительная линия
+            draw.line([80, current_y + 80, img_w - 80, current_y + 80], fill=(229, 231, 235), width=3)
+            draw.text((80, current_y + 30), "ДЕТАЛИ ЗАЯВКИ", fill=(31, 41, 55), font=font_header)
+            text_y = current_y + 120
+        else:
+            text_y = current_y + padding
+
         for lbl, val in content_pairs:
-            draw.text((70, text_y), lbl.upper(), fill=(107, 114, 128), font=font_label)
-            text_y += 30
+            draw.text((80, text_y), lbl.upper(), fill=(156, 163, 175), font=font_label)  # Серый лэйбл
+            text_y += 40
             val_lines = clean_text(val).strip().split('\n')
             for line in val_lines:
                 if line.strip():
-                    color = (37, 99, 235) if "ТЕХНИКА" in lbl else (31, 41, 55)
-                    draw.text((70, text_y), line.strip(), fill=color, font=font_value)
+                    color = (37, 99, 235) if "ТЕХНИКА" in lbl else (17, 24, 39)
+                    draw.text((80, text_y), line.strip(), fill=color, font=font_value)
                     text_y += line_height
-            text_y += 15
+            text_y += 25
 
         return current_y + box_h + 20
 
-    # Блоки заявки
     y_offset = draw_block([("ДАТА ВЫЕЗДА", date_str), ("АДРЕС ОБЪЕКТА", address)], y_offset)
     y_offset = draw_block([("ВЫБОР БРИГАДЫ", f"{team_name}\n(Прораб: {foreman})")], y_offset)
 
@@ -570,7 +600,7 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
     return {"status": "ok"}
 
 
-# --- ГЛОБАЛЬНАЯ ПУБЛИКАЦИЯ КАРТИНКОЙ + ЦИТАТОЙ ---
+# --- ПУБЛИКАЦИЯ КАРТИНКОЙ + ЦИТАТОЙ ---
 async def execute_app_publish(app_dict, bot_token, group_id):
     app_id = app_dict['id']
     team_name = "Без бригады"
@@ -618,11 +648,9 @@ async def execute_app_publish(app_dict, bot_token, group_id):
 
     comment_text = app_dict.get('comment', '')
 
-    # 1. ГЕНЕРАЦИЯ КАРТИНКИ НОВОГО ФОРМАТА
     img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
                                equip_text, comment_text)
 
-    # 2. ФОРМИРОВАНИЕ ЦИТАТЫ (СПОЙЛЕРА)
     comment_html = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
     equip_html = ""
     if equip_text:
