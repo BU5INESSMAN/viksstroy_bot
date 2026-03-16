@@ -26,7 +26,7 @@ dp = Dispatcher()
 db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
 
-WEB_APP_URL = "https://app.viks22.ru/tma"
+WEB_APP_URL = "https://miniapp.viks22.ru/tma"
 
 
 class RegState(StatesGroup):
@@ -46,7 +46,7 @@ async def cmd_start(message: types.Message, command: CommandObject, state: FSMCo
 
     if args and args.startswith("team_"):
         invite_code = args.replace("team_", "")
-        invite_url = f"https://app.viks22.ru/invite/{invite_code}"
+        invite_url = f"https://miniapp.viks22.ru/invite/{invite_code}"
         kb = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="🔗 Привязать аккаунт", web_app=WebAppInfo(url=invite_url))]])
         await message.answer("👋 <b>Приглашение в бригаду!</b>\n\nНажмите кнопку ниже.", reply_markup=kb,
@@ -55,7 +55,7 @@ async def cmd_start(message: types.Message, command: CommandObject, state: FSMCo
 
     if args and args.startswith("equip_"):
         invite_code = args.replace("equip_", "")
-        invite_url = f"https://app.viks22.ru/equip-invite/{invite_code}"
+        invite_url = f"https://miniapp.viks22.ru/equip-invite/{invite_code}"
         kb = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="🔗 Стать водителем", web_app=WebAppInfo(url=invite_url))]])
         await message.answer("👋 <b>Привязка техники!</b>\n\nНажмите кнопку ниже.", reply_markup=kb, parse_mode="HTML")
@@ -125,7 +125,6 @@ async def handle_all_messages(message: types.Message):
 async def call_api(endpoint):
     try:
         async with aiohttp.ClientSession() as session:
-            # docker-compose сеть: обращаемся к api напрямую
             await session.post(f"http://api:8000{endpoint}")
     except Exception as e:
         logger.error(f"Cron Error {endpoint}: {e}")
@@ -161,16 +160,11 @@ async def main():
     await db.init_db()
     logger.info("База данных готова.")
 
-    # ЧАСОВОЙ ПОЯС БАРНАУЛ
     scheduler = AsyncIOScheduler(timezone='Asia/Barnaul')
 
-    # 07:00 Перевод одобренных в работу + пост в группу
     scheduler.add_job(start_day_jobs, 'cron', hour=7, minute=0, id='start_day')
-    # 23:00 Завершение заявок
     scheduler.add_job(end_day_jobs, 'cron', hour=23, minute=0, id='end_day')
-    # Проверка техники (каждый час в :30 минут)
     scheduler.add_job(check_equip_timeouts, 'cron', minute=30, id='check_equip')
-
     scheduler.add_job(backup_database, 'cron', hour=3, minute=0, id='backup_database')
 
     scheduler.start()

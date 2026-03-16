@@ -254,7 +254,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
     if not chat_ids: return
     markup = {
-        "inline_keyboard": [[{"text": "📱 Открыть платформу", "web_app": {"url": f"https://app.viks22.ru/{url_path}"}}]]}
+        "inline_keyboard": [[{"text": "📱 Открыть платформу", "web_app": {"url": f"https://miniapp.viks22.ru/{url_path}"}}]]}
 
     async with aiohttp.ClientSession() as session:
         for cid in chat_ids:
@@ -418,7 +418,7 @@ async def startup():
         ("applications", "selected_members", "TEXT"), ("applications", "equipment_data", "TEXT"),
         ("applications", "status", "TEXT DEFAULT 'waiting'"),
         ("applications", "approved_by", "TEXT DEFAULT ''"), ("applications", "approved_by_id", "INTEGER DEFAULT 0"),
-        ("applications", "is_started_notified", "INTEGER DEFAULT 0"),  # НОВАЯ КОЛОНКА
+        ("applications", "is_started_notified", "INTEGER DEFAULT 0"),
         ("team_members", "tg_id", "INTEGER"), ("team_members", "is_foreman", "INTEGER DEFAULT 0"),
         ("users", "avatar_url", "TEXT"),
         ("equipment", "driver", "TEXT DEFAULT ''"), ("equipment", "status", "TEXT DEFAULT 'free'"),
@@ -656,7 +656,7 @@ async def api_delete_user(target_id: int, tg_id: int = Form(...)):
 @app.post("/api/teams/{team_id}/generate_invite")
 async def api_generate_invite(team_id: int):
     invite_code = await db.get_or_create_team_invite(team_id)
-    return {"invite_link": f"https://app.viks22.ru/invite/{invite_code}",
+    return {"invite_link": f"https://miniapp.viks22.ru/invite/{invite_code}",
             "tg_bot_link": f"https://t.me/{os.getenv('BOT_USERNAME', 'viksstroy_bot')}?start=team_{invite_code}"}
 
 
@@ -1205,7 +1205,7 @@ async def generate_equip_invite(equip_id: int):
                 await db.conn.commit()
             except:
                 await db.conn.rollback()
-    return {"invite_link": f"https://app.viks22.ru/equip-invite/{code}",
+    return {"invite_link": f"https://miniapp.viks22.ru/equip-invite/{code}",
             "tg_bot_link": f"https://t.me/{os.getenv('BOT_USERNAME', 'viksstroy_bot')}?start=equip_{code}"}
 
 
