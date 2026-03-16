@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 
+const getTodayStr = () => {
+    try {
+        return new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Barnaul'}).format(new Date());
+    } catch(e) {
+        return new Date().toISOString().split('T')[0];
+    }
+};
+
 export default function Review() {
     const tgId = localStorage.getItem('tg_id') || '0';
     const role = localStorage.getItem('user_role') || 'Гость';
@@ -63,13 +71,19 @@ export default function Review() {
         } catch(e) { alert("Ошибка публикации"); }
     };
 
+    const todayYYYYMMDD = getTodayStr();
+
     const waitingApps = reviewApps.filter(a => a.status === 'waiting');
-    const approvedApps = reviewApps.filter(a => a.status === 'approved');
-    const publishedApps = reviewApps.filter(a => a.status === 'published');
+
+    // В одобренных показываются одобренные + те, что опубликованы, но дата еще не наступила
+    const approvedApps = reviewApps.filter(a => a.status === 'approved' || (a.status === 'published' && a.date_target > todayYYYYMMDD));
+
+    // В работе - те, что опубликованы и дата которых сегодня или в прошлом
+    const publishedApps = reviewApps.filter(a => a.status === 'published' && a.date_target <= todayYYYYMMDD);
 
     const filteredForPublish = publishDateFilter
-        ? approvedApps.filter(a => a.date_target === publishDateFilter)
-        : approvedApps;
+        ? approvedApps.filter(a => a.date_target === publishDateFilter && a.status === 'approved')
+        : approvedApps.filter(a => a.status === 'approved');
 
     const renderAppCard = (app, statusType) => {
         let equipText = 'Не требуется';
@@ -89,7 +103,8 @@ export default function Review() {
                 </div>
                 <div className="flex flex-col items-end justify-center min-w-[120px] pt-3 md:pt-0">
                     {statusType === 'waiting' && <span className="bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-yellow-200 dark:border-yellow-700/50">На модерации</span>}
-                    {statusType === 'approved' && <span className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-700/50">Одобрено</span>}
+                    {statusType === 'approved' && app.status === 'approved' && <span className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-700/50">Одобрено</span>}
+                    {statusType === 'approved' && app.status === 'published' && <span className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-700/50">Ожидает начала</span>}
                     {statusType === 'published' && <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-700/50">В работе</span>}
                 </div>
             </div>
@@ -100,9 +115,9 @@ export default function Review() {
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
             <div className="flex justify-between items-center bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 border border-gray-100 dark:border-gray-700">
                 <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📋</span> Управление заявками</h2>
-                {approvedApps.length > 0 && (
+                {filteredForPublish.length > 0 && (
                     <button onClick={openPublishModal} className="bg-emerald-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-emerald-600 animate-pulse transition">
-                        📤 Опубликовать ({approvedApps.length})
+                        📤 Опубликовать ({filteredForPublish.length})
                     </button>
                 )}
             </div>
@@ -116,7 +131,7 @@ export default function Review() {
 
             {approvedApps.length > 0 && (
                 <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-emerald-200 dark:border-emerald-900/50">
-                    <h3 className="font-bold text-emerald-700 dark:text-emerald-500 mb-4">✅ Одобрены (ожидают публикации)</h3>
+                    <h3 className="font-bold text-emerald-700 dark:text-emerald-500 mb-4">✅ Одобрены (ожидают начала)</h3>
                     <div className="space-y-3">{approvedApps.map(a => renderAppCard(a, 'approved'))}</div>
                 </div>
             )}
@@ -221,7 +236,7 @@ export default function Review() {
                                         <button onClick={() => handleReviewAction('rejected')} className="w-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-200 transition">🔙 Отозвать заявку</button>
                                     )}
                                     {selectedApp.status === 'published' && role === 'moderator' && (
-                                        <button onClick={() => handleReviewAction('completed')} className="w-full bg-gray-800 text-white dark:bg-gray-600 py-3 rounded-xl font-bold hover:bg-gray-900 transition shadow-md">🏁 Завершить наряд</button>
+                                        <button onClick={() => handleReviewAction('completed')} className="w-full bg-gray-800 text-white dark:bg-gray-600 py-3 rounded-xl font-bold hover:bg-gray-900 transition shadow-md">🏁 Отменить / Завершить наряд</button>
                                     )}
                                 </div>
                             </div>
