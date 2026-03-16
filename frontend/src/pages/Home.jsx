@@ -12,6 +12,14 @@ const getSmartDates = () => {
     });
 };
 
+const getTodayStr = () => {
+    try {
+        return new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Barnaul'}).format(new Date());
+    } catch(e) {
+        return new Date().toISOString().split('T')[0];
+    }
+};
+
 const KanbanCol = ({ title, icon, colorClass, apps, isOpen, toggleOpen, onAppClick }) => (
     <div className="flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
         <button onClick={toggleOpen} className={`p-4 flex justify-between items-center w-full text-left font-bold ${colorClass} transition-colors lg:cursor-default`}>
@@ -41,21 +49,20 @@ export default function Home() {
     const { isGlobalCreateAppOpen, setGlobalCreateAppOpen } = useOutletContext();
 
     const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], kanban_apps: [], recent_addresses: [] });
-    const [activeApps, setActiveApps] = useState([]); // Изменено на массив для вывода всех активных заявок
+    const [activeApps, setActiveApps] = useState([]);
     const [myTeam, setMyTeam] = useState(null);
     const [loading, setLoading] = useState(true);
 
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
-    
-    // ИСПРАВЛЕНИЕ: team_ids вместо team_id
+
     const [appForm, setAppForm] = useState({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false });
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
 
     const fetchData = () => {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
         axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApps(res.data || []); setLoading(false); }).catch(() => { setActiveApps([]); setLoading(false); });
-        
+
         if (['worker', 'foreman'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {
                 if (res.data?.profile?.team_id) {
@@ -75,17 +82,14 @@ export default function Home() {
         }
     }, [isGlobalCreateAppOpen]);
 
-    // Загрузка рабочих из всех выбранных бригад
     useEffect(() => {
         if (appForm.team_ids && appForm.team_ids.length > 0) {
             Promise.all(appForm.team_ids.map(id => axios.get(`/api/teams/${id}/details`)))
                 .then(responses => {
                     const allMembers = responses.flatMap(res => res.data?.members || []);
-                    // Убираем дубликаты
                     const uniqueMembers = Array.from(new Map(allMembers.map(m => [m.id, m])).values());
                     setTeamMembers(uniqueMembers);
-                    
-                    // Если создаем новую заявку (а не смотрим старую), выделяем всех рабочих автоматически
+
                     if(!appForm.isViewOnly && !appForm.id) {
                         setAppForm(prev => ({ ...prev, members: uniqueMembers.map(m => m.id) }));
                     }
@@ -96,8 +100,7 @@ export default function Home() {
     }, [appForm.team_ids.join(',')]);
 
     const handleFormChange = (field, value) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, [field]: value })); };
-    
-    // Переключатель нескольких бригад
+
     const toggleTeamSelection = (id) => {
         if(appForm.isViewOnly) return;
         setAppForm(prev => {
@@ -107,7 +110,7 @@ export default function Home() {
     };
 
     const toggleAppMember = (id) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, members: prev.members?.includes(id) ? prev.members.filter(m => m !== id) : [...(prev.members || []), id] })); };
-    
+
     const checkTeamStatus = (team_id) => {
         if (data.kanban_apps) {
             const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && ['approved', 'published'].includes(a.status));
@@ -150,14 +153,14 @@ export default function Home() {
         if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) return alert("Выберите бригаду или технику!");
         if (appForm.team_ids.length === 0 && !window.confirm("Создать заявку ТОЛЬКО на технику (без людей)?")) return;
         if (appForm.team_ids.length > 0 && appForm.members.length === 0) return alert("Выберите хотя бы одного рабочего из бригады!");
-        
+
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId); fd.append('date_target', appForm.date_target); fd.append('object_address', appForm.object_address);
-            fd.append('team_id', appForm.team_ids.join(',') || '0'); 
+            fd.append('team_id', appForm.team_ids.join(',') || '0');
             fd.append('comment', appForm.comment); fd.append('selected_members', appForm.members.join(','));
             fd.append('equipment_data', JSON.stringify(appForm.equipment));
-            
+
             if (appForm.id) {
                 await axios.post(`/api/applications/${appForm.id}/update`, fd);
                 alert("Заявка успешно обновлена!");
@@ -195,8 +198,24 @@ export default function Home() {
         setGlobalCreateAppOpen(true);
     };
 
+    // ФИЛЬТРАЦИЯ КАНБАН-ДОСКИ ПО ДАТЕ
+    const todayYYYYMMDD = getTodayStr();
     const appsMap = { waiting: [], approved: [], published: [], completed: [] };
-    if (data.kanban_apps) { data.kanban_apps.forEach(a => { if (appsMap[a.status]) appsMap[a.status].push(a); }); }
+
+    if (data.kanban_apps) {
+        data.kanban_apps.forEach(a => {
+            if (a.status === 'waiting') appsMap.waiting.push(a);
+            else if (a.status === 'completed') appsMap.completed.push(a);
+            else if (a.status === 'approved') appsMap.approved.push(a);
+            else if (a.status === 'published') {
+                if (a.date_target > todayYYYYMMDD) {
+                    appsMap.approved.push(a); // Будущие заявки висят в одобренных
+                } else {
+                    appsMap.published.push(a); // Сегодняшние и прошлые идут "В работу"
+                }
+            }
+        });
+    }
 
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
 
@@ -204,9 +223,8 @@ export default function Home() {
 
     return (
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-            
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* БЛИЖАЙШИЙ НАРЯД ТОЛЬКО ДЛЯ РАБОЧИХ/ВОДИТЕЛЕЙ И ПРОРАБОВ */}
                 {['worker', 'driver', 'foreman'].includes(role) && (
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-blue-500 relative h-fit">
                         <h2 className="text-lg font-bold mb-2 flex items-center dark:text-white">📋 Текущие наряды</h2>
@@ -215,7 +233,7 @@ export default function Home() {
                                 {activeApps.map(a => {
                                     let activeEquipText = 'Не требуется';
                                     if (a.equipment_data) { try { const eqList = JSON.parse(a.equipment_data); if (eqList && eqList.length > 0) activeEquipText = eqList.map(e => `${e.name} (${e.time_start}:00-${e.time_end}:00)`).join(', '); } catch(e){} }
-                                    
+
                                     return (
                                         <div key={a.id} className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-sm space-y-2 text-gray-800 dark:text-gray-200">
                                             <p><b>Дата:</b> {a.date_target}</p><p><b>Объект:</b> {a.object_address}</p><p><b>Техника:</b> {activeEquipText}</p><p><b>Бригада:</b> {a.team_name || 'Только техника'}</p>
@@ -255,7 +273,7 @@ export default function Home() {
                     <div className="flex justify-between items-center mb-2 mt-2">
                         <h2 className="text-xl font-bold text-gray-800 dark:text-white">📊 ЗАЯВКИ</h2>
                     </div>
-                    
+
                     <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
                         <KanbanCol title="На модерации" icon="⏳" colorClass="bg-yellow-50 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-400" apps={appsMap.waiting} isOpen={openKanban.waiting} toggleOpen={() => setOpenKanban({...openKanban, waiting: !openKanban.waiting})} onAppClick={openAppModalFromKanban} />
                         <KanbanCol title="Одобрены" icon="✅" colorClass="bg-emerald-50 text-emerald-800 dark:bg-emerald-900/30 dark:text-emerald-400" apps={appsMap.approved} isOpen={openKanban.approved} toggleOpen={() => setOpenKanban({...openKanban, approved: !openKanban.approved})} onAppClick={openAppModalFromKanban} />
@@ -265,7 +283,6 @@ export default function Home() {
                 </div>
             )}
 
-            {/* МОДАЛКА ЗАЯВКИ (РЕДАКТИРОВАНИЕ) */}
             {isGlobalCreateAppOpen && (
                 <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
@@ -302,7 +319,7 @@ export default function Home() {
                                             let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700';
                                             if (st.state === 'busy') btnStyles = 'bg-red-50 border-red-300 text-red-500 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400 cursor-not-allowed opacity-75';
                                             else if (isSelected) btnStyles = 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm';
-                                            
+
                                             if(appForm.isViewOnly && !isSelected) return null;
 
                                             return (<button key={t.id} type="button" onClick={() => { if(appForm.isViewOnly) return; if(st.state !== 'free') return alert(st.message); toggleTeamSelection(t.id); }} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${btnStyles}`}>🏗 {t.name}</button>);
@@ -320,11 +337,10 @@ export default function Home() {
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" disabled={appForm.isViewOnly} value={appForm.comment} onChange={e => handleFormChange('comment', e.target.value)} placeholder="Доп. информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" /></div>
-                                
+
                                 <div className="flex space-x-3 pt-4">
                                     <button type="button" onClick={() => setGlobalCreateAppOpen(false)} className={`w-full bg-gray-100 dark:bg-gray-700 py-4 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition ${appForm.isViewOnly && appForm.status !== 'waiting' ? '' : 'w-1/3'}`}>Закрыть</button>
-                                    
-                                    {/* ИСПРАВЛЕНИЕ: КНОПКА РЕДАКТИРОВАНИЯ */}
+
                                     {appForm.isViewOnly && appForm.status === 'waiting' && ['foreman', 'moderator', 'boss', 'superadmin'].includes(role) && (
                                         <button type="button" onClick={() => setAppForm(prev => ({...prev, isViewOnly: false}))} className="w-2/3 bg-yellow-500 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-yellow-600 transition">✏️ Редактировать</button>
                                     )}
