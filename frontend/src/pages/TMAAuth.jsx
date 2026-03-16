@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 
 export default function TMAAuth() {
@@ -7,7 +7,9 @@ export default function TMAAuth() {
   const [needsPassword, setNeedsPassword] = useState(false);
   const [tgUser, setTgUser] = useState(null);
   const [password, setPassword] = useState('');
+
   const navigate = useNavigate();
+  const location = useLocation();
 
   useEffect(() => {
     const tg = window.Telegram?.WebApp;
@@ -19,6 +21,10 @@ export default function TMAAuth() {
       return;
     }
 
+    // Достаем из URL параметр return_to (куда юзер кликнул в боте)
+    const searchParams = new URLSearchParams(location.search);
+    const returnUrl = searchParams.get('return_to') || '/dashboard';
+
     const formData = new FormData();
     formData.append('tg_id', user.id);
     formData.append('first_name', user.first_name || '');
@@ -29,7 +35,7 @@ export default function TMAAuth() {
         if (res.data.status === 'ok') {
           localStorage.setItem('user_role', res.data.role);
           localStorage.setItem('tg_id', res.data.tg_id);
-          navigate('/dashboard');
+          navigate(returnUrl); // Направляем на нужную страницу
         } else if (res.data.status === 'needs_password') {
           setTgUser(res.data);
           setNeedsPassword(true);
@@ -38,7 +44,7 @@ export default function TMAAuth() {
       .catch((err) => {
         setError(err.response?.data?.detail || "Ошибка доступа к серверу");
       });
-  }, [navigate]);
+  }, [navigate, location]);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -54,7 +60,10 @@ export default function TMAAuth() {
       if (response.data.status === 'ok') {
         localStorage.setItem('user_role', response.data.role);
         localStorage.setItem('tg_id', response.data.tg_id);
-        navigate('/dashboard');
+
+        const searchParams = new URLSearchParams(location.search);
+        const returnUrl = searchParams.get('return_to') || '/dashboard';
+        navigate(returnUrl); // Направляем на нужную страницу
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Неверный пароль');
