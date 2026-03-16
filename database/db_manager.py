@@ -14,8 +14,15 @@ class DatabaseManager:
 
     async def init_db(self):
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
-        self.conn = await aiosqlite.connect(self.db_path)
+        # Добавлен таймаут для защиты от database is locked
+        self.conn = await aiosqlite.connect(self.db_path, timeout=30.0)
         self.conn.row_factory = aiosqlite.Row
+
+        # Оптимизация конкурентного доступа к SQLite
+        await self.conn.execute("PRAGMA journal_mode=WAL;")
+        await self.conn.execute("PRAGMA synchronous=NORMAL;")
+        await self.conn.execute("PRAGMA busy_timeout=30000;")
+        await self.conn.commit()
 
         if os.path.exists("database/schema.sql"):
             with open("database/schema.sql", "r", encoding="utf-8") as f:
