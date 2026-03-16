@@ -1,59 +1,39 @@
-import { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import Login from './pages/Login';
-import TMAAuth from './pages/TMAAuth';
-import JoinTeam from './pages/JoinTeam';
-import JoinEquipment from './pages/JoinEquipment';
-import Guide from './pages/Guide';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
+import Auth from './pages/Auth';
 import Home from './pages/Home';
 import Teams from './pages/Teams';
-import Review from './pages/Review';
+import Guide from './pages/Guide';
+import Updates from './pages/Updates'; // <--- Добавлен новый файл
 import System from './pages/System';
-import Equipment from './pages/Equipment';
 import MyApps from './pages/MyApps';
+import Review from './pages/Review';
+import Equipment from './pages/Equipment';
 
-function App() {
-  // Оптимизация для Telegram
-  useEffect(() => {
-      const tg = window.Telegram?.WebApp;
-      if (tg) {
-          tg.expand();
-          try {
-              // ИСПРАВЛЕНИЕ ОШИБКИ ТЕЛЕГРАМА (Безопасный вызов)
-              if (tg.isVersionAtLeast && tg.isVersionAtLeast('7.7') && tg.disableVerticalSwipes) {
-                  tg.disableVerticalSwipes();
-              }
-          } catch(e) {}
-      }
-      document.body.style.overscrollBehaviorY = 'none';
-  }, []);
-
-  return (
-    <Router>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/tma" element={<TMAAuth />} />
-        <Route path="/invite/:code" element={<JoinTeam />} />
-        <Route path="/equip-invite/:code" element={<JoinEquipment />} />
-        <Route path="/guide" element={<Guide />} />
-
-        <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-            <Route path="dashboard" element={<Home />} />
-            <Route path="my-apps" element={<MyApps />} />
-            <Route path="teams" element={<Teams />} />
-            <Route path="review" element={<Review />} />
-            <Route path="system" element={<System />} />
-            <Route path="equipment" element={<Equipment />} />
-        </Route>
-      </Routes>
-    </Router>
-  );
+function ProtectedRoute({ children }) {
+  if (!localStorage.getItem('user_role')) return <Navigate to="/" />;
+  return children;
 }
 
-const ProtectedRoute = ({ children }) => {
-  const role = localStorage.getItem('user_role');
-  return role ? children : <Navigate to="/" />;
-};
+function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/" element={<Auth />} />
+
+        <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+          <Route path="/dashboard" element={<Home />} />
+          <Route path="/teams" element={<Teams />} />
+          <Route path="/guide" element={<Guide />} />
+          <Route path="/updates" element={<Updates />} /> {/* <--- Добавлен роут */}
+          <Route path="/system" element={<System />} />
+          <Route path="/my-apps" element={<MyApps />} />
+          <Route path="/review" element={<Review />} />
+          <Route path="/equipment" element={<Equipment />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
+  );
+}
 
 export default App;

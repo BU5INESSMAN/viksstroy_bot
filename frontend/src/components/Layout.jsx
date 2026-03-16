@@ -17,7 +17,6 @@ export default function Layout() {
     const [isTMA, setIsTMA] = useState(false);
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
 
-    // Стейт для открытого сэндвич-меню
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     useEffect(() => {
@@ -106,38 +105,25 @@ export default function Layout() {
                         }}></div>
                     </div>
 
-                    {/* КНОПКА СЭНДВИЧ-МЕНЮ */}
                     <div className="relative flex items-center">
-                        <button
-                            onClick={() => setIsMenuOpen(!isMenuOpen)}
-                            className="flex items-center justify-center w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition border border-transparent dark:border-gray-600"
-                        >
-                            {isMenuOpen ? (
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                            ) : (
-                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>
-                            )}
+                        <button onClick={() => setIsMenuOpen(!isMenuOpen)} className="flex items-center justify-center w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition border border-transparent dark:border-gray-600">
+                            {isMenuOpen ? (<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>) : (<svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" /></svg>)}
                         </button>
 
-                        {/* ВЫПАДАЮЩЕЕ МЕНЮ */}
                         {isMenuOpen && (
                             <>
                                 <div className="fixed inset-0 z-[90]" onClick={() => setIsMenuOpen(false)}></div>
                                 <div className="absolute top-full right-0 mt-3 w-56 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 z-[100] overflow-hidden transition-all origin-top-right">
                                     <div className="flex flex-col py-2">
-                                        <button onClick={() => { setIsMenuOpen(false); openProfile(tgId); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full">
-                                            <span className="mr-3 text-xl">👤</span> Мой профиль
-                                        </button>
-                                        <button onClick={() => { setIsMenuOpen(false); navigate('/guide'); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full">
-                                            <span className="mr-3 text-xl">📖</span> Инструкция
-                                        </button>
-                                        <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" onClick={() => setIsMenuOpen(false)} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full">
-                                            <span className="mr-3 text-xl">💬</span> Техподдержка
-                                        </a>
+                                        <button onClick={() => { setIsMenuOpen(false); openProfile(tgId); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">👤</span> Мой профиль</button>
+                                        <button onClick={() => { setIsMenuOpen(false); navigate('/guide'); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">📖</span> Инструкция</button>
+
+                                        {/* КНОПКА ОБНОВЛЕНИЯ */}
+                                        <button onClick={() => { setIsMenuOpen(false); navigate('/updates'); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">🚀</span> Обновления</button>
+
+                                        <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" onClick={() => setIsMenuOpen(false)} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">💬</span> Техподдержка</a>
                                         <div className="h-px bg-gray-100 dark:bg-gray-700 my-1 mx-4"></div>
-                                        <button onClick={() => { toggleTheme(); setIsMenuOpen(false); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full">
-                                            <span className="mr-3 text-xl">{themeIcon}</span> {theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'Светлая тема' : 'Темная тема'}
-                                        </button>
+                                        <button onClick={() => { toggleTheme(); setIsMenuOpen(false); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">{themeIcon}</span> {theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'Светлая тема' : 'Темная тема'}</button>
                                     </div>
                                 </div>
                             </>
