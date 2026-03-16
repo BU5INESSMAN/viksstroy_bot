@@ -254,7 +254,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
     if not chat_ids: return
     markup = {
-        "inline_keyboard": [[{"text": "📱 Открыть платформу", "web_app": {"url": f"https://islandvpn.sbs/{url_path}"}}]]}
+        "inline_keyboard": [[{"text": "📱 Открыть платформу", "web_app": {"url": f"https://app.viks22.ru/{url_path}"}}]]}
 
     async with aiohttp.ClientSession() as session:
         for cid in chat_ids:
@@ -656,7 +656,7 @@ async def api_delete_user(target_id: int, tg_id: int = Form(...)):
 @app.post("/api/teams/{team_id}/generate_invite")
 async def api_generate_invite(team_id: int):
     invite_code = await db.get_or_create_team_invite(team_id)
-    return {"invite_link": f"https://islandvpn.sbs/invite/{invite_code}",
+    return {"invite_link": f"https://app.viks22.ru/invite/{invite_code}",
             "tg_bot_link": f"https://t.me/{os.getenv('BOT_USERNAME', 'viksstroy_bot')}?start=team_{invite_code}"}
 
 
@@ -1205,7 +1205,7 @@ async def generate_equip_invite(equip_id: int):
                 await db.conn.commit()
             except:
                 await db.conn.rollback()
-    return {"invite_link": f"https://islandvpn.sbs/equip-invite/{code}",
+    return {"invite_link": f"https://app.viks22.ru/equip-invite/{code}",
             "tg_bot_link": f"https://t.me/{os.getenv('BOT_USERNAME', 'viksstroy_bot')}?start=equip_{code}"}
 
 
