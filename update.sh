@@ -14,10 +14,10 @@ echo "➡️ Сборка и запуск Docker контейнеров..."
 docker compose up -d --build
 
 echo "➡️ Удаление старых файлов фронтенда..."
-sudo rm -rf /var/www/islandvpn.sbs/*
+sudo rm -rf /var/www/app.viks22.ru/*
 
 echo "➡️ Копирование новых файлов фронтенда..."
-sudo cp -r frontend/dist/* /var/www/islandvpn.sbs/
+sudo cp -r frontend/dist/* /var/www/app.viks22.ru/
 
 echo "✅ Обновление успешно завершено!"
 
