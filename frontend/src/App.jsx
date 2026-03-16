@@ -15,11 +15,16 @@ function ProtectedRoute({ children }) {
   const isAuth = localStorage.getItem('user_role');
 
   // Проверяем, открыт ли сайт внутри Telegram
-  const isTMA = window.Telegram?.WebApp?.initData || window.location.search.includes('tgWebAppData');
+  const isTMA = window.Telegram?.WebApp?.initData ||
+                window.location.search.includes('tgWebAppData') ||
+                window.location.hash.includes('tgWebAppData');
 
   if (!isAuth) {
-    // Если в Телеграме - кидаем на мобильную авторизацию, иначе на компьютерную
-    return <Navigate to={isTMA ? "/tma" : "/"} replace />;
+    if (isTMA) {
+      // ВАЖНО: сохраняем путь (куда кликнул юзер) и хэш авторизации Телеграма
+      return <Navigate to={`/tma?return_to=${window.location.pathname}${window.location.hash}`} replace />;
+    }
+    return <Navigate to="/" replace />;
   }
   return children;
 }
