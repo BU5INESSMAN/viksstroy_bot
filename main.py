@@ -26,7 +26,7 @@ dp = Dispatcher()
 db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
 
-WEB_APP_URL = "https://islandvpn.sbs/tma"
+WEB_APP_URL = "https://app.viks22.ru/tma"
 
 
 class RegState(StatesGroup):
@@ -46,7 +46,7 @@ async def cmd_start(message: types.Message, command: CommandObject, state: FSMCo
 
     if args and args.startswith("team_"):
         invite_code = args.replace("team_", "")
-        invite_url = f"https://islandvpn.sbs/invite/{invite_code}"
+        invite_url = f"https://app.viks22.ru/invite/{invite_code}"
         kb = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="🔗 Привязать аккаунт", web_app=WebAppInfo(url=invite_url))]])
         await message.answer("👋 <b>Приглашение в бригаду!</b>\n\nНажмите кнопку ниже.", reply_markup=kb,
@@ -55,7 +55,7 @@ async def cmd_start(message: types.Message, command: CommandObject, state: FSMCo
 
     if args and args.startswith("equip_"):
         invite_code = args.replace("equip_", "")
-        invite_url = f"https://islandvpn.sbs/equip-invite/{invite_code}"
+        invite_url = f"https://app.viks22.ru/equip-invite/{invite_code}"
         kb = InlineKeyboardMarkup(
             inline_keyboard=[[InlineKeyboardButton(text="🔗 Стать водителем", web_app=WebAppInfo(url=invite_url))]])
         await message.answer("👋 <b>Привязка техники!</b>\n\nНажмите кнопку ниже.", reply_markup=kb, parse_mode="HTML")
