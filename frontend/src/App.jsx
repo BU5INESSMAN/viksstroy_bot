@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout';
-import Auth from './pages/Auth';
+import Auth from './pages/TMAAuth';
 import Home from './pages/Home';
 import Teams from './pages/Teams';
 import Guide from './pages/Guide';
