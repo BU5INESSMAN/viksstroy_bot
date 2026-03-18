@@ -16,7 +16,6 @@ export default function Layout() {
 
     const [isTMA, setIsTMA] = useState(false);
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
-
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     useEffect(() => {
@@ -28,7 +27,16 @@ export default function Layout() {
 
     useEffect(() => {
         const tg = window.Telegram?.WebApp;
-        if (tg && tg.initData) setIsTMA(true);
+        if (tg && tg.initData) {
+            setIsTMA(true);
+            tg.expand();
+            if (tg.disableVerticalSwipes) {
+                tg.disableVerticalSwipes();
+            }
+        }
+        if (window.location.pathname.includes('/max')) setIsTMA(true);
+
+        document.body.style.overscrollBehaviorY = 'none';
     }, []);
 
     const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light');
@@ -88,14 +96,15 @@ export default function Layout() {
 
     return (
         <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
-            <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 sm:pt-0 ${isTMA ? 'pt-[140px]' : 'pt-4'}`}>
+            {/* ИСПРАВЛЕННЫЙ ОТСТУП ДЛЯ TMA (pt-8 вместо pt-4) */}
+            <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 ${isTMA ? 'pt-8' : 'pt-4'}`}>
                 {realRole && (
-                    <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-50">
+                    <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-[60]">
                         <span>Тест роли: {roleNames[role]}</span>
-                        <button onClick={endRoleTest} className="bg-black/20 hover:bg-black/30 px-3 py-1 rounded-lg text-xs transition">Вернуться</button>
+                        <button onClick={endRoleTest} className="bg-black/20 hover:bg-black/30 px-3 py-1 rounded-lg text-xs transition cursor-pointer pointer-events-auto">Вернуться</button>
                     </div>
                 )}
-                <nav className="px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center relative">
+                <nav className="px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center relative z-40">
                     <div className="flex-1 flex items-center">
                         <div className="w-28 h-8 bg-blue-600 dark:bg-blue-400 transition-colors" style={{
                             WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
@@ -117,10 +126,7 @@ export default function Layout() {
                                     <div className="flex flex-col py-2">
                                         <button onClick={() => { setIsMenuOpen(false); openProfile(tgId); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">👤</span> Мой профиль</button>
                                         <button onClick={() => { setIsMenuOpen(false); navigate('/guide'); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">📖</span> Инструкция</button>
-
-                                        {/* КНОПКА ОБНОВЛЕНИЯ */}
                                         <button onClick={() => { setIsMenuOpen(false); navigate('/updates'); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">🚀</span> Обновления</button>
-
                                         <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" onClick={() => setIsMenuOpen(false)} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">💬</span> Техподдержка</a>
                                         <div className="h-px bg-gray-100 dark:bg-gray-700 my-1 mx-4"></div>
                                         <button onClick={() => { toggleTheme(); setIsMenuOpen(false); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">{themeIcon}</span> {theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'Светлая тема' : 'Темная тема'}</button>
