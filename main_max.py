@@ -3,6 +3,9 @@ import logging
 import os
 import sys
 import aiohttp
+import time
+import random
+import string
 from dotenv import load_dotenv
 
 from maxapi import Bot, Dispatcher, F
@@ -29,7 +32,6 @@ dp = Dispatcher()
 db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
 
-# В maxapi нет встроенной машины состояний, поэтому используем простой словарь
 MAX_USER_STATES = {}
 WEB_APP_URL = "https://miniapp.viks22.ru/max"
 
@@ -40,7 +42,6 @@ async def clear_webhook():
     headers = {"Authorization": MAX_TOKEN}
     async with aiohttp.ClientSession() as session:
         try:
-            # Пытаемся удалить любые подписки
             url = "https://platform-api.max.ru/subscriptions"
             async with session.delete(url, headers=headers) as resp:
                 pass
@@ -48,11 +49,18 @@ async def clear_webhook():
             pass
 
 
+async def generate_auth_link(max_id: int) -> str:
+    """Генерирует одноразовую ссылку для автоматического входа в MAX WebApp"""
+    token = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
+    expires = time.time() + 300  # Токен живет 5 минут
+    await db.conn.execute("INSERT INTO web_codes (code, max_id, expires) VALUES (?, ?, ?)", (token, max_id, expires))
+    await db.conn.commit()
+    return f"{WEB_APP_URL}?auth_token={token}"
+
+
 @dp.message_created(F.message.body.text)
 async def message_handler(event: MessageCreated):
     text = event.message.body.text.strip()
-
-    # Получаем уникальный ID пользователя в MAX
     max_id = event.message.sender.user_id
 
     # Для совместимости с текущей БД используем отрицательный ID
@@ -61,20 +69,20 @@ async def message_handler(event: MessageCreated):
     first_name = event.message.sender.first_name or "Пользователь"
     last_name = getattr(event.message.sender, 'last_name', '') or ""
 
-    # Ищем пользователя в БД по отрицательному ID
     user = await db.get_user(pseudo_tg_id)
 
-    # 1. ОБРАБОТКА КОМАНДЫ /start
     if text == "/start":
         if user:
             if dict(user).get('is_blacklisted'):
                 await event.message.answer("Ваш аккаунт заблокирован.")
                 return
+
+            # Генерируем магическую ссылку для авто-входа
+            auth_link = await generate_auth_link(max_id)
             await event.message.answer(
-                f"С возвращением, {dict(user)['fio']}!\n\n📱 Открыть платформу можно по ссылке:\n{WEB_APP_URL}"
+                f"С возвращением, {dict(user)['fio']}!\n\n📱 Открыть платформу можно по ссылке:\n{auth_link}"
             )
         else:
-            # Начинаем регистрацию
             MAX_USER_STATES[max_id] = {
                 "state": "waiting_for_password",
                 "first_name": first_name,
@@ -84,18 +92,16 @@ async def message_handler(event: MessageCreated):
                 "🔐 Добро пожаловать в ВИКС Расписание!\n\nПожалуйста, введите ваш системный пароль:")
         return
 
-    # 2. ОБРАБОТКА ДИАЛОГА РЕГИСТРАЦИИ
     state_data = MAX_USER_STATES.get(max_id)
 
-    # Если состояний нет (обычное сообщение вне регистрации)
     if not state_data:
         if user:
-            await event.message.answer(f"Все функции доступны в мини-приложении 👇\n{WEB_APP_URL}")
+            auth_link = await generate_auth_link(max_id)
+            await event.message.answer(f"Все функции доступны в мини-приложении 👇\n{auth_link}")
         else:
             await event.message.answer("Для работы с ботом введите команду /start")
         return
 
-    # --- Шаг 1: Проверка пароля ---
     if state_data["state"] == "waiting_for_password":
         role = None
         if text == os.getenv("SUPERADMIN_PASS"):
@@ -116,23 +122,20 @@ async def message_handler(event: MessageCreated):
         await event.message.answer("✅ Пароль принят!\n\nТеперь введите ваше ФИО (Например: Иванов Иван):")
         return
 
-    # --- Шаг 2: Получение ФИО и завершение ---
     if state_data["state"] == "waiting_for_fio":
         role = state_data["role"]
         fio = text
 
-        # Сохраняем в БД
         await db.add_user(pseudo_tg_id, fio, role)
         await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался через MAX (Роль: {role})")
 
-        # Очищаем состояние
         del MAX_USER_STATES[max_id]
 
+        auth_link = await generate_auth_link(max_id)
         await event.message.answer(
-            f"🎉 Регистрация успешна!\n\n📱 Открыть платформу можно по ссылке:\n{WEB_APP_URL}"
+            f"🎉 Регистрация успешна!\n\n📱 Открыть платформу можно по ссылке:\n{auth_link}"
         )
 
-        # Отправляем уведомление администраторам в основную группу (через Telegram)
         bot_token = os.getenv("BOT_TOKEN")
         group_id = os.getenv("GROUP_CHAT_ID")
         if bot_token and group_id:
@@ -148,9 +151,13 @@ async def message_handler(event: MessageCreated):
 
 async def main():
     await db.init_db()
-
-    # Очищаем старые вебхуки перед запуском
     await clear_webhook()
+
+    try:
+        await db.conn.execute("CREATE TABLE IF NOT EXISTS web_codes (code TEXT, max_id INTEGER, expires REAL)")
+        await db.conn.commit()
+    except:
+        pass
 
     logger.info(">>> Бот MAX успешно запущен (Long Polling) <<<")
     await dp.start_polling(bot)

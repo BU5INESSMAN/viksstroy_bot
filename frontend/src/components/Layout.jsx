@@ -16,6 +16,7 @@ export default function Layout() {
 
     const [isTMA, setIsTMA] = useState(false);
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
+
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     useEffect(() => {
@@ -96,15 +97,15 @@ export default function Layout() {
 
     return (
         <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
-            {/* ИСПРАВЛЕННЫЙ ОТСТУП ДЛЯ TMA (pt-8 вместо pt-4) */}
+            {/* ОРИГИНАЛЬНАЯ ШАПКА + УВЕЛИЧЕННЫЙ ОТСТУП ДЛЯ TMA (pt-8 вместо pt-4) */}
             <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 ${isTMA ? 'pt-8' : 'pt-4'}`}>
                 {realRole && (
-                    <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-[60]">
+                    <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-50">
                         <span>Тест роли: {roleNames[role]}</span>
-                        <button onClick={endRoleTest} className="bg-black/20 hover:bg-black/30 px-3 py-1 rounded-lg text-xs transition cursor-pointer pointer-events-auto">Вернуться</button>
+                        <button onClick={endRoleTest} className="bg-black/20 hover:bg-black/30 px-3 py-1 rounded-lg text-xs transition">Вернуться</button>
                     </div>
                 )}
-                <nav className="px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center relative z-40">
+                <nav className="px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center relative">
                     <div className="flex-1 flex items-center">
                         <div className="w-28 h-8 bg-blue-600 dark:bg-blue-400 transition-colors" style={{
                             WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',

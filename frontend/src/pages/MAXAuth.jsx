@@ -5,7 +5,7 @@ import axios from 'axios';
 export default function MAXAuth() {
   const [code, setCode] = useState('');
   const [error, setError] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   const navigate = useNavigate();
   const location = useLocation();
@@ -13,16 +13,32 @@ export default function MAXAuth() {
   useEffect(() => {
     // Дублируем защиту от свайпов для страницы входа
     document.body.style.overscrollBehaviorY = 'none';
+
+    const searchParams = new URLSearchParams(location.search);
+    const authToken = searchParams.get('auth_token');
+
+    if (authToken) {
+      // Автоматический вход по токену из ссылки бота
+      handleAuth(authToken);
+    } else {
+      // Если токена нет (пользователь ввел /web), показываем ручной ввод
+      setIsLoading(false);
+    }
   }, []);
 
-  const handleAuth = async (e) => {
-    e.preventDefault();
+  const handleAuth = async (tokenOrEvent) => {
+    if (tokenOrEvent?.preventDefault) {
+      tokenOrEvent.preventDefault();
+    }
+
+    const codeToSubmit = typeof tokenOrEvent === 'string' ? tokenOrEvent : code.trim();
+
     setError('');
     setIsLoading(true);
 
     try {
       const formData = new FormData();
-      formData.append('code', code.trim());
+      formData.append('code', codeToSubmit);
 
       const response = await axios.post('/api/max/web_auth', formData);
 
@@ -36,7 +52,6 @@ export default function MAXAuth() {
       }
     } catch (err) {
       setError(err.response?.data?.detail || 'Неверный или устаревший код');
-    } finally {
       setIsLoading(false);
     }
   };
@@ -49,31 +64,41 @@ export default function MAXAuth() {
             <span className="text-4xl font-black text-green-600">M</span>
           </div>
           <h2 className="text-2xl font-bold text-white tracking-tight">Авторизация MAX</h2>
-          <p className="text-green-100 text-sm mt-2 opacity-90">Введите код из бота @viksstroy</p>
+          <p className="text-green-100 text-sm mt-2 opacity-90">Безопасный вход в систему</p>
         </div>
 
-        <div className="p-8">
-          <form onSubmit={handleAuth} className="space-y-6">
-            <div>
-              <input
-                type="text"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                required
-                maxLength="6"
-                placeholder="000000"
-                className="w-full px-4 py-4 text-center text-2xl tracking-widest font-mono border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
-              />
+        <div className="p-8 text-center">
+          {isLoading ? (
+            <div className="space-y-4">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-green-600 mx-auto"></div>
+              <p className="text-gray-600 dark:text-gray-300 font-medium">Автоматический вход...</p>
             </div>
-            {error && <p className="text-red-500 text-sm text-center font-bold">{error}</p>}
-            <button
-              type="submit"
-              disabled={isLoading || code.length < 6}
-              className="w-full bg-green-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-green-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isLoading ? 'Проверка...' : 'Войти'}
-            </button>
-          </form>
+          ) : (
+            <form onSubmit={handleAuth} className="space-y-6">
+              <div>
+                <p className="text-gray-600 dark:text-gray-300 font-medium mb-4 text-sm">
+                  Введите 6-значный код из бота @viksstroy:
+                </p>
+                <input
+                  type="text"
+                  value={code}
+                  onChange={(e) => setCode(e.target.value)}
+                  required
+                  maxLength="6"
+                  placeholder="000000"
+                  className="w-full px-4 py-4 text-center text-2xl tracking-widest font-mono border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 uppercase"
+                />
+              </div>
+              {error && <p className="text-red-500 text-sm text-center font-bold">{error}</p>}
+              <button
+                type="submit"
+                disabled={code.length < 6}
+                className="w-full bg-green-600 text-white font-bold py-4 rounded-xl shadow-lg hover:bg-green-700 transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                Войти
+              </button>
+            </form>
+          )}
         </div>
       </div>
     </div>
