@@ -1,11 +1,19 @@
 services:
-  bot:
+  bot_tg:
     build: .
     restart: unless-stopped
     env_file: .env
     volumes:
       - ./data:/app/data
     command: python main.py
+
+  bot_max:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+    command: python main_max.py
 
   api:
     build: .

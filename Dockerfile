@@ -21,4 +21,4 @@ COPY . .
 RUN mkdir -p data
 
 # Запускаем бота
-CMD ["python", "main.py"]
+CMD ["python", "main.py", "main_max.py"]
