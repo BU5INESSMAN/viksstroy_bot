@@ -12,18 +12,44 @@ export default function MAXAuth() {
   const location = useLocation();
 
   useEffect(() => {
-    // В MAX параметры пользователя передаются в URL при открытии приложения
-    const searchParams = new URLSearchParams(location.search);
-    const userId = searchParams.get('user_id');
-    const firstName = searchParams.get('first_name') || '';
-    const lastName = searchParams.get('last_name') || '';
+    // Универсальный парсер: ищет данные в URL (search/hash) или в JS-объекте MAX
+    const getParam = (key) => {
+        const searchParams = new URLSearchParams(location.search);
+        const hashParams = new URLSearchParams(location.hash.replace('#', '?'));
+        return searchParams.get(key) || hashParams.get(key);
+    };
+
+    let userId = getParam('user_id') || getParam('max_user_id') || getParam('max_id') || getParam('id');
+    let firstName = getParam('first_name') || '';
+    let lastName = getParam('last_name') || '';
+
+    // Если MAX передает данные внутри строки 'user' или 'maxWebAppData'
+    const userStr = getParam('user') || getParam('maxWebAppData') || getParam('tgWebAppData');
+    if (userStr) {
+        try {
+            const parsedData = JSON.parse(decodeURIComponent(userStr));
+            const u = parsedData.user ? (typeof parsedData.user === 'string' ? JSON.parse(parsedData.user) : parsedData.user) : parsedData;
+            userId = u.id || u.user_id || userId;
+            firstName = u.first_name || firstName;
+            lastName = u.last_name || lastName;
+        } catch(e) {}
+    }
+
+    // Поддержка, если MAX инжектит JS bridge (по аналогии с Telegram)
+    if (window.max?.initDataUnsafe?.user) {
+        const u = window.max.initDataUnsafe.user;
+        userId = u.id || userId;
+        firstName = u.first_name || firstName;
+        lastName = u.last_name || lastName;
+    }
 
     if (!userId) {
-      setError("Пожалуйста, откройте это приложение внутри мессенджера MAX.");
+      console.error("Auth params missing. Current URL:", window.location.href);
+      setError("Доступ запрещен. Пожалуйста, откройте это приложение через системную кнопку внутри мессенджера MAX.");
       return;
     }
 
-    const returnUrl = searchParams.get('return_to') || '/dashboard';
+    const returnUrl = getParam('return_to') || '/dashboard';
 
     const formData = new FormData();
     formData.append('max_id', userId);
@@ -44,7 +70,7 @@ export default function MAXAuth() {
       .catch(err => {
         setError(err.response?.data?.detail || 'Ошибка авторизации');
       });
-  }, [navigate, location.search]);
+  }, [navigate, location]);
 
   const handleRegister = async (e) => {
     e.preventDefault();
@@ -75,10 +101,10 @@ export default function MAXAuth() {
             <p className="text-gray-500 dark:text-gray-400 font-medium tracking-wide animate-pulse">Авторизация...</p>
         </div>
       ) : needsPassword ? (
-        <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-sm w-full border-t-4 border-blue-500">
+        <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-3xl shadow-xl max-w-sm w-full border-t-4 border-blue-500">
           <div className="flex justify-center mb-6">
-            <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center shadow-inner">
-                <span className="text-4xl text-blue-600 dark:text-blue-400">🛡️</span>
+            <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 rounded-2xl flex items-center justify-center shadow-inner transform rotate-3">
+                <span className="text-4xl text-blue-600 dark:text-blue-400 font-black">M</span>
             </div>
           </div>
           <h2 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-100">
@@ -96,14 +122,14 @@ export default function MAXAuth() {
                 placeholder="Системный пароль..."
                 className="w-full px-4 py-3 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-md">
+              <button type="submit" className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all active:scale-95">
               Привязать аккаунт
             </button>
-            {error && <p className="text-red-500 text-sm text-center font-medium">{error}</p>}
+            {error && <p className="text-red-500 text-sm text-center font-medium mt-2">{error}</p>}
           </form>
         </div>
       ) : (
-        <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-2xl shadow-xl max-w-sm w-full border-t-4 border-red-500">
+        <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-3xl shadow-xl max-w-sm w-full border-t-4 border-red-500">
           <span className="text-6xl block mb-4">❌</span>
           <h2 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-100">Доступ запрещен</h2>
           <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed mb-6">{error}</p>

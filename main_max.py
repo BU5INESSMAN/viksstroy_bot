@@ -34,7 +34,7 @@ WEB_APP_URL = "https://miniapp.viks22.ru/max"
 
 
 def get_webapp_keyboard():
-    # Стандартная кнопка для запуска мини-приложения в платформе
+    # Дублирующая кнопка на случай, если пользователь не найдет системную.
     return [
         [{"type": "link", "text": "📱 Открыть платформу", "url": WEB_APP_URL}]
     ]
@@ -55,10 +55,28 @@ async def clear_webhook():
 
 @dp.message_created(F.message.body.text)
 async def message_handler(event: MessageCreated):
-    # Логика регистрации полностью перенесена в React (MAXAuth.jsx)
-    text = "Добро пожаловать в ВИКС Расписание!\n\nИспользуйте системную кнопку «Открыть» или нажмите на кнопку ниже, чтобы запустить платформу."
+    text = event.message.body.text.strip()
+    max_id = event.message.sender.user_id
+    pseudo_tg_id = -int(max_id)
 
-    # Отправляем сообщение с прикрепленной кнопкой через aiohttp для надежности
+    user = await db.get_user(pseudo_tg_id)
+
+    # Формируем ответ точно как в Telegram (main.py)
+    if text.startswith("/start"):
+        if user:
+            if dict(user).get('is_blacklisted'):
+                msg = "Ваш аккаунт заблокирован."
+            else:
+                msg = f"С возвращением, <b>{dict(user)['fio']}</b>!\n\nИспользуйте системную кнопку «Открыть» или нажмите на кнопку ниже для запуска платформы:"
+        else:
+            msg = "🔐 <b>Добро пожаловать в ВИКС Расписание!</b>\n\nИспользуйте системную кнопку «Открыть» или нажмите на кнопку ниже для начала регистрации."
+    else:
+        if user:
+            msg = "Все функции доступны в мини-приложении 👇"
+        else:
+            msg = "Для работы с ботом введите команду /start или нажмите системную кнопку «Открыть»"
+
+    # Отправка ответа в MAX
     url = "https://platform-api.max.ru/messages"
     headers = {
         "Authorization": MAX_TOKEN,
@@ -66,7 +84,7 @@ async def message_handler(event: MessageCreated):
     }
     payload = {
         "chat_id": str(event.message.recipient.chat_id),
-        "text": text,
+        "text": msg,
         "format": "html",
         "inlineKeyboardMarkup": json.dumps(get_webapp_keyboard())
     }
@@ -75,7 +93,7 @@ async def message_handler(event: MessageCreated):
         try:
             await session.post(url, headers=headers, json=payload)
         except Exception as e:
-            logger.error(f"Ошибка отправки сообщения: {e}")
+            logger.error(f"Ошибка отправки сообщения в MAX: {e}")
 
 
 async def main():
