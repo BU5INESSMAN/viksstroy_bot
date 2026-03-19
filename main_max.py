@@ -3,7 +3,6 @@ import logging
 import os
 import sys
 import aiohttp
-import json
 from dotenv import load_dotenv
 
 from maxapi import Bot, Dispatcher, F
@@ -31,25 +30,18 @@ db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
 
 WEB_APP_URL = "https://miniapp.viks22.ru/max"
+# Формируем готовую гиперссылку для вставки в текст
+APP_LINK = f"<a href='{WEB_APP_URL}'>📱 Открыть платформу</a>"
 
 # In-memory хранилище состояний (FSM) для процесса регистрации
 USER_STATES = {}
 
 
-def get_webapp_keyboard():
-    return {
-        "inline_keyboard": [
-            [{"text": "📱 Открыть платформу", "web_app": {"url": WEB_APP_URL}}]
-        ]
-    }
-
-
-async def send_max_msg(event: MessageCreated, text: str, show_keyboard: bool = False):
-    """Надежная функция отправки сообщений, сочетающая aiohttp и нативный метод."""
-    # 1. Пытаемся отправить через HTTP напрямую для точного контроля клавиатуры
+async def send_max_msg(event: MessageCreated, text: str):
+    """Функция отправки сообщений (используем aiohttp как основной, нативный как запасной)."""
+    # 1. Отправка через API MAX (aiohttp) — самый надежный вариант с поддержкой HTML
     try:
         chat_id = None
-        # Извлекаем chat_id из правильной структуры объекта MAX
         if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
             chat_id = event.message.chat.id
         elif hasattr(event, "chat_id"):
@@ -59,10 +51,8 @@ async def send_max_msg(event: MessageCreated, text: str, show_keyboard: bool = F
             payload = {
                 "chat_id": str(chat_id),
                 "text": text,
-                "format": "html"
+                "format": "html"  # MAX поддерживает HTML теги, включая <a>
             }
-            if show_keyboard:
-                payload["inlineKeyboardMarkup"] = json.dumps(get_webapp_keyboard())
 
             url = "https://platform-api.max.ru/messages"
             headers = {
@@ -76,12 +66,10 @@ async def send_max_msg(event: MessageCreated, text: str, show_keyboard: bool = F
     except Exception as e:
         logger.warning(f"aiohttp send failed: {e}. Пытаемся использовать нативный метод.")
 
-    # 2. Если aiohttp не сработал, используем нативный метод как в simple_max_bot.py
+    # 2. Если aiohttp не сработал, используем нативный метод библиотеки (только текст)
     try:
-        if show_keyboard:
-            await event.message.answer(text, parse_mode="html", reply_markup=get_webapp_keyboard())
-        else:
-            await event.message.answer(text, parse_mode="html")
+        # Убрали reply_markup и parse_mode, чтобы избежать ошибок библиотеки
+        await event.message.answer(text)
     except Exception as e:
         logger.error(f"Критическая ошибка отправки: {e}")
 
@@ -103,16 +91,16 @@ async def message_handler(event: MessageCreated):
     if text.startswith("/start"):
         if user:
             if dict(user).get('is_blacklisted'):
-                await send_max_msg(event, "❌ Ваш аккаунт заблокирован. Обратитесь к руководству.", False)
+                await send_max_msg(event, "❌ Ваш аккаунт заблокирован. Обратитесь к руководству.")
             else:
                 USER_STATES.pop(max_id, None)
-                msg = f"С возвращением, <b>{dict(user)['fio']}</b>!\n\nИспользуйте системную кнопку «Открыть платформу» или нажмите на кнопку ниже для запуска:"
-                await send_max_msg(event, msg, True)
+                msg = f"С возвращением, <b>{dict(user)['fio']}</b>!\n\nНажмите на ссылку ниже для запуска:\n\n{APP_LINK}"
+                await send_max_msg(event, msg)
         else:
             # Начинаем процесс регистрации
             USER_STATES[max_id] = {"state": "waiting_for_password"}
             msg = "🔐 <b>Добро пожаловать в ВИКС Расписание!</b>\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль для регистрации:"
-            await send_max_msg(event, msg, False)
+            await send_max_msg(event, msg)
         return
 
     # FSM: ОЖИДАНИЕ ПАРОЛЯ
@@ -131,10 +119,9 @@ async def message_handler(event: MessageCreated):
             USER_STATES[max_id]["role"] = role
             USER_STATES[max_id]["state"] = "waiting_for_fio"
             await send_max_msg(event,
-                               "✅ Пароль принят.\n\nПожалуйста, введите ваше <b>ФИО</b> (Например: Иванов Иван):",
-                               False)
+                               "✅ Пароль принят.\n\nПожалуйста, введите ваше <b>ФИО</b> (Например: Иванов Иван):")
         else:
-            await send_max_msg(event, "❌ Неверный пароль. Попробуйте снова:", False)
+            await send_max_msg(event, "❌ Неверный пароль. Попробуйте снова:")
         return
 
     # FSM: ОЖИДАНИЕ ФИО
@@ -149,15 +136,15 @@ async def message_handler(event: MessageCreated):
         # Очищаем состояние
         USER_STATES.pop(max_id, None)
 
-        msg = f"🎉 <b>Регистрация успешно завершена!</b>\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇"
-        await send_max_msg(event, msg, True)
+        msg = f"🎉 <b>Регистрация успешно завершена!</b>\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇\n\n{APP_LINK}"
+        await send_max_msg(event, msg)
         return
 
     # ДЕФОЛТНЫЙ ОТВЕТ НА ЛЮБЫЕ ДРУГИЕ СООБЩЕНИЯ
     if user:
-        await send_max_msg(event, "Все функции доступны внутри мини-приложения 👇", True)
+        await send_max_msg(event, f"Все функции доступны внутри мини-приложения 👇\n\n{APP_LINK}")
     else:
-        await send_max_msg(event, "Для начала работы или регистрации введите команду /start", False)
+        await send_max_msg(event, "Для начала работы или регистрации введите команду /start")
 
 
 async def clear_webhook():
@@ -177,7 +164,7 @@ async def main():
     await db.init_db()
     await clear_webhook()
 
-    logger.info(">>> Бот MAX успешно запущен (Long Polling + FSM) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Без кнопок, с HTML ссылками) <<<")
     await dp.start_polling(bot)
 
 
