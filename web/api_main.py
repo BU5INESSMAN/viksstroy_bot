@@ -38,9 +38,7 @@ app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 TZ_BARNAUL = ZoneInfo("Asia/Barnaul")
 
 
-# --- СИСТЕМА АЛИАСОВ ID ДЛЯ СВЯЗКИ АККАУНТОВ ---
 async def resolve_id(raw_id: int):
-    """Преобразует вторичный ID в первичный, если аккаунты связаны."""
     async with db.conn.execute("SELECT primary_id FROM account_links WHERE secondary_id = ?", (raw_id,)) as cur:
         row = await cur.fetchone()
         if row: return row[0]
@@ -74,7 +72,7 @@ def download_font(url, filename):
             with urllib.request.urlopen(req, context=ctx) as response, open(filename, 'wb') as out_file:
                 out_file.write(response.read())
         except Exception as e:
-            print(f"Font download error: {e}")
+            pass
 
 
 def get_fonts():
@@ -269,8 +267,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
     async with aiohttp.ClientSession() as session:
         for cid in tg_chat_ids:
-            if int(cid) < 0:
-                continue
+            if int(cid) < 0: continue
             try:
                 await session.post(f"https://api.telegram.org/bot{bot_token}/sendMessage",
                                    json={"chat_id": cid, "text": text, "parse_mode": "HTML", "reply_markup": markup})
@@ -463,18 +460,14 @@ async def api_unlink_platform(tg_id: int = Form(...), platform: str = Form(...))
     try:
         if platform == 'max':
             if real_target_id < 0:
-                # Если MAX является корневым, удаляем связь, где он primary
                 await db.conn.execute("DELETE FROM account_links WHERE primary_id = ?", (real_target_id,))
             else:
-                # Если MAX вторичный
                 await db.conn.execute("DELETE FROM account_links WHERE primary_id = ? AND secondary_id < 0",
                                       (real_target_id,))
         elif platform == 'tg':
             if real_target_id > 0:
-                # Если Telegram является корневым
                 await db.conn.execute("DELETE FROM account_links WHERE primary_id = ?", (real_target_id,))
             else:
-                # Если Telegram вторичный
                 await db.conn.execute("DELETE FROM account_links WHERE primary_id = ? AND secondary_id > 0",
                                       (real_target_id,))
         await db.conn.commit()
@@ -697,7 +690,9 @@ async def api_get_profile(target_id: int):
         "links": {
             "has_tg": has_tg,
             "has_max": has_max,
-            "is_linked": len(linked_ids) > 0
+            "is_linked": len(linked_ids) > 0,
+            "secondary_tg": any(sid > 0 for sid in linked_ids) or (real_target_id > 0 and len(linked_ids) > 0),
+            "secondary_max": any(sid < 0 for sid in linked_ids) or (real_target_id < 0 and len(linked_ids) > 0)
         }
     }
 
@@ -765,10 +760,16 @@ async def api_delete_user(target_id: int, tg_id: int = Form(...)):
     return {"status": "ok"}
 
 
+# --- ГЕНЕРАЦИЯ 3-х ССЫЛОК ДЛЯ БРИГАД ---
 @app.post("/api/teams/{team_id}/generate_invite")
 async def api_generate_invite(team_id: int):
     invite_code, join_password = await db.generate_team_invite(team_id)
-    return {"invite_link": f"https://miniapp.viks22.ru/invite/{invite_code}", "join_password": join_password}
+    return {
+        "invite_link": f"https://miniapp.viks22.ru/invite/{invite_code}",
+        "tg_bot_link": f"https://t.me/viksstroy_bot?start=invite_{invite_code}",
+        "max_bot_link": f"https://max.ru/id222264297116_bot?start=invite_{invite_code}",
+        "join_password": join_password
+    }
 
 
 @app.get("/api/invite/{invite_code}")
@@ -1280,6 +1281,7 @@ async def delete_equipment(equip_id: int, tg_id: int = Form(0)):
     return {"status": "ok"}
 
 
+# --- ГЕНЕРАЦИЯ 3-х ССЫЛОК ДЛЯ ТЕХНИКИ ---
 @app.post("/api/equipment/{equip_id}/generate_invite")
 async def generate_equip_invite(equip_id: int):
     async with db.conn.execute("SELECT invite_code FROM equipment WHERE id = ?", (equip_id,)) as cursor:
@@ -1293,8 +1295,11 @@ async def generate_equip_invite(equip_id: int):
                 await db.conn.commit()
             except:
                 await db.conn.rollback()
-    return {"invite_link": f"https://miniapp.viks22.ru/equip-invite/{code}",
-            "tg_bot_link": f"https://t.me/{os.getenv('BOT_USERNAME', 'viksstroy_bot')}?start=equip_{code}"}
+    return {
+        "invite_link": f"https://miniapp.viks22.ru/equip-invite/{code}",
+        "tg_bot_link": f"https://t.me/viksstroy_bot?start=equip_{code}",
+        "max_bot_link": f"https://max.ru/id222264297116_bot?start=equip_{code}"
+    }
 
 
 @app.get("/api/equipment/invite/{invite_code}")

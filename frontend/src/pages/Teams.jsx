@@ -12,119 +12,213 @@ export default function Teams() {
     const [manageTeamData, setManageTeamData] = useState(null);
     const [newMember, setNewMember] = useState({ fio: '', position: 'Рабочий', is_foreman: false });
     const [inviteInfo, setInviteInfo] = useState(null);
-    const [copiedLink, setCopiedLink] = useState('');
 
     const fetchData = () => { axios.get('/api/dashboard').then(res => setTeams(res.data.teams || [])).catch(()=>{}); };
     useEffect(() => { fetchData(); }, []);
 
-    const handleCreateTeam = async (e) => { 
-        e.preventDefault(); 
-        try { 
-            const fd = new FormData(); 
-            fd.append('name', newTeamName); 
-            fd.append('tg_id', tgId); 
-            await axios.post('/api/teams/create', fd); 
-            setTeamModalOpen(false); 
-            setNewTeamName(''); 
-            fetchData(); 
-        } catch (err) { alert("Ошибка"); } 
+    const handleCreateTeam = async (e) => {
+        e.preventDefault();
+        try {
+            const fd = new FormData();
+            fd.append('name', newTeamName);
+            fd.append('tg_id', tgId);
+            await axios.post('/api/teams/create', fd);
+            setTeamModalOpen(false);
+            setNewTeamName('');
+            fetchData();
+        } catch (e) { alert("Ошибка создания"); }
     };
-    
-    const openManageModal = async (teamId) => { try { const res = await axios.get(`/api/teams/${teamId}/details`); setManageTeamData(res.data); setManageModalOpen(true); } catch (err) { alert("Ошибка"); } };
-    const handleGenerateInvite = async (teamId) => { try { const res = await axios.post(`/api/teams/${teamId}/generate_invite`); setInviteInfo(res.data); } catch (err) { alert("Ошибка!"); } };
-    const handleAddMember = async (e) => { e.preventDefault(); try { const fd = new FormData(); fd.append('fio', newMember.fio); fd.append('position', newMember.position); fd.append('is_foreman', newMember.is_foreman ? 1 : 0); fd.append('tg_id', tgId); await axios.post(`/api/teams/${manageTeamData.id}/members/add`, fd); setNewMember({ fio: '', position: 'Рабочий', is_foreman: false }); const res = await axios.get(`/api/teams/${manageTeamData.id}/details`); setManageTeamData(res.data); fetchData(); } catch (err) { alert("Ошибка"); } };
-    const handleToggleForeman = async (memberId, currentStatus) => { try { const fd = new FormData(); fd.append('is_foreman', currentStatus ? 0 : 1); fd.append('tg_id', tgId); await axios.post(`/api/teams/members/${memberId}/toggle_foreman`, fd); const res = await axios.get(`/api/teams/${manageTeamData.id}/details`); setManageTeamData(res.data); fetchData(); } catch (err) { alert("Ошибка"); } };
-    const handleDeleteMember = async (memberId) => { if(!window.confirm('Удалить участника?')) return; try { const fd = new FormData(); fd.append('tg_id', tgId); await axios.post(`/api/teams/members/${memberId}/delete`, fd); const res = await axios.get(`/api/teams/${manageTeamData.id}/details`); setManageTeamData(res.data); fetchData(); } catch (err) { alert("Ошибка"); } };
-    const copyToClipboard = (text, type) => { navigator.clipboard.writeText(text); setCopiedLink(type); setTimeout(() => setCopiedLink(''), 2000); };
 
-    const handleDeleteEntireTeam = async () => {
-        if (!window.confirm(`ВНИМАНИЕ! Вы уверены, что хотите полностью удалить бригаду «${manageTeamData.name}»? Это действие нельзя отменить.`)) return;
+    const openManageModal = async (teamId) => {
+        try {
+            const res = await axios.get(`/api/teams/${teamId}/details`);
+            setManageTeamData(res.data);
+            setManageModalOpen(true);
+        } catch (e) { alert("Ошибка загрузки"); }
+    };
+
+    const handleAddMember = async (e) => {
+        e.preventDefault();
+        try {
+            const fd = new FormData();
+            fd.append('fio', newMember.fio);
+            fd.append('position', newMember.position);
+            fd.append('is_foreman', newMember.is_foreman ? 1 : 0);
+            fd.append('tg_id', tgId);
+            await axios.post(`/api/teams/${manageTeamData.id}/members/add`, fd);
+            setNewMember({ fio: '', position: 'Рабочий', is_foreman: false });
+            openManageModal(manageTeamData.id);
+        } catch (e) { alert("Ошибка"); }
+    };
+
+    const handleToggleForeman = async (memberId, currentStatus) => {
+        try {
+            const fd = new FormData();
+            fd.append('is_foreman', currentStatus ? 0 : 1);
+            fd.append('tg_id', tgId);
+            await axios.post(`/api/teams/members/${memberId}/toggle_foreman`, fd);
+            openManageModal(manageTeamData.id);
+        } catch (e) { alert("Ошибка"); }
+    };
+
+    const handleDeleteMember = async (memberId) => {
+        if(!window.confirm("Удалить?")) return;
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
-            await axios.post(`/api/teams/${manageTeamData.id}/delete`, fd);
-            alert("Бригада успешно удалена.");
-            setManageModalOpen(false);
-            fetchData();
-        } catch (err) { alert("Ошибка при удалении бригады"); }
+            await axios.post(`/api/teams/members/${memberId}/delete`, fd);
+            openManageModal(manageTeamData.id);
+        } catch (e) { alert("Ошибка"); }
     };
 
+    const handleDeleteTeam = async (teamId) => {
+        if(!window.confirm("Удалить бригаду и всех участников?")) return;
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            await axios.post(`/api/teams/${teamId}/delete`, fd);
+            setManageModalOpen(false);
+            fetchData();
+        } catch (e) { alert("Ошибка"); }
+    };
+
+    const generateInviteLink = async (teamId) => {
+        try {
+            const res = await axios.post(`/api/teams/${teamId}/generate_invite`);
+            setInviteInfo(res.data);
+            setManageModalOpen(false);
+        } catch (e) {
+            alert("Ошибка генерации инвайта");
+        }
+    };
+
+    // НОВАЯ ФУНКЦИЯ КОПИРОВАНИЯ СООБЩЕНИЯ В БУФЕР
+    const copyInviteMessage = () => {
+        if (!inviteInfo) return;
+        const text = `🏗 Приглашение в бригаду «${manageTeamData?.name || 'ВИКС'}»!
+
+Для подключения к платформе перейдите по одной из ссылок:
+✈️ Telegram: ${inviteInfo.tg_bot_link}
+📱 MAX: ${inviteInfo.max_bot_link}
+🌐 Web: ${inviteInfo.invite_link}
+
+🔑 Код доступа: ${inviteInfo.join_password}`;
+
+        navigator.clipboard.writeText(text);
+        alert("Сообщение скопировано в буфер обмена!");
+    };
+
+    const canEdit = ['superadmin', 'boss', 'moderator'].includes(role);
+
     return (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
-              <h2 className="text-lg font-bold mb-4 flex items-center">👥 Управление бригадами</h2>
-              {teams.length > 0 ? (
-                  <ul className="space-y-3">
-                  {teams.map(t => (
-                      <li key={t.id} className="p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 transition-colors">
-                          <span className="font-medium text-gray-800 dark:text-gray-200">🏗 {t.name}</span>
-                          <div className="flex space-x-2 w-full sm:w-auto mt-2 sm:mt-0">
-                              <button onClick={() => handleGenerateInvite(t.id)} className="flex-1 sm:flex-none text-green-700 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-3 py-1.5 rounded hover:bg-green-200 dark:hover:bg-green-900/60 text-sm font-medium transition">🔗 Ссылка</button>
-                              <button onClick={() => openManageModal(t.id)} className="flex-1 sm:flex-none text-blue-700 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-3 py-1.5 rounded hover:bg-blue-200 dark:hover:bg-blue-900/60 text-sm font-medium transition">Управлять</button>
-                          </div>
-                      </li>
-                  ))}
-                  </ul>
-              ) : (<p className="text-gray-500 dark:text-gray-400 text-sm">Список пуст.</p>)}
-              <button onClick={() => setTeamModalOpen(true)} className="mt-5 w-full bg-gray-50 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 py-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 font-medium transition-colors">+ Создать новую бригаду</button>
+        <div className="p-4 max-w-lg mx-auto">
+            <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-bold dark:text-white">Бригады</h1>
+                {canEdit && <button onClick={() => setTeamModalOpen(true)} className="bg-blue-600 text-white w-10 h-10 rounded-full font-bold text-xl shadow hover:bg-blue-700">+</button>}
             </div>
 
-            {/* ОКНО СОЗДАНИЯ НОВОЙ БРИГАДЫ */}
+            <div className="space-y-3">
+                {teams.length === 0 ? (
+                    <p className="text-gray-500 text-center">Нет активных бригад</p>
+                ) : teams.map(t => (
+                    <div key={t.id} onClick={() => openManageModal(t.id)} className="bg-white dark:bg-gray-800 p-4 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 cursor-pointer active:scale-95 transition-transform flex justify-between items-center">
+                        <span className="font-bold text-gray-800 dark:text-gray-100">{t.name}</span>
+                        <span className="text-xl">⚙️</span>
+                    </div>
+                ))}
+            </div>
+
             {isTeamModalOpen && (
-                <div className="fixed inset-0 z-[110] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-2xl w-full max-w-sm relative transition-colors">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold dark:text-white">Новая бригада</h3>
-                            <button onClick={() => setTeamModalOpen(false)} className="text-gray-400 hover:text-red-500 text-3xl leading-none transition">&times;</button>
-                        </div>
+                <div className="fixed inset-0 z-50 bg-black/50 flex justify-center items-center p-4">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-sm">
+                        <h2 className="text-xl font-bold mb-4 dark:text-white">Новая бригада</h2>
                         <form onSubmit={handleCreateTeam}>
-                            <input type="text" required value={newTeamName} onChange={e => setNewTeamName(e.target.value)} placeholder="Название бригады" className="w-full px-4 py-3 border dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl mb-4 outline-none dark:text-white focus:ring-2 focus:ring-blue-500" />
-                            <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-xl shadow-md transition">Создать</button>
+                            <input type="text" placeholder="Название бригады" value={newTeamName} onChange={e => setNewTeamName(e.target.value)} required className="w-full px-4 py-3 mb-4 border dark:border-gray-600 rounded-xl outline-none dark:bg-gray-700 dark:text-white"/>
+                            <div className="flex space-x-3">
+                                <button type="button" onClick={() => setTeamModalOpen(false)} className="w-1/2 py-3 bg-gray-200 dark:bg-gray-700 rounded-xl font-bold">Отмена</button>
+                                <button type="submit" className="w-1/2 py-3 bg-blue-600 text-white rounded-xl font-bold">Создать</button>
+                            </div>
                         </form>
                     </div>
                 </div>
             )}
 
             {isManageModalOpen && manageTeamData && (
-                <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm">
-                    <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
-                        <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-xl w-full max-w-lg relative transition-colors">
-                            
-                            <div className="flex justify-between items-center mb-6">
-                                <h3 className="text-xl font-bold dark:text-white">Бригада «{manageTeamData?.name}»</h3>
-                                <div className="flex items-center space-x-3">
-                                    {['moderator', 'boss', 'superadmin'].includes(role) && (
-                                        <button onClick={handleDeleteEntireTeam} className="bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1.5 rounded-lg text-xs font-bold transition border border-red-200 dark:border-red-800">🗑 Удалить бригаду</button>
+                <div className="fixed inset-0 z-[100] bg-black/50 flex justify-center items-start pt-10 px-4 overflow-y-auto pb-20">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 w-full max-w-md shadow-2xl relative">
+                        <button onClick={() => setManageModalOpen(false)} className="absolute top-4 right-4 text-gray-500 text-2xl leading-none">&times;</button>
+                        <h2 className="text-2xl font-bold mb-1 pr-6 dark:text-white">{manageTeamData.name}</h2>
+
+                        <div className="mt-4 space-y-2">
+                            {manageTeamData.members.length === 0 ? <p className="text-sm text-gray-500">Нет участников</p> :
+                            manageTeamData.members.map(m => (
+                                <div key={m.id} className={`flex items-center justify-between p-3 rounded-xl border ${m.is_foreman ? 'border-blue-400 bg-blue-50 dark:bg-blue-900/20' : 'border-gray-200 dark:border-gray-700 dark:bg-gray-750'}`}>
+                                    <div className="flex-1 min-w-0 pr-2">
+                                        <p className="font-bold text-sm text-gray-900 dark:text-white truncate flex items-center">
+                                            {m.fio} {m.is_linked ? <span className="ml-2 w-2 h-2 rounded-full bg-green-500" title="Аккаунт привязан"></span> : null}
+                                        </p>
+                                        <p className="text-xs text-gray-500 truncate">{m.position} {m.is_foreman ? '(Прораб)' : ''}</p>
+                                    </div>
+                                    {canEdit && (
+                                        <div className="flex items-center space-x-1 shrink-0">
+                                            <button onClick={() => handleToggleForeman(m.id, m.is_foreman)} className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm transition ${m.is_foreman ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'}`} title="Сделать прорабом">👷</button>
+                                            <button onClick={() => handleDeleteMember(m.id)} className="w-8 h-8 flex items-center justify-center rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 text-sm">✖</button>
+                                        </div>
                                     )}
-                                    <button onClick={() => setManageModalOpen(false)} className="text-gray-400 hover:text-red-500 text-3xl leading-none transition">&times;</button>
                                 </div>
-                            </div>
-                            
-                            <div className="mb-6"><h4 className="font-bold text-gray-700 dark:text-gray-300 mb-3">Состав ({manageTeamData?.members?.length || 0} чел.)</h4><div className="max-h-64 overflow-y-auto space-y-2 border dark:border-gray-700 rounded-xl p-3 bg-gray-50 dark:bg-gray-900/50">{manageTeamData?.members?.map(m => (<div key={m.id} className={`flex justify-between items-center p-3 rounded-lg border shadow-sm text-sm transition-colors ${m.is_foreman ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-700/50' : 'bg-white dark:bg-gray-700 dark:border-gray-600'}`}><div><p className="font-bold text-gray-800 dark:text-gray-200">{m.fio}{m.is_foreman && <span className="ml-2 bg-yellow-100 dark:bg-yellow-800 text-yellow-800 dark:text-yellow-200 text-[10px] uppercase font-extrabold px-2 py-0.5 rounded shadow-sm">⭐️ Бригадир</span>}</p><p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mt-1.5">{m.position} {m.is_linked ? <span className="text-green-600 font-bold ml-1">✓ Привязан</span> : ''}</p></div><div className="flex flex-col space-y-1"><button onClick={() => handleToggleForeman(m.id, m.is_foreman)} className={`font-bold px-2 py-1 rounded-md text-xs transition ${m.is_foreman ? 'bg-gray-200 dark:bg-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-300' : 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 hover:bg-yellow-200'}`}>{m.is_foreman ? 'Снять статус' : '⭐️ Назначить'}</button><button onClick={() => handleDeleteMember(m.id)} className="text-red-500 dark:text-red-400 font-bold px-2 py-1 bg-red-50 dark:bg-red-900/20 rounded-md hover:bg-red-100 transition">Удалить</button></div></div>))}</div></div><form onSubmit={handleAddMember} className="bg-blue-50 dark:bg-blue-900/20 p-5 rounded-xl border border-blue-100 dark:border-blue-800"><h4 className="font-bold text-blue-800 dark:text-blue-400 mb-3 text-sm uppercase tracking-wide">Добавить участника</h4><div className="flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2 mb-3"><input type="text" required value={newMember.fio} onChange={e => setNewMember({...newMember, fio: e.target.value})} placeholder="ФИО" className="w-full sm:w-2/3 px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-sm outline-none shadow-sm" /><input type="text" required value={newMember.position} onChange={e => setNewMember({...newMember, position: e.target.value})} placeholder="Должность" className="w-full sm:w-1/3 px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg text-sm outline-none shadow-sm" /></div><div className="flex items-center mb-4"><input type="checkbox" id="is_foreman_cb" checked={newMember.is_foreman} onChange={e => setNewMember({...newMember, is_foreman: e.target.checked})} className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" /><label htmlFor="is_foreman_cb" className="ml-2 text-sm font-bold text-gray-700 dark:text-gray-300 cursor-pointer">⭐️ Назначить бригадиром</label></div><button type="submit" className="w-full bg-blue-600 text-white py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-md">Добавить в состав</button></form></div></div></div>
-            )}
-            
-            {inviteInfo && (
-                <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-2xl w-full max-w-md">
-                        <h3 className="text-xl font-bold mb-4 text-center dark:text-white">Приглашение</h3>
-                        <div className="space-y-4 mb-6">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wide">🤖 Бот (Для Telegram):</label>
-                                <button onClick={() => copyToClipboard(inviteInfo.tg_bot_link, 'tg')} className="w-full text-left px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-gray-50 dark:bg-gray-700 font-medium hover:bg-gray-100 dark:hover:bg-gray-600 transition shadow-sm text-blue-600 dark:text-blue-400">
-                                    {copiedLink === 'tg' ? '✅ Успешно скопировано!' : '🔗 Нажмите, чтобы скопировать'}
-                                </button>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wide">🌐 Прямая Web-ссылка:</label>
-                                <button onClick={() => copyToClipboard(inviteInfo.invite_link, 'web')} className="w-full text-left px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-gray-50 dark:bg-gray-700 font-medium hover:bg-gray-100 dark:hover:bg-gray-600 transition shadow-sm text-blue-600 dark:text-blue-400">
-                                    {copiedLink === 'web' ? '✅ Успешно скопировано!' : '🔗 Нажмите, чтобы скопировать'}
-                                </button>
-                            </div>
+                            ))}
                         </div>
-                        <button onClick={() => setInviteInfo(null)} className="w-full bg-gray-800 dark:bg-gray-700 text-white py-3.5 rounded-xl font-bold shadow-md hover:bg-gray-900 transition">Готово</button>
+
+                        {canEdit && (
+                            <form onSubmit={handleAddMember} className="mt-6 border-t dark:border-gray-700 pt-4">
+                                <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300 mb-3">Добавить участника</h3>
+                                <div className="space-y-3">
+                                    <input type="text" placeholder="ФИО" value={newMember.fio} onChange={e => setNewMember({...newMember, fio: e.target.value})} required className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm dark:bg-gray-700 dark:text-white outline-none"/>
+                                    <input type="text" placeholder="Специальность (напр: Сварщик)" value={newMember.position} onChange={e => setNewMember({...newMember, position: e.target.value})} required className="w-full px-3 py-2 border dark:border-gray-600 rounded-lg text-sm dark:bg-gray-700 dark:text-white outline-none"/>
+                                    <button type="submit" className="w-full py-2.5 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 font-bold rounded-lg text-sm">Добавить в список</button>
+                                </div>
+                            </form>
+                        )}
+
+                        <div className="mt-6 pt-4 border-t dark:border-gray-700 space-y-3">
+                            {canEdit && <button onClick={() => generateInviteLink(manageTeamData.id)} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700 transition flex justify-center items-center">🔗 Пригласить в бригаду</button>}
+                            {canEdit && <button onClick={() => handleDeleteTeam(manageTeamData.id)} className="w-full py-3 bg-red-50 dark:bg-red-900/20 text-red-600 font-bold rounded-xl hover:bg-red-100 transition">Удалить бригаду</button>}
+                        </div>
                     </div>
                 </div>
             )}
-        </main>
+
+            {inviteInfo && (
+                <div className="fixed inset-0 z-[200] bg-black/60 flex justify-center items-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl">
+                        <div className="text-center mb-4">
+                            <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3"><span className="text-3xl">🔗</span></div>
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Приглашение</h2>
+                            <p className="text-sm text-gray-500 mt-1">Пароль для вступления:</p>
+                            <p className="text-4xl font-mono font-black text-blue-600 dark:text-blue-400 mt-2 tracking-widest">{inviteInfo.join_password}</p>
+                        </div>
+
+                        <div className="space-y-3 mb-6">
+                            <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-200 dark:border-gray-600 text-center">
+                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Telegram Бот</p>
+                                <p className="text-sm text-gray-800 dark:text-gray-200 break-all">{inviteInfo.tg_bot_link}</p>
+                            </div>
+                            <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-200 dark:border-gray-600 text-center">
+                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">MAX Бот</p>
+                                <p className="text-sm text-gray-800 dark:text-gray-200 break-all">{inviteInfo.max_bot_link}</p>
+                            </div>
+                        </div>
+
+                        {/* КНОПКА СКОПИРОВАТЬ СООБЩЕНИЕ */}
+                        <button onClick={copyInviteMessage} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95 mb-3 flex justify-center items-center space-x-2">
+                            <span>📄</span>
+                            <span>Скопировать сообщение</span>
+                        </button>
+
+                        <button onClick={() => setInviteInfo(null)} className="w-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold py-3.5 rounded-xl transition-all">Закрыть</button>
+                    </div>
+                </div>
+            )}
+        </div>
     );
 }

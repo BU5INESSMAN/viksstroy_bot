@@ -7,7 +7,7 @@ import random
 import time
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart, Command
+from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
@@ -28,7 +28,7 @@ dp = Dispatcher()
 db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
 
-WEB_APP_URL = "https://miniapp.viks22.ru/tma"
+WEB_APP_URL = "https://miniapp.viks22.ru"
 
 
 class RegState(StatesGroup):
@@ -38,7 +38,8 @@ class RegState(StatesGroup):
 
 def get_webapp_keyboard():
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="📱 Открыть платформу", web_app=WebAppInfo(url=WEB_APP_URL))]]
+        inline_keyboard=[
+            [InlineKeyboardButton(text="📱 Открыть платформу", web_app=WebAppInfo(url=f"{WEB_APP_URL}/tma"))]]
     )
 
 
@@ -50,7 +51,27 @@ async def resolve_id(raw_id: int):
 
 
 @dp.message(CommandStart())
-async def cmd_start(message: types.Message, state: FSMContext):
+async def cmd_start(message: types.Message, command: CommandObject, state: FSMContext):
+    # ОБРАБОТКА ДИПЛИНКОВ TELEGRAM
+    args = command.args
+    if args:
+        if args.startswith("invite_"):
+            code = args.split('_')[1]
+            url = f"{WEB_APP_URL}/invite/{code}"
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="Вступить в бригаду", web_app=WebAppInfo(url=url))]])
+            return await message.answer(
+                "Вам пришло приглашение в бригаду. Нажмите на кнопку ниже, чтобы выбрать свой профиль:",
+                reply_markup=kb)
+        elif args.startswith("equip_"):
+            code = args.split('_')[1]
+            url = f"{WEB_APP_URL}/equip-invite/{code}"
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="Привязать технику", web_app=WebAppInfo(url=url))]])
+            return await message.answer(
+                "Привязка техники. Нажмите на кнопку ниже, чтобы закрепить технику за вашим аккаунтом:",
+                reply_markup=kb)
+
     raw_id = message.from_user.id
     tg_id = await resolve_id(raw_id)
     user = await db.get_user(tg_id)
@@ -92,7 +113,6 @@ async def process_password(message: types.Message, state: FSMContext):
     text = message.text.strip()
     raw_id = message.from_user.id
 
-    # ПРОВЕРКА: Возможно это код привязки аккаунта
     if len(text) == 6 and text.isdigit():
         async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (text,)) as cur:
             row = await cur.fetchone()
@@ -143,7 +163,6 @@ async def process_fio(message: types.Message, state: FSMContext):
         reply_markup=get_webapp_keyboard(), parse_mode="html")
 
 
-# --- Планировщик ---
 async def call_api(endpoint):
     url = f"http://127.0.0.1:8000{endpoint}"
     async with aiohttp.ClientSession() as session:
@@ -190,7 +209,7 @@ async def main():
     scheduler.add_job(backup_database, 'cron', hour=3, minute=0, id='backup_database')
     scheduler.start()
 
-    logger.info(">>> Бот ВИКС Расписание успешно запущен (Asia/Barnaul) <<<")
+    logger.info(">>> Бот ВИКС Расписание успешно запущен (Deep Links) <<<")
     await dp.start_polling(bot)
 
 

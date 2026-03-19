@@ -1,11 +1,11 @@
-import { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 
 export default function JoinTeam() {
   const { code } = useParams();
   const navigate = useNavigate();
-  const telegramWrapperRef = useRef(null);
+  const location = useLocation();
 
   const [teamData, setTeamData] = useState(null);
   const [error, setError] = useState('');
@@ -13,6 +13,7 @@ export default function JoinTeam() {
 
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [isConfirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [joinPassword, setJoinPassword] = useState('');
 
   useEffect(() => {
     axios.get(`/api/invite/${code}`)
@@ -21,94 +22,125 @@ export default function JoinTeam() {
   }, [code]);
 
   useEffect(() => {
-    const tg = window.Telegram?.WebApp;
-    const tgUser = tg?.initDataUnsafe?.user;
+    // УНИВЕРСАЛЬНЫЙ ПАРСЕР ДЛЯ TELEGRAM И MAX
+    const getParam = (key) => {
+        const searchParams = new URLSearchParams(location.search);
+        const hashParams = new URLSearchParams(location.hash.replace('#', '?'));
+        return searchParams.get(key) || hashParams.get(key);
+    };
 
-    // ЕСЛИ ОТКРЫТО В ТЕЛЕГРАМ - АВТОМАТИЧЕСКАЯ АВТОРИЗАЦИЯ
-    if (tgUser && tgUser.id && !tgId) {
-        const formData = new FormData();
-        formData.append('tg_id', tgUser.id);
-        formData.append('first_name', tgUser.first_name || '');
-        formData.append('last_name', tgUser.last_name || '');
-        axios.post('/api/tma/auth', formData).then(res => {
-            setTgId(tgUser.id);
-            localStorage.setItem('tg_id', tgUser.id);
-            if (res.data.role) localStorage.setItem('user_role', res.data.role);
-        }).catch(() => setError("Ошибка авторизации TMA"));
+    let detectedUserId = tgId;
+
+    // 1. Проверяем Telegram WebApp JS Bridge
+    if (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) {
+        detectedUserId = window.Telegram.WebApp.initDataUnsafe.user.id;
     }
-    // ЕСЛИ ОТКРЫТО В БРАУЗЕРЕ (САФАРИ/ХРОМ) - ПОКАЗЫВАЕМ ВИДЖЕТ
-    else if (teamData && !tgId && telegramWrapperRef.current && telegramWrapperRef.current.children.length === 0) {
-        window.onTelegramAuthInvite = async (user) => {
-            try {
-              const response = await axios.post('/api/telegram_auth', user);
-              setTgId(response.data.tg_id);
-              localStorage.setItem('tg_id', response.data.tg_id);
-              if (response.data.role) localStorage.setItem('user_role', response.data.role);
-            } catch (err) { setError(err.response?.data?.detail || 'Ошибка авторизации'); }
-        };
-        const script = document.createElement('script');
-        script.src = 'https://telegram.org/js/telegram-widget.js?22';
-        script.setAttribute('data-telegram-login', 'viksstroy_bot');
-        script.setAttribute('data-size', 'large');
-        script.setAttribute('data-onauth', 'onTelegramAuthInvite(user)');
-        script.async = true;
-        telegramWrapperRef.current.appendChild(script);
+
+    // 2. Проверяем параметры в URL (MAX WebAppData или Telegram params)
+    const webAppDataStr = getParam('WebAppData') || getParam('tgWebAppData');
+    if (webAppDataStr) {
+        try {
+            const params = new URLSearchParams(webAppDataStr);
+            const userParam = params.get('user');
+            if (userParam) {
+                const u = JSON.parse(userParam);
+                if (u.id || u.user_id) detectedUserId = u.id || u.user_id;
+            }
+        } catch(e) {}
     }
-  }, [tgId, teamData]);
 
-  const handleWorkerClick = (worker) => { setSelectedWorker(worker); setConfirmModalOpen(true); };
+    // 3. Прямые параметры MAX
+    if (!detectedUserId) {
+        const maxId = getParam('user_id') || getParam('max_id');
+        if (maxId) detectedUserId = maxId;
+    }
 
-  const handleConfirmJoin = async () => {
+    if (detectedUserId && detectedUserId !== tgId) {
+        setTgId(detectedUserId);
+        localStorage.setItem('tg_id', detectedUserId);
+    }
+  }, [location, tgId]);
+
+  const handleJoin = async () => {
+    if (!tgId) return alert("Не удалось определить ваш ID. Пожалуйста, откройте ссылку из бота.");
     try {
-      const formData = new FormData();
-      formData.append('invite_code', code);
-      formData.append('worker_id', selectedWorker.id);
-      formData.append('tg_id', tgId);
-      await axios.post('/api/invite/join', formData);
-      navigate('/dashboard');
-    } catch (err) { setError(err.response?.data?.detail || "Ошибка"); setConfirmModalOpen(false); }
+        const fd = new FormData();
+        fd.append('invite_code', code);
+        fd.append('worker_id', selectedWorker.id);
+        fd.append('tg_id', tgId);
+
+        await axios.post('/api/invite/join', fd);
+
+        alert("Успешно привязано!");
+
+        // Редирект в зависимости от среды
+        if (window.location.search.includes('WebAppData') || window.location.pathname.includes('/max')) {
+             navigate('/max');
+        } else if (window.Telegram?.WebApp?.initData) {
+             navigate('/tma');
+        } else {
+             navigate('/');
+        }
+    } catch (e) {
+        alert(e.response?.data?.detail || "Ошибка привязки");
+    }
   };
 
-  if (error && !teamData) return (<div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 p-4 transition-colors"><div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 p-6 rounded-2xl shadow-xl w-full max-w-sm text-center"><p className="font-bold text-lg mb-2">Ошибка: {error}</p><p className="text-sm">Попросите прислать новую ссылку.</p><button onClick={() => navigate('/')} className="mt-6 bg-white dark:bg-gray-800 text-gray-800 dark:text-white border px-4 py-2 rounded-lg font-medium">На главную</button></div></div>);
-  if (!teamData) return <div className="flex items-center justify-center min-h-screen text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900 transition-colors">Загрузка данных...</div>;
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+        <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl max-w-sm w-full border-t-4 border-red-500">
+            <span className="text-6xl block mb-4">❌</span>
+            <h2 className="text-xl font-bold mb-2 dark:text-white">Ошибка</h2>
+            <p className="text-gray-600 dark:text-gray-400 text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 dark:bg-gray-900 p-4 transition-colors">
-      <div className="bg-white dark:bg-gray-800 p-8 rounded-2xl shadow-xl w-full max-w-lg border border-transparent dark:border-gray-700">
-        <h1 className="text-2xl font-bold text-center text-blue-600 dark:text-blue-400 mb-2">ВИКС Расписание</h1>
-        <h2 className="text-lg text-center font-medium text-gray-700 dark:text-gray-300 mb-6">Приглашение в бригаду<br/><span className="text-blue-600 dark:text-blue-400 font-bold">«{teamData.team_name}»</span></h2>
-
-        {error && (<div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 p-4 rounded-xl mb-4 text-center"><p className="font-bold text-sm mb-1">Ошибка: {error}</p></div>)}
-
-        {!tgId ? (
-          <div className="text-center"><p className="text-gray-600 dark:text-gray-400 mb-4 text-sm font-medium">Для вступления необходимо авторизоваться:</p><div className="flex justify-center min-h-[40px]" ref={telegramWrapperRef}></div></div>
-        ) : teamData.unclaimed_workers.length === 0 ? (
-          <div className="text-center bg-gray-100 dark:bg-gray-700 p-6 rounded-xl text-gray-500 dark:text-gray-300 font-medium">В данной бригаде больше нет свободных мест.</div>
+    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 transition-colors">
+      <div className="w-full max-w-md">
+        {!teamData ? (
+          <div className="flex justify-center p-10"><div className="animate-spin h-10 w-10 border-b-2 border-blue-600 rounded-full"></div></div>
         ) : (
-          <div>
-            <p className="text-center text-gray-600 dark:text-gray-300 mb-4 font-medium">Выберите себя из списка ниже:</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {teamData.unclaimed_workers.map(w => (
-                <button key={w.id} onClick={() => handleWorkerClick(w)} className="bg-gray-50 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 border border-gray-200 dark:border-gray-600 hover:border-blue-400 dark:hover:border-blue-500 transition-all rounded-xl p-4 text-left shadow-sm group">
-                  <p className="font-bold text-gray-800 dark:text-gray-200 group-hover:text-blue-700 dark:group-hover:text-blue-400">{w.fio}</p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mt-1">{w.position}</p>
-                </button>
-              ))}
+          <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-xl">
+            <div className="text-center mb-8">
+                <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl shadow-inner">👷‍♂️</div>
+                <h2 className="text-2xl font-bold dark:text-white mb-2">Приглашение</h2>
+                <p className="text-gray-600 dark:text-gray-300">Бригада: <b className="text-gray-900 dark:text-white">{teamData.team_name}</b></p>
             </div>
+
+            <p className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wider text-center">Выберите ваш профиль из списка:</p>
+
+            {teamData.unclaimed_workers.length === 0 ? (
+                <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-100 dark:border-gray-600">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">Свободных мест нет или все участники уже привязали свои аккаунты.</p>
+                </div>
+            ) : (
+                <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                  {teamData.unclaimed_workers.map(w => (
+                    <button key={w.id} onClick={() => { setSelectedWorker(w); setConfirmModalOpen(true); }} className="w-full text-left p-4 bg-gray-50 dark:bg-gray-750 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 rounded-2xl transition-all group active:scale-[0.98]">
+                      <p className="font-bold text-gray-800 dark:text-gray-200 group-hover:text-blue-700 dark:group-hover:text-blue-400 text-lg">{w.fio}</p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mt-1">{w.position}</p>
+                    </button>
+                  ))}
+                </div>
+            )}
           </div>
         )}
       </div>
 
       {isConfirmModalOpen && selectedWorker && (
-        <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
-            <div className="flex min-h-screen items-center justify-center p-4">
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl w-full max-w-sm text-center shadow-2xl transition-colors">
-                    <h3 className="text-xl font-bold mb-2 dark:text-white">Подтверждение</h3>
-                    <p className="text-gray-600 dark:text-gray-400 mb-6">Привязать аккаунт к профилю: <br/><b className="text-lg text-gray-900 dark:text-gray-100">{selectedWorker.fio}</b>?</p>
-                    <div className="flex space-x-3">
-                        <button onClick={() => setConfirmModalOpen(false)} className="w-1/2 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl font-medium text-gray-700 dark:text-gray-300">Отмена</button>
-                        <button onClick={handleConfirmJoin} className="w-1/2 bg-blue-600 text-white py-3 rounded-xl font-medium hover:bg-blue-700 shadow-md">Да, это я</button>
-                    </div>
+        <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity flex items-center justify-center p-4">
+            <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl w-full max-w-sm text-center shadow-2xl">
+                <h3 className="text-2xl font-bold mb-2 dark:text-white">Подтверждение</h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">Привязать ваш мессенджер к профилю: <br/><b className="text-xl text-gray-900 dark:text-white mt-1 block">{selectedWorker.fio}</b></p>
+
+                {/* Пароль мы больше не требуем, так как ссылка уже безопасная */}
+                <div className="flex space-x-3">
+                    <button onClick={() => setConfirmModalOpen(false)} className="w-1/2 bg-gray-100 dark:bg-gray-700 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition">Отмена</button>
+                    <button onClick={handleJoin} className="w-1/2 bg-blue-600 py-3.5 rounded-xl font-bold text-white shadow-lg hover:bg-blue-700 transition active:scale-95">Привязать</button>
                 </div>
             </div>
         </div>
