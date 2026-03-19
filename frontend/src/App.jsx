@@ -21,15 +21,17 @@ function ProtectedRoute({ children }) {
                 window.location.search.includes('tgWebAppData') ||
                 window.location.hash.includes('tgWebAppData');
 
-  const isMAX = window.location.pathname.includes('/max');
+  // Проверяем, открыт ли сайт внутри MAX (по ссылке /max или по параметрам WebAppData)
+  const isMAX = window.location.pathname.includes('/max') ||
+                window.location.search.includes('WebAppData') ||
+                window.location.hash.includes('WebAppData');
 
   if (!isAuth) {
-    if (isTMA) {
-      // ВАЖНО: сохраняем путь (куда кликнул юзер) и хэш авторизации Телеграма
-      return <Navigate to={`/tma?return_to=${window.location.pathname}${window.location.hash}`} replace />;
-    }
     if (isMAX) {
       return <Navigate to={`/max?return_to=${window.location.pathname}${window.location.hash}`} replace />;
+    }
+    if (isTMA) {
+      return <Navigate to={`/tma?return_to=${window.location.pathname}${window.location.hash}`} replace />;
     }
     return <Navigate to="/" replace />;
   }

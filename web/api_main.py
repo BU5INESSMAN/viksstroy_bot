@@ -456,18 +456,27 @@ async def api_link_account(tg_id: int = Form(...), code: str = Form(...)):
     return {"status": "ok", "new_tg_id": primary_id, "role": role}
 
 
-# НОВЫЙ ЭНДПОИНТ: Отвязка аккаунтов
 @app.post("/api/users/unlink_platform")
 async def api_unlink_platform(tg_id: int = Form(...), platform: str = Form(...)):
     real_target_id = await resolve_id(tg_id)
 
     try:
         if platform == 'max':
-            await db.conn.execute("DELETE FROM account_links WHERE primary_id = ? AND secondary_id < 0",
-                                  (real_target_id,))
+            if real_target_id < 0:
+                # Если MAX является корневым, удаляем связь, где он primary
+                await db.conn.execute("DELETE FROM account_links WHERE primary_id = ?", (real_target_id,))
+            else:
+                # Если MAX вторичный
+                await db.conn.execute("DELETE FROM account_links WHERE primary_id = ? AND secondary_id < 0",
+                                      (real_target_id,))
         elif platform == 'tg':
-            await db.conn.execute("DELETE FROM account_links WHERE primary_id = ? AND secondary_id > 0",
-                                  (real_target_id,))
+            if real_target_id > 0:
+                # Если Telegram является корневым
+                await db.conn.execute("DELETE FROM account_links WHERE primary_id = ?", (real_target_id,))
+            else:
+                # Если Telegram вторичный
+                await db.conn.execute("DELETE FROM account_links WHERE primary_id = ? AND secondary_id > 0",
+                                      (real_target_id,))
         await db.conn.commit()
     except Exception as e:
         await db.conn.rollback()
@@ -669,32 +678,26 @@ async def api_get_users():
              "is_blacklisted": dict(u)['is_blacklisted'], "avatar_url": dict(u).get('avatar_url', '')} for u in users]
 
 
-# --- ИЗМЕНЕННЫЙ ЭНДПОИНТ: ВОЗВРАЩАЕТ ДАННЫЕ О ПРИВЯЗКАХ ---
 @app.get("/api/users/{target_id}/profile")
 async def api_get_profile(target_id: int):
     real_target_id = await resolve_id(target_id)
     profile = await db.get_user_full_profile(real_target_id)
     if not profile: raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-    # Получаем все вторичные ID, привязанные к этому профилю
     async with db.conn.execute("SELECT secondary_id FROM account_links WHERE primary_id = ?", (real_target_id,)) as cur:
         rows = await cur.fetchall()
 
     linked_ids = [r[0] for r in rows]
-    has_secondary_tg = any(sid > 0 for sid in linked_ids)
-    has_secondary_max = any(sid < 0 for sid in linked_ids)
-
-    primary_is_tg = real_target_id > 0
-    primary_is_max = real_target_id < 0
+    has_tg = (real_target_id > 0) or any(sid > 0 for sid in linked_ids)
+    has_max = (real_target_id < 0) or any(sid < 0 for sid in linked_ids)
 
     return {
         "profile": dict(profile),
         "logs": await db.get_specific_user_logs(real_target_id),
         "links": {
-            "has_tg": primary_is_tg or has_secondary_tg,
-            "has_max": primary_is_max or has_secondary_max,
-            "secondary_tg": has_secondary_tg,
-            "secondary_max": has_secondary_max
+            "has_tg": has_tg,
+            "has_max": has_max,
+            "is_linked": len(linked_ids) > 0
         }
     }
 
