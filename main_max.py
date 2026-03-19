@@ -57,12 +57,11 @@ async def clear_webhook():
 async def message_handler(event: MessageCreated):
     text = event.message.body.text.strip()
     max_id = event.message.sender.user_id
-    # Используем отрицательные ID для пользователей MAX, чтобы избежать конфликтов с TG ID
     pseudo_tg_id = -int(max_id)
 
     user = await db.get_user(pseudo_tg_id)
 
-    # Формируем ответ точно как в Telegram
+    # Формируем ответ точно как в Telegram (main.py)
     if text.startswith("/start"):
         if user:
             if dict(user).get('is_blacklisted'):
@@ -77,6 +76,14 @@ async def message_handler(event: MessageCreated):
         else:
             msg = "Для работы с ботом введите команду /start или нажмите кнопку «Открыть платформу» для регистрации"
 
+    # Безопасное извлечение ID чата (чтобы бот не отвечал самому себе)
+    chat_id = getattr(event.message, "chat_id", None)
+    if not chat_id:
+        if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
+            chat_id = event.message.chat.id
+        else:
+            chat_id = max_id
+
     # Отправка ответа в MAX
     url = "https://platform-api.max.ru/messages"
     headers = {
@@ -84,7 +91,7 @@ async def message_handler(event: MessageCreated):
         "Content-Type": "application/json"
     }
     payload = {
-        "chat_id": str(event.message.recipient.chat_id),
+        "chat_id": str(chat_id),
         "text": msg,
         "format": "html",
         "inlineKeyboardMarkup": json.dumps(get_webapp_keyboard())

@@ -12,7 +12,7 @@ export default function MAXAuth() {
   const location = useLocation();
 
   useEffect(() => {
-    // Универсальный парсер: ищет данные в URL (search/hash) или в JS-объекте MAX
+    // Универсальный парсер: ищет данные в URL (search/hash)
     const getParam = (key) => {
         const searchParams = new URLSearchParams(location.search);
         const hashParams = new URLSearchParams(location.hash.replace('#', '?'));
@@ -23,19 +23,37 @@ export default function MAXAuth() {
     let firstName = getParam('first_name') || '';
     let lastName = getParam('last_name') || '';
 
-    // Если MAX передает данные внутри строки 'user' или 'maxWebAppData'
-    const userStr = getParam('user') || getParam('maxWebAppData') || getParam('tgWebAppData');
-    if (userStr) {
+    // MAX передает данные в ключе WebAppData (формат идентичен tgWebAppData)
+    const webAppDataStr = getParam('WebAppData') || getParam('maxWebAppData') || getParam('tgWebAppData');
+    if (webAppDataStr) {
         try {
-            const parsedData = JSON.parse(decodeURIComponent(userStr));
-            const u = parsedData.user ? (typeof parsedData.user === 'string' ? JSON.parse(parsedData.user) : parsedData.user) : parsedData;
+            // URLSearchParams автоматически декодирует строку внутри (например, %7B -> { )
+            const params = new URLSearchParams(webAppDataStr);
+            const userParam = params.get('user');
+
+            if (userParam) {
+                const u = JSON.parse(userParam);
+                userId = u.id || u.user_id || userId;
+                firstName = u.first_name || firstName;
+                lastName = u.last_name || lastName;
+            }
+        } catch(e) {
+            console.error("Parse error WebAppData:", e);
+        }
+    }
+
+    // Резервный парсер, если данные переданы просто как JSON-строка
+    const userStr = getParam('user');
+    if (userStr && !webAppDataStr) {
+        try {
+            const u = JSON.parse(decodeURIComponent(userStr));
             userId = u.id || u.user_id || userId;
             firstName = u.first_name || firstName;
             lastName = u.last_name || lastName;
         } catch(e) {}
     }
 
-    // Поддержка, если MAX инжектит JS bridge (по аналогии с Telegram)
+    // Поддержка встроенного JS bridge (если MAX инжектит данные)
     if (window.max?.initDataUnsafe?.user) {
         const u = window.max.initDataUnsafe.user;
         userId = u.id || userId;
