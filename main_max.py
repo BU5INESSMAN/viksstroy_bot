@@ -3,6 +3,8 @@ import logging
 import os
 import sys
 import aiohttp
+import random
+import time
 from dotenv import load_dotenv
 
 from maxapi import Bot, Dispatcher, F
@@ -30,16 +32,21 @@ db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
 
 WEB_APP_URL = "https://miniapp.viks22.ru/max"
-# Обычный текст + прямая ссылка (без HTML-тегов)
 APP_LINK = f"📱 Платформа: {WEB_APP_URL}"
 
 # In-memory хранилище состояний (FSM) для процесса регистрации
 USER_STATES = {}
 
 
+async def resolve_id(raw_id: int):
+    async with db.conn.execute("SELECT primary_id FROM account_links WHERE secondary_id = ?", (raw_id,)) as cur:
+        row = await cur.fetchone()
+        if row: return row[0]
+    return raw_id
+
+
 async def send_max_msg(event: MessageCreated, text: str):
     """Отправка исключительно чистого текста без разметки."""
-    # 1. Отправка через API MAX (aiohttp)
     try:
         chat_id = None
         if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
@@ -51,7 +58,6 @@ async def send_max_msg(event: MessageCreated, text: str):
             payload = {
                 "chat_id": str(chat_id),
                 "text": text
-                # Убрали "format": "html", теперь это просто чистый текст
             }
 
             url = "https://platform-api.max.ru/messages"
@@ -62,11 +68,10 @@ async def send_max_msg(event: MessageCreated, text: str):
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=headers, json=payload) as resp:
                     if resp.status == 200:
-                        return  # Успешно отправлено
+                        return
     except Exception as e:
         logger.warning(f"aiohttp send failed: {e}. Пытаемся использовать нативный метод.")
 
-    # 2. Если aiohttp не сработал, используем нативный метод библиотеки
     try:
         await event.message.answer(text)
     except Exception as e:
@@ -78,13 +83,29 @@ async def message_handler(event: MessageCreated):
     text = event.message.body.text.strip()
     max_id = event.message.sender.user_id
 
-    # Для совместимости с БД используем отрицательные ID
     pseudo_tg_id = -int(max_id)
-    user = await db.get_user(pseudo_tg_id)
+    real_tg_id = await resolve_id(pseudo_tg_id)
+    user = await db.get_user(real_tg_id)
 
-    # Получаем текущее состояние пользователя
     state_data = USER_STATES.get(max_id, {})
     current_state = state_data.get("state")
+
+    # КОМАНДА /WEB (Генерация кода связки)
+    if text.startswith("/web"):
+        if not user:
+            return await send_max_msg(event, "❌ Сначала зарегистрируйтесь (команда /start).")
+
+        code = str(random.randint(100000, 999999))
+        expires = time.time() + 900
+        try:
+            await db.conn.execute("INSERT INTO link_codes (code, user_id, expires) VALUES (?, ?, ?)",
+                                  (code, real_tg_id, expires))
+            await db.conn.commit()
+            await send_max_msg(event,
+                               f"Ваш код для привязки: {code}\nДействителен 15 минут. Введите его в Telegram или в профиле платформы.")
+        except Exception as e:
+            await send_max_msg(event, "Ошибка генерации кода.")
+        return
 
     # ОБРАБОТКА КОМАНДЫ /START
     if text.startswith("/start"):
@@ -96,14 +117,32 @@ async def message_handler(event: MessageCreated):
                 msg = f"С возвращением, {dict(user)['fio']}!\n\nНажмите на ссылку ниже для запуска:\n\n{APP_LINK}"
                 await send_max_msg(event, msg)
         else:
-            # Начинаем процесс регистрации
             USER_STATES[max_id] = {"state": "waiting_for_password"}
-            msg = "🔐 Добро пожаловать в ВИКС Расписание!\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль для регистрации:"
+            msg = "🔐 Добро пожаловать в ВИКС Расписание!\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль или 6-значный код привязки (если аккаунт уже есть в Telegram):"
             await send_max_msg(event, msg)
         return
 
-    # FSM: ОЖИДАНИЕ ПАРОЛЯ
+    # FSM: ОЖИДАНИЕ ПАРОЛЯ ИЛИ КОДА
     if current_state == "waiting_for_password":
+
+        # Проверка кода привязки
+        if len(text) == 6 and text.isdigit():
+            async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (text,)) as cur:
+                row = await cur.fetchone()
+            if row and time.time() < row[1]:
+                primary_id = row[0]
+                await db.conn.execute("INSERT OR REPLACE INTO account_links (primary_id, secondary_id) VALUES (?, ?)",
+                                      (primary_id, pseudo_tg_id))
+                await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (text,))
+                await db.conn.commit()
+                USER_STATES.pop(max_id, None)
+                await send_max_msg(event, f"✅ Аккаунты успешно связаны! Вы вошли как {primary_id}.\n\n{APP_LINK}")
+                return
+            else:
+                await send_max_msg(event, "❌ Код недействителен или устарел. Введите пароль или новый код:")
+                return
+
+        # Проверка системного пароля
         role = None
         if text == os.getenv("FOREMAN_PASS"):
             role = "foreman"
@@ -119,7 +158,7 @@ async def message_handler(event: MessageCreated):
             USER_STATES[max_id]["state"] = "waiting_for_fio"
             await send_max_msg(event, "✅ Пароль принят.\n\nПожалуйста, введите ваше ФИО (Например: Иванов Иван):")
         else:
-            await send_max_msg(event, "❌ Неверный пароль. Попробуйте снова:")
+            await send_max_msg(event, "❌ Неверный ввод. Попробуйте снова:")
         return
 
     # FSM: ОЖИДАНИЕ ФИО
@@ -127,11 +166,8 @@ async def message_handler(event: MessageCreated):
         fio = text
         role = state_data.get("role", "worker")
 
-        # Записываем пользователя в БД
         await db.add_user(pseudo_tg_id, fio, role)
         await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался в боте MAX (Роль: {role})")
-
-        # Очищаем состояние
         USER_STATES.pop(max_id, None)
 
         msg = f"🎉 Регистрация успешно завершена!\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇\n\n{APP_LINK}"
@@ -146,7 +182,6 @@ async def message_handler(event: MessageCreated):
 
 
 async def clear_webhook():
-    """Удаляет старые вебхуки, чтобы бот мог работать через Long Polling"""
     logger.info("Очистка старых подписок MAX...")
     headers = {"Authorization": MAX_TOKEN}
     async with aiohttp.ClientSession() as session:
@@ -162,7 +197,7 @@ async def main():
     await db.init_db()
     await clear_webhook()
 
-    logger.info(">>> Бот MAX успешно запущен (Только чистый текст) <<<")
+    logger.info(">>> Бот MAX успешно запущен (С поддержкой привязки) <<<")
     await dp.start_polling(bot)
 
 
