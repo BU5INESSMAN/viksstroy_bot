@@ -2,6 +2,8 @@ import asyncio
 import logging
 import os
 import sys
+import aiohttp
+import json
 from dotenv import load_dotenv
 
 from maxapi import Bot, Dispatcher, F
@@ -30,10 +32,11 @@ db = DatabaseManager(db_path)
 
 WEB_APP_URL = "https://miniapp.viks22.ru/max"
 
+# In-memory хранилище состояний (FSM) для процесса регистрации
+USER_STATES = {}
+
 
 def get_webapp_keyboard():
-    # Нативный SDK MAXAPI позволяет передавать стандартный словарь для клавиатуры.
-    # Библиотека сама конвертирует его в нужный JSON при отправке.
     return {
         "inline_keyboard": [
             [{"text": "📱 Открыть платформу", "web_app": {"url": WEB_APP_URL}}]
@@ -41,63 +44,140 @@ def get_webapp_keyboard():
     }
 
 
+async def send_max_msg(event: MessageCreated, text: str, show_keyboard: bool = False):
+    """Надежная функция отправки сообщений, сочетающая aiohttp и нативный метод."""
+    # 1. Пытаемся отправить через HTTP напрямую для точного контроля клавиатуры
+    try:
+        chat_id = None
+        # Извлекаем chat_id из правильной структуры объекта MAX
+        if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
+            chat_id = event.message.chat.id
+        elif hasattr(event, "chat_id"):
+            chat_id = event.chat_id
+
+        if chat_id:
+            payload = {
+                "chat_id": str(chat_id),
+                "text": text,
+                "format": "html"
+            }
+            if show_keyboard:
+                payload["inlineKeyboardMarkup"] = json.dumps(get_webapp_keyboard())
+
+            url = "https://platform-api.max.ru/messages"
+            headers = {
+                "Authorization": MAX_TOKEN,
+                "Content-Type": "application/json"
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as resp:
+                    if resp.status == 200:
+                        return  # Успешно отправлено
+    except Exception as e:
+        logger.warning(f"aiohttp send failed: {e}. Пытаемся использовать нативный метод.")
+
+    # 2. Если aiohttp не сработал, используем нативный метод как в simple_max_bot.py
+    try:
+        if show_keyboard:
+            await event.message.answer(text, parse_mode="html", reply_markup=get_webapp_keyboard())
+        else:
+            await event.message.answer(text, parse_mode="html")
+    except Exception as e:
+        logger.error(f"Критическая ошибка отправки: {e}")
+
+
 @dp.message_created(F.message.body.text)
 async def message_handler(event: MessageCreated):
     text = event.message.body.text.strip()
-
-    # Идентификатор пользователя в MAX
     max_id = event.message.sender.user_id
 
     # Для совместимости с БД используем отрицательные ID
     pseudo_tg_id = -int(max_id)
     user = await db.get_user(pseudo_tg_id)
 
-    # Формируем текст ответа
+    # Получаем текущее состояние пользователя
+    state_data = USER_STATES.get(max_id, {})
+    current_state = state_data.get("state")
+
+    # ОБРАБОТКА КОМАНДЫ /START
     if text.startswith("/start"):
         if user:
             if dict(user).get('is_blacklisted'):
-                msg = "❌ Ваш аккаунт заблокирован. Обратитесь к руководству."
+                await send_max_msg(event, "❌ Ваш аккаунт заблокирован. Обратитесь к руководству.", False)
             else:
-                msg = f"С возвращением, <b>{dict(user)['fio']}</b>!\n\nИспользуйте системную кнопку «Открыть платформу» или нажмите на кнопку ниже для запуска системы:"
+                USER_STATES.pop(max_id, None)
+                msg = f"С возвращением, <b>{dict(user)['fio']}</b>!\n\nИспользуйте системную кнопку «Открыть платформу» или нажмите на кнопку ниже для запуска:"
+                await send_max_msg(event, msg, True)
         else:
-            msg = "🔐 <b>Добро пожаловать в ВИКС Расписание!</b>\n\nЯ не нашел вас в базе данных.\nНажмите на кнопку ниже, чтобы открыть платформу и пройти быструю регистрацию по паролю."
-    else:
-        if user:
-            msg = "Все функции доступны внутри мини-приложения 👇"
-        else:
-            msg = "Для работы с ботом введите команду /start или нажмите кнопку «Открыть платформу» для регистрации"
+            # Начинаем процесс регистрации
+            USER_STATES[max_id] = {"state": "waiting_for_password"}
+            msg = "🔐 <b>Добро пожаловать в ВИКС Расписание!</b>\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль для регистрации:"
+            await send_max_msg(event, msg, False)
+        return
 
-    # Отправка сообщения нативными средствами библиотеки maxapi (как в simple_max_bot.py)
-    try:
-        # Метод event.reply автоматически берет нужный chat_id из события,
-        # что исключает ошибку отправки сообщения ботом самому себе.
-        await event.reply(
-            text=msg,
-            parse_mode="html",
-            reply_markup=get_webapp_keyboard()
-        )
-    except AttributeError:
-        # Запасной вариант маршрутизации на случай специфичной версии библиотеки maxapi
+    # FSM: ОЖИДАНИЕ ПАРОЛЯ
+    if current_state == "waiting_for_password":
+        role = None
+        if text == os.getenv("FOREMAN_PASS"):
+            role = "foreman"
+        elif text == os.getenv("MODERATOR_PASS"):
+            role = "moderator"
+        elif text == os.getenv("BOSS_PASS"):
+            role = "boss"
+        elif text == os.getenv("SUPERADMIN_PASS"):
+            role = "superadmin"
+
+        if role:
+            USER_STATES[max_id]["role"] = role
+            USER_STATES[max_id]["state"] = "waiting_for_fio"
+            await send_max_msg(event,
+                               "✅ Пароль принят.\n\nПожалуйста, введите ваше <b>ФИО</b> (Например: Иванов Иван):",
+                               False)
+        else:
+            await send_max_msg(event, "❌ Неверный пароль. Попробуйте снова:", False)
+        return
+
+    # FSM: ОЖИДАНИЕ ФИО
+    if current_state == "waiting_for_fio":
+        fio = text
+        role = state_data.get("role", "worker")
+
+        # Записываем пользователя в БД
+        await db.add_user(pseudo_tg_id, fio, role)
+        await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался в боте MAX (Роль: {role})")
+
+        # Очищаем состояние
+        USER_STATES.pop(max_id, None)
+
+        msg = f"🎉 <b>Регистрация успешно завершена!</b>\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇"
+        await send_max_msg(event, msg, True)
+        return
+
+    # ДЕФОЛТНЫЙ ОТВЕТ НА ЛЮБЫЕ ДРУГИЕ СООБЩЕНИЯ
+    if user:
+        await send_max_msg(event, "Все функции доступны внутри мини-приложения 👇", True)
+    else:
+        await send_max_msg(event, "Для начала работы или регистрации введите команду /start", False)
+
+
+async def clear_webhook():
+    """Удаляет старые вебхуки, чтобы бот мог работать через Long Polling"""
+    logger.info("Очистка старых подписок MAX...")
+    headers = {"Authorization": MAX_TOKEN}
+    async with aiohttp.ClientSession() as session:
         try:
-            chat_id = event.message.chat_id
-            await bot.send_message(
-                chat_id=chat_id,
-                text=msg,
-                parse_mode="html",
-                reply_markup=get_webapp_keyboard()
-            )
-        except Exception as e:
-            logger.error(f"Ошибка отправки через bot.send_message: {e}")
-    except Exception as e:
-        logger.error(f"Ошибка отправки сообщения: {e}")
+            url = "https://platform-api.max.ru/subscriptions"
+            async with session.delete(url, headers=headers) as resp:
+                pass
+        except Exception:
+            pass
 
 
 async def main():
     await db.init_db()
+    await clear_webhook()
 
-    logger.info(">>> Бот MAX успешно запущен (Long Polling) <<<")
-
-    # start_polling библиотеки maxapi обычно сам очищает зависшие вебхуки
+    logger.info(">>> Бот MAX успешно запущен (Long Polling + FSM) <<<")
     await dp.start_polling(bot)
 
 
