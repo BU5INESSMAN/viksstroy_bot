@@ -57,6 +57,13 @@ class DatabaseManager:
             pass
 
         await self.conn.commit()
+
+        # --- АВТОМАТИЧЕСКИЕ МИГРАЦИИ ПРИ СТАРТЕ ---
+        await self.upgrade_db_for_invites()
+        await self.upgrade_db_for_logs()
+        await self.upgrade_db_for_profiles()
+        await self.upgrade_db_for_foreman()
+
         logging.info("База данных успешно инициализирована.")
 
     async def close(self):
@@ -74,24 +81,27 @@ class DatabaseManager:
 
     async def get_missing_foremen_today(self):
         async with self.conn.execute("""
-            SELECT user_id, fio 
-            FROM users 
-            WHERE role = 'foreman' AND is_active = 1
-            AND user_id NOT IN (
-                SELECT DISTINCT foreman_id 
-                FROM applications 
-                WHERE date(created_at) = date('now', 'localtime')
-            )
-        """) as cursor:
+                                     SELECT user_id, fio
+                                     FROM users
+                                     WHERE role = 'foreman'
+                                       AND is_active = 1
+                                       AND user_id NOT IN (SELECT DISTINCT foreman_id
+                                                           FROM applications
+                                                           WHERE
+                                         date (created_at) = date ('now'
+                                         , 'localtime')
+                                         )
+                                     """) as cursor:
             return await cursor.fetchall()
 
     async def get_app_members_with_tg(self, app_id: int):
         async with self.conn.execute("""
-            SELECT tm.tg_user_id, tm.fio, tm.position 
-            FROM application_selected_staff ast 
-            JOIN team_members tm ON ast.member_id = tm.id 
-            WHERE ast.app_id = ? AND tm.tg_user_id IS NOT NULL
-        """, (app_id,)) as cursor:
+                                     SELECT tm.tg_user_id, tm.fio, tm.position
+                                     FROM application_selected_staff ast
+                                              JOIN team_members tm ON ast.member_id = tm.id
+                                     WHERE ast.app_id = ?
+                                       AND tm.tg_user_id IS NOT NULL
+                                     """, (app_id,)) as cursor:
             return await cursor.fetchall()
 
     async def get_approved_apps_for_publish(self):
@@ -227,9 +237,17 @@ class DatabaseManager:
 
         if app_id:
             await self.conn.execute(
-                """UPDATE applications 
-                SET object_address=?, team_id=?, date_target=?, equipment_id=?, time_start=?, time_end=?, comment=?, status='pending', rejection_reason=NULL 
-                WHERE id=?""",
+                """UPDATE applications
+                   SET object_address=?,
+                       team_id=?,
+                       date_target=?,
+                       equipment_id=?,
+                       time_start=?,
+                       time_end=?,
+                       comment=?,
+                       status='pending',
+                       rejection_reason=NULL
+                   WHERE id = ?""",
                 (data['object_address'], data['team_id'], data['date_target'], data['equipment_id'], data['time_start'],
                  data['time_end'], data.get('comment', ''), app_id)
             )
@@ -237,9 +255,10 @@ class DatabaseManager:
             new_app_id = app_id
         else:
             cursor = await self.conn.execute(
-                """INSERT INTO applications 
-                (foreman_id, object_address, team_id, date_target, equipment_id, time_start, time_end, comment, status) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
+                """INSERT INTO applications
+                   (foreman_id, object_address, team_id, date_target, equipment_id, time_start, time_end, comment,
+                    status)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending')""",
                 (foreman_id, data['object_address'], data['team_id'], data['date_target'], data['equipment_id'],
                  data['time_start'], data['time_end'], data.get('comment', ''))
             )
@@ -255,17 +274,19 @@ class DatabaseManager:
         cursor = await self.conn.execute(
             """SELECT a.*, t.name as team_name, e.name as equip_name, e.driver_fio, u.fio as foreman_name
                FROM applications a
-               LEFT JOIN teams t ON a.team_id = t.id
-               LEFT JOIN equipment e ON a.equipment_id = e.id
-               LEFT JOIN users u ON a.foreman_id = u.user_id
+                        LEFT JOIN teams t ON a.team_id = t.id
+                        LEFT JOIN equipment e ON a.equipment_id = e.id
+                        LEFT JOIN users u ON a.foreman_id = u.user_id
                WHERE a.id = ?""", (app_id,)
         )
         app = await cursor.fetchone()
         if not app: return None
 
         cursor = await self.conn.execute(
-            """SELECT ast.member_id, tm.fio, tm.position FROM application_selected_staff ast 
-               JOIN team_members tm ON ast.member_id = tm.id WHERE ast.app_id = ?""", (app_id,)
+            """SELECT ast.member_id, tm.fio, tm.position
+               FROM application_selected_staff ast
+                        JOIN team_members tm ON ast.member_id = tm.id
+               WHERE ast.app_id = ?""", (app_id,)
         )
         staff = await cursor.fetchall()
         return {"details": dict(app), "staff": [dict(s) for s in staff]}
@@ -334,29 +355,35 @@ class DatabaseManager:
 
     async def get_general_statistics(self):
         stats = {}
-        async with self.conn.execute("SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime')") as c:
+        async with self.conn.execute(
+                "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime')") as c:
             stats['today_total'] = (await c.fetchone())[0]
-        async with self.conn.execute("SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'approved'") as c:
+        async with self.conn.execute(
+                "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'approved'") as c:
             stats['today_approved'] = (await c.fetchone())[0]
-        async with self.conn.execute("SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'rejected'") as c:
+        async with self.conn.execute(
+                "SELECT count(*) FROM applications WHERE date(created_at) = date('now', 'localtime') AND status = 'rejected'") as c:
             stats['today_rejected'] = (await c.fetchone())[0]
-        async with self.conn.execute("SELECT count(*) FROM applications WHERE status = 'approved' AND (is_published = 0 OR is_published IS NULL)") as c:
+        async with self.conn.execute(
+                "SELECT count(*) FROM applications WHERE status = 'approved' AND (is_published = 0 OR is_published IS NULL)") as c:
             stats['waiting_publish'] = (await c.fetchone())[0]
         async with self.conn.execute('''
-            SELECT e.name, COUNT(a.id) as cnt 
-            FROM applications a 
-            JOIN equipment e ON a.equipment_id = e.id 
-            WHERE a.status = 'approved' 
-            GROUP BY e.id ORDER BY cnt DESC LIMIT 3
-        ''') as c:
+                                     SELECT e.name, COUNT(a.id) as cnt
+                                     FROM applications a
+                                              JOIN equipment e ON a.equipment_id = e.id
+                                     WHERE a.status = 'approved'
+                                     GROUP BY e.id
+                                     ORDER BY cnt DESC LIMIT 3
+                                     ''') as c:
             stats['top_equip'] = await c.fetchall()
         async with self.conn.execute('''
-            SELECT u.fio, COUNT(a.id) as cnt 
-            FROM applications a 
-            JOIN users u ON a.foreman_id = u.user_id 
-            WHERE a.status = 'approved' 
-            GROUP BY u.user_id ORDER BY cnt DESC LIMIT 3
-        ''') as c:
+                                     SELECT u.fio, COUNT(a.id) as cnt
+                                     FROM applications a
+                                              JOIN users u ON a.foreman_id = u.user_id
+                                     WHERE a.status = 'approved'
+                                     GROUP BY u.user_id
+                                     ORDER BY cnt DESC LIMIT 3
+                                     ''') as c:
             stats['top_foremen'] = await c.fetchall()
         return stats
 
@@ -364,17 +391,19 @@ class DatabaseManager:
         cursor = await self.conn.execute(
             """SELECT a.*, u.fio as foreman_fio, e.name as equip_name, e.driver_fio
                FROM applications a
-               LEFT JOIN users u ON a.foreman_id = u.user_id
-               LEFT JOIN equipment e ON a.equipment_id = e.id
-               WHERE a.date_target = ? AND a.status = 'approved'""",
+                        LEFT JOIN users u ON a.foreman_id = u.user_id
+                        LEFT JOIN equipment e ON a.equipment_id = e.id
+               WHERE a.date_target = ?
+                 AND a.status = 'approved'""",
             (date_target,)
         )
         apps = await cursor.fetchall()
         report = []
         for app in apps:
             c2 = await self.conn.execute(
-                """SELECT tm.fio, tm.position FROM application_selected_staff ast
-                   JOIN team_members tm ON ast.member_id = tm.id
+                """SELECT tm.fio, tm.position
+                   FROM application_selected_staff ast
+                            JOIN team_members tm ON ast.member_id = tm.id
                    WHERE ast.app_id = ?""", (app['id'],)
             )
             members = await c2.fetchall()
@@ -389,12 +418,15 @@ class DatabaseManager:
         """Безопасное добавление новых колонок для логики инвайтов"""
         try:
             await self.conn.execute("ALTER TABLE teams ADD COLUMN invite_code TEXT")
-            await self.conn.execute("ALTER TABLE teams ADD COLUMN join_password TEXT")
         except Exception:
-            pass  # Колонки уже существуют
+            pass
 
         try:
-            # Добавляем привязку к Telegram ID в таблицу участников бригады
+            await self.conn.execute("ALTER TABLE teams ADD COLUMN join_password TEXT")
+        except Exception:
+            pass
+
+        try:
             await self.conn.execute("ALTER TABLE team_members ADD COLUMN tg_id INTEGER")
         except Exception:
             pass
