@@ -85,6 +85,7 @@ async def message_handler(event: MessageCreated):
     state_data = USER_STATES.get(max_id, {})
     current_state = state_data.get("state")
 
+    # КОМАНДА /WEB (Генерация кода связки)
     if text.startswith("/web"):
         if not user:
             return await send_max_msg(event, "❌ Сначала зарегистрируйтесь (команда /start).")
@@ -100,22 +101,33 @@ async def message_handler(event: MessageCreated):
             await send_max_msg(event, "Ошибка генерации кода.")
         return
 
-    # ОБРАБОТКА ДИПЛИНКОВ MAX
-    if text.startswith("/start"):
+    # НОВЫЙ ОБРАБОТЧИК: КОМАНДА /JOIN (Вступление в бригаду / Привязка техники)
+    if text.startswith("/join"):
         parts = text.split()
-        if len(parts) > 1:
-            arg = parts[1]
-            if arg.startswith("invite_"):
-                code = arg.split('_')[1]
-                url = f"https://miniapp.viks22.ru/invite/{code}"
-                await send_max_msg(event, f"Для вступления в бригаду перейдите по ссылке:\n\n📱 {url}")
-                return
-            elif arg.startswith("equip_"):
-                code = arg.split('_')[1]
-                url = f"https://miniapp.viks22.ru/equip-invite/{code}"
-                await send_max_msg(event, f"Для привязки техники перейдите по ссылке:\n\n📱 {url}")
-                return
+        if len(parts) < 2:
+            return await send_max_msg(event, "❌ Укажите код приглашения. Пример: /join 123456")
 
+        code = parts[1].strip()
+
+        # 1. Проверяем бригады
+        async with db.conn.execute("SELECT invite_code FROM teams WHERE join_password = ?", (code,)) as cur:
+            t_row = await cur.fetchone()
+        if t_row:
+            url = f"https://miniapp.viks22.ru/invite/{t_row[0]}"
+            return await send_max_msg(event,
+                                      f"Для выбора профиля и вступления в бригаду перейдите по ссылке:\n\n📱 {url}")
+
+        # 2. Проверяем технику
+        async with db.conn.execute("SELECT invite_code FROM equipment WHERE invite_code = ?", (code,)) as cur:
+            e_row = await cur.fetchone()
+        if e_row:
+            url = f"https://miniapp.viks22.ru/equip-invite/{e_row[0]}"
+            return await send_max_msg(event, f"Для подтверждения привязки техники перейдите по ссылке:\n\n📱 {url}")
+
+        return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
+
+    # ОБРАБОТКА КОМАНДЫ /START
+    if text.startswith("/start"):
         if user:
             if dict(user).get('is_blacklisted'):
                 await send_max_msg(event, "❌ Ваш аккаунт заблокирован.")
@@ -129,6 +141,7 @@ async def message_handler(event: MessageCreated):
             await send_max_msg(event, msg)
         return
 
+    # FSM: ОЖИДАНИЕ ПАРОЛЯ ИЛИ КОДА
     if current_state == "waiting_for_password":
         if len(text) == 6 and text.isdigit():
             async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (text,)) as cur:
@@ -140,7 +153,7 @@ async def message_handler(event: MessageCreated):
                 await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (text,))
                 await db.conn.commit()
                 USER_STATES.pop(max_id, None)
-                await send_max_msg(event, f"✅ Аккаунты успешно связаны! Вы вошли как {primary_id}.\n\n{APP_LINK}")
+                await send_max_msg(event, f"✅ Аккаунты успешно связаны!\n\n{APP_LINK}")
                 return
             else:
                 await send_max_msg(event, "❌ Код недействителен или устарел. Введите пароль или новый код:")
@@ -164,6 +177,7 @@ async def message_handler(event: MessageCreated):
             await send_max_msg(event, "❌ Неверный ввод. Попробуйте снова:")
         return
 
+    # FSM: ОЖИДАНИЕ ФИО
     if current_state == "waiting_for_fio":
         fio = text
         role = state_data.get("role", "worker")
@@ -195,7 +209,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (Поддержка Deep Links) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Команда /join вместо диплинков) <<<")
     await dp.start_polling(bot)
 
 

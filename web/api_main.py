@@ -11,6 +11,7 @@ import aiohttp
 import json
 import uuid
 import base64
+import random  # Добавлен
 import urllib.request
 import ssl
 import re
@@ -760,14 +761,12 @@ async def api_delete_user(target_id: int, tg_id: int = Form(...)):
     return {"status": "ok"}
 
 
-# --- ГЕНЕРАЦИЯ 3-х ССЫЛОК ДЛЯ БРИГАД ---
 @app.post("/api/teams/{team_id}/generate_invite")
 async def api_generate_invite(team_id: int):
     invite_code, join_password = await db.generate_team_invite(team_id)
     return {
         "invite_link": f"https://miniapp.viks22.ru/invite/{invite_code}",
         "tg_bot_link": f"https://t.me/viksstroy_bot?start=invite_{invite_code}",
-        "max_bot_link": f"https://max.ru/id222264297116_bot?start=invite_{invite_code}",
         "join_password": join_password
     }
 
@@ -1281,7 +1280,6 @@ async def delete_equipment(equip_id: int, tg_id: int = Form(0)):
     return {"status": "ok"}
 
 
-# --- ГЕНЕРАЦИЯ 3-х ССЫЛОК ДЛЯ ТЕХНИКИ ---
 @app.post("/api/equipment/{equip_id}/generate_invite")
 async def generate_equip_invite(equip_id: int):
     async with db.conn.execute("SELECT invite_code FROM equipment WHERE id = ?", (equip_id,)) as cursor:
@@ -1289,16 +1287,18 @@ async def generate_equip_invite(equip_id: int):
         if row and row[0]:
             code = row[0]
         else:
-            code = str(uuid.uuid4())[:8]
+            # Для оборудования теперь тоже генерируем 6-значный код, чтобы его было легко вводить в MAX
+            code = str(random.randint(100000, 999999))
             try:
                 await db.conn.execute("UPDATE equipment SET invite_code = ? WHERE id = ?", (code, equip_id))
                 await db.conn.commit()
             except:
                 await db.conn.rollback()
+
     return {
         "invite_link": f"https://miniapp.viks22.ru/equip-invite/{code}",
         "tg_bot_link": f"https://t.me/viksstroy_bot?start=equip_{code}",
-        "max_bot_link": f"https://max.ru/id222264297116_bot?start=equip_{code}"
+        "join_password": code
     }
 
 
