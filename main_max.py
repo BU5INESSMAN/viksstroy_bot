@@ -2,8 +2,6 @@ import asyncio
 import logging
 import os
 import sys
-import aiohttp
-import json
 from dotenv import load_dotenv
 
 from maxapi import Bot, Dispatcher, F
@@ -34,34 +32,27 @@ WEB_APP_URL = "https://miniapp.viks22.ru/max"
 
 
 def get_webapp_keyboard():
-    # Системная кнопка запуска WebApp
-    return [
-        [{"type": "link", "text": "📱 Открыть платформу", "url": WEB_APP_URL}]
-    ]
-
-
-async def clear_webhook():
-    """Удаляет старые вебхуки, чтобы бот мог работать через Long Polling"""
-    logger.info("Очистка старых подписок MAX...")
-    headers = {"Authorization": MAX_TOKEN}
-    async with aiohttp.ClientSession() as session:
-        try:
-            url = "https://platform-api.max.ru/subscriptions"
-            async with session.delete(url, headers=headers) as resp:
-                pass
-        except Exception:
-            pass
+    # Нативный SDK MAXAPI позволяет передавать стандартный словарь для клавиатуры.
+    # Библиотека сама конвертирует его в нужный JSON при отправке.
+    return {
+        "inline_keyboard": [
+            [{"text": "📱 Открыть платформу", "web_app": {"url": WEB_APP_URL}}]
+        ]
+    }
 
 
 @dp.message_created(F.message.body.text)
 async def message_handler(event: MessageCreated):
     text = event.message.body.text.strip()
-    max_id = event.message.sender.user_id
-    pseudo_tg_id = -int(max_id)
 
+    # Идентификатор пользователя в MAX
+    max_id = event.message.sender.user_id
+
+    # Для совместимости с БД используем отрицательные ID
+    pseudo_tg_id = -int(max_id)
     user = await db.get_user(pseudo_tg_id)
 
-    # Формируем ответ точно как в Telegram (main.py)
+    # Формируем текст ответа
     if text.startswith("/start"):
         if user:
             if dict(user).get('is_blacklisted'):
@@ -76,39 +67,37 @@ async def message_handler(event: MessageCreated):
         else:
             msg = "Для работы с ботом введите команду /start или нажмите кнопку «Открыть платформу» для регистрации"
 
-    # Безопасное извлечение ID чата (чтобы бот не отвечал самому себе)
-    chat_id = getattr(event.message, "chat_id", None)
-    if not chat_id:
-        if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
-            chat_id = event.message.chat.id
-        else:
-            chat_id = max_id
-
-    # Отправка ответа в MAX
-    url = "https://platform-api.max.ru/messages"
-    headers = {
-        "Authorization": MAX_TOKEN,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "chat_id": str(chat_id),
-        "text": msg,
-        "format": "html",
-        "inlineKeyboardMarkup": json.dumps(get_webapp_keyboard())
-    }
-
-    async with aiohttp.ClientSession() as session:
+    # Отправка сообщения нативными средствами библиотеки maxapi (как в simple_max_bot.py)
+    try:
+        # Метод event.reply автоматически берет нужный chat_id из события,
+        # что исключает ошибку отправки сообщения ботом самому себе.
+        await event.reply(
+            text=msg,
+            parse_mode="html",
+            reply_markup=get_webapp_keyboard()
+        )
+    except AttributeError:
+        # Запасной вариант маршрутизации на случай специфичной версии библиотеки maxapi
         try:
-            await session.post(url, headers=headers, json=payload)
+            chat_id = event.message.chat_id
+            await bot.send_message(
+                chat_id=chat_id,
+                text=msg,
+                parse_mode="html",
+                reply_markup=get_webapp_keyboard()
+            )
         except Exception as e:
-            logger.error(f"Ошибка отправки сообщения в MAX: {e}")
+            logger.error(f"Ошибка отправки через bot.send_message: {e}")
+    except Exception as e:
+        logger.error(f"Ошибка отправки сообщения: {e}")
 
 
 async def main():
     await db.init_db()
-    await clear_webhook()
 
     logger.info(">>> Бот MAX успешно запущен (Long Polling) <<<")
+
+    # start_polling библиотеки maxapi обычно сам очищает зависшие вебхуки
     await dp.start_polling(bot)
 
 
