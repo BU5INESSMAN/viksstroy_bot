@@ -38,7 +38,7 @@ app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 TZ_BARNAUL = ZoneInfo("Asia/Barnaul")
 
 
-# --- НОВАЯ СИСТЕМА АЛИАСОВ ID ДЛЯ СВЯЗКИ АККАУНТОВ ---
+# --- СИСТЕМА АЛИАСОВ ID ДЛЯ СВЯЗКИ АККАУНТОВ ---
 async def resolve_id(raw_id: int):
     """Преобразует вторичный ID в первичный, если аккаунты связаны."""
     async with db.conn.execute("SELECT primary_id FROM account_links WHERE secondary_id = ?", (raw_id,)) as cur:
@@ -387,7 +387,6 @@ async def startup():
     await db.init_db()
     try:
         await db.conn.execute("CREATE TABLE IF NOT EXISTS web_codes (code TEXT, max_id INTEGER, expires REAL)")
-        # Таблицы для привязки и входа по коду
         await db.conn.execute(
             "CREATE TABLE IF NOT EXISTS account_links (primary_id INTEGER, secondary_id INTEGER UNIQUE)")
         await db.conn.execute("CREATE TABLE IF NOT EXISTS link_codes (code TEXT UNIQUE, user_id INTEGER, expires REAL)")
@@ -402,7 +401,6 @@ async def shutdown():
     await db.close()
 
 
-# --- ЭНДПОИНТ ДЛЯ ВХОДА В БРАУЗЕРЕ ЧЕРЕЗ КОД ---
 @app.post("/api/auth/code")
 async def api_auth_by_code(code: str = Form(...)):
     async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (code,)) as cur:
@@ -420,7 +418,6 @@ async def api_auth_by_code(code: str = Form(...)):
     if user_dict.get('is_blacklisted'):
         raise HTTPException(status_code=403, detail="Ваш аккаунт заблокирован")
 
-    # После успешного входа удаляем код в целях безопасности
     try:
         await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (code,))
         await db.conn.commit()
@@ -430,7 +427,6 @@ async def api_auth_by_code(code: str = Form(...)):
     return {"status": "ok", "role": user_dict['role'], "tg_id": primary_id}
 
 
-# --- ЭНДПОИНТ ДЛЯ ПРИВЯЗКИ АККАУНТА ИЗ ПРОФИЛЯ ---
 @app.post("/api/users/link_account")
 async def api_link_account(tg_id: int = Form(...), code: str = Form(...)):
     raw_id = tg_id
@@ -454,11 +450,30 @@ async def api_link_account(tg_id: int = Form(...), code: str = Form(...)):
         await db.conn.rollback()
         raise HTTPException(500, "Ошибка БД при связке аккаунтов")
 
-    # Возвращаем данные primary_id для обновления localStorage
     user = await db.get_user(primary_id)
     role = dict(user)['role'] if user else "worker"
 
     return {"status": "ok", "new_tg_id": primary_id, "role": role}
+
+
+# НОВЫЙ ЭНДПОИНТ: Отвязка аккаунтов
+@app.post("/api/users/unlink_platform")
+async def api_unlink_platform(tg_id: int = Form(...), platform: str = Form(...)):
+    real_target_id = await resolve_id(tg_id)
+
+    try:
+        if platform == 'max':
+            await db.conn.execute("DELETE FROM account_links WHERE primary_id = ? AND secondary_id < 0",
+                                  (real_target_id,))
+        elif platform == 'tg':
+            await db.conn.execute("DELETE FROM account_links WHERE primary_id = ? AND secondary_id > 0",
+                                  (real_target_id,))
+        await db.conn.commit()
+    except Exception as e:
+        await db.conn.rollback()
+        raise HTTPException(500, "Ошибка БД при отвязке")
+
+    return {"status": "ok"}
 
 
 @app.post("/api/max/web_auth")
@@ -654,12 +669,34 @@ async def api_get_users():
              "is_blacklisted": dict(u)['is_blacklisted'], "avatar_url": dict(u).get('avatar_url', '')} for u in users]
 
 
+# --- ИЗМЕНЕННЫЙ ЭНДПОИНТ: ВОЗВРАЩАЕТ ДАННЫЕ О ПРИВЯЗКАХ ---
 @app.get("/api/users/{target_id}/profile")
 async def api_get_profile(target_id: int):
     real_target_id = await resolve_id(target_id)
     profile = await db.get_user_full_profile(real_target_id)
     if not profile: raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return {"profile": profile, "logs": await db.get_specific_user_logs(real_target_id)}
+
+    # Получаем все вторичные ID, привязанные к этому профилю
+    async with db.conn.execute("SELECT secondary_id FROM account_links WHERE primary_id = ?", (real_target_id,)) as cur:
+        rows = await cur.fetchall()
+
+    linked_ids = [r[0] for r in rows]
+    has_secondary_tg = any(sid > 0 for sid in linked_ids)
+    has_secondary_max = any(sid < 0 for sid in linked_ids)
+
+    primary_is_tg = real_target_id > 0
+    primary_is_max = real_target_id < 0
+
+    return {
+        "profile": dict(profile),
+        "logs": await db.get_specific_user_logs(real_target_id),
+        "links": {
+            "has_tg": primary_is_tg or has_secondary_tg,
+            "has_max": primary_is_max or has_secondary_max,
+            "secondary_tg": has_secondary_tg,
+            "secondary_max": has_secondary_max
+        }
+    }
 
 
 def process_base64_image(base64_str: str, prefix: str) -> str:

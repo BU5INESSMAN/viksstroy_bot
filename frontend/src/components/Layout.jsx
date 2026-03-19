@@ -18,8 +18,6 @@ export default function Layout() {
     const [linkCode, setLinkCode] = useState('');
 
     const [isTMA, setIsTMA] = useState(false);
-    // Отдельно определяем платформу MAX для ссылок-подсказок
-    const isMAX = window.location.pathname.includes('/max');
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
 
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -40,10 +38,10 @@ export default function Layout() {
                 tg.disableVerticalSwipes();
             }
         }
-        if (isMAX) setIsTMA(true);
+        if (window.location.pathname.includes('/max')) setIsTMA(true);
 
         document.body.style.overscrollBehaviorY = 'none';
-    }, [isMAX]);
+    }, []);
 
     const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light');
     const themeIcon = theme === 'light' ? '🌞' : theme === 'dark' ? '🌙' : '💻';
@@ -53,9 +51,11 @@ export default function Layout() {
     const openProfile = async (targetId) => {
         try {
             const res = await axios.get(`/api/users/${targetId}/profile`);
-            setProfileData(res.data.profile);
+            // Добавляем объект links внутрь profileData для удобства рендеринга
+            const newProfileData = { ...res.data.profile, links: res.data.links };
+            setProfileData(newProfileData);
             setEditProfile({ fio: res.data.profile.fio, role: res.data.profile.role, team_id: res.data.profile.team_id || '', position: res.data.profile.position || '' });
-            setLinkCode(''); // очищаем код при открытии
+            setLinkCode('');
             setProfileModalOpen(true);
         } catch (err) { alert("Ошибка загрузки профиля"); }
     };
@@ -102,7 +102,6 @@ export default function Layout() {
             fd.append('code', linkCode);
             const res = await axios.post('/api/users/link_account', fd);
 
-            // Если привязка прошла успешно, обновляем наш tgId в браузере
             localStorage.setItem('tg_id', res.data.new_tg_id);
             localStorage.setItem('user_role', res.data.role);
 
@@ -110,6 +109,20 @@ export default function Layout() {
             window.location.reload();
         } catch (e) {
             alert(e.response?.data?.detail || "Ошибка привязки. Проверьте правильность кода.");
+        }
+    };
+
+    const handleUnlinkPlatform = async (platform) => {
+        if (!window.confirm(`Вы уверены, что хотите отвязать этот мессенджер?`)) return;
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            fd.append('platform', platform);
+            await axios.post('/api/users/unlink_platform', fd);
+            alert("Мессенджер успешно отвязан.");
+            window.location.reload();
+        } catch (e) {
+            alert(e.response?.data?.detail || "Ошибка при отвязке.");
         }
     };
 
@@ -191,25 +204,56 @@ export default function Layout() {
                     </label>
                 <div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p></div></div></div><div className="p-6 space-y-6"><div className="space-y-4"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div></div>
 
-                {/* БЛОК: Привязка другого аккаунта */}
-                {profileData.user_id === Number(tgId) && (
+                {/* НОВЫЙ БЛОК: Динамическая привязка и отвязка */}
+                {profileData.user_id === Number(tgId) && profileData.links && (
                     <div className="mt-6 pt-4 border-t dark:border-gray-700">
-                        <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider mb-2">Привязка другого мессенджера</h4>
+                        <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider mb-3">Привязка мессенджеров</h4>
 
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                            Сгенерируйте код командой <code className="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded font-mono">/web</code> в{' '}
-                            {isMAX ? (
-                                <a href="https://t.me/viksstroy_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 font-bold underline decoration-blue-300">Telegram боте</a>
-                            ) : (
-                                <a href="https://max.ru/id222264297116_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 font-bold underline decoration-blue-300">MAX боте</a>
-                            )}
-                            {' '}и введите его здесь:
-                        </p>
+                        {/* Показываем инструкции ТОЛЬКО для тех платформ, которые еще не привязаны */}
+                        {!profileData.links.has_max && (
+                            <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+                                <p className="text-xs text-gray-600 dark:text-gray-300">
+                                    <span className="font-bold">MAX:</span> Для привязки отправьте <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-800 dark:text-gray-200 font-mono">/web</code> в <a href="https://max.ru/id222264297116_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 underline font-medium">MAX боте</a> и введите код ниже.
+                                </p>
+                            </div>
+                        )}
 
-                        <div className="flex space-x-2">
-                            <input type="text" maxLength={6} value={linkCode} onChange={e => setLinkCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="w-full px-4 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg outline-none font-mono tracking-widest text-center" />
-                            <button onClick={handleLinkAccount} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-bold text-sm transition shadow-md whitespace-nowrap active:scale-95">Привязать</button>
-                        </div>
+                        {!profileData.links.has_tg && (
+                            <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+                                <p className="text-xs text-gray-600 dark:text-gray-300">
+                                    <span className="font-bold">Telegram:</span> Для привязки отправьте <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-800 dark:text-gray-200 font-mono">/web</code> в <a href="https://t.me/viksstroy_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 underline font-medium">Telegram боте</a> и введите код ниже.
+                                </p>
+                            </div>
+                        )}
+
+                        {/* Форма ввода кода (скрывается, если привязано всё) */}
+                        {(!profileData.links.has_max || !profileData.links.has_tg) && (
+                            <div className="flex space-x-2 mb-4">
+                                <input type="text" maxLength={6} value={linkCode} onChange={e => setLinkCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="w-full px-4 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg outline-none font-mono tracking-widest text-center shadow-inner" />
+                                <button onClick={handleLinkAccount} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-bold text-sm transition shadow-md whitespace-nowrap active:scale-95">Привязать</button>
+                            </div>
+                        )}
+
+                        {/* Кнопки отвязки для вторичных аккаунтов */}
+                        {(profileData.links.secondary_max || profileData.links.secondary_tg) && (
+                            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+                                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Привязанные устройства:</p>
+                                <div className="flex flex-col space-y-2">
+                                    {profileData.links.secondary_max && (
+                                        <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+                                            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">📱 Мессенджер MAX</span>
+                                            <button onClick={() => handleUnlinkPlatform('max')} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1 rounded text-xs font-bold transition">Отвязать</button>
+                                        </div>
+                                    )}
+                                    {profileData.links.secondary_tg && (
+                                        <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+                                            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">✈️ Telegram</span>
+                                            <button onClick={() => handleUnlinkPlatform('tg')} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1 rounded text-xs font-bold transition">Отвязать</button>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
