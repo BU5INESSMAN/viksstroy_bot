@@ -18,6 +18,8 @@ export default function Layout() {
     const [linkCode, setLinkCode] = useState('');
 
     const [isTMA, setIsTMA] = useState(false);
+    // Отдельно определяем платформу MAX для ссылок-подсказок
+    const isMAX = window.location.pathname.includes('/max');
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
 
     const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -38,10 +40,10 @@ export default function Layout() {
                 tg.disableVerticalSwipes();
             }
         }
-        if (window.location.pathname.includes('/max')) setIsTMA(true);
+        if (isMAX) setIsTMA(true);
 
         document.body.style.overscrollBehaviorY = 'none';
-    }, []);
+    }, [isMAX]);
 
     const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light');
     const themeIcon = theme === 'light' ? '🌞' : theme === 'dark' ? '🌙' : '💻';
@@ -100,7 +102,7 @@ export default function Layout() {
             fd.append('code', linkCode);
             const res = await axios.post('/api/users/link_account', fd);
 
-            // Если привязка прошла успешно, обновляем наш tgId в браузере, чтобы стать первичным юзером
+            // Если привязка прошла успешно, обновляем наш tgId в браузере
             localStorage.setItem('tg_id', res.data.new_tg_id);
             localStorage.setItem('user_role', res.data.role);
 
@@ -189,14 +191,24 @@ export default function Layout() {
                     </label>
                 <div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p></div></div></div><div className="p-6 space-y-6"><div className="space-y-4"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div></div>
 
-                {/* НОВЫЙ БЛОК: Привязка другого аккаунта (виден только самому пользователю) */}
+                {/* БЛОК: Привязка другого аккаунта */}
                 {profileData.user_id === Number(tgId) && (
                     <div className="mt-6 pt-4 border-t dark:border-gray-700">
                         <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider mb-2">Привязка другого мессенджера</h4>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Сгенерируйте код командой <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded">/web</code> в другом мессенджере и введите его здесь:</p>
+
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                            Сгенерируйте код командой <code className="bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 px-1 py-0.5 rounded font-mono">/web</code> в{' '}
+                            {isMAX ? (
+                                <a href="https://t.me/viksstroy_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 font-bold underline decoration-blue-300">Telegram боте</a>
+                            ) : (
+                                <a href="https://max.ru/id222264297116_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 font-bold underline decoration-blue-300">MAX боте</a>
+                            )}
+                            {' '}и введите его здесь:
+                        </p>
+
                         <div className="flex space-x-2">
-                            <input type="text" maxLength={6} value={linkCode} onChange={e => setLinkCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg outline-none" />
-                            <button onClick={handleLinkAccount} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition whitespace-nowrap">Привязать</button>
+                            <input type="text" maxLength={6} value={linkCode} onChange={e => setLinkCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="w-full px-4 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg outline-none font-mono tracking-widest text-center" />
+                            <button onClick={handleLinkAccount} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-bold text-sm transition shadow-md whitespace-nowrap active:scale-95">Привязать</button>
                         </div>
                     </div>
                 )}

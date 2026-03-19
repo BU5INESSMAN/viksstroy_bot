@@ -387,7 +387,7 @@ async def startup():
     await db.init_db()
     try:
         await db.conn.execute("CREATE TABLE IF NOT EXISTS web_codes (code TEXT, max_id INTEGER, expires REAL)")
-        # --- НОВЫЕ ТАБЛИЦЫ ДЛЯ ПРИВЯЗКИ ---
+        # Таблицы для привязки и входа по коду
         await db.conn.execute(
             "CREATE TABLE IF NOT EXISTS account_links (primary_id INTEGER, secondary_id INTEGER UNIQUE)")
         await db.conn.execute("CREATE TABLE IF NOT EXISTS link_codes (code TEXT UNIQUE, user_id INTEGER, expires REAL)")
@@ -400,6 +400,34 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     await db.close()
+
+
+# --- ЭНДПОИНТ ДЛЯ ВХОДА В БРАУЗЕРЕ ЧЕРЕЗ КОД ---
+@app.post("/api/auth/code")
+async def api_auth_by_code(code: str = Form(...)):
+    async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (code,)) as cur:
+        row = await cur.fetchone()
+
+    if not row or time.time() > row[1]:
+        raise HTTPException(400, "Код недействителен или устарел")
+
+    primary_id = row[0]
+    user = await db.get_user(primary_id)
+    if not user:
+        raise HTTPException(404, "Пользователь не найден")
+
+    user_dict = dict(user)
+    if user_dict.get('is_blacklisted'):
+        raise HTTPException(status_code=403, detail="Ваш аккаунт заблокирован")
+
+    # После успешного входа удаляем код в целях безопасности
+    try:
+        await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (code,))
+        await db.conn.commit()
+    except:
+        pass
+
+    return {"status": "ok", "role": user_dict['role'], "tg_id": primary_id}
 
 
 # --- ЭНДПОИНТ ДЛЯ ПРИВЯЗКИ АККАУНТА ИЗ ПРОФИЛЯ ---
@@ -462,7 +490,6 @@ async def api_max_auth(max_id: int = Form(...), first_name: str = Form(""), last
     if user:
         user_dict = dict(user)
         if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
-        # Возвращаем real_tg_id чтобы фронтенд авторизовался как первичный юзер
         return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": real_tg_id}
     return {"status": "needs_password", "max_id": max_id, "first_name": first_name, "last_name": last_name}
 
