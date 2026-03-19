@@ -38,6 +38,15 @@ app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 TZ_BARNAUL = ZoneInfo("Asia/Barnaul")
 
 
+# --- НОВАЯ СИСТЕМА АЛИАСОВ ID ДЛЯ СВЯЗКИ АККАУНТОВ ---
+async def resolve_id(raw_id: int):
+    """Преобразует вторичный ID в первичный, если аккаунты связаны."""
+    async with db.conn.execute("SELECT primary_id FROM account_links WHERE secondary_id = ?", (raw_id,)) as cur:
+        row = await cur.fetchone()
+        if row: return row[0]
+    return raw_id
+
+
 async def fetch_teams_dict():
     async with db.conn.execute("SELECT id, name FROM teams") as cur:
         return {r[0]: r[1] for r in await cur.fetchall()}
@@ -260,7 +269,6 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
     async with aiohttp.ClientSession() as session:
         for cid in tg_chat_ids:
-            # Для MAX пользователей мы не отправляем уведомления через TG API (у них отрицательные ID)
             if int(cid) < 0:
                 continue
             try:
@@ -379,6 +387,10 @@ async def startup():
     await db.init_db()
     try:
         await db.conn.execute("CREATE TABLE IF NOT EXISTS web_codes (code TEXT, max_id INTEGER, expires REAL)")
+        # --- НОВЫЕ ТАБЛИЦЫ ДЛЯ ПРИВЯЗКИ ---
+        await db.conn.execute(
+            "CREATE TABLE IF NOT EXISTS account_links (primary_id INTEGER, secondary_id INTEGER UNIQUE)")
+        await db.conn.execute("CREATE TABLE IF NOT EXISTS link_codes (code TEXT UNIQUE, user_id INTEGER, expires REAL)")
         await db.conn.commit()
     except:
         pass
@@ -390,9 +402,36 @@ async def shutdown():
     await db.close()
 
 
-# =======================================================
-# АВТОРИЗАЦИЯ В MAX ИЛИ БРАУЗЕРЕ (С ТОКЕНОМ И БЕЗ)
-# =======================================================
+# --- ЭНДПОИНТ ДЛЯ ПРИВЯЗКИ АККАУНТА ИЗ ПРОФИЛЯ ---
+@app.post("/api/users/link_account")
+async def api_link_account(tg_id: int = Form(...), code: str = Form(...)):
+    raw_id = tg_id
+    async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (code,)) as cur:
+        row = await cur.fetchone()
+
+    if not row or time.time() > row[1]:
+        raise HTTPException(400, "Код недействителен или устарел")
+
+    primary_id = row[0]
+
+    if primary_id == raw_id:
+        raise HTTPException(400, "Нельзя привязать аккаунт к самому себе")
+
+    try:
+        await db.conn.execute("INSERT OR REPLACE INTO account_links (primary_id, secondary_id) VALUES (?, ?)",
+                              (primary_id, raw_id))
+        await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (code,))
+        await db.conn.commit()
+    except Exception as e:
+        await db.conn.rollback()
+        raise HTTPException(500, "Ошибка БД при связке аккаунтов")
+
+    # Возвращаем данные primary_id для обновления localStorage
+    user = await db.get_user(primary_id)
+    role = dict(user)['role'] if user else "worker"
+
+    return {"status": "ok", "new_tg_id": primary_id, "role": role}
+
 
 @app.post("/api/max/web_auth")
 async def max_web_auth(code: str = Form(...)):
@@ -404,29 +443,30 @@ async def max_web_auth(code: str = Form(...)):
 
     max_id = row[0]
     pseudo_tg_id = -int(max_id)
-    user = await db.get_user(pseudo_tg_id)
+    real_tg_id = await resolve_id(pseudo_tg_id)
+    user = await db.get_user(real_tg_id)
     if not user:
         raise HTTPException(404, "Пользователь не найден. Зарегистрируйтесь в боте (/start)")
 
     await db.conn.execute("DELETE FROM web_codes WHERE code = ?", (code,))
     await db.conn.commit()
 
-    return {"status": "ok", "role": dict(user)['role'], "tg_id": dict(user)['user_id']}
+    return {"status": "ok", "role": dict(user)['role'], "tg_id": real_tg_id}
 
 
-# НОВЫЙ ЭНДПОИНТ ДЛЯ БЕСШОВНОЙ АВТОРИЗАЦИИ MAX
 @app.post("/api/max/auth")
 async def api_max_auth(max_id: int = Form(...), first_name: str = Form(""), last_name: str = Form("")):
     pseudo_tg_id = -int(max_id)
-    user = await db.get_user(pseudo_tg_id)
+    real_tg_id = await resolve_id(pseudo_tg_id)
+    user = await db.get_user(real_tg_id)
     if user:
         user_dict = dict(user)
         if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
-        return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": pseudo_tg_id}
+        # Возвращаем real_tg_id чтобы фронтенд авторизовался как первичный юзер
+        return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": real_tg_id}
     return {"status": "needs_password", "max_id": max_id, "first_name": first_name, "last_name": last_name}
 
 
-# НОВЫЙ ЭНДПОИНТ ДЛЯ РЕГИСТРАЦИИ В MAX
 @app.post("/api/max/register")
 async def register_max(max_id: int = Form(...), first_name: str = Form(""), last_name: str = Form(""),
                        password: str = Form(...)):
@@ -489,18 +529,20 @@ async def telegram_auth(data: dict):
         hash_calc = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
         if hash_calc != received_hash: raise HTTPException(status_code=403, detail="Неверная подпись")
 
-        tg_id = int(data['id'])
+        raw_id = int(data['id'])
+        real_tg_id = await resolve_id(raw_id)
         photo_url = data.get('photo_url', '')
-        user = await db.get_user(tg_id)
+        user = await db.get_user(real_tg_id)
+
         if user:
             user_dict = dict(user)
             if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
             if photo_url and not user_dict.get('avatar_url'):
-                await db.update_user_avatar(tg_id, photo_url)
+                await db.update_user_avatar(real_tg_id, photo_url)
                 user_dict['avatar_url'] = photo_url
-            return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": tg_id,
+            return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": real_tg_id,
                     "avatar_url": user_dict.get('avatar_url', photo_url)}
-        return {"status": "needs_password", "tg_id": tg_id, "first_name": data.get('first_name', ''),
+        return {"status": "needs_password", "tg_id": raw_id, "first_name": data.get('first_name', ''),
                 "last_name": data.get('last_name', ''), "photo_url": photo_url}
     except HTTPException:
         raise
@@ -510,11 +552,12 @@ async def telegram_auth(data: dict):
 
 @app.post("/api/tma/auth")
 async def api_tma_auth(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form("")):
-    user = await db.get_user(tg_id)
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
     if user:
         user_dict = dict(user)
         if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
-        return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": tg_id}
+        return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": real_tg_id}
     return {"status": "needs_password", "tg_id": tg_id, "first_name": first_name, "last_name": last_name}
 
 
@@ -561,9 +604,10 @@ async def get_dashboard_data(tg_id: int = 0):
         enrich_app_with_team_name(a, teams_dict)
 
     recent_addresses = []
-    if tg_id > 0 or tg_id < 0:
+    if tg_id != 0:
+        real_tg_id = await resolve_id(tg_id)
         async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
-                                   (tg_id,)) as cur:
+                                   (real_tg_id,)) as cur:
             for r in await cur.fetchall():
                 if r[0] and r[0] not in recent_addresses: recent_addresses.append(r[0])
                 if len(recent_addresses) >= 5: break
@@ -585,9 +629,10 @@ async def api_get_users():
 
 @app.get("/api/users/{target_id}/profile")
 async def api_get_profile(target_id: int):
-    profile = await db.get_user_full_profile(target_id)
+    real_target_id = await resolve_id(target_id)
+    profile = await db.get_user_full_profile(real_target_id)
     if not profile: raise HTTPException(status_code=404, detail="Пользователь не найден")
-    return {"profile": profile, "logs": await db.get_specific_user_logs(target_id)}
+    return {"profile": profile, "logs": await db.get_specific_user_logs(real_target_id)}
 
 
 def process_base64_image(base64_str: str, prefix: str) -> str:
@@ -608,9 +653,10 @@ def process_base64_image(base64_str: str, prefix: str) -> str:
 @app.post("/api/users/{target_id}/update_avatar")
 async def api_update_avatar(target_id: int, avatar_url: str = Form(""), avatar_base64: str = Form(""),
                             tg_id: int = Form(0)):
+    real_target_id = await resolve_id(target_id)
     final_url = avatar_url
-    if avatar_base64: final_url = process_base64_image(avatar_base64, f"avatar_{target_id}") or avatar_url
-    if final_url: await db.update_user_avatar(target_id, final_url)
+    if avatar_base64: final_url = process_base64_image(avatar_base64, f"avatar_{real_target_id}") or avatar_url
+    if final_url: await db.update_user_avatar(real_target_id, final_url)
     return {"status": "ok", "avatar_url": final_url}
 
 
@@ -620,8 +666,9 @@ async def api_update_profile(target_id: int, tg_id: int = Form(...), fio: str = 
     admin = await db.get_user(tg_id)
     if not admin or admin['role'] not in ['superadmin', 'boss', 'moderator']: raise HTTPException(status_code=403,
                                                                                                   detail="Нет прав")
-    await db.update_user_profile_data(target_id, fio, role)
-    profile = await db.get_user_full_profile(target_id)
+    real_target_id = await resolve_id(target_id)
+    await db.update_user_profile_data(real_target_id, fio, role)
+    profile = await db.get_user_full_profile(real_target_id)
     if profile['member_id']:
         if team_id > 0:
             await db.conn.execute("UPDATE team_members SET team_id = ?, position = ? WHERE id = ?",
@@ -630,7 +677,7 @@ async def api_update_profile(target_id: int, tg_id: int = Form(...), fio: str = 
             await db.conn.execute("DELETE FROM team_members WHERE id = ?", (profile['member_id'],))
     elif team_id > 0:
         await db.conn.execute("INSERT INTO team_members (team_id, fio, position, tg_id) VALUES (?, ?, ?, ?)",
-                              (team_id, fio, position, target_id))
+                              (team_id, fio, position, real_target_id))
     await db.conn.commit()
     return {"status": "ok"}
 
@@ -640,10 +687,11 @@ async def api_delete_user(target_id: int, tg_id: int = Form(...)):
     admin = await db.get_user(tg_id)
     if not admin or dict(admin).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403,
                                                                                                             "Нет прав")
+    real_target_id = await resolve_id(target_id)
     try:
-        await db.conn.execute("DELETE FROM users WHERE user_id = ?", (target_id,))
-        await db.conn.execute("DELETE FROM team_members WHERE tg_id = ?", (target_id,))
-        await db.conn.execute("UPDATE equipment SET tg_id = NULL WHERE tg_id = ?", (target_id,))
+        await db.conn.execute("DELETE FROM users WHERE user_id = ?", (real_target_id,))
+        await db.conn.execute("DELETE FROM team_members WHERE tg_id = ?", (real_target_id,))
+        await db.conn.execute("UPDATE equipment SET tg_id = NULL WHERE tg_id = ?", (real_target_id,))
         await db.conn.commit()
     except:
         await db.conn.rollback()
@@ -668,15 +716,16 @@ async def api_get_invite_info(invite_code: str):
 @app.post("/api/invite/join")
 async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...), tg_id: int = Form(...)):
     team = await db.get_team_by_invite(invite_code)
-    await db.conn.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (tg_id, worker_id))
-    user = await db.get_user(tg_id)
+    real_tg_id = await resolve_id(tg_id)
+    await db.conn.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (real_tg_id, worker_id))
+    user = await db.get_user(real_tg_id)
     async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
         w_row = await cur.fetchone()
-        fio = w_row[0] if w_row else f"Рабочий {tg_id}"
+        fio = w_row[0] if w_row else f"Рабочий {real_tg_id}"
     if not user:
-        await db.add_user(tg_id, fio, "worker")
+        await db.add_user(real_tg_id, fio, "worker")
     elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
-        await db.update_user_role(tg_id, "worker")
+        await db.update_user_role(real_tg_id, "worker")
     await db.conn.commit()
     await notify_users(["report_group"],
                        f"🔗 <b>Привязка аккаунта</b>\nРабочий {fio} привязал аккаунт к бригаде «{team['name']}».",
@@ -751,11 +800,12 @@ async def delete_entire_team(team_id: int, tg_id: int = Form(0)):
 async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form("")):
-    user = await db.get_user(tg_id)
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
     fio = dict(user).get('fio', 'Web-Пользователь') if user else "Web-Пользователь"
     await db.conn.execute(
         "INSERT INTO applications (foreman_id, foreman_name, team_id, equip_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data) VALUES (?, ?, ?, 0, ?, ?, '08', '17', ?, 'waiting', ?, ?)",
-        (tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
+        (real_tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
     await notify_users(["report_group", "moderator"],
                        f"📝 <b>Новая заявка на выезд</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}",
@@ -767,7 +817,8 @@ async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_targ
 async def update_app(app_id: int, tg_id: int = Form(...), team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form("")):
-    user = await db.get_user(tg_id)
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
     if not user: raise HTTPException(403)
     async with db.conn.execute("SELECT status FROM applications WHERE id = ?", (app_id,)) as cur:
         row = await cur.fetchone()
@@ -780,7 +831,7 @@ async def update_app(app_id: int, tg_id: int = Form(...), team_id: str = Form("0
         await db.conn.commit()
     except:
         await db.conn.rollback()
-    await db.add_log(tg_id, dict(user).get('fio', 'Пользователь'), f"Отредактировал заявку №{app_id}")
+    await db.add_log(real_tg_id, dict(user).get('fio', 'Пользователь'), f"Отредактировал заявку №{app_id}")
     return {"status": "ok"}
 
 
@@ -984,7 +1035,8 @@ async def cron_check_timeouts(): return {"status": "ok"}
 
 @app.get("/api/applications/active")
 async def get_active_app(tg_id: int):
-    user = await db.get_user(tg_id)
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
     if not user: return []
     role = dict(user).get('role')
     if role in ['superadmin', 'boss', 'moderator']: return []
@@ -1000,17 +1052,17 @@ async def get_active_app(tg_id: int):
         enrich_app_with_team_name(app_dict, teams_dict)
         involved = False
 
-        if role == 'foreman' and app_dict['foreman_id'] == tg_id: involved = True
+        if role == 'foreman' and app_dict['foreman_id'] == real_tg_id: involved = True
 
         if role in ['worker', 'foreman']:
-            async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_user_id = ?", (tg_id,)) as cur:
+            async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_user_id = ?", (real_tg_id,)) as cur:
                 tm_row = await cur.fetchone()
                 if tm_row and tm_row[0]:
                     t_ids = [int(x) for x in str(app_dict['team_id']).split(',') if x.strip().isdigit()]
                     if tm_row[0] in t_ids: involved = True
 
         if role == 'driver':
-            async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (tg_id,)) as cur:
+            async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (real_tg_id,)) as cur:
                 eq_row = await cur.fetchone()
                 if eq_row:
                     my_eq_id = eq_row[0]
@@ -1027,7 +1079,8 @@ async def get_active_app(tg_id: int):
 
 @app.get("/api/applications/my")
 async def get_my_apps(tg_id: int):
-    user = await db.get_user(tg_id)
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
     if not user: return []
     role = dict(user).get('role')
     teams_dict = await fetch_teams_dict()
@@ -1053,13 +1106,13 @@ async def get_my_apps(tg_id: int):
 
         involved = False
         if role in ['worker', 'foreman']:
-            async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_user_id = ?", (tg_id,)) as cur:
+            async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_user_id = ?", (real_tg_id,)) as cur:
                 tm_row = await cur.fetchone()
                 if tm_row and tm_row[0]:
                     t_ids = [int(x) for x in str(app_dict['team_id']).split(',') if x.strip().isdigit()]
                     if tm_row[0] in t_ids: involved = True
         if role in ['driver']:
-            async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (tg_id,)) as cur:
+            async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (real_tg_id,)) as cur:
                 eq_row = await cur.fetchone()
                 if eq_row:
                     my_eq_id = eq_row[0]
@@ -1070,16 +1123,17 @@ async def get_my_apps(tg_id: int):
 
 @app.post("/api/equipment/set_free")
 async def set_equipment_free(tg_id: int = Form(...)):
+    real_tg_id = await resolve_id(tg_id)
     try:
-        await db.conn.execute("UPDATE equipment SET status = 'free' WHERE tg_id = ?", (tg_id,))
+        await db.conn.execute("UPDATE equipment SET status = 'free' WHERE tg_id = ?", (real_tg_id,))
         await db.conn.commit()
     except:
         await db.conn.rollback()
 
-    user = await db.get_user(tg_id)
+    user = await db.get_user(real_tg_id)
     if user:
         fio = dict(user).get('fio', '')
-        await db.add_log(tg_id, fio, "Освободил свою технику")
+        await db.add_log(real_tg_id, fio, "Освободил свою технику")
         await notify_users(["report_group"], f"🟢 <b>Техника освобождена</b>\nВодитель {fio} завершил работу.",
                            "equipment")
     return {"status": "ok"}
@@ -1190,15 +1244,16 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
         eq_row = await cur.fetchone()
     if not eq_row: raise HTTPException(status_code=404, detail="Техника не найдена")
 
+    real_tg_id = await resolve_id(tg_id)
     try:
-        await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (tg_id, eq_row[0]))
+        await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (real_tg_id, eq_row[0]))
 
-        user = await db.get_user(tg_id)
-        fio = dict(user).get('fio', f"Пользователь {tg_id}") if user else f"Пользователь {tg_id}"
+        user = await db.get_user(real_tg_id)
+        fio = dict(user).get('fio', f"Пользователь {real_tg_id}") if user else f"Пользователь {real_tg_id}"
         if not user:
-            await db.add_user(tg_id, fio, "driver")
+            await db.add_user(real_tg_id, fio, "driver")
         elif dict(user)['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
-            await db.update_user_role(tg_id, "driver")
+            await db.update_user_role(real_tg_id, "driver")
         await db.conn.commit()
     except:
         await db.conn.rollback()

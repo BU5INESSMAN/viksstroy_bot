@@ -14,6 +14,9 @@ export default function Layout() {
     const [profileData, setProfileData] = useState(null);
     const [editProfile, setEditProfile] = useState({});
 
+    // Стейт для привязки аккаунта
+    const [linkCode, setLinkCode] = useState('');
+
     const [isTMA, setIsTMA] = useState(false);
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
 
@@ -50,6 +53,7 @@ export default function Layout() {
             const res = await axios.get(`/api/users/${targetId}/profile`);
             setProfileData(res.data.profile);
             setEditProfile({ fio: res.data.profile.fio, role: res.data.profile.role, team_id: res.data.profile.team_id || '', position: res.data.profile.position || '' });
+            setLinkCode(''); // очищаем код при открытии
             setProfileModalOpen(true);
         } catch (err) { alert("Ошибка загрузки профиля"); }
     };
@@ -88,6 +92,25 @@ export default function Layout() {
         } catch (e) { alert("Ошибка удаления пользователя"); }
     };
 
+    const handleLinkAccount = async () => {
+        if (!linkCode) return;
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            fd.append('code', linkCode);
+            const res = await axios.post('/api/users/link_account', fd);
+
+            // Если привязка прошла успешно, обновляем наш tgId в браузере, чтобы стать первичным юзером
+            localStorage.setItem('tg_id', res.data.new_tg_id);
+            localStorage.setItem('user_role', res.data.role);
+
+            alert("Аккаунты успешно связаны!");
+            window.location.reload();
+        } catch (e) {
+            alert(e.response?.data?.detail || "Ошибка привязки. Проверьте правильность кода.");
+        }
+    };
+
     const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
 
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
@@ -97,8 +120,7 @@ export default function Layout() {
 
     return (
         <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
-            {/* ОРИГИНАЛЬНАЯ ШАПКА + УВЕЛИЧЕННЫЙ ОТСТУП ДЛЯ TMA (pt-8 вместо pt-4) */}
-            <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 ${isTMA ? 'pt-16' : 'pt-16'}`}>
+            <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 ${isTMA ? 'pt-8' : 'pt-4'}`}>
                 {realRole && (
                     <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-50">
                         <span>Тест роли: {roleNames[role]}</span>
@@ -166,6 +188,18 @@ export default function Layout() {
                         <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                     </label>
                 <div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p></div></div></div><div className="p-6 space-y-6"><div className="space-y-4"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div></div>
+
+                {/* НОВЫЙ БЛОК: Привязка другого аккаунта (виден только самому пользователю) */}
+                {profileData.user_id === Number(tgId) && (
+                    <div className="mt-6 pt-4 border-t dark:border-gray-700">
+                        <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider mb-2">Привязка другого мессенджера</h4>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Сгенерируйте код командой <code className="bg-gray-200 dark:bg-gray-600 px-1 rounded">/web</code> в другом мессенджере и введите его здесь:</p>
+                        <div className="flex space-x-2">
+                            <input type="text" maxLength={6} value={linkCode} onChange={e => setLinkCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg outline-none" />
+                            <button onClick={handleLinkAccount} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg font-bold text-sm transition whitespace-nowrap">Привязать</button>
+                        </div>
+                    </div>
+                )}
 
                 {canEditUsers && (
                     <div className="flex justify-between items-center pt-4 mt-2 border-t dark:border-gray-700">

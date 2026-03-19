@@ -3,9 +3,11 @@ import logging
 import os
 import shutil
 import aiohttp
+import random
+import time
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types, F
-from aiogram.filters import CommandStart, CommandObject
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
@@ -13,7 +15,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from dotenv import load_dotenv
 import sys
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from database.db_manager import DatabaseManager
 
 load_dotenv()
@@ -36,98 +38,119 @@ class RegState(StatesGroup):
 
 def get_webapp_keyboard():
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="📱 Открыть платформу", web_app=WebAppInfo(url=WEB_APP_URL))]])
+        inline_keyboard=[[InlineKeyboardButton(text="📱 Открыть платформу", web_app=WebAppInfo(url=WEB_APP_URL))]]
+    )
+
+
+async def resolve_id(raw_id: int):
+    async with db.conn.execute("SELECT primary_id FROM account_links WHERE secondary_id = ?", (raw_id,)) as cur:
+        row = await cur.fetchone()
+        if row: return row[0]
+    return raw_id
 
 
 @dp.message(CommandStart())
-async def cmd_start(message: types.Message, command: CommandObject, state: FSMContext):
-    tg_id = message.from_user.id
-    args = command.args
-
-    if args and args.startswith("team_"):
-        invite_code = args.replace("team_", "")
-        invite_url = f"https://miniapp.viks22.ru/invite/{invite_code}"
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="🔗 Привязать аккаунт", web_app=WebAppInfo(url=invite_url))]])
-        await message.answer("👋 <b>Приглашение в бригаду!</b>\n\nНажмите кнопку ниже.", reply_markup=kb,
-                             parse_mode="HTML")
-        return
-
-    if args and args.startswith("equip_"):
-        invite_code = args.replace("equip_", "")
-        invite_url = f"https://miniapp.viks22.ru/equip-invite/{invite_code}"
-        kb = InlineKeyboardMarkup(
-            inline_keyboard=[[InlineKeyboardButton(text="🔗 Стать водителем", web_app=WebAppInfo(url=invite_url))]])
-        await message.answer("👋 <b>Привязка техники!</b>\n\nНажмите кнопку ниже.", reply_markup=kb, parse_mode="HTML")
-        return
-
+async def cmd_start(message: types.Message, state: FSMContext):
+    raw_id = message.from_user.id
+    tg_id = await resolve_id(raw_id)
     user = await db.get_user(tg_id)
+
     if user:
         if dict(user).get('is_blacklisted'):
-            await message.answer("❌ Ваш аккаунт заблокирован.")
-            return
-        await message.answer(f"С возвращением, <b>{dict(user).get('fio')}</b>!\n\nНажмите кнопку ниже для запуска:",
-                             reply_markup=get_webapp_keyboard(), parse_mode="HTML")
-        return
+            await message.answer("❌ Ваш аккаунт заблокирован. Обратитесь к руководству.")
+        else:
+            await state.clear()
+            await message.answer(
+                f"С возвращением, <b>{dict(user)['fio']}</b>!\n\nИспользуйте кнопку ниже для запуска платформы:",
+                reply_markup=get_webapp_keyboard(), parse_mode="html")
+    else:
+        await state.set_state(RegState.waiting_for_password)
+        await message.answer(
+            "🔐 <b>Добро пожаловать в ВИКС Расписание!</b>\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш <b>системный пароль</b> или <b>6-значный код привязки</b> (если аккаунт уже есть в MAX):",
+            parse_mode="html")
 
-    await state.set_state(RegState.waiting_for_password)
-    await message.answer("🔐 <b>Добро пожаловать!</b>\n\nПожалуйста, введите ваш системный пароль:", parse_mode="HTML")
+
+@dp.message(Command("web"))
+async def cmd_web(message: types.Message):
+    raw_id = message.from_user.id
+    tg_id = await resolve_id(raw_id)
+    user = await db.get_user(tg_id)
+    if not user:
+        return await message.answer("❌ Сначала зарегистрируйтесь (команда /start).")
+
+    code = str(random.randint(100000, 999999))
+    expires = time.time() + 900  # 15 min
+    await db.conn.execute("INSERT INTO link_codes (code, user_id, expires) VALUES (?, ?, ?)", (code, tg_id, expires))
+    await db.conn.commit()
+    await message.answer(
+        f"Ваш код для привязки аккаунта: <code>{code}</code>\nДействителен 15 минут. Введите его в другом мессенджере или в профиле платформы.",
+        parse_mode="html")
 
 
 @dp.message(RegState.waiting_for_password)
 async def process_password(message: types.Message, state: FSMContext):
-    pwd = message.text.strip()
+    text = message.text.strip()
+    raw_id = message.from_user.id
+
+    # ПРОВЕРКА: Возможно это код привязки аккаунта
+    if len(text) == 6 and text.isdigit():
+        async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (text,)) as cur:
+            row = await cur.fetchone()
+        if row and time.time() < row[1]:
+            primary_id = row[0]
+            await db.conn.execute("INSERT OR REPLACE INTO account_links (primary_id, secondary_id) VALUES (?, ?)",
+                                  (primary_id, raw_id))
+            await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (text,))
+            await db.conn.commit()
+            await state.clear()
+            return await message.answer("✅ Аккаунты успешно связаны! Нажмите /start для обновления.")
+        else:
+            return await message.answer(
+                "❌ Код недействителен или устарел. Введите правильный пароль или новый код привязки:")
+
     role = None
-    if pwd == os.getenv("SUPERADMIN_PASS"):
-        role = "superadmin"
-    elif pwd == os.getenv("BOSS_PASS"):
-        role = "boss"
-    elif pwd == os.getenv("MODERATOR_PASS"):
-        role = "moderator"
-    elif pwd == os.getenv("FOREMAN_PASS"):
+    if text == os.getenv("FOREMAN_PASS"):
         role = "foreman"
+    elif text == os.getenv("MODERATOR_PASS"):
+        role = "moderator"
+    elif text == os.getenv("BOSS_PASS"):
+        role = "boss"
+    elif text == os.getenv("SUPERADMIN_PASS"):
+        role = "superadmin"
 
-    if not role:
-        await message.answer("❌ Неверный пароль. Попробуйте еще раз:")
-        return
-
-    await state.update_data(role=role)
-    await state.set_state(RegState.waiting_for_fio)
-    await message.answer("✅ Пароль принят!\n\nТеперь введите ваше <b>ФИО</b> (Например: Иванов Иван):",
-                         parse_mode="HTML")
+    if role:
+        await state.update_data(role=role)
+        await state.set_state(RegState.waiting_for_fio)
+        await message.answer("✅ Пароль принят.\n\nПожалуйста, введите ваше <b>ФИО</b> (Например: Иванов Иван):",
+                             parse_mode="html")
+    else:
+        await message.answer("❌ Неверный пароль. Попробуйте снова:")
 
 
 @dp.message(RegState.waiting_for_fio)
 async def process_fio(message: types.Message, state: FSMContext):
     fio = message.text.strip()
     data = await state.get_data()
-    role = data.get("role")
-    tg_id = message.from_user.id
+    role = data.get("role", "worker")
+    raw_id = message.from_user.id
 
-    await db.add_user(tg_id, fio, role)
-    await db.add_log(tg_id, fio, f"Зарегистрировался через бота (Роль: {role})")
-
+    await db.add_user(raw_id, fio, role)
+    await db.add_log(raw_id, fio, f"Зарегистрировался в боте (Роль: {role})")
     await state.clear()
-    await message.answer(f"🎉 <b>Регистрация успешна!</b>\n\nНажмите на кнопку ниже, чтобы открыть платформу.",
-                         reply_markup=get_webapp_keyboard(), parse_mode="HTML")
+
+    await message.answer(
+        f"🎉 <b>Регистрация успешно завершена!</b>\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇",
+        reply_markup=get_webapp_keyboard(), parse_mode="html")
 
 
-@dp.message()
-async def handle_all_messages(message: types.Message):
-    user = await db.get_user(message.from_user.id)
-    if user and not dict(user).get('is_blacklisted'):
-        await message.answer("⚠️ Все функции в мини-приложении 👇", reply_markup=get_webapp_keyboard())
-    elif not user:
-        await message.answer("Нажмите /start для регистрации.")
-
-
-# --- АВТОМАТИЗАЦИЯ ЧЕРЕЗ API БЭКЕНДА ---
+# --- Планировщик ---
 async def call_api(endpoint):
-    try:
-        async with aiohttp.ClientSession() as session:
-            await session.post(f"http://api:8000{endpoint}")
-    except Exception as e:
-        logger.error(f"Cron Error {endpoint}: {e}")
+    url = f"http://127.0.0.1:8000{endpoint}"
+    async with aiohttp.ClientSession() as session:
+        try:
+            await session.post(url)
+        except:
+            pass
 
 
 async def start_day_jobs():
@@ -161,18 +184,18 @@ async def main():
     logger.info("База данных готова.")
 
     scheduler = AsyncIOScheduler(timezone='Asia/Barnaul')
-
     scheduler.add_job(start_day_jobs, 'cron', hour=7, minute=0, id='start_day')
     scheduler.add_job(end_day_jobs, 'cron', hour=23, minute=0, id='end_day')
-    scheduler.add_job(check_equip_timeouts, 'cron', minute=30, id='check_equip')
+    scheduler.add_job(check_equip_timeouts, 'cron', hour='8-22', minute='0,30', id='check_equip_timeouts')
     scheduler.add_job(backup_database, 'cron', hour=3, minute=0, id='backup_database')
-
     scheduler.start()
-    logger.info(">>> Бот ВИКС Расписание успешно запущен (Asia/Barnaul) <<<")
 
-    await bot.delete_webhook(drop_pending_updates=True)
+    logger.info(">>> Бот ВИКС Расписание успешно запущен (Asia/Barnaul) <<<")
     await dp.start_polling(bot)
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
+if __name__ == '__main__':
+    try:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
+        logger.info("Бот остановлен.")
