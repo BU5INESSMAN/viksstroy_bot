@@ -260,6 +260,9 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
     async with aiohttp.ClientSession() as session:
         for cid in tg_chat_ids:
+            # Для MAX пользователей мы не отправляем уведомления через TG API (у них отрицательные ID)
+            if int(cid) < 0:
+                continue
             try:
                 await session.post(f"https://api.telegram.org/bot{bot_token}/sendMessage",
                                    json={"chat_id": cid, "text": text, "parse_mode": "HTML", "reply_markup": markup})
@@ -374,7 +377,6 @@ async def background_scheduler():
 @app.on_event("startup")
 async def startup():
     await db.init_db()
-    # Создаем таблицу для хранения токенов авторизации MAX (если ее еще нет)
     try:
         await db.conn.execute("CREATE TABLE IF NOT EXISTS web_codes (code TEXT, max_id INTEGER, expires REAL)")
         await db.conn.commit()
@@ -386,6 +388,7 @@ async def startup():
 @app.on_event("shutdown")
 async def shutdown():
     await db.close()
+
 
 # =======================================================
 # АВТОРИЗАЦИЯ В MAX ИЛИ БРАУЗЕРЕ (С ТОКЕНОМ И БЕЗ)
@@ -409,6 +412,42 @@ async def max_web_auth(code: str = Form(...)):
     await db.conn.commit()
 
     return {"status": "ok", "role": dict(user)['role'], "tg_id": dict(user)['user_id']}
+
+
+# НОВЫЙ ЭНДПОИНТ ДЛЯ БЕСШОВНОЙ АВТОРИЗАЦИИ MAX
+@app.post("/api/max/auth")
+async def api_max_auth(max_id: int = Form(...), first_name: str = Form(""), last_name: str = Form("")):
+    pseudo_tg_id = -int(max_id)
+    user = await db.get_user(pseudo_tg_id)
+    if user:
+        user_dict = dict(user)
+        if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
+        return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": pseudo_tg_id}
+    return {"status": "needs_password", "max_id": max_id, "first_name": first_name, "last_name": last_name}
+
+
+# НОВЫЙ ЭНДПОИНТ ДЛЯ РЕГИСТРАЦИИ В MAX
+@app.post("/api/max/register")
+async def register_max(max_id: int = Form(...), first_name: str = Form(""), last_name: str = Form(""),
+                       password: str = Form(...)):
+    role = None
+    if password == os.getenv("FOREMAN_PASS"):
+        role = "foreman"
+    elif password == os.getenv("MODERATOR_PASS"):
+        role = "moderator"
+    elif password == os.getenv("BOSS_PASS"):
+        role = "boss"
+    elif password == os.getenv("SUPERADMIN_PASS"):
+        role = "superadmin"
+
+    if not role: raise HTTPException(status_code=401, detail="Неверный пароль")
+
+    pseudo_tg_id = -int(max_id)
+    fio = f"{last_name} {first_name}".strip() or f"Пользователь MAX {max_id}"
+    await db.add_user(pseudo_tg_id, fio, role)
+    await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался через MAX (Роль: {role})")
+    await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация (MAX)</b>\n👤 {fio}\n💼 {role}", "system")
+    return {"status": "ok", "role": role, "tg_id": pseudo_tg_id}
 
 
 @app.get("/api/settings")
@@ -522,7 +561,7 @@ async def get_dashboard_data(tg_id: int = 0):
         enrich_app_with_team_name(a, teams_dict)
 
     recent_addresses = []
-    if tg_id > 0:
+    if tg_id > 0 or tg_id < 0:
         async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
                                    (tg_id,)) as cur:
             for r in await cur.fetchall():
@@ -640,7 +679,7 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
         await db.update_user_role(tg_id, "worker")
     await db.conn.commit()
     await notify_users(["report_group"],
-                       f"🔗 <b>Привязка аккаунта</b>\nРабочий {fio} привязал Telegram к бригаде «{team['name']}».",
+                       f"🔗 <b>Привязка аккаунта</b>\nРабочий {fio} привязал аккаунт к бригаде «{team['name']}».",
                        "teams")
     return {"status": "ok"}
 

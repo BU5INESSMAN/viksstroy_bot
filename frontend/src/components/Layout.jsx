@@ -98,7 +98,7 @@ export default function Layout() {
     return (
         <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
             {/* ОРИГИНАЛЬНАЯ ШАПКА + УВЕЛИЧЕННЫЙ ОТСТУП ДЛЯ TMA (pt-8 вместо pt-4) */}
-            <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 ${isTMA ? 'pt-8' : 'pt-4'}`}>
+            <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 ${isTMA ? 'pt-16' : 'pt-16'}`}>
                 {realRole && (
                     <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-50">
                         <span>Тест роли: {roleNames[role]}</span>
