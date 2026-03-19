@@ -13,15 +13,17 @@ import MyApps from './pages/MyApps';
 import Review from './pages/Review';
 import Equipment from './pages/Equipment';
 
+// Подключаем страницы инвайтов
+import JoinTeam from './pages/JoinTeam';
+import JoinEquipment from './pages/JoinEquipment';
+
 function ProtectedRoute({ children }) {
   const isAuth = localStorage.getItem('user_role');
 
-  // Проверяем, открыт ли сайт внутри Telegram
   const isTMA = window.Telegram?.WebApp?.initData ||
                 window.location.search.includes('tgWebAppData') ||
                 window.location.hash.includes('tgWebAppData');
 
-  // Проверяем, открыт ли сайт внутри MAX (по ссылке /max или по параметрам WebAppData)
   const isMAX = window.location.pathname.includes('/max') ||
                 window.location.search.includes('WebAppData') ||
                 window.location.hash.includes('WebAppData');
@@ -40,10 +42,8 @@ function ProtectedRoute({ children }) {
 
 export default function App() {
   useEffect(() => {
-    // 1. Универсальная защита от свайпов (pull-to-refresh) для всех платформ
     document.body.style.overscrollBehaviorY = 'none';
 
-    // 2. Специфичная защита от вертикальных свайпов для Telegram Mini App
     if (window.Telegram?.WebApp?.disableVerticalSwipes) {
         window.Telegram.WebApp.disableVerticalSwipes();
     }
@@ -55,6 +55,10 @@ export default function App() {
         <Route path="/" element={<Login />} />
         <Route path="/tma" element={<TMAAuth />} />
         <Route path="/max" element={<MAXAuth />} />
+
+        {/* Публичные роуты для приглашений */}
+        <Route path="/invite/:code" element={<JoinTeam />} />
+        <Route path="/equip-invite/:code" element={<JoinEquipment />} />
 
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/dashboard" element={<Home />} />
