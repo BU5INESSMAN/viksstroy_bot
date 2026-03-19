@@ -14,7 +14,6 @@ export default function Layout() {
     const [profileData, setProfileData] = useState(null);
     const [editProfile, setEditProfile] = useState({});
 
-    // Стейт для привязки аккаунта
     const [linkCode, setLinkCode] = useState('');
 
     const [isTMA, setIsTMA] = useState(false);
@@ -38,7 +37,10 @@ export default function Layout() {
                 tg.disableVerticalSwipes();
             }
         }
-        if (window.location.pathname.includes('/max')) setIsTMA(true);
+        // MAX detection check added to Layout specific for top padding
+        if (window.location.pathname.includes('/max') || window.location.search.includes('WebAppData') || window.location.hash.includes('WebAppData')) {
+            setIsTMA(true);
+        }
 
         document.body.style.overscrollBehaviorY = 'none';
     }, []);
@@ -51,7 +53,6 @@ export default function Layout() {
     const openProfile = async (targetId) => {
         try {
             const res = await axios.get(`/api/users/${targetId}/profile`);
-            // Добавляем объект links внутрь profileData для удобства рендеринга
             const newProfileData = { ...res.data.profile, links: res.data.links };
             setProfileData(newProfileData);
             setEditProfile({ fio: res.data.profile.fio, role: res.data.profile.role, team_id: res.data.profile.team_id || '', position: res.data.profile.position || '' });
@@ -113,13 +114,14 @@ export default function Layout() {
     };
 
     const handleUnlinkPlatform = async (platform) => {
-        if (!window.confirm(`Вы уверены, что хотите отвязать этот мессенджер?`)) return;
+        const platformName = platform === 'max' ? 'MAX' : 'Telegram';
+        if (!window.confirm(`Вы уверены, что хотите отвязать мессенджер ${platformName}?`)) return;
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
             fd.append('platform', platform);
             await axios.post('/api/users/unlink_platform', fd);
-            alert("Мессенджер успешно отвязан.");
+            alert(`Мессенджер ${platformName} успешно отвязан.`);
             window.location.reload();
         } catch (e) {
             alert(e.response?.data?.detail || "Ошибка при отвязке.");
@@ -204,12 +206,10 @@ export default function Layout() {
                     </label>
                 <div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p></div></div></div><div className="p-6 space-y-6"><div className="space-y-4"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div></div>
 
-                {/* НОВЫЙ БЛОК: Динамическая привязка и отвязка */}
                 {profileData.user_id === Number(tgId) && profileData.links && (
                     <div className="mt-6 pt-4 border-t dark:border-gray-700">
                         <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider mb-3">Привязка мессенджеров</h4>
 
-                        {/* Показываем инструкции ТОЛЬКО для тех платформ, которые еще не привязаны */}
                         {!profileData.links.has_max && (
                             <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
                                 <p className="text-xs text-gray-600 dark:text-gray-300">
@@ -226,7 +226,6 @@ export default function Layout() {
                             </div>
                         )}
 
-                        {/* Форма ввода кода (скрывается, если привязано всё) */}
                         {(!profileData.links.has_max || !profileData.links.has_tg) && (
                             <div className="flex space-x-2 mb-4">
                                 <input type="text" maxLength={6} value={linkCode} onChange={e => setLinkCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="w-full px-4 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg outline-none font-mono tracking-widest text-center shadow-inner" />
@@ -234,18 +233,18 @@ export default function Layout() {
                             </div>
                         )}
 
-                        {/* Кнопки отвязки для вторичных аккаунтов */}
-                        {(profileData.links.secondary_max || profileData.links.secondary_tg) && (
+                        {/* Кнопки отвязки (показываются для каждого привязанного устройства) */}
+                        {profileData.links.is_linked && (
                             <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Привязанные устройства:</p>
                                 <div className="flex flex-col space-y-2">
-                                    {profileData.links.secondary_max && (
+                                    {profileData.links.has_max && (
                                         <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
                                             <span className="text-sm font-bold text-gray-700 dark:text-gray-300">📱 Мессенджер MAX</span>
                                             <button onClick={() => handleUnlinkPlatform('max')} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1 rounded text-xs font-bold transition">Отвязать</button>
                                         </div>
                                     )}
-                                    {profileData.links.secondary_tg && (
+                                    {profileData.links.has_tg && (
                                         <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
                                             <span className="text-sm font-bold text-gray-700 dark:text-gray-300">✈️ Telegram</span>
                                             <button onClick={() => handleUnlinkPlatform('tg')} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1 rounded text-xs font-bold transition">Отвязать</button>

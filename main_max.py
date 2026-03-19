@@ -31,7 +31,7 @@ dp = Dispatcher()
 db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
 
-WEB_APP_URL = "https://miniapp.viks22.ru/max"
+WEB_APP_URL = "https://miniapp.viks22.ru/"
 APP_LINK = f"📱 Платформа: {WEB_APP_URL}"
 
 # In-memory хранилище состояний (FSM) для процесса регистрации
