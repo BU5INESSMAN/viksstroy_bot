@@ -30,16 +30,16 @@ db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
 
 WEB_APP_URL = "https://miniapp.viks22.ru/max"
-# Формируем готовую гиперссылку для вставки в текст
-APP_LINK = f"<a href='{WEB_APP_URL}'>📱 Открыть платформу</a>"
+# Обычный текст + прямая ссылка (без HTML-тегов)
+APP_LINK = f"📱 Платформа: {WEB_APP_URL}"
 
 # In-memory хранилище состояний (FSM) для процесса регистрации
 USER_STATES = {}
 
 
 async def send_max_msg(event: MessageCreated, text: str):
-    """Функция отправки сообщений (используем aiohttp как основной, нативный как запасной)."""
-    # 1. Отправка через API MAX (aiohttp) — самый надежный вариант с поддержкой HTML
+    """Отправка исключительно чистого текста без разметки."""
+    # 1. Отправка через API MAX (aiohttp)
     try:
         chat_id = None
         if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
@@ -50,8 +50,8 @@ async def send_max_msg(event: MessageCreated, text: str):
         if chat_id:
             payload = {
                 "chat_id": str(chat_id),
-                "text": text,
-                "format": "html"  # MAX поддерживает HTML теги, включая <a>
+                "text": text
+                # Убрали "format": "html", теперь это просто чистый текст
             }
 
             url = "https://platform-api.max.ru/messages"
@@ -66,9 +66,8 @@ async def send_max_msg(event: MessageCreated, text: str):
     except Exception as e:
         logger.warning(f"aiohttp send failed: {e}. Пытаемся использовать нативный метод.")
 
-    # 2. Если aiohttp не сработал, используем нативный метод библиотеки (только текст)
+    # 2. Если aiohttp не сработал, используем нативный метод библиотеки
     try:
-        # Убрали reply_markup и parse_mode, чтобы избежать ошибок библиотеки
         await event.message.answer(text)
     except Exception as e:
         logger.error(f"Критическая ошибка отправки: {e}")
@@ -94,12 +93,12 @@ async def message_handler(event: MessageCreated):
                 await send_max_msg(event, "❌ Ваш аккаунт заблокирован. Обратитесь к руководству.")
             else:
                 USER_STATES.pop(max_id, None)
-                msg = f"С возвращением, <b>{dict(user)['fio']}</b>!\n\nНажмите на ссылку ниже для запуска:\n\n{APP_LINK}"
+                msg = f"С возвращением, {dict(user)['fio']}!\n\nНажмите на ссылку ниже для запуска:\n\n{APP_LINK}"
                 await send_max_msg(event, msg)
         else:
             # Начинаем процесс регистрации
             USER_STATES[max_id] = {"state": "waiting_for_password"}
-            msg = "🔐 <b>Добро пожаловать в ВИКС Расписание!</b>\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль для регистрации:"
+            msg = "🔐 Добро пожаловать в ВИКС Расписание!\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль для регистрации:"
             await send_max_msg(event, msg)
         return
 
@@ -118,8 +117,7 @@ async def message_handler(event: MessageCreated):
         if role:
             USER_STATES[max_id]["role"] = role
             USER_STATES[max_id]["state"] = "waiting_for_fio"
-            await send_max_msg(event,
-                               "✅ Пароль принят.\n\nПожалуйста, введите ваше <b>ФИО</b> (Например: Иванов Иван):")
+            await send_max_msg(event, "✅ Пароль принят.\n\nПожалуйста, введите ваше ФИО (Например: Иванов Иван):")
         else:
             await send_max_msg(event, "❌ Неверный пароль. Попробуйте снова:")
         return
@@ -136,7 +134,7 @@ async def message_handler(event: MessageCreated):
         # Очищаем состояние
         USER_STATES.pop(max_id, None)
 
-        msg = f"🎉 <b>Регистрация успешно завершена!</b>\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇\n\n{APP_LINK}"
+        msg = f"🎉 Регистрация успешно завершена!\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇\n\n{APP_LINK}"
         await send_max_msg(event, msg)
         return
 
@@ -164,7 +162,7 @@ async def main():
     await db.init_db()
     await clear_webhook()
 
-    logger.info(">>> Бот MAX успешно запущен (Без кнопок, с HTML ссылками) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Только чистый текст) <<<")
     await dp.start_polling(bot)
 
 
