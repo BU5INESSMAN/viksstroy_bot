@@ -92,17 +92,19 @@ export default function Teams() {
         }
     };
 
-    // НОВАЯ ФУНКЦИЯ КОПИРОВАНИЯ СООБЩЕНИЯ В БУФЕР
+    const copyToClipboard = (text, label) => {
+        navigator.clipboard.writeText(text);
+        alert(`${label} скопировано в буфер обмена!`);
+    };
+
     const copyInviteMessage = () => {
         if (!inviteInfo) return;
         const text = `🏗 Приглашение в бригаду «${manageTeamData?.name || 'ВИКС'}»!
 
-Для подключения к платформе перейдите по одной из ссылок:
+Для подключения к платформе:
 ✈️ Telegram: ${inviteInfo.tg_bot_link}
-📱 MAX: ${inviteInfo.max_bot_link}
-🌐 Web: ${inviteInfo.invite_link}
-
-🔑 Код доступа: ${inviteInfo.join_password}`;
+📱 MAX: Отправьте боту @id222264297116_bot команду /join ${inviteInfo.join_password}
+🌐 Web: ${inviteInfo.invite_link}`;
 
         navigator.clipboard.writeText(text);
         alert("Сообщение скопировано в буфер обмена!");
@@ -181,7 +183,7 @@ export default function Teams() {
                         )}
 
                         <div className="mt-6 pt-4 border-t dark:border-gray-700 space-y-3">
-                            {canEdit && <button onClick={() => generateInviteLink(manageTeamData.id)} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700 transition flex justify-center items-center">🔗 Пригласить в бригаду</button>}
+                            {canEdit && <button onClick={() => generateInviteLink(manageTeamData.id)} className="w-full py-3 bg-green-600 text-white font-bold rounded-xl shadow-lg hover:bg-green-700 transition flex justify-center items-center">🔗 Сгенерировать приглашение</button>}
                             {canEdit && <button onClick={() => handleDeleteTeam(manageTeamData.id)} className="w-full py-3 bg-red-50 dark:bg-red-900/20 text-red-600 font-bold rounded-xl hover:bg-red-100 transition">Удалить бригаду</button>}
                         </div>
                     </div>
@@ -191,28 +193,32 @@ export default function Teams() {
             {inviteInfo && (
                 <div className="fixed inset-0 z-[200] bg-black/60 flex justify-center items-center p-4 backdrop-blur-sm">
                     <div className="bg-white dark:bg-gray-800 rounded-3xl p-6 w-full max-w-sm shadow-2xl">
-                        <div className="text-center mb-4">
+                        <div className="text-center mb-6">
                             <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3"><span className="text-3xl">🔗</span></div>
                             <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Приглашение</h2>
-                            <p className="text-sm text-gray-500 mt-1">Пароль для вступления:</p>
-                            <p className="text-4xl font-mono font-black text-blue-600 dark:text-blue-400 mt-2 tracking-widest">{inviteInfo.join_password}</p>
+                            <p className="text-sm text-gray-500 mt-1">Скопируйте один из вариантов ниже:</p>
                         </div>
 
                         <div className="space-y-3 mb-6">
-                            <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-200 dark:border-gray-600 text-center">
-                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">Telegram Бот</p>
-                                <p className="text-sm text-gray-800 dark:text-gray-200 break-all">{inviteInfo.tg_bot_link}</p>
+                            <div onClick={() => copyToClipboard(inviteInfo.tg_bot_link, 'Ссылка Telegram')} className="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-200 dark:border-gray-600 text-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition active:scale-95">
+                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">✈️ Telegram Бот</p>
+                                <p className="text-sm text-blue-600 dark:text-blue-400 font-medium break-all">{inviteInfo.tg_bot_link}</p>
                             </div>
-                            <div className="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-200 dark:border-gray-600 text-center">
-                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">MAX Бот</p>
-                                <p className="text-sm text-gray-800 dark:text-gray-200 break-all">{inviteInfo.max_bot_link}</p>
+
+                            <div onClick={() => copyToClipboard(`/join ${inviteInfo.join_password}`, 'Команда для MAX')} className="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-200 dark:border-gray-600 text-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition active:scale-95">
+                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">📱 MAX Бот (Скопировать команду)</p>
+                                <p className="text-lg text-blue-600 dark:text-blue-400 font-bold font-mono tracking-widest">/join {inviteInfo.join_password}</p>
+                            </div>
+
+                            <div onClick={() => copyToClipboard(inviteInfo.invite_link, 'Web-ссылка')} className="p-3 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-200 dark:border-gray-600 text-center cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition active:scale-95">
+                                <p className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1">🌐 Web Ссылка</p>
+                                <p className="text-sm text-blue-600 dark:text-blue-400 font-medium break-all">{inviteInfo.invite_link}</p>
                             </div>
                         </div>
 
-                        {/* КНОПКА СКОПИРОВАТЬ СООБЩЕНИЕ */}
                         <button onClick={copyInviteMessage} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 rounded-xl shadow-lg transition-all active:scale-95 mb-3 flex justify-center items-center space-x-2">
                             <span>📄</span>
-                            <span>Скопировать сообщение</span>
+                            <span>Скопировать всё сообщение</span>
                         </button>
 
                         <button onClick={() => setInviteInfo(null)} className="w-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white font-bold py-3.5 rounded-xl transition-all">Закрыть</button>
