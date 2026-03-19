@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 import aiohttp
-import urllib.parse
+import json
 from dotenv import load_dotenv
 
 from maxapi import Bot, Dispatcher, F
@@ -17,6 +17,7 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 logger = logging.getLogger(__name__)
 
+# Токен берем из переменной окружения
 MAX_TOKEN = os.getenv("MAX_BOT_TOKEN", "").strip()
 
 if not MAX_TOKEN:
@@ -32,8 +33,15 @@ db = DatabaseManager(db_path)
 WEB_APP_URL = "https://miniapp.viks22.ru/max"
 
 
+def get_webapp_keyboard():
+    # Стандартная кнопка для запуска мини-приложения в платформе
+    return [
+        [{"type": "link", "text": "📱 Открыть платформу", "url": WEB_APP_URL}]
+    ]
+
+
 async def clear_webhook():
-    """Очистка старых подписок, чтобы работал Long Polling"""
+    """Удаляет старые вебхуки, чтобы бот мог работать через Long Polling"""
     logger.info("Очистка старых подписок MAX...")
     headers = {"Authorization": MAX_TOKEN}
     async with aiohttp.ClientSession() as session:
@@ -47,32 +55,33 @@ async def clear_webhook():
 
 @dp.message_created(F.message.body.text)
 async def message_handler(event: MessageCreated):
-    max_id = event.message.sender.user_id
-    first_name = event.message.sender.first_name or "Пользователь"
-    last_name = getattr(event.message.sender, 'last_name', '') or ""
+    # Логика регистрации полностью перенесена в React (MAXAuth.jsx)
+    text = "Добро пожаловать в ВИКС Расписание!\n\nИспользуйте системную кнопку «Открыть» или нажмите на кнопку ниже, чтобы запустить платформу."
 
-    # Бот генерирует ссылку с параметрами, чтобы WebApp сразу узнал юзера
-    params = urllib.parse.urlencode({
-        'user_id': max_id,
-        'first_name': first_name,
-        'last_name': last_name
-    })
-    auth_link = f"{WEB_APP_URL}?{params}"
+    # Отправляем сообщение с прикрепленной кнопкой через aiohttp для надежности
+    url = "https://platform-api.max.ru/messages"
+    headers = {
+        "Authorization": MAX_TOKEN,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "chat_id": str(event.message.recipient.chat_id),
+        "text": text,
+        "format": "html",
+        "inlineKeyboardMarkup": json.dumps(get_webapp_keyboard())
+    }
 
-    text = event.message.body.text.strip()
-    if text == "/start":
-        await event.message.answer(
-            f"Добро пожаловать!\n\n📱 Открыть платформу можно по ссылке:\n{auth_link}"
-        )
-    else:
-        await event.message.answer(
-            f"Все функции доступны на платформе 👇\n{auth_link}"
-        )
+    async with aiohttp.ClientSession() as session:
+        try:
+            await session.post(url, headers=headers, json=payload)
+        except Exception as e:
+            logger.error(f"Ошибка отправки сообщения: {e}")
 
 
 async def main():
     await db.init_db()
     await clear_webhook()
+
     logger.info(">>> Бот MAX успешно запущен (Long Polling) <<<")
     await dp.start_polling(bot)
 
