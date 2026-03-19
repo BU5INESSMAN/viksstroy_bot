@@ -10,37 +10,53 @@ export default function Updates() {
                     </div>
                 </div>
 
-                <div className="space-y-8">
+                <div className="space-y-8 mt-8">
+                    {/* ВЕРСИЯ 1.1.0 */}
+                    <div className="relative pl-6 border-l-2 border-green-500">
+                        <div className="absolute w-4 h-4 bg-green-500 rounded-full -left-[9px] top-1 border-4 border-white dark:border-gray-800"></div>
+                        <h3 className="text-xl font-bold text-green-600 dark:text-green-400">Версия 1.1.0 (Омниканальность)</h3>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mb-4 font-mono">19 Марта 2026</p>
+
+                        <div className="space-y-4 text-sm text-gray-600 dark:text-gray-300">
+                            <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
+                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">🔗 Бесшовная интеграция MAX:</b>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li>Реализована полноценная поддержка и авторизация в корпоративном мессенджере MAX.</li>
+                                    <li>Добавлена функция связки аккаунтов (Telegram + MAX) через 6-значный код (команда <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">/web</code>).</li>
+                                    <li>В профиле появилось управление устройствами: можно привязывать и отвязывать конкретные мессенджеры.</li>
+                                    <li>Реализован вход в платформу через обычный браузер по коду из бота.</li>
+                                </ul>
+                            </div>
+
+                            <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
+                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">💌 Улучшенные приглашения:</b>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li>Генерация сразу 3-х вариантов инвайтов: Диплинк Telegram, команда для MAX и универсальная Web-ссылка.</li>
+                                    <li>Добавлена удобная команда <code className="bg-gray-200 dark:bg-gray-700 px-1 rounded">/join</code> для MAX-бота для быстрого вступления в бригады и привязки техники.</li>
+                                    <li>Новая кнопка «Скопировать всё сообщение» для удобной отправки инструкций рабочим.</li>
+                                </ul>
+                            </div>
+
+                            <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
+                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">🚜 Автопарк:</b>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li>Внедрена система инвайт-кодов для привязки водителей напрямую к их машинам.</li>
+                                    <li>Улучшен парсер массового добавления техники (теперь поддерживает считывание категорий через точку с запятой <code>;</code>).</li>
+                                    <li>Новый UI карточек техники с аватарками и статусами привязки.</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
                     {/* ВЕРСИЯ 1.0.0 */}
                     <div className="relative pl-6 border-l-2 border-blue-500">
                         <div className="absolute w-4 h-4 bg-blue-500 rounded-full -left-[9px] top-1 border-4 border-white dark:border-gray-800"></div>
                         <h3 className="text-xl font-bold text-blue-600 dark:text-blue-400">Версия 1.0.0 (Релиз)</h3>
-                        <p className="text-xs text-gray-400 mb-3">Дата: Октябрь 2026</p>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 mb-4 font-mono">15 Марта 2026</p>
 
-                        <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                        <div className="space-y-4 text-sm text-gray-600 dark:text-gray-300">
                             <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
-                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">🤖 Автоматизация и Настройки:</b>
-                                <ul className="list-disc pl-5 space-y-1">
-                                    <li>Добавлен раздел «Система» для босса и модераторов.</li>
-                                    <li><b>Авто-публикация:</b> Система сама публикует одобренные наряды на сегодня в заданное время.</li>
-                                    <li><b>Умные напоминания:</b> Автоматические оповещения прорабам о сдаче нарядов (с возможностью отключения на выходные).</li>
-                                    <li>Уведомления о <b>начале наряда</b> всем рабочим и водителям в 08:00.</li>
-                                </ul>
-                            </div>
-
-                            <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
-                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">📋 Умная модерация заявок:</b>
-                                <ul className="list-disc pl-5 space-y-1">
-                                    <li>Возможность выбора <b>нескольких бригад</b> на один объект.</li>
-                                    <li>Кнопка <b>редактирования</b> заявки до модерации.</li>
-                                    <li>Окно модерации: кнопки перенесены внутрь детального окна заявки для удобства.</li>
-                                    <li><b>Мульти-публикация:</b> Выбор заявок галочками и фильтрация по дате перед публикацией.</li>
-                                    <li>Разделение заявок в Канбане на «Одобрено» (будущие) и «В работе» (сегодняшние).</li>
-                                </ul>
-                            </div>
-
-                            <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl">
-                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">🎨 Улучшения Telegram-интерфейса:</b>
+                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">✨ Улучшения UI-интерфейса:</b>
                                 <ul className="list-disc pl-5 space-y-1">
                                     <li>Полностью переписан алгоритм генерации картинок-нарядов: идеальное выравнивание и перенос строк.</li>
                                     <li>Время работы техники на карточке вынесено на отдельную строку.</li>
