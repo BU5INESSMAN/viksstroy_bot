@@ -13,6 +13,10 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import io
 
+# ИМПОРТИРУЕМ ИНСТРУМЕНТЫ MAXAPI ДЛЯ ОТПРАВКИ ФАЙЛОВ И СООБЩЕНИЙ
+from maxapi import Bot
+from maxapi.types import InputMedia
+
 from database_deps import db
 
 
@@ -243,7 +247,6 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
 
-    # Получаем актуальный ID группы MAX из БД
     async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
         row = await cur.fetchone()
         db_max_group_id = row[0] if row else None
@@ -280,6 +283,9 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
     max_plain_text = f"{strip_html(text)}\n\n📱 Платформа: https://miniapp.viks22.ru/{url_path}"
 
+    # Инициализируем бота MAX, если есть токен
+    max_bot = Bot(token=max_bot_token) if max_bot_token else None
+
     async with aiohttp.ClientSession() as session:
         for cid_raw in tg_chat_ids:
             cid_str = str(cid_raw)
@@ -287,18 +293,11 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             # --- Отправка в ГРУППУ MAX ---
             if cid_str.startswith("MAX_GROUP:"):
                 actual_max_id = cid_str.split(":", 1)[1]
-                if max_bot_token:
-                    payload = {"chatId": actual_max_id, "chat_id": actual_max_id, "text": max_plain_text}
-                    url = f"https://platform-api.max.ru/messages?chat_id={actual_max_id}&chatId={actual_max_id}"
+                if max_bot:
                     try:
-                        async with session.post(url, headers={"Authorization": max_bot_token,
-                                                              "Content-Type": "application/json"},
-                                                json=payload) as resp:
-                            if resp.status != 200:
-                                err = await resp.text()
-                                print(f"MAX API GROUP ERROR: {resp.status} - {err}")
+                        await max_bot.send_message(chat_id=actual_max_id, text=max_plain_text)
                     except Exception as e:
-                        print(f"MAX HTTP GROUP EXCEPTION: {e}")
+                        print(f"MAX BOT GROUP NOTIFY ERROR: {e}")
                 continue
 
             try:
@@ -308,19 +307,12 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
             # --- Отправка ЛИЧНО В MAX ---
             if cid_int < 0:
-                if max_bot_token:
+                if max_bot:
                     actual_max_id = str(abs(cid_int))
-                    payload = {"chatId": actual_max_id, "chat_id": actual_max_id, "text": max_plain_text}
-                    url = f"https://platform-api.max.ru/messages?chat_id={actual_max_id}&chatId={actual_max_id}"
                     try:
-                        async with session.post(url, headers={"Authorization": max_bot_token,
-                                                              "Content-Type": "application/json"},
-                                                json=payload) as resp:
-                            if resp.status != 200:
-                                err = await resp.text()
-                                print(f"MAX API DM ERROR: {resp.status} - {err}")
+                        await max_bot.send_message(chat_id=actual_max_id, text=max_plain_text)
                     except Exception as e:
-                        print(f"MAX HTTP DM EXCEPTION: {e}")
+                        print(f"MAX BOT DM NOTIFY ERROR: {e}")
 
             # --- Отправка ЛИЧНО В TELEGRAM ---
             else:
@@ -397,14 +389,15 @@ async def execute_app_publish(app_dict):
 
     comment_text = app_dict.get('comment', '')
 
+    # 1. Генерируем саму картинку
     img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
                                equip_list, comment_text)
 
+    # 2. Сохраняем её локально для MAX
     filename = f"app_publish_{app_id}_{int(time.time())}.png"
     filepath = os.path.join("data", "uploads", filename)
     with open(filepath, "wb") as f:
         f.write(img_buf.getvalue())
-    file_url = f"https://miniapp.viks22.ru/uploads/{filename}"
 
     comment_html = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
 
@@ -434,32 +427,17 @@ async def execute_app_publish(app_dict):
 
     published_max = False
     if max_bot_token and max_group_id:
-        payload = {
-            "chatId": str(max_group_id),
-            "chat_id": str(max_group_id),
-            "text": strip_html(html_caption),
-            "attachments": [
-                {
-                    "type": "image",
-                    "payload": {
-                        "url": file_url
-                    }
-                }
-            ]
-        }
-        url = f"https://platform-api.max.ru/messages?chat_id={max_group_id}&chatId={max_group_id}"
+        # Используем родной метод maxapi.Bot для отправки локального файла
+        max_bot = Bot(token=max_bot_token)
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url,
-                                        headers={"Authorization": max_bot_token, "Content-Type": "application/json"},
-                                        json=payload) as resp:
-                    if resp.status == 200:
-                        published_max = True
-                    else:
-                        err = await resp.text()
-                        print(f"MAX API PUBLISH ERROR: {resp.status} - {err}")
+            await max_bot.send_message(
+                chat_id=str(max_group_id),
+                text=strip_html(html_caption),
+                attachments=[InputMedia(path=filepath)]
+            )
+            published_max = True
         except Exception as e:
-            print(f"MAX HTTP PUBLISH EXCEPTION: {e}")
+            print(f"MAX BOT PUBLISH ERROR: {e}")
 
     if published_tg or published_max:
         try:
