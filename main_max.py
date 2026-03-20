@@ -6,7 +6,7 @@ import random
 import time
 from dotenv import load_dotenv
 
-from maxapi import Bot, Dispatcher
+from maxapi import Bot, Dispatcher, F
 from maxapi.types import MessageCreated
 
 # Подключаем папку web, чтобы Python увидел database_deps и другие модули бэкенда
@@ -37,7 +37,6 @@ USER_STATES = {}
 
 
 async def resolve_id(raw_id: int):
-    # ГАРАНТИЯ ПОДКЛЮЧЕНИЯ
     if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT primary_id FROM account_links WHERE secondary_id = ?", (raw_id,)) as cur:
         row = await cur.fetchone()
@@ -53,60 +52,38 @@ async def send_max_msg(event: MessageCreated, text: str):
         logger.warning(f"Ошибка ответа MAX: {e}")
 
 
-# Убрали фильтры. Ловим АБСОЛЮТНО всё.
-@dp.message_created()
+# ВЕРНУЛИ ФИЛЬТР ТЕКСТА, БЕЗ НЕГО БИБЛИОТЕКА ПАДАЕТ!
+@dp.message_created(F.message.body.text)
 async def message_handler(event: MessageCreated):
     if db.conn is None: await db.init_db()
 
-    # --- 1. ПУЛЕНЕПРОБИВАЕМОЕ ИЗВЛЕЧЕНИЕ ID ---
-    # Ищем chat_id
-    chat_id = getattr(event, 'chat_id', None)
-    if not chat_id and hasattr(event, 'message') and hasattr(event.message, 'chat'):
-        chat_id = getattr(event.message.chat, 'id', getattr(event.message.chat, 'chatId', None))
+    text = event.message.body.text.strip()
+    max_id = event.message.sender.user_id
 
-    # Ищем user_id (sender)
-    max_id = getattr(event, 'user_id', None)
-    if not max_id and hasattr(event, 'message') and hasattr(event.message, 'sender'):
-        max_id = getattr(event.message.sender, 'user_id', getattr(event.message.sender, 'userId', None))
+    # Надежное извлечение ID диалога
+    chat_id = getattr(event, "chat_id", None)
+    if not chat_id and hasattr(event.message, "chat"):
+        chat_id = event.message.chat.id
 
-    if not max_id or not chat_id:
-        # Если это системное событие без ID, просто игнорируем
-        return
-
-    chat_str = str(chat_id).strip()
-    max_id_str = str(max_id).strip()
-
-    # --- 2. ПУЛЕНЕПРОБИВАЕМОЕ ИЗВЛЕЧЕНИЕ ТЕКСТА ---
-    text = ""
-    if hasattr(event, "message") and event.message:
-        if hasattr(event.message, "body") and event.message.body and hasattr(event.message.body, "text"):
-            text = event.message.body.text or ""
-        elif hasattr(event.message, "text"):
-            text = event.message.text or ""
-
-    text = text.strip()
-
-    # --- 3. СОХРАНЕНИЕ ID ДИАЛОГА ДЛЯ ЛС ---
+    chat_str = str(chat_id)
     is_group = chat_str.startswith("-") or "@chat" in chat_str
 
+    # --- СОХРАНЕНИЕ ID ДИАЛОГА ДЛЯ ЛС ---
+    # Бот запомнит этот ID с первого же сообщения!
     if not is_group and chat_str and chat_str != "None":
         try:
-            await db.conn.execute("DELETE FROM settings WHERE key = ?", (f'max_dm_{max_id_str}',))
-            await db.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f'max_dm_{max_id_str}', chat_str))
+            await db.conn.execute("DELETE FROM settings WHERE key = ?", (f'max_dm_{max_id}',))
+            await db.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f'max_dm_{max_id}', chat_str))
             await db.conn.commit()
-            logger.info(f"💾 СОХРАНЕН ID ДИАЛОГА ЛС: max_dm_{max_id_str} = {chat_str}")
+            logger.info(f"💾 СОХРАНЕН ID ДИАЛОГА ЛС: max_dm_{max_id} = {chat_str}")
         except Exception as e:
             logger.error(f"Ошибка сохранения chat_id для ЛС MAX: {e}")
-
-    # Если текста нет (например, прислали стикер), дальше не идем
-    if not text:
-        return
 
     pseudo_tg_id = -int(max_id)
     real_tg_id = await resolve_id(pseudo_tg_id)
     user = await db.get_user(real_tg_id)
 
-    state_data = USER_STATES.get(max_id_str, {})
+    state_data = USER_STATES.get(max_id, {})
     current_state = state_data.get("state")
 
     # --- ЛОГИКА ДЛЯ ГРУППОВЫХ ЧАТОВ ---
@@ -125,7 +102,7 @@ async def message_handler(event: MessageCreated):
                 await send_max_msg(event, f"❌ Ошибка при сохранении группы в базу данных: {e}")
         return
 
-    # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ (ЛС) ---
+    # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ ---
 
     if text.startswith("/web"):
         if not user:
@@ -169,11 +146,11 @@ async def message_handler(event: MessageCreated):
             if dict(user).get('is_blacklisted'):
                 await send_max_msg(event, "❌ Ваш аккаунт заблокирован.")
             else:
-                USER_STATES.pop(max_id_str, None)
+                USER_STATES.pop(max_id, None)
                 msg = f"С возвращением, {dict(user)['fio']}!\n\nНажмите на ссылку ниже для запуска:\n\n{APP_LINK}"
                 await send_max_msg(event, msg)
         else:
-            USER_STATES[max_id_str] = {"state": "waiting_for_password"}
+            USER_STATES[max_id] = {"state": "waiting_for_password"}
             msg = "🔐 Добро пожаловать в ВИКС Расписание!\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль или 6-значный код привязки (если аккаунт уже есть в Telegram):"
             await send_max_msg(event, msg)
         return
@@ -188,7 +165,7 @@ async def message_handler(event: MessageCreated):
                                       (primary_id, pseudo_tg_id))
                 await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (text,))
                 await db.conn.commit()
-                USER_STATES.pop(max_id_str, None)
+                USER_STATES.pop(max_id, None)
                 await send_max_msg(event, f"✅ Аккаунты успешно связаны!\n\n{APP_LINK}")
                 return
             else:
@@ -206,8 +183,8 @@ async def message_handler(event: MessageCreated):
             role = "superadmin"
 
         if role:
-            USER_STATES[max_id_str]["role"] = role
-            USER_STATES[max_id_str]["state"] = "waiting_for_fio"
+            USER_STATES[max_id]["role"] = role
+            USER_STATES[max_id]["state"] = "waiting_for_fio"
             await send_max_msg(event, "✅ Пароль принят.\n\nПожалуйста, введите ваше ФИО (Например: Иванов Иван):")
         else:
             await send_max_msg(event, "❌ Неверный ввод. Попробуйте снова:")
@@ -218,7 +195,7 @@ async def message_handler(event: MessageCreated):
         role = state_data.get("role", "worker")
         await db.add_user(pseudo_tg_id, fio, role)
         await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался в боте MAX (Роль: {role})")
-        USER_STATES.pop(max_id_str, None)
+        USER_STATES.pop(max_id, None)
         msg = f"🎉 Регистрация успешно завершена!\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇\n\n{APP_LINK}"
         await send_max_msg(event, msg)
         return
@@ -242,7 +219,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (Кэширование ЛС диалогов) <<<")
+    logger.info(">>> Бот MAX успешно запущен (ЛС работают как швейцарские часы) <<<")
     await dp.start_polling(bot)
 
 
