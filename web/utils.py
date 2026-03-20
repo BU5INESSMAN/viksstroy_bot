@@ -13,6 +13,7 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import io
 
+# Используем ТОЛЬКО родную библиотеку
 from maxapi import Bot
 from maxapi.types import InputMedia
 
@@ -95,7 +96,6 @@ def clean_text(text):
 
 
 def strip_html(text):
-    """Удаляет ВСЕ HTML теги для безопасной отправки текста в MAX"""
     if not text: return ""
     clean = re.compile('<.*?>')
     return re.sub(clean, '', str(text)).strip()
@@ -240,68 +240,76 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
     return buf
 
 
+# === ИДЕАЛЬНЫЕ ФУНКЦИИ ДЛЯ MAX (СТРОГО ЧЕРЕЗ MAXAPI С int) ===
+
 async def get_max_group_id():
+    """Получает актуальный ID группы MAX"""
     if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
         row = await cur.fetchone()
         if row and str(row[0]).strip().lower() not in ["none", "null", ""]:
             return str(row[0]).strip()
+
     env_val = os.getenv("MAX_GROUP_CHAT_ID")
     if env_val and str(env_val).strip().lower() not in ["none", "null", ""]:
         return str(env_val).strip()
     return None
 
 
-# === КОМБИНИРОВАННАЯ ЖЕЛЕЗОБЕТОННАЯ ОТПРАВКА ===
-async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: str = None, file_url: str = None):
+async def send_max_text(bot_token: str, chat_id: str, text: str):
+    """Отправка чистого текста"""
     if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
         return False
 
-    # 1. Попытка отправки картинки через библиотеку maxapi
+    try:
+        bot = Bot(token=bot_token)
+        # ВАЖНО: chat_id ДОЛЖЕН БЫТЬ int!
+        await bot.send_message(chat_id=int(chat_id), text=str(text))
+        return True
+    except Exception as e:
+        print(f"❌ MAX text error [{chat_id}]: {e}")
+        return False
+
+
+async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: str = None, file_url: str = None):
+    """Сначала шлет картинку, затем текст. Все через maxapi!"""
+    if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
+        return False
+
+    bot = Bot(token=bot_token)
+    # ВАЖНО: chat_id ДОЛЖЕН БЫТЬ int! Иначе maxapi падает с ошибкой None
+    int_chat_id = int(chat_id)
     photo_sent = False
+
+    # 1. Отправляем картинку
     if filepath:
-        print(f"➡️ MAX: Попытка загрузки фото в чат {chat_id}...")
+        print(f"➡️ MAX: Отправка фото в {chat_id}...")
         try:
-            bot = Bot(token=bot_token)
-            # ВАЖНО: Приводим ID к integer, иначе maxapi падает с ошибкой None
             await bot.send_message(
-                chat_id=int(chat_id),
+                chat_id=int_chat_id,
                 attachments=[InputMedia(path=os.path.abspath(filepath))]
             )
             photo_sent = True
-            print(f"✅ Успех: Фото отправлено в MAX!")
+            print("✅ Успех: Фото отправлено!")
         except Exception as e:
-            print(f"❌ Ошибка загрузки фото через maxapi: {e}")
+            print(f"❌ Ошибка MAX API (Photo): {e}")
 
-    # 2. Формируем финальный текст
+    # 2. Формируем текст
     final_text = text
     if not photo_sent and file_url:
-        # Если фото не отправилось, прикрепляем ссылку к тексту
         final_text += f"\n\n🖼 Наряд: {file_url}"
 
-    # 3. Отправка текста надежным сырым HTTP-запросом
+    # 3. Отправляем текст
     print(f"➡️ MAX: Отправка текста в {chat_id}...")
-    url = "https://platform-api.max.ru/messages"
-    headers = {"Authorization": bot_token, "Content-Type": "application/json"}
-
-    # ВАЖНО: Ключ должен быть chat_id (snake_case), иначе API вернет "Unknown recipient"
-    payload = {
-        "chat_id": str(chat_id),
-        "text": final_text
-    }
-
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                if resp.status == 200:
-                    print(f"✅ Успех: Текст отправлен в MAX!")
-                    return True
-                else:
-                    err = await resp.text()
-                    print(f"❌ MAX API ERROR (Text): {resp.status} - {err}")
-                    return False
+        await bot.send_message(
+            chat_id=int_chat_id,
+            text=str(final_text)
+        )
+        print("✅ Успех: Текст отправлен!")
+        return True
     except Exception as e:
-        print(f"❌ MAX HTTP EXCEPTION (Text): {e}")
+        print(f"❌ Ошибка MAX API (Text): {e}")
         return False
 
 
@@ -350,7 +358,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             if cid_str.startswith("MAX_GROUP:"):
                 if target_platform in ["all", "max"] and max_bot_token:
                     actual_max_id = cid_str.split(":", 1)[1]
-                    await send_max_message(max_bot_token, actual_max_id, max_plain_text)
+                    await send_max_text(max_bot_token, actual_max_id, max_plain_text)
                 continue
 
             try:
@@ -362,7 +370,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             if cid_int < 0:
                 if target_platform in ["all", "max"] and max_bot_token:
                     actual_max_id = str(abs(cid_int))
-                    await send_max_message(max_bot_token, actual_max_id, max_plain_text)
+                    await send_max_text(max_bot_token, actual_max_id, max_plain_text)
 
             # --- Отправка ЛИЧНО В TELEGRAM ---
             else:
@@ -472,7 +480,8 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
         max_text = strip_html(html_caption)
-        # Передаем и путь к файлу (для maxapi) и ссылку (для фолбэка)
+
+        # Передаем всё в нашу идеальную функцию
         published_max = await send_max_message(max_bot_token, max_group_id, max_text, filepath, file_url)
 
     if (published_tg or published_max) and target_platform == "all":
