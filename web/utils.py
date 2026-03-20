@@ -13,6 +13,9 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import io
 
+# Используем ТОЛЬКО родную библиотеку для отправки
+from maxapi import Bot
+
 from database_deps import db
 
 
@@ -92,7 +95,7 @@ def clean_text(text):
 
 
 def strip_html(text):
-    """Очищает текст от HTML тегов для мессенджера MAX"""
+    """Удаляет ВСЕ HTML теги для безопасной отправки текста в MAX"""
     if not text: return ""
     clean = re.compile('<.*?>')
     return re.sub(clean, '', str(text)).strip()
@@ -237,30 +240,28 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
     return buf
 
 
-# === НАДЕЖНАЯ ФУНКЦИЯ ОТПРАВКИ В MAX (АВТОРИЗАЦИЯ В HEADERS) ===
-async def send_max_message(bot_token: str, chat_id: str, text: str):
-    """Использует POST запрос с авторизацией в заголовках"""
-    if not chat_id or chat_id == "None":
+# === ИЗОЛИРОВАННАЯ ФУНКЦИЯ ДЛЯ MAX (ТОЛЬКО ТЕКСТ) ===
+async def send_max_text(bot_token: str, chat_id: str, text: str):
+    """
+    Отправляет чистый текст через встроенный класс Bot из maxapi.
+    Добавлено подробное логирование.
+    """
+    if not bot_token or not chat_id or str(chat_id) == "None":
+        print(f"⚠️ Отмена отправки в MAX: Неверный chat_id = {chat_id}")
         return False
 
-    url = "https://platform-api.max.ru/messages"
-    headers = {
-        "Authorization": bot_token,
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "chat_id": str(chat_id),
-        "text": text
-    }
+    print(f"➡️ Попытка отправки в MAX. ChatID: {chat_id} | Длина текста: {len(text)}")
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                if resp.status != 200:
-                    err = await resp.text()
-                    print(f"MAX API ERROR [{chat_id}]: {resp.status} - {err}")
-                return resp.status == 200
+        bot = Bot(token=bot_token)
+        # Вызываем именно встроенный метод библиотеки
+        await bot.send_message(
+            chat_id=str(chat_id),
+            text=str(text)
+        )
+        print(f"✅ Успешно отправлено в MAX! (ChatID: {chat_id})")
+        return True
     except Exception as e:
-        print(f"MAX HTTP EXCEPTION: {e}")
+        print(f"❌ Ошибка отправки в MAX (maxapi): {e}")
         return False
 
 
@@ -314,7 +315,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             if cid_str.startswith("MAX_GROUP:"):
                 if target_platform in ["all", "max"] and max_bot_token:
                     actual_max_id = cid_str.split(":", 1)[1]
-                    await send_max_message(max_bot_token, actual_max_id, max_plain_text)
+                    await send_max_text(max_bot_token, actual_max_id, max_plain_text)
                 continue
 
             try:
@@ -326,7 +327,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             if cid_int < 0:
                 if target_platform in ["all", "max"] and max_bot_token:
                     actual_max_id = str(abs(cid_int))
-                    await send_max_message(max_bot_token, actual_max_id, max_plain_text)
+                    await send_max_text(max_bot_token, actual_max_id, max_plain_text)
 
             # --- Отправка ЛИЧНО В TELEGRAM ---
             else:
@@ -440,11 +441,12 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
 
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
-        # Для MAX отправляем текст и ссылку на картинку через надежный POST
-        max_text = f"{strip_html(html_caption)}\n\n🖼 Наряд: {file_url}"
-        published_max = await send_max_message(max_bot_token, max_group_id, max_text)
+        # ТОЛЬКО ТЕКСТ (Ссылка на картинку включена в текст)
+        max_text = f"{strip_html(html_caption)}\n\n🖼 Ссылка на наряд: {file_url}"
 
-    # Обновляем БД и шлем уведомления только если это реальный наряд
+        # Используем безопасную функцию
+        published_max = await send_max_text(max_bot_token, max_group_id, max_text)
+
     if (published_tg or published_max) and target_platform == "all":
         try:
             await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))
