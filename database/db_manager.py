@@ -118,8 +118,12 @@ class DatabaseManager:
             return await cursor.fetchone()
 
     async def add_user(self, user_id: int, fio: str, role: str):
-        await self.conn.execute("INSERT INTO users (user_id, fio, role, is_active) VALUES (?, ?, ?, 1)",
-                                (user_id, fio, role))
+        if not self.conn: await self.init_db()
+        # Используем INSERT OR REPLACE, чтобы избежать ошибки UNIQUE constraint failed
+        await self.conn.execute("""
+            INSERT OR REPLACE INTO users (user_id, fio, role, is_active) 
+            VALUES (?, ?, ?, 1)
+        """, (user_id, fio, role))
         await self.conn.commit()
 
     async def get_all_users(self):
