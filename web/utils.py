@@ -17,6 +17,7 @@ from database_deps import db
 
 
 async def resolve_id(raw_id: int):
+    if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT primary_id FROM account_links WHERE secondary_id = ?", (raw_id,)) as cur:
         row = await cur.fetchone()
         if row: return row[0]
@@ -24,6 +25,7 @@ async def resolve_id(raw_id: int):
 
 
 async def fetch_teams_dict():
+    if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT id, name FROM teams") as cur:
         return {r[0]: r[1] for r in await cur.fetchall()}
 
@@ -235,6 +237,8 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
 
 
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None):
+    if db.conn is None: await db.init_db()
+
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
@@ -280,17 +284,21 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         for cid_raw in tg_chat_ids:
             cid_str = str(cid_raw)
 
+            # --- Отправка в ГРУППУ MAX ---
             if cid_str.startswith("MAX_GROUP:"):
                 actual_max_id = cid_str.split(":", 1)[1]
                 if max_bot_token:
+                    payload = {"chatId": actual_max_id, "chat_id": actual_max_id, "text": max_plain_text}
+                    url = f"https://platform-api.max.ru/messages?chat_id={actual_max_id}&chatId={actual_max_id}"
                     try:
-                        await session.post(
-                            "https://platform-api.max.ru/messages",
-                            headers={"Authorization": max_bot_token, "Content-Type": "application/json"},
-                            json={"chat_id": actual_max_id, "text": max_plain_text}
-                        )
-                    except:
-                        pass
+                        async with session.post(url, headers={"Authorization": max_bot_token,
+                                                              "Content-Type": "application/json"},
+                                                json=payload) as resp:
+                            if resp.status != 200:
+                                err = await resp.text()
+                                print(f"MAX API GROUP ERROR: {resp.status} - {err}")
+                    except Exception as e:
+                        print(f"MAX HTTP GROUP EXCEPTION: {e}")
                 continue
 
             try:
@@ -298,16 +306,23 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             except ValueError:
                 continue
 
+            # --- Отправка ЛИЧНО В MAX ---
             if cid_int < 0:
                 if max_bot_token:
+                    actual_max_id = str(abs(cid_int))
+                    payload = {"chatId": actual_max_id, "chat_id": actual_max_id, "text": max_plain_text}
+                    url = f"https://platform-api.max.ru/messages?chat_id={actual_max_id}&chatId={actual_max_id}"
                     try:
-                        await session.post(
-                            "https://platform-api.max.ru/messages",
-                            headers={"Authorization": max_bot_token, "Content-Type": "application/json"},
-                            json={"chat_id": str(abs(cid_int)), "text": max_plain_text}
-                        )
-                    except:
-                        pass
+                        async with session.post(url, headers={"Authorization": max_bot_token,
+                                                              "Content-Type": "application/json"},
+                                                json=payload) as resp:
+                            if resp.status != 200:
+                                err = await resp.text()
+                                print(f"MAX API DM ERROR: {resp.status} - {err}")
+                    except Exception as e:
+                        print(f"MAX HTTP DM EXCEPTION: {e}")
+
+            # --- Отправка ЛИЧНО В TELEGRAM ---
             else:
                 if bot_token:
                     try:
@@ -320,11 +335,12 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
 
 async def execute_app_publish(app_dict):
+    if db.conn is None: await db.init_db()
+
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
 
-    # Забираем актуальный ID из базы
     async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
         row = await cur.fetchone()
         db_max_group_id = row[0] if row else None
@@ -419,6 +435,7 @@ async def execute_app_publish(app_dict):
     published_max = False
     if max_bot_token and max_group_id:
         payload = {
+            "chatId": str(max_group_id),
             "chat_id": str(max_group_id),
             "text": strip_html(html_caption),
             "attachments": [
@@ -430,14 +447,19 @@ async def execute_app_publish(app_dict):
                 }
             ]
         }
+        url = f"https://platform-api.max.ru/messages?chat_id={max_group_id}&chatId={max_group_id}"
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.post("https://platform-api.max.ru/messages",
+                async with session.post(url,
                                         headers={"Authorization": max_bot_token, "Content-Type": "application/json"},
                                         json=payload) as resp:
-                    if resp.status == 200: published_max = True
-        except:
-            pass
+                    if resp.status == 200:
+                        published_max = True
+                    else:
+                        err = await resp.text()
+                        print(f"MAX API PUBLISH ERROR: {resp.status} - {err}")
+        except Exception as e:
+            print(f"MAX HTTP PUBLISH EXCEPTION: {e}")
 
     if published_tg or published_max:
         try:
