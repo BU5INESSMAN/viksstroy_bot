@@ -1,6 +1,5 @@
 import sys
 import os
-# Переходим на уровень выше (в папку web), чтобы импорты сработали
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Form, HTTPException
@@ -72,32 +71,34 @@ async def cron_end_day(): return {"status": "ok"}
 @router.post("/api/cron/check_timeouts")
 async def cron_check_timeouts(): return {"status": "ok"}
 
-# НОВЫЙ ЭНДПОИНТ ДЛЯ ТЕСТИРОВАНИЯ УВЕДОМЛЕНИЙ
+# ОБНОВЛЕННЫЙ ЭНДПОИНТ С ПОДДЕРЖКОЙ platform
 @router.post("/api/system/test_notification")
-async def test_notification(tg_id: int = Form(...)):
+async def test_notification(tg_id: int = Form(...), platform: str = Form("all")):
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     if not user or dict(user).get('role') != 'superadmin':
         raise HTTPException(403, "Нет прав")
 
     fio = dict(user).get('fio', 'Супер-Админ')
+    platform_name = "MAX" if platform == "max" else "Telegram"
 
-    await notify_users([], "🧪 <b>Тестовое уведомление:</b> Вас добавили в наряд!", "my-apps", [real_tg_id])
-    await notify_users(["moderator"], f"📝 <b>Тестовая заявка:</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: Проверка уведомлений", "review", [real_tg_id])
+    await notify_users([], f"🧪 <b>Тестовое уведомление:</b> Вас добавили в наряд! ({platform_name})", "my-apps", [real_tg_id], target_platform=platform)
+    await notify_users(["moderator"], f"📝 <b>Тестовая заявка ({platform_name}):</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: Проверка уведомлений", "review", [real_tg_id], target_platform=platform)
 
     fake_app = {
         'id': 9999,
         'date_target': datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d"),
-        'object_address': 'Тестовый объект (Проверка интеграции)',
+        'object_address': f'Тестовый объект ({platform_name})',
         'foreman_id': real_tg_id,
         'foreman_name': fio,
-        'team_name': 'Тестовая бригада',
+        'team_name': f'Тестовая бригада {platform_name}',
         'selected_members': '',
         'equipment_data': '[]',
-        'comment': 'Это тестовый наряд для проверки доставки изображений в мессенджеры',
+        'comment': f'Это тестовый наряд для проверки доставки изображений в {platform_name}',
         'approved_by': 'Автоматика',
         'approved_by_id': real_tg_id
     }
-    await execute_app_publish(fake_app)
+    # Передаем параметр целевой платформы в функцию публикации
+    await execute_app_publish(fake_app, target_platform=platform)
 
     return {"status": "ok"}

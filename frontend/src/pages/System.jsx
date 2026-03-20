@@ -28,7 +28,6 @@ export default function System() {
         }
     }, [role]);
 
-    // ВОССТАНОВЛЕННАЯ ФУНКЦИЯ ТЕСТИРОВАНИЯ РОЛЕЙ
     const handleTestRole = (testRole) => {
         if (!localStorage.getItem('real_role')) {
             localStorage.setItem('real_role', role);
@@ -50,14 +49,16 @@ export default function System() {
         } catch (err) { alert("Ошибка сохранения настроек"); }
     };
 
-    // ФУНКЦИЯ ТЕСТИРОВАНИЯ УВЕДОМЛЕНИЙ
-    const handleTestNotification = async () => {
-        if (!window.confirm("Отправить тестовый наряд во все группы и в личные сообщения?")) return;
+    // ОБНОВЛЕННАЯ ФУНКЦИЯ ДЛЯ ТЕСТИРОВАНИЯ С ПАРАМЕТРОМ ПЛАТФОРМЫ
+    const handleTestNotification = async (platform) => {
+        const platformName = platform === 'max' ? 'MAX' : 'Telegram';
+        if (!window.confirm(`Отправить тестовый наряд в ${platformName}?`)) return;
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
+            fd.append('platform', platform);
             await axios.post('/api/system/test_notification', fd);
-            alert('✅ Тестовые уведомления успешно отправлены!');
+            alert(`✅ Тестовое уведомление успешно отправлено в ${platformName}!`);
         } catch (e) {
             alert(e.response?.data?.detail || 'Ошибка отправки тестового уведомления');
         }
@@ -94,23 +95,29 @@ export default function System() {
                             <input type="time" value={settings.foreman_reminder_time} onChange={e => setSettings({...settings, foreman_reminder_time: e.target.value})} className="w-full p-3 border rounded-xl dark:bg-gray-700 dark:border-gray-600 dark:text-white mb-3 outline-none" />
 
                             <div className="flex items-center">
-                                <input type="checkbox" id="weekend_rem" checked={settings.foreman_reminder_weekends} onChange={e => setSettings({...settings, foreman_reminder_weekends: e.target.checked})} className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500" />
+                                <input type="checkbox" id="weekend_rem" checked={settings.foreman_reminder_weekends} onChange={e => setSettings({...settings, foreman_reminder_weekends: e.target.checked})} className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500 cursor-pointer" />
                                 <label htmlFor="weekend_rem" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-300 cursor-pointer">Включить напоминания по выходным</label>
                             </div>
                         </div>
                         <button type="submit" className="w-full bg-blue-600 text-white py-3 rounded-xl font-bold shadow-md hover:bg-blue-700 transition">💾 Сохранить настройки</button>
                     </form>
 
-                    {/* ДОБАВЛЕНА КНОПКА ТЕСТОВОГО НАРЯДА */}
+                    {/* ОБНОВЛЕННЫЙ БЛОК ДЛЯ ТЕСТИРОВАНИЯ С РАЗДЕЛЬНЫМИ КНОПКАМИ */}
                     {role === 'superadmin' && (
                         <div className="mt-8 pt-6 border-t border-gray-100 dark:border-gray-700">
                             <h3 className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-3 uppercase tracking-wider">Тестирование интеграций</h3>
-                            <button onClick={handleTestNotification} className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3.5 rounded-xl font-bold transition-all shadow-md flex items-center justify-center space-x-2 active:scale-95">
-                                <span className="text-lg">🧪</span>
-                                <span>Отправить тестовый наряд</span>
-                            </button>
+                            <div className="flex flex-col sm:flex-row gap-3">
+                                <button onClick={() => handleTestNotification('tg')} className="w-full bg-blue-500 hover:bg-blue-600 text-white py-3.5 rounded-xl font-bold transition-all shadow-md flex items-center justify-center space-x-2 active:scale-95">
+                                    <span className="text-lg">✈️</span>
+                                    <span>Тест Telegram</span>
+                                </button>
+                                <button onClick={() => handleTestNotification('max')} className="w-full bg-purple-600 hover:bg-purple-700 text-white py-3.5 rounded-xl font-bold transition-all shadow-md flex items-center justify-center space-x-2 active:scale-95">
+                                    <span className="text-lg">📱</span>
+                                    <span>Тест MAX</span>
+                                </button>
+                            </div>
                             <p className="text-xs text-gray-500 dark:text-gray-400 mt-3 leading-relaxed">
-                                Создаст фейковый наряд и разошлет уведомления во все общие группы, а также в ваши личные сообщения.
+                                Создаст фейковый наряд и разошлет уведомления в выбранную систему (общая группа + личные сообщения).
                             </p>
                         </div>
                     )}
