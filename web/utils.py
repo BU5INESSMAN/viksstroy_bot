@@ -95,7 +95,7 @@ def clean_text(text):
 
 
 def strip_html(text):
-    """Удаляет ВСЕ HTML теги для безопасной отправки текста в MAX"""
+    """Очищает текст от HTML тегов для мессенджера MAX"""
     if not text: return ""
     clean = re.compile('<.*?>')
     return re.sub(clean, '', str(text)).strip()
@@ -254,47 +254,69 @@ async def get_max_group_id():
     return None
 
 
+async def get_max_mention(user_id_raw, user_name: str):
+    """
+    Умный поиск аккаунта: проверяет, есть ли у пользователя привязанный аккаунт MAX.
+    Возвращает кликабельное упоминание @[id] для мессенджера MAX.
+    """
+    if not user_id_raw: return user_name
+    try:
+        uid = int(user_id_raw)
+    except:
+        return user_name
+
+    max_id = None
+    if uid < 0:
+        max_id = abs(uid)
+    else:
+        # Если это пользователь Telegram (uid > 0), ищем его вторичный MAX-аккаунт
+        if db.conn is None: await db.init_db()
+        async with db.conn.execute("SELECT secondary_id FROM account_links WHERE primary_id = ? AND secondary_id < 0",
+                                   (uid,)) as cur:
+            row = await cur.fetchone()
+            if row: max_id = abs(row[0])
+
+    if max_id:
+        return f"@[{max_id}]"
+    return user_name
+
+
 async def send_max_text(bot_token: str, chat_id: str, text: str):
-    """Надежная отправка чистого текста через встроенный класс Bot из maxapi."""
+    """Отправка текста в MAX. Работает И для личных сообщений (ЛС), И для групп"""
     if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
         return False
 
     try:
-        # Критически важно: конвертируем в int!
         int_chat_id = int(str(chat_id).strip())
     except ValueError:
-        print(f"❌ MAX: Неверный формат chat_id (не число): {chat_id}")
         return False
 
-    print(f"➡️ MAX: Отправка текста в {int_chat_id}...")
     try:
         bot = Bot(token=bot_token)
-        await bot.send_message(
-            chat_id=int_chat_id,
-            text=str(text)
-        )
-        print(f"✅ Успех: Текст отправлен в MAX! (ChatID: {int_chat_id})")
+        await bot.send_message(chat_id=int_chat_id, text=str(text))
         return True
     except Exception as e:
-        print(f"❌ Ошибка отправки текста в MAX (maxapi): {e}")
+        print(f"❌ Ошибка MAX API (send_max_text): {e}")
         return False
 
 
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
                        target_platform: str = "all"):
-    """Универсальная рассылка уведомлений по ролям и ID"""
+    """
+    Универсальная рассылка.
+    Теперь она УМЕЕТ отправлять в ЛС MAX, но НЕ СПАМИТ в группу MAX обычными системными уведомлениями.
+    """
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
-    max_group_id = await get_max_group_id()
 
     tg_chat_ids = set()
 
+    # Группа MAX вырезана отсюда. Она получает ТОЛЬКО готовые наряды.
     if "report_group" in target_roles:
         if group_id: tg_chat_ids.add(str(group_id))
-        if max_group_id: tg_chat_ids.add(f"MAX_GROUP:{max_group_id}")
 
     roles_to_fetch = [r for r in target_roles if r != "report_group"]
     if roles_to_fetch:
@@ -322,11 +344,16 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         for cid_raw in tg_chat_ids:
             cid_str = str(cid_raw)
 
-            # --- Отправка в ГРУППУ MAX ---
-            if cid_str.startswith("MAX_GROUP:"):
-                if target_platform in ["all", "max"] and max_bot_token:
-                    actual_max_id = cid_str.split(":", 1)[1]
-                    await send_max_text(max_bot_token, actual_max_id, max_plain_text)
+            # --- Отправка в ГРУППУ TELEGRAM ---
+            if cid_str == str(group_id):
+                if target_platform in ["all", "tg"] and bot_token:
+                    try:
+                        await session.post(
+                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                            json={"chat_id": cid_str, "text": text, "parse_mode": "HTML", "reply_markup": markup}
+                        )
+                    except:
+                        pass
                 continue
 
             try:
@@ -334,26 +361,44 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             except ValueError:
                 continue
 
-            # --- Отправка ЛИЧНО В MAX ---
-            if cid_int < 0:
-                if target_platform in ["all", "max"] and max_bot_token:
-                    actual_max_id = str(abs(cid_int))
-                    await send_max_text(max_bot_token, actual_max_id, max_plain_text)
+            # Определяем, куда слать ЛС: в TG, MAX или в оба (если аккаунты связаны)
+            tg_id = None
+            max_id = None
 
-            # --- Отправка ЛИЧНО В TELEGRAM ---
+            if cid_int > 0:
+                tg_id = cid_int
+                # Ищем привязанный аккаунт MAX
+                async with db.conn.execute(
+                        "SELECT secondary_id FROM account_links WHERE primary_id = ? AND secondary_id < 0",
+                        (cid_int,)) as cur:
+                    row = await cur.fetchone()
+                    if row: max_id = abs(row[0])
             else:
-                if target_platform in ["all", "tg"] and bot_token:
-                    try:
-                        await session.post(
-                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                            json={"chat_id": cid_int, "text": text, "parse_mode": "HTML", "reply_markup": markup}
-                        )
-                    except:
-                        pass
+                max_id = abs(cid_int)
+                # Ищем привязанный аккаунт Telegram
+                async with db.conn.execute(
+                        "SELECT secondary_id FROM account_links WHERE primary_id = ? AND secondary_id > 0",
+                        (cid_int,)) as cur:
+                    row = await cur.fetchone()
+                    if row: tg_id = row[0]
+
+            # --- Отправка ЛС В MAX ---
+            if target_platform in ["all", "max"] and max_bot_token and max_id:
+                await send_max_text(max_bot_token, str(max_id), max_plain_text)
+
+            # --- Отправка ЛС В TELEGRAM ---
+            if target_platform in ["all", "tg"] and bot_token and tg_id:
+                try:
+                    await session.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={"chat_id": tg_id, "text": text, "parse_mode": "HTML", "reply_markup": markup}
+                    )
+                except:
+                    pass
 
 
 async def execute_app_publish(app_dict, target_platform: str = "all"):
-    """Генерация и публикация наряда с упоминанием сотрудников (тегированием)"""
+    """Здесь формируется финальный наряд и отправляется в ГРУППУ MAX"""
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
@@ -375,7 +420,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
                                    selected_list) as cur:
             staff_rows = await cur.fetchall()
 
-    # --- ПОДГОТОВКА СПИСКА СОТРУДНИКОВ (С РАЗДЕЛЬНЫМИ ТЕГАМИ ДЛЯ TG И MAX) ---
+    # --- УМНОЕ ФОРМИРОВАНИЕ СПИСКА ---
     staff_str_tg = ""
     staff_str_max = ""
     workers_ids = []
@@ -385,15 +430,11 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
             name, position, w_tg_id = r[0], r[1], r[2]
             if w_tg_id:
                 workers_ids.append(w_tg_id)
-                if int(w_tg_id) > 0:
-                    # Рабочий из Telegram
-                    staff_str_tg += f"\n  ├ <a href='tg://user?id={w_tg_id}'>{name}</a> (<i>{position}</i>)"
-                    staff_str_max += f"\n  ├ {name} ({position})"
-                else:
-                    # Рабочий из MAX -> Используем тегирование @[user_id]
-                    max_uid = abs(int(w_tg_id))
-                    staff_str_tg += f"\n  ├ {name} (<i>{position}</i>)"
-                    staff_str_max += f"\n  ├ @[{max_uid}] ({position})"
+                # Тег для TG
+                staff_str_tg += f"\n  ├ <a href='tg://user?id={w_tg_id}'>{name}</a> (<i>{position}</i>)"
+                # Умный тег для MAX @[id]
+                mention_max = await get_max_mention(w_tg_id, name)
+                staff_str_max += f"\n  ├ {mention_max} ({position})"
             else:
                 staff_str_tg += f"\n  ├ {name} (<i>{position}</i>)"
                 staff_str_max += f"\n  ├ {name} ({position})"
@@ -421,11 +462,9 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
 
     comment_text = app_dict.get('comment', '')
 
-    # 1. Генерируем саму картинку
     img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
                                equip_list, comment_text)
 
-    # 2. Сохраняем её локально
     filename = f"app_publish_{app_id}_{int(time.time())}.png"
     filepath = os.path.join("data", "uploads", filename)
     with open(filepath, "wb") as f:
@@ -436,41 +475,21 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     comment_html_tg = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
     comment_html_max = f"\n💬 Комментарий: {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
 
-    # Прораб (Отметка в MAX)
-    foreman_id = int(app_dict.get('foreman_id', 0))
+    # Отметки для Прораба и Одобрившего
+    foreman_id = app_dict.get('foreman_id', 0)
     foreman_name = app_dict.get('foreman_name', 'Неизвестно')
+    foreman_tg = f"<a href='tg://user?id={foreman_id}'>{foreman_name}</a>" if int(foreman_id) > 0 else foreman_name
+    foreman_max = await get_max_mention(foreman_id, foreman_name)
 
-    if foreman_id > 0:
-        foreman_tg = f"<a href='tg://user?id={foreman_id}'>{foreman_name}</a>"
-        foreman_max = f"{foreman_name}"
-    elif foreman_id < 0:
-        foreman_tg = f"{foreman_name}"
-        foreman_max = f"@[{abs(foreman_id)}]"
-    else:
-        foreman_tg = foreman_name
-        foreman_max = foreman_name
+    approved_name = app_dict.get('approved_by', '')
+    approved_id = app_dict.get('approved_by_id')
+    approved_tg = f"\n🛡 <b>Одобрил(а):</b> <a href='tg://user?id={approved_id}'>{approved_name}</a>" if approved_id and int(
+        approved_id) > 0 else f"\n🛡 <b>Одобрил(а):</b> {approved_name}"
+    approved_max = f"\n🛡 Одобрил(а): {await get_max_mention(approved_id, approved_name)}" if approved_id else f"\n🛡 Одобрил(а): {approved_name}"
 
-    # Одобривший (Отметка в MAX)
-    approved_tg = ""
-    approved_max = ""
-    if app_dict.get('approved_by'):
-        a_name = app_dict['approved_by']
-        a_id = app_dict.get('approved_by_id')
-        if a_id:
-            if int(a_id) > 0:
-                approved_tg = f"\n🛡 <b>Одобрил(а):</b> <a href='tg://user?id={a_id}'>{a_name}</a>"
-                approved_max = f"\n🛡 Одобрил(а): {a_name}"
-            elif int(a_id) < 0:
-                approved_tg = f"\n🛡 <b>Одобрил(а):</b> {a_name}"
-                approved_max = f"\n🛡 Одобрил(а): @[{abs(int(a_id))}]"
-        else:
-            approved_tg = f"\n🛡 <b>Одобрил(а):</b> {a_name}"
-            approved_max = f"\n🛡 Одобрил(а): {a_name}"
-
-    # Финальные тексты для платформ
+    # ФИНАЛЬНЫЕ ТЕКСТЫ
     tg_caption = f"<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n🚜 <b>Техника:</b>\n{equip_html}👷‍♂️ <b>Прораб:</b> {foreman_tg}\n👥 <b>Бригада «{team_name}»:</b>{staff_str_tg}{comment_html_tg}{approved_tg}</blockquote>"
 
-    # В MAX тексте используются теги @[user_id]
     max_caption = f"🟢 УТВЕРЖДЕННЫЙ НАРЯД №{app_id}\n📅 Дата: {app_dict['date_target']}\n📍 Объект: {app_dict['object_address']}\n🚜 Техника:\n{equip_html}👷‍♂️ Прораб: {foreman_max}\n👥 Бригада «{team_name}»:{staff_str_max}{comment_html_max}{approved_max}"
 
     published_tg = False
@@ -491,7 +510,6 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
 
-        # 1. Отправляем картинку через maxapi (Встроенный класс)
         photo_sent = False
         try:
             max_bot = Bot(token=max_bot_token)
@@ -500,11 +518,9 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
                 attachments=[InputMedia(path=os.path.abspath(filepath))]
             )
             photo_sent = True
-            print("✅ Успех: Фото отправлено в MAX!")
         except Exception as e:
-            print(f"❌ Ошибка отправки фото в MAX: {e}")
+            print(f"❌ Ошибка фото в MAX: {e}")
 
-        # 2. Отправляем текст с упоминаниями через встроенный класс (ГАРАНТИЯ ДОСТАВКИ)
         final_text = max_caption
         if not photo_sent:
             final_text += f"\n\n🖼 Наряд: {file_url}"
@@ -530,7 +546,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
             all_involved.append(app_dict['foreman_id'])
 
         if all_involved:
-            # send_max_text теперь используется и для рассылки личных сообщений в MAX
+            # Эти ЛС теперь уйдут и в Telegram, и в MAX!
             msg_inv = f"👷‍♂️ <b>Вас добавили в наряд!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
             await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved)
         return True
