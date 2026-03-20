@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import sys
-import aiohttp
 import random
 import time
 from dotenv import load_dotenv
@@ -15,7 +14,6 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 web_dir = os.path.join(current_dir, "web")
 sys.path.append(web_dir)
 
-# Теперь импорт сработает корректно
 from database_deps import db
 
 load_dotenv()
@@ -39,6 +37,8 @@ USER_STATES = {}
 
 
 async def resolve_id(raw_id: int):
+    # ГАРАНТИЯ ПОДКЛЮЧЕНИЯ
+    if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT primary_id FROM account_links WHERE secondary_id = ?", (raw_id,)) as cur:
         row = await cur.fetchone()
         if row: return row[0]
@@ -46,37 +46,18 @@ async def resolve_id(raw_id: int):
 
 
 async def send_max_msg(event: MessageCreated, text: str):
-    try:
-        chat_id = None
-        if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
-            chat_id = event.message.chat.id
-        elif hasattr(event, "chat_id"):
-            chat_id = event.chat_id
-
-        if chat_id:
-            payload = {
-                "chat_id": str(chat_id),
-                "text": text
-            }
-            url = "https://platform-api.max.ru/messages"
-            headers = {
-                "Authorization": MAX_TOKEN,
-                "Content-Type": "application/json"
-            }
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status == 200: return
-    except Exception as e:
-        logger.warning(f"aiohttp send failed: {e}")
-
+    """Отправка сообщения через нативный метод maxapi"""
     try:
         await event.message.answer(text)
     except Exception as e:
-        pass
+        logger.warning(f"Ошибка отправки сообщения: {e}")
 
 
 @dp.message_created(F.message.body.text)
 async def message_handler(event: MessageCreated):
+    # ГАРАНТИЯ ПОДКЛЮЧЕНИЯ
+    if db.conn is None: await db.init_db()
+
     text = event.message.body.text.strip()
     max_id = event.message.sender.user_id
 
@@ -109,9 +90,9 @@ async def message_handler(event: MessageCreated):
                 await send_max_msg(event,
                                    "✅ Группа успешно привязана!\nТеперь все наряды и системные уведомления для MAX будут автоматически приходить сюда.")
             except Exception as e:
-                await send_max_msg(event, "❌ Ошибка при сохранении группы в базу данных.")
+                await send_max_msg(event, f"❌ Ошибка при сохранении группы в базу данных: {e}")
 
-        # Обязательно прерываем выполнение, чтобы бот не реагировал на обычные переписки людей в группе
+        # Прерываем выполнение, чтобы бот не реагировал на обычные переписки людей в группе
         return
 
     # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ ---
@@ -219,19 +200,16 @@ async def message_handler(event: MessageCreated):
 
 
 async def clear_webhook():
-    logger.info("Очистка старых подписок MAX...")
-    headers = {"Authorization": MAX_TOKEN}
-    async with aiohttp.ClientSession() as session:
-        try:
-            url = "https://platform-api.max.ru/subscriptions"
-            async with session.delete(url, headers=headers) as resp:
-                pass
-        except Exception:
-            pass
+    try:
+        headers = {"Authorization": MAX_TOKEN}
+        async with aiohttp.ClientSession() as session:
+            await session.delete("https://platform-api.max.ru/subscriptions", headers=headers)
+    except Exception:
+        pass
 
 
 async def main():
-    await db.init_db()  # ВЕРНУЛ ЭТУ ВАЖНУЮ СТРОКУ!
+    await db.init_db()
     await clear_webhook()
     logger.info(">>> Бот MAX успешно запущен (Игнорирует спам в группах, ждет /setchat) <<<")
     await dp.start_polling(bot)
