@@ -18,7 +18,6 @@ from maxapi.types import InputMedia
 
 from database_deps import db
 
-# Кэшируем бота MAX, чтобы избежать утечек сессий (Unclosed client session)
 _max_bot_instance = None
 
 
@@ -250,21 +249,29 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
 
 
 async def get_max_group_id():
-    """Получает актуальный ID группы MAX"""
+    """Получает ID группы MAX"""
     if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
         row = await cur.fetchone()
         if row and str(row[0]).strip().lower() not in ["none", "null", ""]:
             return str(row[0]).strip()
-
     env_val = os.getenv("MAX_GROUP_CHAT_ID")
     if env_val and str(env_val).strip().lower() not in ["none", "null", ""]:
         return str(env_val).strip()
     return None
 
 
+async def get_max_dm_chat_id(max_user_id: str):
+    """Умный поиск ID личного диалога в базе для пользователя MAX"""
+    if db.conn is None: await db.init_db()
+    async with db.conn.execute("SELECT value FROM settings WHERE key = ?", (f'max_dm_{max_user_id}',)) as cur:
+        row = await cur.fetchone()
+        if row and str(row[0]).strip().lower() not in ["none", "null", ""]:
+            return str(row[0]).strip()
+    return str(max_user_id)  # Возвращаем user_id как запасной вариант
+
+
 async def send_max_text(bot_token: str, chat_id: str, text: str):
-    """Отправка текста в MAX. Обрабатывает ошибку ненайденного диалога для ЛС."""
     if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
         return False
 
@@ -280,14 +287,13 @@ async def send_max_text(bot_token: str, chat_id: str, text: str):
     except Exception as e:
         err_str = str(e)
         if 'dialog.not.found' in err_str:
-            print(f"⚠️ Ожидаемо для MAX: ЛС не отправлено (ID {int_chat_id}). Пользователь еще не написал боту /start.")
+            print(f"⚠️ ЛС не отправлено (Диалог не найден). Пользователь еще не написал боту ЛС.")
         else:
             print(f"❌ Ошибка MAX API (send_max_text): {e}")
         return False
 
 
 async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: str = None, file_url: str = None):
-    """Отправка полного наряда (Фото + Текст) в MAX"""
     if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
         return False
 
@@ -317,12 +323,7 @@ async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: st
         await bot.send_message(chat_id=int_chat_id, text=str(final_text))
         return True
     except Exception as e:
-        err_str = str(e)
-        if 'dialog.not.found' in err_str:
-            print(
-                f"⚠️ Ожидаемо для MAX: Наряд не отправлен в ЛС (ID {int_chat_id}). Пользователь еще не написал боту /start.")
-        else:
-            print(f"❌ Ошибка текста в MAX: {e}")
+        print(f"❌ Ошибка текста в MAX: {e}")
         return False
 
 
@@ -366,7 +367,6 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         for cid_raw in tg_chat_ids:
             cid_str = str(cid_raw)
 
-            # Группа Telegram
             if cid_str == str(group_id):
                 if target_platform in ["all", "tg"] and bot_token:
                     try:
@@ -401,11 +401,13 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
                     row = await cur.fetchone()
                     if row: tg_id = row[0]
 
-            # ЛС в MAX
+            # --- Отправка ЛС В MAX ---
             if target_platform in ["all", "max"] and max_bot_token and max_id:
-                await send_max_text(max_bot_token, str(max_id), max_plain_text)
+                # ВАЖНО: Достаем ID диалога вместо ID пользователя
+                dm_chat_id = await get_max_dm_chat_id(str(max_id))
+                await send_max_text(max_bot_token, dm_chat_id, max_plain_text)
 
-            # ЛС в Telegram
+            # --- Отправка ЛС В TELEGRAM ---
             if target_platform in ["all", "tg"] and bot_token and tg_id:
                 try:
                     await session.post(
@@ -417,7 +419,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
 
 async def execute_app_publish(app_dict, target_platform: str = "all"):
-    """Генерация и публикация наряда (УБРАНЫ ОТМЕТКИ MAX)"""
+    """Генерация и публикация наряда БЕЗ кривых отметок в MAX"""
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
@@ -453,7 +455,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
             else:
                 staff_str_tg += f"\n  ├ {name} (<i>{position}</i>)"
 
-            # MAX всегда получает только чистый текст
+            # В MAX просто красивое ФИО
             staff_str_max += f"\n  ├ {name} ({position})"
     else:
         staff_str_tg = "\n  ├ Только техника"
@@ -495,12 +497,16 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     foreman_id = app_dict.get('foreman_id', 0)
     foreman_name = app_dict.get('foreman_name', 'Неизвестно')
     foreman_tg = f"<a href='tg://user?id={foreman_id}'>{foreman_name}</a>" if int(foreman_id) > 0 else foreman_name
+
+    # В MAX просто красивое ФИО прораба
     foreman_max = foreman_name
 
     approved_name = app_dict.get('approved_by', '')
     approved_id = app_dict.get('approved_by_id')
     approved_tg = f"\n🛡 <b>Одобрил(а):</b> <a href='tg://user?id={approved_id}'>{approved_name}</a>" if approved_id and int(
         approved_id) > 0 else f"\n🛡 <b>Одобрил(а):</b> {approved_name}"
+
+    # В MAX просто ФИО одобрившего
     approved_max = f"\n🛡 Одобрил(а): {approved_name}" if approved_name else ""
 
     tg_caption = f"<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n🚜 <b>Техника:</b>\n{equip_html}👷‍♂️ <b>Прораб:</b> {foreman_tg}\n👥 <b>Бригада «{team_name}»:</b>{staff_str_tg}{comment_html_tg}{approved_tg}</blockquote>"
