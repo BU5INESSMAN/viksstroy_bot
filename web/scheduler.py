@@ -1,7 +1,7 @@
 import sys
 import os
 import json
-import asyncio
+import logging
 from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -9,6 +9,10 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from database_deps import db, TZ_BARNAUL
 from utils import notify_users, execute_app_publish
+
+# Настраиваем логгер для планировщика
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+logger = logging.getLogger("SCHEDULER")
 
 # Инициализируем планировщик с часовым поясом Барнаула
 scheduler = AsyncIOScheduler(timezone=TZ_BARNAUL)
@@ -34,12 +38,11 @@ async def check_and_run_tasks():
         remind_on_weekends = settings.get('foreman_reminder_weekends', '0') == '1'
 
         # =========================================================================
-        # ТРИГГЕР 1: АВТО-ПУБЛИКАЦИЯ И СТАРТ НАРЯДА (Переход в 'in_progress')
+        # ТРИГГЕР 1: АВТО-ПУБЛИКАЦИЯ И СТАРТ НАРЯДА
         # =========================================================================
         if auto_publish_time and current_time_str == auto_publish_time:
-            print(f"🚀 [SCHEDULER] {current_time_str} - Запуск нарядов на сегодня...")
+            logger.info(f"🚀 {current_time_str} - Запуск нарядов на сегодня...")
 
-            # Сначала публикуем все одобренные заявки
             async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved' AND date_target = ?",
                                        (today_date_str,)) as cur:
                 approved_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
@@ -51,7 +54,6 @@ async def check_and_run_tasks():
             if count > 0:
                 await db.add_log(0, "Система", f"Авто-публикация: {count} нарядов")
 
-            # Теперь переводим опубликованные наряды в статус "В работе" и уведомляем
             async with db.conn.execute("SELECT * FROM applications WHERE status = 'published' AND date_target = ?",
                                        (today_date_str,)) as cur:
                 apps_to_start = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
@@ -62,9 +64,8 @@ async def check_and_run_tasks():
                     (app_dict['id'],))
 
                 workers_ids = []
-                selected_list = [int(x.strip()) for x in
-                                 app_dict.get('selected_members', '').split(',')] if app_dict.get(
-                    'selected_members') else []
+                selected_list = [int(x.strip()) for x in app_dict.get('selected_members', '').split(',') if
+                                 x.strip().isdigit()] if app_dict.get('selected_members') else []
                 if selected_list:
                     pl = ','.join(['?'] * len(selected_list))
                     async with db.conn.execute(f"SELECT tg_user_id FROM team_members WHERE id IN ({pl})",
@@ -93,10 +94,10 @@ async def check_and_run_tasks():
             await db.conn.commit()
 
         # =========================================================================
-        # ТРИГГЕР 2: АВТО-ЗАВЕРШЕНИЕ НАРЯДА (Переход в 'pending_report')
+        # ТРИГГЕР 2: АВТО-ЗАВЕРШЕНИЕ НАРЯДА
         # =========================================================================
         if auto_complete_time and current_time_str == auto_complete_time:
-            print(f"🏁 [SCHEDULER] {current_time_str} - Завершение нарядов на сегодня...")
+            logger.info(f"🏁 {current_time_str} - Завершение нарядов на сегодня...")
 
             async with db.conn.execute(
                     "SELECT id, object_address, foreman_id FROM applications WHERE date_target = ? AND status IN ('in_progress', 'published')",
@@ -106,7 +107,6 @@ async def check_and_run_tasks():
             for app in apps_to_complete:
                 app_id, address, foreman_id = app
 
-                # Меняем статус на "Ожидает отчета"
                 await db.conn.execute("UPDATE applications SET status = 'pending_report' WHERE id = ?", (app_id,))
 
                 if foreman_id:
@@ -120,16 +120,16 @@ async def check_and_run_tasks():
         # =========================================================================
         if foreman_reminder_time and current_time_str == foreman_reminder_time:
             if not is_weekend or remind_on_weekends:
-                print(f"🔔 [SCHEDULER] {current_time_str} - Отправка напоминаний прорабам...")
+                logger.info(f"🔔 {current_time_str} - Отправка напоминаний прорабам...")
                 msg = "🔔 <b>Напоминание!</b>\nПожалуйста, не забудьте заполнить и отправить заявки на следующий день!"
                 await notify_users(["foreman"], msg, "dashboard")
 
     except Exception as e:
-        print(f"❌ Ошибка в планировщике: {e}")
+        logger.error(f"Ошибка в планировщике: {e}")
 
 
 def start_scheduler():
     """Запускает проверку каждую минуту"""
     scheduler.add_job(check_and_run_tasks, 'cron', minute='*')
     scheduler.start()
-    print("⏳ Планировщик задач успешно запущен (Часовой пояс: Азия/Барнаул)")
+    logger.info("⏳ Планировщик задач успешно запущен (Часовой пояс: Азия/Барнаул)")
