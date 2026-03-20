@@ -13,7 +13,7 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import io
 
-# ИМПОРТИРУЕМ ИНСТРУМЕНТЫ MAXAPI ДЛЯ ОТПРАВКИ ФАЙЛОВ И СООБЩЕНИЙ
+# Инструменты MAX
 from maxapi import Bot
 from maxapi.types import InputMedia
 
@@ -282,15 +282,13 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         [{"text": "📱 Открыть платформу", "web_app": {"url": f"https://miniapp.viks22.ru/{url_path}"}}]]}
 
     max_plain_text = f"{strip_html(text)}\n\n📱 Платформа: https://miniapp.viks22.ru/{url_path}"
-
-    # Инициализируем бота MAX, если есть токен
     max_bot = Bot(token=max_bot_token) if max_bot_token else None
 
     async with aiohttp.ClientSession() as session:
         for cid_raw in tg_chat_ids:
             cid_str = str(cid_raw)
 
-            # --- Отправка в ГРУППУ MAX ---
+            # Отправка в ГРУППУ MAX
             if cid_str.startswith("MAX_GROUP:"):
                 actual_max_id = cid_str.split(":", 1)[1]
                 if max_bot:
@@ -305,7 +303,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             except ValueError:
                 continue
 
-            # --- Отправка ЛИЧНО В MAX ---
+            # Отправка ЛИЧНО В MAX
             if cid_int < 0:
                 if max_bot:
                     actual_max_id = str(abs(cid_int))
@@ -314,7 +312,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
                     except Exception as e:
                         print(f"MAX BOT DM NOTIFY ERROR: {e}")
 
-            # --- Отправка ЛИЧНО В TELEGRAM ---
+            # Отправка ЛИЧНО В TELEGRAM
             else:
                 if bot_token:
                     try:
@@ -389,15 +387,16 @@ async def execute_app_publish(app_dict):
 
     comment_text = app_dict.get('comment', '')
 
-    # 1. Генерируем саму картинку
     img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
                                equip_list, comment_text)
 
-    # 2. Сохраняем её локально для MAX
     filename = f"app_publish_{app_id}_{int(time.time())}.png"
     filepath = os.path.join("data", "uploads", filename)
     with open(filepath, "wb") as f:
         f.write(img_buf.getvalue())
+
+    # Получаем абсолютный путь к файлу для передачи в InputMedia
+    abs_filepath = os.path.abspath(filepath)
 
     comment_html = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
 
@@ -427,17 +426,27 @@ async def execute_app_publish(app_dict):
 
     published_max = False
     if max_bot_token and max_group_id:
-        # Используем родной метод maxapi.Bot для отправки локального файла
         max_bot = Bot(token=max_bot_token)
+
+        # 1. Отправляем КАРТИНКУ без текста
         try:
             await max_bot.send_message(
                 chat_id=str(max_group_id),
-                text=strip_html(html_caption),
-                attachments=[InputMedia(path=filepath)]
+                attachments=[InputMedia(path=abs_filepath)]
             )
             published_max = True
         except Exception as e:
-            print(f"MAX BOT PUBLISH ERROR: {e}")
+            print(f"MAX BOT MEDIA ERROR: {e}")
+
+        # 2. Отправляем ТЕКСТ наряда
+        try:
+            await max_bot.send_message(
+                chat_id=str(max_group_id),
+                text=strip_html(html_caption)
+            )
+            published_max = True
+        except Exception as e:
+            print(f"MAX BOT TEXT ERROR: {e}")
 
     if published_tg or published_max:
         try:
