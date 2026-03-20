@@ -92,6 +92,7 @@ def clean_text(text):
 
 
 def strip_html(text):
+    """Очищает текст от HTML тегов для мессенджера MAX"""
     if not text: return ""
     clean = re.compile('<.*?>')
     return re.sub(clean, '', str(text)).strip()
@@ -236,18 +237,24 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
     return buf
 
 
-# --- НАДЕЖНЫЙ МЕТОД ДЛЯ ОТПРАВКИ В MAX ---
+# === НАДЕЖНАЯ ФУНКЦИЯ ОТПРАВКИ В MAX (АВТОРИЗАЦИЯ В HEADERS) ===
 async def send_max_message(bot_token: str, chat_id: str, text: str):
-    """Использует прямой нативный эндпоинт MyTeam/MAX API для 100% гарантии доставки"""
-    url = "https://platform-api.max.ru/messages/sendText"
-    params = {
-        "token": bot_token,
-        "chatId": str(chat_id),
+    """Использует POST запрос с авторизацией в заголовках"""
+    if not chat_id or chat_id == "None":
+        return False
+
+    url = "https://platform-api.max.ru/messages"
+    headers = {
+        "Authorization": bot_token,
+        "Content-Type": "application/json"
+    }
+    payload = {
+        "chat_id": str(chat_id),
         "text": text
     }
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(url, params=params) as resp:
+            async with session.post(url, headers=headers, json=payload) as resp:
                 if resp.status != 200:
                     err = await resp.text()
                     print(f"MAX API ERROR [{chat_id}]: {resp.status} - {err}")
@@ -433,11 +440,11 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
 
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
-        # Добавляем прямую ссылку на фото в конец наряда
+        # Для MAX отправляем текст и ссылку на картинку через надежный POST
         max_text = f"{strip_html(html_caption)}\n\n🖼 Наряд: {file_url}"
         published_max = await send_max_message(max_bot_token, max_group_id, max_text)
 
-    # Обновляем БД и шлем уведомления только если это не тестовый наряд
+    # Обновляем БД и шлем уведомления только если это реальный наряд
     if (published_tg or published_max) and target_platform == "all":
         try:
             await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))

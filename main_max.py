@@ -47,7 +47,7 @@ async def resolve_id(raw_id: int):
 
 
 async def send_max_msg(event: MessageCreated, text: str):
-    """Использует прямой нативный эндпоинт MyTeam/MAX API для 100% гарантии доставки"""
+    """Использует POST /messages с авторизацией через заголовок для 100% гарантии"""
     chat_id = None
     if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
         chat_id = event.message.chat.id
@@ -55,18 +55,21 @@ async def send_max_msg(event: MessageCreated, text: str):
         chat_id = event.chat_id
 
     if chat_id:
-        url = "https://platform-api.max.ru/messages/sendText"
-        params = {
-            "token": MAX_TOKEN,
-            "chatId": str(chat_id),
+        url = "https://platform-api.max.ru/messages"
+        headers = {
+            "Authorization": MAX_TOKEN,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "chat_id": str(chat_id),
             "text": text
         }
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, params=params) as resp:
+                async with session.post(url, headers=headers, json=payload) as resp:
                     if resp.status == 200: return
         except Exception as e:
-            logger.warning(f"aiohttp sendText failed: {e}")
+            logger.warning(f"aiohttp send failed: {e}")
 
     # Fallback (если прямой запрос не сработал)
     try:
