@@ -10,7 +10,12 @@ from dotenv import load_dotenv
 from maxapi import Bot, Dispatcher, F
 from maxapi.types import MessageCreated
 
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+# Подключаем папку web, чтобы Python увидел database_deps и другие модули бэкенда
+current_dir = os.path.dirname(os.path.abspath(__file__))
+web_dir = os.path.join(current_dir, "web")
+sys.path.append(web_dir)
+
+# Теперь импорт сработает корректно
 from database_deps import db
 
 load_dotenv()
