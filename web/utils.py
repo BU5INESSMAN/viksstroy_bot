@@ -13,9 +13,6 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import io
 
-from maxapi import Bot
-from maxapi.types import InputMedia
-
 from database_deps import db
 
 
@@ -95,9 +92,10 @@ def clean_text(text):
 
 
 def strip_html(text):
+    """Очищает текст от HTML тегов для мессенджера MAX"""
     if not text: return ""
     clean = re.compile('<.*?>')
-    return re.sub(clean, '', str(text))
+    return re.sub(clean, '', str(text)).strip()
 
 
 def wrap_text(text, font, max_width, draw):
@@ -241,6 +239,7 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
 
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
                        target_platform: str = "all"):
+    """Универсальная рассылка уведомлений в ЛС и группы (через aiohttp)"""
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
@@ -282,7 +281,6 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         [{"text": "📱 Открыть платформу", "web_app": {"url": f"https://miniapp.viks22.ru/{url_path}"}}]]}
 
     max_plain_text = f"{strip_html(text)}\n\n📱 Платформа: https://miniapp.viks22.ru/{url_path}"
-    max_bot = Bot(token=max_bot_token) if max_bot_token else None
 
     async with aiohttp.ClientSession() as session:
         for cid_raw in tg_chat_ids:
@@ -292,11 +290,14 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             if cid_str.startswith("MAX_GROUP:"):
                 if target_platform in ["all", "max"]:
                     actual_max_id = cid_str.split(":", 1)[1]
-                    if max_bot:
+                    if max_bot_token:
+                        payload = {"chat_id": actual_max_id, "text": max_plain_text}
                         try:
-                            await max_bot.send_message(chat_id=actual_max_id, text=max_plain_text)
+                            await session.post("https://platform-api.max.ru/messages",
+                                               headers={"Authorization": max_bot_token,
+                                                        "Content-Type": "application/json"}, json=payload)
                         except Exception as e:
-                            print(f"MAX BOT GROUP NOTIFY ERROR: {e}")
+                            print(f"MAX GROUP NOTIFY ERROR: {e}")
                 continue
 
             try:
@@ -307,12 +308,15 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             # --- Отправка ЛИЧНО В MAX ---
             if cid_int < 0:
                 if target_platform in ["all", "max"]:
-                    if max_bot:
+                    if max_bot_token:
                         actual_max_id = str(abs(cid_int))
+                        payload = {"chat_id": actual_max_id, "text": max_plain_text}
                         try:
-                            await max_bot.send_message(chat_id=actual_max_id, text=max_plain_text)
+                            await session.post("https://platform-api.max.ru/messages",
+                                               headers={"Authorization": max_bot_token,
+                                                        "Content-Type": "application/json"}, json=payload)
                         except Exception as e:
-                            print(f"MAX BOT DM NOTIFY ERROR: {e}")
+                            print(f"MAX DM NOTIFY ERROR: {e}")
 
             # --- Отправка ЛИЧНО В TELEGRAM ---
             else:
@@ -328,6 +332,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
 
 async def execute_app_publish(app_dict, target_platform: str = "all"):
+    """Публикация красивого наряда в общие группы"""
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
@@ -391,14 +396,12 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
                                equip_list, comment_text)
 
-    # 2. Сохраняем её локально
+    # 2. Сохраняем её локально для доступа по ссылке
     filename = f"app_publish_{app_id}_{int(time.time())}.png"
     filepath = os.path.join("data", "uploads", filename)
     with open(filepath, "wb") as f:
         f.write(img_buf.getvalue())
 
-    # Получаем абсолютный путь к файлу для передачи в InputMedia
-    abs_filepath = os.path.abspath(filepath)
     file_url = f"https://miniapp.viks22.ru/uploads/{filename}"
 
     comment_html = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
@@ -429,30 +432,23 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
 
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
-        max_bot = Bot(token=max_bot_token)
-
-        # 1. Отправляем КАРТИНКУ без текста
+        # Для MAX отправляем просто текст со ссылкой на наряд (сырой HTTP)
+        max_text = f"{strip_html(html_caption)}\n\n🖼 Наряд: {file_url}"
+        payload = {"chat_id": str(max_group_id), "text": max_text}
         try:
-            await max_bot.send_message(
-                chat_id=str(max_group_id),
-                attachments=[InputMedia(path=abs_filepath)]
-            )
-            published_max = True
+            async with aiohttp.ClientSession() as session:
+                async with session.post("https://platform-api.max.ru/messages",
+                                        headers={"Authorization": max_bot_token, "Content-Type": "application/json"},
+                                        json=payload) as resp:
+                    if resp.status == 200:
+                        published_max = True
+                    else:
+                        err = await resp.text()
+                        print(f"MAX API PUBLISH ERROR: {resp.status} - {err}")
         except Exception as e:
-            print(f"MAX BOT MEDIA ERROR: {e}")
+            print(f"MAX HTTP PUBLISH EXCEPTION: {e}")
 
-        # 2. Отправляем ТЕКСТ наряда
-        try:
-            await max_bot.send_message(
-                chat_id=str(max_group_id),
-                text=strip_html(html_caption)
-            )
-            published_max = True
-        except Exception as e:
-            print(f"MAX BOT TEXT ERROR: {e}")
-
-    # Обновляем БД и шлем уведомления только если это не тестовый наряд
-    # (если это тестовый, status = 'published' и уведомления не нужны, так как мы их уже послали)
+    # Обновляем БД и шлем уведомления только если это реальный наряд (target_platform == all)
     if (published_tg or published_max) and target_platform == "all":
         try:
             await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))
