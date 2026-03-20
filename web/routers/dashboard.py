@@ -1,5 +1,6 @@
 import sys
 import os
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Form, HTTPException
@@ -9,6 +10,7 @@ from utils import resolve_id, fetch_teams_dict, enrich_app_with_team_name, notif
 
 router = APIRouter(tags=["Dashboard"])
 
+
 @router.get("/api/dashboard")
 async def get_dashboard_data(tg_id: int = 0):
     stats = await db.get_general_statistics()
@@ -17,11 +19,13 @@ async def get_dashboard_data(tg_id: int = 0):
 
     async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur:
         equip = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-    async with db.conn.execute("SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur:
+    async with db.conn.execute(
+            "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur:
         cat_rows = await cur.fetchall()
     categories = [r[0].strip().capitalize() for r in cat_rows if r[0].strip()]
 
-    async with db.conn.execute("SELECT * FROM applications WHERE date_target >= date('now', '-14 days') ORDER BY id DESC") as cur:
+    async with db.conn.execute(
+            "SELECT * FROM applications WHERE date_target >= date('now', '-14 days') ORDER BY id DESC") as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
     for a in all_apps: enrich_app_with_team_name(a, teams_dict)
@@ -29,7 +33,8 @@ async def get_dashboard_data(tg_id: int = 0):
     recent_addresses = []
     if tg_id != 0:
         real_tg_id = await resolve_id(tg_id)
-        async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC", (real_tg_id,)) as cur:
+        async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
+                                   (real_tg_id,)) as cur:
             for r in await cur.fetchall():
                 if r[0] and r[0] not in recent_addresses: recent_addresses.append(r[0])
                 if len(recent_addresses) >= 5: break
@@ -37,8 +42,10 @@ async def get_dashboard_data(tg_id: int = 0):
     return {"stats": stats, "teams": [{"id": t['id'], "name": t['name']} for t in teams], "equipment": equip,
             "equip_categories": list(set(categories)), "kanban_apps": all_apps, "recent_addresses": recent_addresses}
 
+
 @router.get("/api/logs")
 async def get_logs(): return await db.get_recent_logs(50)
+
 
 @router.get("/api/settings")
 async def get_settings():
@@ -46,30 +53,46 @@ async def get_settings():
         rows = await cur.fetchall()
     return {r[0]: r[1] for r in rows}
 
+
 @router.post("/api/settings/update")
 async def update_settings(auto_publish_time: str = Form(""), foreman_reminder_time: str = Form(""),
-                          foreman_reminder_weekends: str = Form("0"), tg_id: int = Form(0)):
+                          foreman_reminder_weekends: str = Form("0"), auto_complete_time: str = Form(""),
+                          tg_id: int = Form(0)):
     user = await db.get_user(tg_id)
-    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403, "Нет прав")
+    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403,
+                                                                                                          "Нет прав")
+
     try:
-        await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'auto_publish_time'", (auto_publish_time,))
-        await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'foreman_reminder_time'", (foreman_reminder_time,))
-        await db.conn.execute("UPDATE settings SET value = ? WHERE key = 'foreman_reminder_weekends'", (foreman_reminder_weekends,))
+        # Надежное обновление или создание ключей настроек
+        for k, v in [
+            ('auto_publish_time', auto_publish_time),
+            ('foreman_reminder_time', foreman_reminder_time),
+            ('foreman_reminder_weekends', foreman_reminder_weekends),
+            ('auto_complete_time', auto_complete_time)
+        ]:
+            await db.conn.execute("UPDATE settings SET value = ? WHERE key = ?", (v, k))
+            await db.conn.execute("INSERT INTO settings (key, value) SELECT ?, ? WHERE (SELECT Changes() = 0)", (k, v))
+
         await db.conn.commit()
-    except:
+    except Exception as e:
         await db.conn.rollback()
-        raise HTTPException(500, "Database error")
+        raise HTTPException(500, f"Database error: {e}")
+
     await db.add_log(tg_id, dict(user).get('fio'), "Обновил системные настройки")
     return {"status": "ok"}
+
 
 @router.post("/api/cron/start_day")
 async def cron_start_day(): return {"status": "ok"}
 
+
 @router.post("/api/cron/end_day")
 async def cron_end_day(): return {"status": "ok"}
 
+
 @router.post("/api/cron/check_timeouts")
 async def cron_check_timeouts(): return {"status": "ok"}
+
 
 # ОБНОВЛЕННЫЙ ЭНДПОИНТ С ПОДДЕРЖКОЙ platform
 @router.post("/api/system/test_notification")
@@ -82,8 +105,11 @@ async def test_notification(tg_id: int = Form(...), platform: str = Form("all"))
     fio = dict(user).get('fio', 'Супер-Админ')
     platform_name = "MAX" if platform == "max" else "Telegram"
 
-    await notify_users([], f"🧪 <b>Тестовое уведомление:</b> Вас добавили в наряд! ({platform_name})", "my-apps", [real_tg_id], target_platform=platform)
-    await notify_users(["moderator"], f"📝 <b>Тестовая заявка ({platform_name}):</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: Проверка уведомлений", "review", [real_tg_id], target_platform=platform)
+    await notify_users([], f"🧪 <b>Тестовое уведомление:</b> Вас добавили в наряд! ({platform_name})", "my-apps",
+                       [real_tg_id], target_platform=platform)
+    await notify_users(["moderator"],
+                       f"📝 <b>Тестовая заявка ({platform_name}):</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: Проверка уведомлений",
+                       "review", [real_tg_id], target_platform=platform)
 
     fake_app = {
         'id': 9999,
