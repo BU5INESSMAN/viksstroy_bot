@@ -1,0 +1,90 @@
+from fastapi import APIRouter, Form, HTTPException
+from database_deps import db
+from utils import resolve_id, notify_users
+
+router = APIRouter(tags=["Teams"])
+
+@router.post("/api/teams/{team_id}/generate_invite")
+async def api_generate_invite(team_id: int):
+    invite_code, join_password = await db.generate_team_invite(team_id)
+    return {
+        "invite_link": f"https://miniapp.viks22.ru/invite/{invite_code}",
+        "tg_bot_link": f"https://t.me/viksstroy_bot?start=invite_{invite_code}",
+        "join_password": join_password
+    }
+
+@router.get("/api/invite/{invite_code}")
+async def api_get_invite_info(invite_code: str):
+    team = await db.get_team_by_invite(invite_code)
+    if not team: raise HTTPException(status_code=404, detail="Ссылка недействительна")
+    return {"team_name": team['name'],
+            "unclaimed_workers": [{"id": w['id'], "fio": w['fio'], "position": w['position']} for w in
+                                  await db.get_unclaimed_workers(team['id'])]}
+
+@router.post("/api/invite/join")
+async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...), tg_id: int = Form(...)):
+    team = await db.get_team_by_invite(invite_code)
+    real_tg_id = await resolve_id(tg_id)
+    await db.conn.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (real_tg_id, worker_id))
+    user = await db.get_user(real_tg_id)
+    async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
+        w_row = await cur.fetchone()
+        fio = w_row[0] if w_row else f"Рабочий {real_tg_id}"
+    if not user:
+        await db.add_user(real_tg_id, fio, "worker")
+    elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
+        await db.update_user_role(real_tg_id, "worker")
+    await db.conn.commit()
+    await notify_users(["report_group"], f"🔗 <b>Привязка аккаунта</b>\nРабочий {fio} привязал аккаунт к бригаде «{team['name']}».", "teams")
+    return {"status": "ok"}
+
+@router.post("/api/teams/create")
+async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Form("Пользователь")):
+    await db.conn.execute("INSERT INTO teams (name) VALUES (?)", (name,))
+    await db.conn.commit()
+    await notify_users(["report_group"], f"🏗 <b>Новая бригада</b>\n{fio} создал бригаду «{name}»", "teams")
+    return {"status": "ok"}
+
+@router.get("/api/teams/{team_id}/details")
+async def get_team_details(team_id: int):
+    async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur: team_row = await cur.fetchone()
+    async with db.conn.execute(
+            "SELECT id, fio, position, tg_user_id, is_foreman FROM team_members WHERE team_id = ? ORDER BY is_foreman DESC, id ASC",
+            (team_id,)) as cur:
+        members = [{"id": r[0], "fio": r[1], "position": r[2], "is_linked": bool(r[3]), "is_foreman": bool(r[4])} for r in await cur.fetchall()]
+    return {"id": team_id, "name": team_row[0], "members": members}
+
+@router.post("/api/teams/{team_id}/members/add")
+async def add_team_member(team_id: int, fio: str = Form(...), position: str = Form(...), is_foreman: int = Form(0), tg_id: int = Form(0)):
+    await db.conn.execute("INSERT INTO team_members (team_id, fio, position, is_foreman) VALUES (?, ?, ?, ?)", (team_id, fio, position, is_foreman))
+    await db.conn.commit()
+    return {"status": "ok"}
+
+@router.post("/api/teams/members/{member_id}/toggle_foreman")
+async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int = Form(0)):
+    await db.conn.execute("UPDATE team_members SET is_foreman = ? WHERE id = ?", (is_foreman, member_id))
+    await db.conn.commit()
+    return {"status": "ok"}
+
+@router.post("/api/teams/members/{member_id}/delete")
+async def delete_team_member(member_id: int, tg_id: int = Form(0)):
+    await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
+    await db.conn.commit()
+    return {"status": "ok"}
+
+@router.post("/api/teams/{team_id}/delete")
+async def delete_entire_team(team_id: int, tg_id: int = Form(0)):
+    user = await db.get_user(tg_id)
+    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(status_code=403, detail="Нет прав")
+    async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
+        t_row = await cur.fetchone()
+        t_name = t_row[0] if t_row else f"ID:{team_id}"
+    try:
+        await db.conn.execute("DELETE FROM teams WHERE id = ?", (team_id,))
+        await db.conn.execute("DELETE FROM team_members WHERE team_id = ?", (team_id,))
+        await db.conn.execute("UPDATE applications SET team_id = '0' WHERE team_id = ?", (str(team_id),))
+        await db.conn.commit()
+    except:
+        await db.conn.rollback()
+    await db.add_log(tg_id, dict(user).get('fio', 'Система'), f"Удалил бригаду «{t_name}»")
+    return {"status": "ok"}
