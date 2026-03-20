@@ -1,3 +1,8 @@
+import sys
+import os
+# Переходим на уровень выше (в папку web), чтобы импорты сработали
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from fastapi import APIRouter, Form, HTTPException, Request
 import uuid
 import random

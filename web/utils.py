@@ -1,4 +1,7 @@
+import sys
 import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 import aiohttp
 import json
 import base64
@@ -8,6 +11,7 @@ import re
 import time
 from PIL import Image, ImageDraw, ImageFont
 import io
+
 from database_deps import db
 
 async def resolve_id(raw_id: int):
