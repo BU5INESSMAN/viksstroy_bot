@@ -18,6 +18,11 @@ import sys
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 from database.db_manager import DatabaseManager
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+web_dir = os.path.join(current_dir, "web")
+sys.path.append(web_dir)
+
+from database_deps import db
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
