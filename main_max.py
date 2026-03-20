@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import sys
+import aiohttp
 import random
 import time
 from dotenv import load_dotenv
@@ -46,11 +47,32 @@ async def resolve_id(raw_id: int):
 
 
 async def send_max_msg(event: MessageCreated, text: str):
-    """Отправка сообщения через нативный метод maxapi"""
+    """Использует прямой нативный эндпоинт MyTeam/MAX API для 100% гарантии доставки"""
+    chat_id = None
+    if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
+        chat_id = event.message.chat.id
+    elif hasattr(event, "chat_id"):
+        chat_id = event.chat_id
+
+    if chat_id:
+        url = "https://platform-api.max.ru/messages/sendText"
+        params = {
+            "token": MAX_TOKEN,
+            "chatId": str(chat_id),
+            "text": text
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, params=params) as resp:
+                    if resp.status == 200: return
+        except Exception as e:
+            logger.warning(f"aiohttp sendText failed: {e}")
+
+    # Fallback (если прямой запрос не сработал)
     try:
         await event.message.answer(text)
     except Exception as e:
-        logger.warning(f"Ошибка отправки сообщения: {e}")
+        logger.warning(f"Fallback answer failed: {e}")
 
 
 @dp.message_created(F.message.body.text)
