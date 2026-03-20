@@ -18,6 +18,16 @@ from maxapi.types import InputMedia
 
 from database_deps import db
 
+# Кэшируем бота MAX, чтобы избежать утечек сессий (Unclosed client session)
+_max_bot_instance = None
+
+
+def get_max_bot(token: str):
+    global _max_bot_instance
+    if _max_bot_instance is None:
+        _max_bot_instance = Bot(token=token)
+    return _max_bot_instance
+
 
 async def resolve_id(raw_id: int):
     if db.conn is None: await db.init_db()
@@ -95,7 +105,6 @@ def clean_text(text):
 
 
 def strip_html(text):
-    """Удаляет ВСЕ HTML теги для безопасной отправки текста в MAX"""
     if not text: return ""
     clean = re.compile('<.*?>')
     return re.sub(clean, '', str(text)).strip()
@@ -254,32 +263,6 @@ async def get_max_group_id():
     return None
 
 
-async def get_max_mention(user_id_raw, user_name: str):
-    """
-    Умный поиск аккаунта.
-    Возвращает красивый формат с именем и тегом: Имя Фамилия (@[ID])
-    """
-    if not user_id_raw: return user_name
-    try:
-        uid = int(user_id_raw)
-    except:
-        return user_name
-
-    max_id = None
-    if uid < 0:
-        max_id = abs(uid)
-    else:
-        if db.conn is None: await db.init_db()
-        async with db.conn.execute("SELECT secondary_id FROM account_links WHERE primary_id = ? AND secondary_id < 0",
-                                   (uid,)) as cur:
-            row = await cur.fetchone()
-            if row: max_id = abs(row[0])
-
-    if max_id:
-        return f"{user_name} (@[{max_id}])"
-    return user_name
-
-
 async def send_max_text(bot_token: str, chat_id: str, text: str):
     """Отправка текста в MAX. Обрабатывает ошибку ненайденного диалога для ЛС."""
     if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
@@ -291,14 +274,13 @@ async def send_max_text(bot_token: str, chat_id: str, text: str):
         return False
 
     try:
-        bot = Bot(token=bot_token)
+        bot = get_max_bot(bot_token)
         await bot.send_message(chat_id=int_chat_id, text=str(text))
         return True
     except Exception as e:
         err_str = str(e)
         if 'dialog.not.found' in err_str:
-            print(
-                f"⚠️ Ожидаемо для MAX: ЛС не отправлено (ID {int_chat_id}). Пользователь еще не написал боту /start в личные сообщения.")
+            print(f"⚠️ Ожидаемо для MAX: ЛС не отправлено (ID {int_chat_id}). Пользователь еще не написал боту /start.")
         else:
             print(f"❌ Ошибка MAX API (send_max_text): {e}")
         return False
@@ -314,7 +296,7 @@ async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: st
     except ValueError:
         return False
 
-    bot = Bot(token=bot_token)
+    bot = get_max_bot(bot_token)
     photo_sent = False
 
     if filepath:
@@ -352,7 +334,6 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
-    max_group_id = await get_max_group_id()
 
     tg_chat_ids = set()
 
@@ -436,7 +417,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
 
 async def execute_app_publish(app_dict, target_platform: str = "all"):
-    """Генерация и публикация наряда с красивыми отметками"""
+    """Генерация и публикация наряда (УБРАНЫ ОТМЕТКИ MAX)"""
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
@@ -469,11 +450,11 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
                 workers_ids.append(w_tg_id)
                 staff_str_tg += f"\n  ├ <a href='tg://user?id={w_tg_id}'>{name}</a> (<i>{position}</i>)" if int(
                     w_tg_id) > 0 else f"\n  ├ {name} (<i>{position}</i>)"
-                mention_max = await get_max_mention(w_tg_id, name)
-                staff_str_max += f"\n  ├ {mention_max} ({position})"
             else:
                 staff_str_tg += f"\n  ├ {name} (<i>{position}</i>)"
-                staff_str_max += f"\n  ├ {name} ({position})"
+
+            # MAX всегда получает только чистый текст
+            staff_str_max += f"\n  ├ {name} ({position})"
     else:
         staff_str_tg = "\n  ├ Только техника"
         staff_str_max = "\n  ├ Только техника"
@@ -514,13 +495,13 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     foreman_id = app_dict.get('foreman_id', 0)
     foreman_name = app_dict.get('foreman_name', 'Неизвестно')
     foreman_tg = f"<a href='tg://user?id={foreman_id}'>{foreman_name}</a>" if int(foreman_id) > 0 else foreman_name
-    foreman_max = await get_max_mention(foreman_id, foreman_name)
+    foreman_max = foreman_name
 
     approved_name = app_dict.get('approved_by', '')
     approved_id = app_dict.get('approved_by_id')
     approved_tg = f"\n🛡 <b>Одобрил(а):</b> <a href='tg://user?id={approved_id}'>{approved_name}</a>" if approved_id and int(
         approved_id) > 0 else f"\n🛡 <b>Одобрил(а):</b> {approved_name}"
-    approved_max = f"\n🛡 Одобрил(а): {await get_max_mention(approved_id, approved_name)}" if approved_id else f"\n🛡 Одобрил(а): {approved_name}"
+    approved_max = f"\n🛡 Одобрил(а): {approved_name}" if approved_name else ""
 
     tg_caption = f"<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n🚜 <b>Техника:</b>\n{equip_html}👷‍♂️ <b>Прораб:</b> {foreman_tg}\n👥 <b>Бригада «{team_name}»:</b>{staff_str_tg}{comment_html_tg}{approved_tg}</blockquote>"
 

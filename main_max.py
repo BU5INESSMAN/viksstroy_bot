@@ -2,7 +2,6 @@ import asyncio
 import logging
 import os
 import sys
-import aiohttp
 import random
 import time
 from dotenv import load_dotenv
@@ -47,53 +46,31 @@ async def resolve_id(raw_id: int):
 
 
 async def send_max_msg(event: MessageCreated, text: str):
-    """Использует POST /messages с правильным параметром chatId"""
-    chat_id = None
-    if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
-        chat_id = event.message.chat.id
-    elif hasattr(event, "chat_id"):
-        chat_id = event.chat_id
-
-    if chat_id:
-        url = "https://platform-api.max.ru/messages"
-        headers = {
-            "Authorization": MAX_TOKEN,
-            "Content-Type": "application/json"
-        }
-        payload = {
-            "chatId": str(chat_id),  # ИСПОЛЬЗУЕМ chatId
-            "text": text
-        }
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status == 200: return
-        except Exception as e:
-            logger.warning(f"aiohttp send failed: {e}")
-
-    # Fallback
+    """Используем встроенный надежный метод для ответа"""
     try:
         await event.message.answer(text)
     except Exception as e:
-        logger.warning(f"Fallback answer failed: {e}")
+        logger.warning(f"Ошибка ответа MAX: {e}")
 
 
 @dp.message_created(F.message.body.text)
 async def message_handler(event: MessageCreated):
-    # ГАРАНТИЯ ПОДКЛЮЧЕНИЯ
     if db.conn is None: await db.init_db()
 
     text = event.message.body.text.strip()
     max_id = event.message.sender.user_id
 
-    # Определяем ID текущего чата для понимания: это ЛС или группа?
+    # Определяем ID текущего чата
     chat_id = None
     if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
         chat_id = event.message.chat.id
     elif hasattr(event, "chat_id"):
         chat_id = event.chat_id
 
-    is_group = str(chat_id) != str(max_id) or "@chat" in str(chat_id)
+    # ИСПРАВЛЕНИЕ: Группы в MAX/MyTeam имеют ID с минусом или содержат '@chat'
+    # ЛС имеют положительный ID (диалог), даже если он не равен user_id.
+    chat_str = str(chat_id)
+    is_group = chat_str.startswith("-") or "@chat" in chat_str
 
     pseudo_tg_id = -int(max_id)
     real_tg_id = await resolve_id(pseudo_tg_id)
@@ -109,20 +86,18 @@ async def message_handler(event: MessageCreated):
                 return await send_max_msg(event, "❌ У вас нет прав для привязки системной группы.")
 
             try:
-                # Жестко удаляем ВСЕ старые записи и вставляем одну новую
                 await db.conn.execute("DELETE FROM settings WHERE key = 'max_group_chat_id'")
-                await db.conn.execute("INSERT INTO settings (key, value) VALUES ('max_group_chat_id', ?)",
-                                      (str(chat_id),))
+                await db.conn.execute("INSERT INTO settings (key, value) VALUES ('max_group_chat_id', ?)", (chat_str,))
                 await db.conn.commit()
                 await send_max_msg(event,
-                                   f"✅ Группа успешно привязана! (ID: {chat_id})\nТеперь все наряды и системные уведомления для MAX будут автоматически приходить сюда.")
+                                   f"✅ Группа успешно привязана! (ID: {chat_str})\nТеперь все наряды и системные уведомления для MAX будут автоматически приходить сюда.")
             except Exception as e:
                 await send_max_msg(event, f"❌ Ошибка при сохранении группы в базу данных: {e}")
 
-        # Прерываем выполнение, чтобы бот не реагировал на обычные переписки людей в группе
+        # В группе бот больше ни на что не реагирует
         return
 
-    # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ ---
+    # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ (ЛС) ---
 
     if text.startswith("/web"):
         if not user:
@@ -228,6 +203,7 @@ async def message_handler(event: MessageCreated):
 
 async def clear_webhook():
     try:
+        import aiohttp
         headers = {"Authorization": MAX_TOKEN}
         async with aiohttp.ClientSession() as session:
             await session.delete("https://platform-api.max.ru/subscriptions", headers=headers)
@@ -238,7 +214,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (Игнорирует спам в группах, ждет /setchat) <<<")
+    logger.info(">>> Бот MAX успешно запущен (ЛС работают корректно) <<<")
     await dp.start_polling(bot)
 
 
