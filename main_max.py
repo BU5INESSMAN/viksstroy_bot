@@ -11,7 +11,7 @@ from maxapi import Bot, Dispatcher, F
 from maxapi.types import MessageCreated
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-from database.db_manager import DatabaseManager
+from database_deps import db
 
 load_dotenv()
 
@@ -26,9 +26,6 @@ if not MAX_TOKEN:
 
 bot = Bot(MAX_TOKEN)
 dp = Dispatcher()
-
-db_path = os.getenv("DB_PATH", "data/viksstroy.db")
-db = DatabaseManager(db_path)
 
 WEB_APP_URL = "https://miniapp.viks22.ru/"
 APP_LINK = f"📱 Платформа: {WEB_APP_URL}"
@@ -78,6 +75,15 @@ async def message_handler(event: MessageCreated):
     text = event.message.body.text.strip()
     max_id = event.message.sender.user_id
 
+    # Определяем ID текущего чата для понимания: это ЛС или группа?
+    chat_id = None
+    if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
+        chat_id = event.message.chat.id
+    elif hasattr(event, "chat_id"):
+        chat_id = event.chat_id
+
+    is_group = str(chat_id) != str(max_id) or "@chat" in str(chat_id)
+
     pseudo_tg_id = -int(max_id)
     real_tg_id = await resolve_id(pseudo_tg_id)
     user = await db.get_user(real_tg_id)
@@ -85,7 +91,26 @@ async def message_handler(event: MessageCreated):
     state_data = USER_STATES.get(max_id, {})
     current_state = state_data.get("state")
 
-    # КОМАНДА /WEB (Генерация кода связки)
+    # --- ЛОГИКА ДЛЯ ГРУППОВЫХ ЧАТОВ ---
+    if is_group:
+        if text.startswith("/setchat"):
+            if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
+                return await send_max_msg(event, "❌ У вас нет прав для привязки системной группы.")
+
+            try:
+                await db.conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES ('max_group_chat_id', ?)",
+                                      (str(chat_id),))
+                await db.conn.commit()
+                await send_max_msg(event,
+                                   "✅ Группа успешно привязана!\nТеперь все наряды и системные уведомления для MAX будут автоматически приходить сюда.")
+            except Exception as e:
+                await send_max_msg(event, "❌ Ошибка при сохранении группы в базу данных.")
+
+        # Обязательно прерываем выполнение, чтобы бот не реагировал на обычные переписки людей в группе
+        return
+
+    # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ ---
+
     if text.startswith("/web"):
         if not user:
             return await send_max_msg(event, "❌ Сначала зарегистрируйтесь (команда /start).")
@@ -101,7 +126,6 @@ async def message_handler(event: MessageCreated):
             await send_max_msg(event, "Ошибка генерации кода.")
         return
 
-    # НОВЫЙ ОБРАБОТЧИК: КОМАНДА /JOIN (Вступление в бригаду / Привязка техники)
     if text.startswith("/join"):
         parts = text.split()
         if len(parts) < 2:
@@ -109,7 +133,6 @@ async def message_handler(event: MessageCreated):
 
         code = parts[1].strip()
 
-        # 1. Проверяем бригады
         async with db.conn.execute("SELECT invite_code FROM teams WHERE join_password = ?", (code,)) as cur:
             t_row = await cur.fetchone()
         if t_row:
@@ -117,7 +140,6 @@ async def message_handler(event: MessageCreated):
             return await send_max_msg(event,
                                       f"Для выбора профиля и вступления в бригаду перейдите по ссылке:\n\n📱 {url}")
 
-        # 2. Проверяем технику
         async with db.conn.execute("SELECT invite_code FROM equipment WHERE invite_code = ?", (code,)) as cur:
             e_row = await cur.fetchone()
         if e_row:
@@ -126,7 +148,6 @@ async def message_handler(event: MessageCreated):
 
         return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
 
-    # ОБРАБОТКА КОМАНДЫ /START
     if text.startswith("/start"):
         if user:
             if dict(user).get('is_blacklisted'):
@@ -141,7 +162,6 @@ async def message_handler(event: MessageCreated):
             await send_max_msg(event, msg)
         return
 
-    # FSM: ОЖИДАНИЕ ПАРОЛЯ ИЛИ КОДА
     if current_state == "waiting_for_password":
         if len(text) == 6 and text.isdigit():
             async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (text,)) as cur:
@@ -177,7 +197,6 @@ async def message_handler(event: MessageCreated):
             await send_max_msg(event, "❌ Неверный ввод. Попробуйте снова:")
         return
 
-    # FSM: ОЖИДАНИЕ ФИО
     if current_state == "waiting_for_fio":
         fio = text
         role = state_data.get("role", "worker")
@@ -207,9 +226,8 @@ async def clear_webhook():
 
 
 async def main():
-    await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (Команда /join вместо диплинков) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Игнорирует спам в группах, ждет /setchat) <<<")
     await dp.start_polling(bot)
 
 
