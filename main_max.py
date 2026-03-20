@@ -4,11 +4,13 @@ import os
 import sys
 import random
 import time
+import re
 from dotenv import load_dotenv
 
 from maxapi import Bot, Dispatcher, F
 from maxapi.types import MessageCreated
 
+# Подключаем папку web, чтобы Python увидел database_deps и другие модули бэкенда
 current_dir = os.path.dirname(os.path.abspath(__file__))
 web_dir = os.path.join(current_dir, "web")
 sys.path.append(web_dir)
@@ -44,6 +46,7 @@ async def resolve_id(raw_id: int):
 
 
 async def send_max_msg(event: MessageCreated, text: str):
+    """Используем встроенный надежный метод для ответа"""
     try:
         await event.message.answer(text)
     except Exception as e:
@@ -56,29 +59,59 @@ async def message_handler(event: MessageCreated):
 
     text = event.message.body.text.strip()
 
+    # --- 1. ПУЛЕНЕПРОБИВАЕМЫЙ ПОИСК USER_ID ---
     max_id = None
-    if hasattr(event.message, "sender") and hasattr(event.message.sender, "user_id"):
+    try:
         max_id = event.message.sender.user_id
-    elif hasattr(event, "user_id"):
-        max_id = event.user_id
+    except:
+        pass
+
+    if not max_id:
+        try:
+            max_id = event.user_id
+        except:
+            pass
 
     if not max_id: return
     max_id_str = str(max_id).strip()
 
-    chat_id = getattr(event, "chat_id", None)
-    if not chat_id and hasattr(event.message, "chat"):
+    # --- 2. ПУЛЕНЕПРОБИВАЕМЫЙ ПОИСК CHAT_ID (ДИАЛОГА) ---
+    chat_id = None
+    try:
         chat_id = event.message.chat.id
+    except:
+        pass
 
-    chat_str = str(chat_id).strip()
+    if not chat_id:
+        try:
+            chat_id = event.message.chat.chatId
+        except:
+            pass
+
+    if not chat_id:
+        try:
+            chat_id = event.chat_id
+        except:
+            pass
+
+    if not chat_id:
+        # Если API спрятало ID, парсим его напрямую из строки события!
+        match = re.search(r"chat_id[=: ]*['\"]?([-\w]+)", str(event))
+        if match: chat_id = match.group(1)
+
+    chat_str = str(chat_id).strip() if chat_id else "None"
     is_group = chat_str.startswith("-") or "@chat" in chat_str
 
-    if not is_group and chat_str and chat_str != "None":
+    # --- 3. ЗАПИСЬ ID ЧАТА В БАЗУ ДАННЫХ (ТО, ЧТО ТЫ ПРОСИЛ) ---
+    if not is_group and chat_str != "None":
         try:
             await db.conn.execute("DELETE FROM settings WHERE key = ?", (f'max_dm_{max_id_str}',))
             await db.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f'max_dm_{max_id_str}', chat_str))
             await db.conn.commit()
+            logger.info(
+                f"💾 БАЗА ДАННЫХ: ID диалога ЛС успешно сохранен! (Пользователь {max_id_str} -> Диалог {chat_str})")
         except Exception as e:
-            print(f"Ошибка сохранения chat_id для ЛС MAX: {e}")
+            logger.error(f"❌ Ошибка БД при сохранении ЛС MAX: {e}")
 
     pseudo_tg_id = -int(max_id)
     real_tg_id = await resolve_id(pseudo_tg_id)
@@ -87,10 +120,12 @@ async def message_handler(event: MessageCreated):
     state_data = USER_STATES.get(max_id_str, {})
     current_state = state_data.get("state")
 
+    # --- ЛОГИКА ДЛЯ ГРУППОВЫХ ЧАТОВ ---
     if is_group:
         if text.startswith("/setchat"):
             if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
                 return await send_max_msg(event, "❌ У вас нет прав для привязки системной группы.")
+
             try:
                 await db.conn.execute("DELETE FROM settings WHERE key = 'max_group_chat_id'")
                 await db.conn.execute("INSERT INTO settings (key, value) VALUES ('max_group_chat_id', ?)", (chat_str,))
@@ -100,6 +135,8 @@ async def message_handler(event: MessageCreated):
             except Exception as e:
                 await send_max_msg(event, f"❌ Ошибка при сохранении группы в базу данных: {e}")
         return
+
+    # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ ---
 
     if text.startswith("/web"):
         if not user:
@@ -140,6 +177,7 @@ async def message_handler(event: MessageCreated):
         if not target_url:
             return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
 
+        # Мгновенная регистрация по коду
         if not user:
             sender = getattr(event.message, "sender", None)
             first_name = getattr(sender, "first_name", getattr(sender, "firstName", ""))
@@ -243,7 +281,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (Фикс блокировки базы данных) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Жесткое извлечение ID диалогов) <<<")
     await dp.start_polling(bot)
 
 
