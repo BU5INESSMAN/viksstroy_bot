@@ -231,6 +231,7 @@ async def clear_webhook():
 
 
 async def main():
+    await db.init_db()  # ВЕРНУЛ ЭТУ ВАЖНУЮ СТРОКУ!
     await clear_webhook()
     logger.info(">>> Бот MAX успешно запущен (Игнорирует спам в группах, ждет /setchat) <<<")
     await dp.start_polling(bot)
