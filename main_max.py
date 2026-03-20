@@ -52,38 +52,45 @@ async def send_max_msg(event: MessageCreated, text: str):
         logger.warning(f"Ошибка ответа MAX: {e}")
 
 
-# ВЕРНУЛИ ФИЛЬТР ТЕКСТА, БЕЗ НЕГО БИБЛИОТЕКА ПАДАЕТ!
 @dp.message_created(F.message.body.text)
 async def message_handler(event: MessageCreated):
     if db.conn is None: await db.init_db()
 
     text = event.message.body.text.strip()
-    max_id = event.message.sender.user_id
 
-    # Надежное извлечение ID диалога
+    # Надежно достаем ID пользователя
+    max_id = None
+    if hasattr(event.message, "sender") and hasattr(event.message.sender, "user_id"):
+        max_id = event.message.sender.user_id
+    elif hasattr(event, "user_id"):
+        max_id = event.user_id
+
+    if not max_id: return
+    max_id_str = str(max_id).strip()
+
+    # Надежно достаем ID чата
     chat_id = getattr(event, "chat_id", None)
     if not chat_id and hasattr(event.message, "chat"):
         chat_id = event.message.chat.id
 
-    chat_str = str(chat_id)
+    chat_str = str(chat_id).strip()
     is_group = chat_str.startswith("-") or "@chat" in chat_str
 
     # --- СОХРАНЕНИЕ ID ДИАЛОГА ДЛЯ ЛС ---
-    # Бот запомнит этот ID с первого же сообщения!
     if not is_group and chat_str and chat_str != "None":
         try:
-            await db.conn.execute("DELETE FROM settings WHERE key = ?", (f'max_dm_{max_id}',))
-            await db.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f'max_dm_{max_id}', chat_str))
+            await db.conn.execute("DELETE FROM settings WHERE key = ?", (f'max_dm_{max_id_str}',))
+            await db.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f'max_dm_{max_id_str}', chat_str))
             await db.conn.commit()
-            logger.info(f"💾 СОХРАНЕН ID ДИАЛОГА ЛС: max_dm_{max_id} = {chat_str}")
+            print(f"💾 СОХРАНЕН ID ДИАЛОГА ЛС: max_dm_{max_id_str} = {chat_str}")
         except Exception as e:
-            logger.error(f"Ошибка сохранения chat_id для ЛС MAX: {e}")
+            print(f"Ошибка сохранения chat_id для ЛС MAX: {e}")
 
     pseudo_tg_id = -int(max_id)
     real_tg_id = await resolve_id(pseudo_tg_id)
     user = await db.get_user(real_tg_id)
 
-    state_data = USER_STATES.get(max_id, {})
+    state_data = USER_STATES.get(max_id_str, {})
     current_state = state_data.get("state")
 
     # --- ЛОГИКА ДЛЯ ГРУППОВЫХ ЧАТОВ ---
@@ -106,7 +113,7 @@ async def message_handler(event: MessageCreated):
 
     if text.startswith("/web"):
         if not user:
-            return await send_max_msg(event, "❌ Сначала зарегистрируйтесь (команда /start).")
+            return await send_max_msg(event, "❌ Сначала зарегистрируйтесь (используйте /start или /join).")
         code = str(random.randint(100000, 999999))
         expires = time.time() + 900
         try:
@@ -119,39 +126,61 @@ async def message_handler(event: MessageCreated):
             await send_max_msg(event, "Ошибка генерации кода.")
         return
 
+    # --- АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ ПО /join (БЕЗ ЗАПРОСА ФИО) ---
     if text.startswith("/join"):
         parts = text.split()
         if len(parts) < 2:
             return await send_max_msg(event, "❌ Укажите код приглашения. Пример: /join 123456")
 
         code = parts[1].strip()
+        target_url = None
+        role_to_set = "worker"
 
         async with db.conn.execute("SELECT invite_code FROM teams WHERE join_password = ?", (code,)) as cur:
             t_row = await cur.fetchone()
         if t_row:
-            url = f"https://miniapp.viks22.ru/invite/{t_row[0]}"
-            return await send_max_msg(event,
-                                      f"Для выбора профиля и вступления в бригаду перейдите по ссылке:\n\n📱 {url}")
+            target_url = f"{WEB_APP_URL}invite/{t_row[0]}"
+            role_to_set = "worker"
+        else:
+            async with db.conn.execute("SELECT invite_code FROM equipment WHERE invite_code = ?", (code,)) as cur:
+                e_row = await cur.fetchone()
+            if e_row:
+                target_url = f"{WEB_APP_URL}equip-invite/{e_row[0]}"
+                role_to_set = "driver"
 
-        async with db.conn.execute("SELECT invite_code FROM equipment WHERE invite_code = ?", (code,)) as cur:
-            e_row = await cur.fetchone()
-        if e_row:
-            url = f"https://miniapp.viks22.ru/equip-invite/{e_row[0]}"
-            return await send_max_msg(event, f"Для подтверждения привязки техники перейдите по ссылке:\n\n📱 {url}")
+        if not target_url:
+            return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
 
-        return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
+        # Если человек новый — сам код служит пропуском. Регистрируем мгновенно!
+        if not user:
+            sender = getattr(event.message, "sender", None)
+            first_name = getattr(sender, "first_name", getattr(sender, "firstName", ""))
+            last_name = getattr(sender, "last_name", getattr(sender, "lastName", ""))
+            fio = f"{first_name} {last_name}".strip()
+
+            # На случай, если в профиле не указаны имя и фамилия (заглушка)
+            if not fio:
+                fio = getattr(sender, "nick", getattr(sender, "firstName", f"Сотрудник {max_id_str}"))
+
+            await db.add_user(pseudo_tg_id, fio, role_to_set)
+            await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался по коду (Роль: {role_to_set}, Платформа: MAX)")
+
+            msg = f"🎉 Регистрация успешно завершена!\n\n👤 Ваше имя: {fio}\n💼 Роль: {role_to_set}\n\nТеперь перейдите по ссылке для выбора бригады/техники:\n\n📱 {target_url}"
+            return await send_max_msg(event, msg)
+        else:
+            return await send_max_msg(event, f"Для вступления/привязки перейдите по ссылке:\n\n📱 {target_url}")
 
     if text.startswith("/start"):
         if user:
             if dict(user).get('is_blacklisted'):
                 await send_max_msg(event, "❌ Ваш аккаунт заблокирован.")
             else:
-                USER_STATES.pop(max_id, None)
+                USER_STATES.pop(max_id_str, None)
                 msg = f"С возвращением, {dict(user)['fio']}!\n\nНажмите на ссылку ниже для запуска:\n\n{APP_LINK}"
                 await send_max_msg(event, msg)
         else:
-            USER_STATES[max_id] = {"state": "waiting_for_password"}
-            msg = "🔐 Добро пожаловать в ВИКС Расписание!\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль или 6-значный код привязки (если аккаунт уже есть в Telegram):"
+            USER_STATES[max_id_str] = {"state": "waiting_for_password"}
+            msg = "🔐 Добро пожаловать в ВИКС Расписание!\n\nЕсли вы администратор или прораб, введите системный пароль.\nЕсли вы рабочий или водитель, используйте команду /join [код]"
             await send_max_msg(event, msg)
         return
 
@@ -165,7 +194,7 @@ async def message_handler(event: MessageCreated):
                                       (primary_id, pseudo_tg_id))
                 await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (text,))
                 await db.conn.commit()
-                USER_STATES.pop(max_id, None)
+                USER_STATES.pop(max_id_str, None)
                 await send_max_msg(event, f"✅ Аккаунты успешно связаны!\n\n{APP_LINK}")
                 return
             else:
@@ -183,11 +212,11 @@ async def message_handler(event: MessageCreated):
             role = "superadmin"
 
         if role:
-            USER_STATES[max_id]["role"] = role
-            USER_STATES[max_id]["state"] = "waiting_for_fio"
+            USER_STATES[max_id_str]["role"] = role
+            USER_STATES[max_id_str]["state"] = "waiting_for_fio"
             await send_max_msg(event, "✅ Пароль принят.\n\nПожалуйста, введите ваше ФИО (Например: Иванов Иван):")
         else:
-            await send_max_msg(event, "❌ Неверный ввод. Попробуйте снова:")
+            await send_max_msg(event, "❌ Неверный ввод. Попробуйте снова (или используйте /join [код]):")
         return
 
     if current_state == "waiting_for_fio":
@@ -195,15 +224,15 @@ async def message_handler(event: MessageCreated):
         role = state_data.get("role", "worker")
         await db.add_user(pseudo_tg_id, fio, role)
         await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался в боте MAX (Роль: {role})")
-        USER_STATES.pop(max_id, None)
+        USER_STATES.pop(max_id_str, None)
         msg = f"🎉 Регистрация успешно завершена!\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇\n\n{APP_LINK}"
         await send_max_msg(event, msg)
         return
 
     if user:
-        await send_max_msg(event, f"Все функции доступны внутри мини-приложения 👇\n\n{APP_LINK}")
+        await send_max_msg(event, f"Все функции доступны внутри платформы 👇\n\n{APP_LINK}")
     else:
-        await send_max_msg(event, "Для начала работы или регистрации введите команду /start")
+        await send_max_msg(event, "Для начала работы введите команду /start или /join [код]")
 
 
 async def clear_webhook():
@@ -219,7 +248,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (ЛС работают как швейцарские часы) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Авто-регистрация по кодам /join) <<<")
     await dp.start_polling(bot)
 
 
