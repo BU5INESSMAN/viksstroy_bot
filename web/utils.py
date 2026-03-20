@@ -249,7 +249,6 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
 
 
 async def get_max_group_id():
-    """Получает ID группы MAX"""
     if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
         row = await cur.fetchone()
@@ -262,13 +261,13 @@ async def get_max_group_id():
 
 
 async def get_max_dm_chat_id(max_user_id: str):
-    """Умный поиск ID личного диалога в базе для пользователя MAX"""
+    """Ищет сохраненный ID личного диалога. Это критически важно для ЛС."""
     if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT value FROM settings WHERE key = ?", (f'max_dm_{max_user_id}',)) as cur:
         row = await cur.fetchone()
         if row and str(row[0]).strip().lower() not in ["none", "null", ""]:
             return str(row[0]).strip()
-    return str(max_user_id)  # Возвращаем user_id как запасной вариант
+    return str(max_user_id)
 
 
 async def send_max_text(bot_token: str, chat_id: str, text: str):
@@ -287,7 +286,7 @@ async def send_max_text(bot_token: str, chat_id: str, text: str):
     except Exception as e:
         err_str = str(e)
         if 'dialog.not.found' in err_str:
-            print(f"⚠️ ЛС не отправлено (Диалог не найден). Пользователь еще не написал боту ЛС.")
+            print(f"⚠️ ЛС не отправлено (Диалог не найден). Пользователь {int_chat_id} еще не написал боту ЛС.")
         else:
             print(f"❌ Ошибка MAX API (send_max_text): {e}")
         return False
@@ -323,7 +322,11 @@ async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: st
         await bot.send_message(chat_id=int_chat_id, text=str(final_text))
         return True
     except Exception as e:
-        print(f"❌ Ошибка текста в MAX: {e}")
+        err_str = str(e)
+        if 'dialog.not.found' in err_str:
+            print(f"⚠️ ЛС не отправлено (Диалог не найден). Пользователь {int_chat_id} еще не написал боту ЛС.")
+        else:
+            print(f"❌ Ошибка текста в MAX: {e}")
         return False
 
 
@@ -335,11 +338,13 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
+    max_group_id = await get_max_group_id()
 
     tg_chat_ids = set()
 
     if "report_group" in target_roles:
         if group_id: tg_chat_ids.add(str(group_id))
+        # Группа MAX получает только наряды, а не обычные уведомления
 
     roles_to_fetch = [r for r in target_roles if r != "report_group"]
     if roles_to_fetch:
@@ -403,7 +408,6 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
             # --- Отправка ЛС В MAX ---
             if target_platform in ["all", "max"] and max_bot_token and max_id:
-                # ВАЖНО: Достаем ID диалога вместо ID пользователя
                 dm_chat_id = await get_max_dm_chat_id(str(max_id))
                 await send_max_text(max_bot_token, dm_chat_id, max_plain_text)
 
