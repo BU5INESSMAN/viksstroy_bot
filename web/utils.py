@@ -38,20 +38,13 @@ async def resolve_id(raw_id: int):
 
 # --- УМНЫЙ РАСШИРИТЕЛЬ ID ---
 async def get_all_linked_ids(base_id: int):
-    """
-    Берет ЛЮБОЙ ID пользователя (Telegram или MAX) и возвращает
-    множество (set) ВСЕХ его связанных аккаунтов.
-    Это гарантирует, что ЛС дойдут во все мессенджеры человека!
-    """
     if db.conn is None: await db.init_db()
     ids = {base_id}
 
-    # 1. Если переданный ID - это primary_id, собираем все его вторичные
     async with db.conn.execute("SELECT secondary_id FROM account_links WHERE primary_id = ?", (base_id,)) as cur:
         for row in await cur.fetchall():
             if row and row[0]: ids.add(row[0])
 
-    # 2. Если переданный ID - это secondary_id, находим primary, а затем все его вторичные
     async with db.conn.execute("SELECT primary_id FROM account_links WHERE secondary_id = ?", (base_id,)) as cur:
         row = await cur.fetchone()
         if row and row[0]:
@@ -277,6 +270,7 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
 
 
 async def get_max_group_id():
+    """Получает ID группы MAX"""
     if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
         row = await cur.fetchone()
@@ -362,10 +356,7 @@ async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: st
 
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
                        target_platform: str = "all"):
-    """
-    ПОЛНОСТЬЮ ПЕРЕРАБОТАННАЯ УНИВЕРСАЛЬНАЯ РАССЫЛКА.
-    Безошибочно доставляет ЛС во ВСЕ привязанные аккаунты (Telegram и MAX)
-    """
+    """Универсальная рассылка уведомлений в Telegram и MAX"""
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
@@ -390,7 +381,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         for tid in extra_tg_ids:
             if tid: raw_user_ids.add(int(tid))
 
-    # 2. Раскрываем каждый ID во все привязанные аккаунты!
+    # 2. Раскрываем каждый ID во все привязанные аккаунты
     final_tg_ids = set()
     final_max_ids = set()
 
@@ -422,8 +413,8 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     # 4. Отправка ЛС В MAX
     if target_platform in ["all", "max"] and max_bot_token:
         for mid in final_max_ids:
-            print(f"🔄 Рассылка ЛС: подготовка к отправке в MAX (User ID: {mid})")
             dm_chat_id = await get_max_dm_chat_id(str(mid))
+            print(f"🔄 MAX ЛС: Отправка уведомления пользователю {mid} в диалог {dm_chat_id}")
             await send_max_text(max_bot_token, dm_chat_id, max_plain_text)
 
     # 5. Отправка ЛС В TELEGRAM
@@ -443,7 +434,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
 
 async def execute_app_publish(app_dict, target_platform: str = "all"):
-    """Генерация и публикация наряда"""
+    """Генерация и публикация наряда (УБРАНЫ ОТМЕТКИ MAX)"""
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
@@ -479,6 +470,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
             else:
                 staff_str_tg += f"\n  ├ {name} (<i>{position}</i>)"
 
+            # MAX всегда получает только чистый текст
             staff_str_max += f"\n  ├ {name} ({position})"
     else:
         staff_str_tg = "\n  ├ Только техника"
@@ -520,12 +512,16 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     foreman_id = app_dict.get('foreman_id', 0)
     foreman_name = app_dict.get('foreman_name', 'Неизвестно')
     foreman_tg = f"<a href='tg://user?id={foreman_id}'>{foreman_name}</a>" if int(foreman_id) > 0 else foreman_name
+
+    # В MAX просто красивое ФИО прораба
     foreman_max = foreman_name
 
     approved_name = app_dict.get('approved_by', '')
     approved_id = app_dict.get('approved_by_id')
     approved_tg = f"\n🛡 <b>Одобрил(а):</b> <a href='tg://user?id={approved_id}'>{approved_name}</a>" if approved_id and int(
         approved_id) > 0 else f"\n🛡 <b>Одобрил(а):</b> {approved_name}"
+
+    # В MAX просто ФИО одобрившего
     approved_max = f"\n🛡 Одобрил(а): {approved_name}" if approved_name else ""
 
     tg_caption = f"<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n🚜 <b>Техника:</b>\n{equip_html}👷‍♂️ <b>Прораб:</b> {foreman_tg}\n👥 <b>Бригада «{team_name}»:</b>{staff_str_tg}{comment_html_tg}{approved_tg}</blockquote>"

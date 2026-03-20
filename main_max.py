@@ -45,7 +45,6 @@ async def resolve_id(raw_id: int):
 
 
 async def send_max_msg(event: MessageCreated, text: str):
-    """Используем встроенный надежный метод для ответа"""
     try:
         await event.message.answer(text)
     except Exception as e:
@@ -58,33 +57,47 @@ async def message_handler(event: MessageCreated):
 
     text = event.message.body.text.strip()
 
-    # Надежно достаем ID пользователя
+    # --- 1. ПУЛЕНЕПРОБИВАЕМЫЙ ПОИСК USER_ID ---
     max_id = None
-    if hasattr(event.message, "sender") and hasattr(event.message.sender, "user_id"):
-        max_id = event.message.sender.user_id
-    elif hasattr(event, "user_id"):
+    if getattr(event, 'user_id', None):
         max_id = event.user_id
+    elif getattr(event, 'userId', None):
+        max_id = event.userId
+    elif getattr(event, 'message', None):
+        sender = getattr(event.message, 'sender', None)
+        if sender:
+            max_id = getattr(sender, 'user_id', None) or getattr(sender, 'userId', None)
 
     if not max_id: return
     max_id_str = str(max_id).strip()
 
-    # Надежно достаем ID чата
-    chat_id = getattr(event, "chat_id", None)
-    if not chat_id and hasattr(event.message, "chat"):
-        chat_id = event.message.chat.id
+    # --- 2. ПУЛЕНЕПРОБИВАЕМЫЙ ПОИСК CHAT_ID ---
+    chat_id = None
+    if getattr(event, 'chat_id', None):
+        chat_id = event.chat_id
+    elif getattr(event, 'chatId', None):
+        chat_id = event.chatId
+    elif getattr(event, 'message', None):
+        msg = event.message
+        if getattr(msg, 'chat_id', None):
+            chat_id = msg.chat_id
+        elif getattr(msg, 'chatId', None):
+            chat_id = msg.chatId
+        elif getattr(msg, 'chat', None):
+            chat_id = getattr(msg.chat, 'id', None) or getattr(msg.chat, 'chatId', None)
 
-    chat_str = str(chat_id).strip()
+    chat_str = str(chat_id).strip() if chat_id else "None"
     is_group = chat_str.startswith("-") or "@chat" in chat_str
 
-    # --- СОХРАНЕНИЕ ID ДИАЛОГА ДЛЯ ЛС ---
+    # --- 3. СОХРАНЕНИЕ ID ДИАЛОГА ДЛЯ ЛС ---
     if not is_group and chat_str and chat_str != "None":
         try:
             await db.conn.execute("DELETE FROM settings WHERE key = ?", (f'max_dm_{max_id_str}',))
             await db.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f'max_dm_{max_id_str}', chat_str))
             await db.conn.commit()
-            print(f"💾 СОХРАНЕН ID ДИАЛОГА ЛС: max_dm_{max_id_str} = {chat_str}")
+            print(f"💾 УСПЕХ: Сохранен ID диалога ЛС (Пользователь {max_id_str} -> Диалог {chat_str})")
         except Exception as e:
-            print(f"Ошибка сохранения chat_id для ЛС MAX: {e}")
+            print(f"❌ Ошибка сохранения chat_id для ЛС MAX: {e}")
 
     pseudo_tg_id = -int(max_id)
     real_tg_id = await resolve_id(pseudo_tg_id)
@@ -110,7 +123,6 @@ async def message_handler(event: MessageCreated):
         return
 
     # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ ---
-
     if text.startswith("/web"):
         if not user:
             return await send_max_msg(event, "❌ Сначала зарегистрируйтесь (используйте /start или /join).")
@@ -126,7 +138,6 @@ async def message_handler(event: MessageCreated):
             await send_max_msg(event, "Ошибка генерации кода.")
         return
 
-    # --- АВТОМАТИЧЕСКАЯ РЕГИСТРАЦИЯ ПО /join (БЕЗ ЗАПРОСА ФИО) ---
     if text.startswith("/join"):
         parts = text.split()
         if len(parts) < 2:
@@ -151,14 +162,12 @@ async def message_handler(event: MessageCreated):
         if not target_url:
             return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
 
-        # Если человек новый — сам код служит пропуском. Регистрируем мгновенно!
         if not user:
             sender = getattr(event.message, "sender", None)
             first_name = getattr(sender, "first_name", getattr(sender, "firstName", ""))
             last_name = getattr(sender, "last_name", getattr(sender, "lastName", ""))
             fio = f"{first_name} {last_name}".strip()
 
-            # На случай, если в профиле не указаны имя и фамилия (заглушка)
             if not fio:
                 fio = getattr(sender, "nick", getattr(sender, "firstName", f"Сотрудник {max_id_str}"))
 
@@ -248,7 +257,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (Авто-регистрация по кодам /join) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Идеальный перехват ЛС диалогов) <<<")
     await dp.start_polling(bot)
 
 
