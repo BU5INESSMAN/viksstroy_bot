@@ -13,8 +13,6 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import io
 
-from maxapi import Bot
-
 from database_deps import db
 
 
@@ -238,10 +236,10 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
     return buf
 
 
-# === ХЕЛПЕРЫ ДЛЯ MAX ===
+# === ИЗОЛИРОВАННЫЕ ФУНКЦИИ ДЛЯ MAX (НАДЕЖНЫЙ HTTP AIOHTTP) ===
 
 async def get_max_group_id():
-    """Получает ID группы, защищая от текстовых заглушек 'None'"""
+    """Получает актуальный ID группы MAX"""
     if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
         row = await cur.fetchone()
@@ -255,20 +253,55 @@ async def get_max_group_id():
 
 
 async def send_max_text(bot_token: str, chat_id: str, text: str):
-    """Надежная отправка в MAX с логированием и очисткой"""
+    """Надежная отправка чистого текста в MAX через GET sendText"""
     chat_id = str(chat_id).strip()
     if not bot_token or not chat_id or chat_id.lower() in ["none", "null", ""]:
-        print(f"⚠️ Отмена отправки в MAX: Неверный chat_id = {chat_id}")
         return False
 
-    print(f"➡️ Попытка отправки в MAX. ChatID: {chat_id} | Длина текста: {len(text)}")
+    url = "https://platform-api.max.ru/messages/sendText"
+    params = {"token": bot_token, "chatId": chat_id, "text": text}
     try:
-        bot = Bot(token=bot_token)
-        await bot.send_message(chat_id=chat_id, text=str(text))
-        print(f"✅ Успешно отправлено в MAX! (ChatID: {chat_id})")
-        return True
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    err = await resp.text()
+                    print(f"❌ MAX API ERROR (Text) [{chat_id}]: {resp.status} - {err}")
+                return resp.status == 200
     except Exception as e:
-        print(f"❌ Ошибка отправки в MAX: {e}")
+        print(f"❌ MAX HTTP EXCEPTION (Text): {e}")
+        return False
+
+
+async def send_max_photo(bot_token: str, chat_id: str, photo_bytes: bytes, caption: str = ""):
+    """Мощная отправка картинки как вложения через multipart/form-data"""
+    chat_id = str(chat_id).strip()
+    if not bot_token or not chat_id or chat_id.lower() in ["none", "null", ""]:
+        return False
+
+    print(f"➡️ MAX: Загрузка наряда в чат {chat_id}...")
+    url = "https://platform-api.max.ru/messages/sendFile"
+
+    # Токен и chatId передаются в URL параметрах по стандарту MyTeam API
+    params = {"token": bot_token, "chatId": chat_id}
+
+    # Формируем multipart тело с файлом и текстом
+    data = aiohttp.FormData()
+    data.add_field('file', photo_bytes, filename='app.png', content_type='image/png')
+    if caption:
+        data.add_field('caption', caption)
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, params=params, data=data) as resp:
+                if resp.status == 200:
+                    print(f"✅ Успех: Картинка отправлена в MAX! (ChatID: {chat_id})")
+                    return True
+                else:
+                    err = await resp.text()
+                    print(f"❌ MAX API ERROR (Photo) [{chat_id}]: {resp.status} - {err}")
+                    return False
+    except Exception as e:
+        print(f"❌ MAX HTTP EXCEPTION (Photo): {e}")
         return False
 
 
@@ -279,7 +312,6 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
-
     max_group_id = await get_max_group_id()
 
     tg_chat_ids = set()
@@ -316,7 +348,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
             # --- Отправка в ГРУППУ MAX ---
             if cid_str.startswith("MAX_GROUP:"):
-                if target_platform in ["all", "max"]:
+                if target_platform in ["all", "max"] and max_bot_token:
                     actual_max_id = cid_str.split(":", 1)[1]
                     await send_max_text(max_bot_token, actual_max_id, max_plain_text)
                 continue
@@ -328,7 +360,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
             # --- Отправка ЛИЧНО В MAX ---
             if cid_int < 0:
-                if target_platform in ["all", "max"]:
+                if target_platform in ["all", "max"] and max_bot_token:
                     actual_max_id = str(abs(cid_int))
                     await send_max_text(max_bot_token, actual_max_id, max_plain_text)
 
@@ -350,8 +382,8 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
-
     max_group_id = await get_max_group_id()
+
     app_id = app_dict['id']
 
     teams_dict = await fetch_teams_dict()
@@ -440,9 +472,18 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
 
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
-        # Отправляем только текст со ссылкой на наряд в конце
-        max_text = f"{strip_html(html_caption)}\n\n🖼 Наряд: {file_url}"
-        published_max = await send_max_text(max_bot_token, max_group_id, max_text)
+        max_text = strip_html(html_caption)
+        img_bytes = img_buf.getvalue()
+
+        # 1. Пробуем отправить фото напрямую с текстом в caption
+        success = await send_max_photo(max_bot_token, max_group_id, img_bytes, max_text)
+
+        # 2. Фолбэк (запасной вариант): если MAX вдруг отклонил файл, кидаем ссылку текстом
+        if not success:
+            fallback_text = f"{max_text}\n\n🖼 Наряд: {file_url}"
+            published_max = await send_max_text(max_bot_token, max_group_id, fallback_text)
+        else:
+            published_max = True
 
     if (published_tg or published_max) and target_platform == "all":
         try:
