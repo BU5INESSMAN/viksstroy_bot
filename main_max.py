@@ -47,11 +47,35 @@ async def resolve_id(raw_id: int):
 
 
 async def send_max_msg(event: MessageCreated, text: str):
-    """Надежная отправка сообщений через встроенный метод maxapi"""
+    """Использует POST /messages с правильным параметром chatId"""
+    chat_id = None
+    if hasattr(event.message, "chat") and hasattr(event.message.chat, "id"):
+        chat_id = event.message.chat.id
+    elif hasattr(event, "chat_id"):
+        chat_id = event.chat_id
+
+    if chat_id:
+        url = "https://platform-api.max.ru/messages"
+        headers = {
+            "Authorization": MAX_TOKEN,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "chatId": str(chat_id),  # ИСПОЛЬЗУЕМ chatId
+            "text": text
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=payload) as resp:
+                    if resp.status == 200: return
+        except Exception as e:
+            logger.warning(f"aiohttp send failed: {e}")
+
+    # Fallback
     try:
         await event.message.answer(text)
     except Exception as e:
-        logger.warning(f"Ошибка ответа на сообщение MAX: {e}")
+        logger.warning(f"Fallback answer failed: {e}")
 
 
 @dp.message_created(F.message.body.text)
