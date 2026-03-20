@@ -255,33 +255,28 @@ async def get_max_group_id():
 
 
 async def send_max_text(bot_token: str, chat_id: str, text: str):
-    """
-    Отправка текста в MAX через надежный HTTP запрос (работает и для ЛС, и для групп).
-    """
-    chat_id = str(chat_id).strip()
-    if not bot_token or not chat_id or chat_id.lower() in ["none", "null", ""]:
+    """Надежная отправка чистого текста через встроенный класс Bot из maxapi."""
+    if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
         return False
 
-    url = "https://platform-api.max.ru/messages"
-    headers = {
-        "Authorization": bot_token,
-        "Content-Type": "application/json"
-    }
-    # ВАЖНО: Используем правильный snake_case ключ "chat_id"
-    payload = {
-        "chat_id": chat_id,
-        "text": str(text)
-    }
-
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload) as resp:
-                if resp.status != 200:
-                    err = await resp.text()
-                    print(f"❌ MAX API TEXT ERROR [{chat_id}]: {resp.status} - {err}")
-                return resp.status == 200
+        # Критически важно: конвертируем в int!
+        int_chat_id = int(str(chat_id).strip())
+    except ValueError:
+        print(f"❌ MAX: Неверный формат chat_id (не число): {chat_id}")
+        return False
+
+    print(f"➡️ MAX: Отправка текста в {int_chat_id}...")
+    try:
+        bot = Bot(token=bot_token)
+        await bot.send_message(
+            chat_id=int_chat_id,
+            text=str(text)
+        )
+        print(f"✅ Успех: Текст отправлен в MAX! (ChatID: {int_chat_id})")
+        return True
     except Exception as e:
-        print(f"❌ MAX HTTP TEXT EXCEPTION: {e}")
+        print(f"❌ Ошибка отправки текста в MAX (maxapi): {e}")
         return False
 
 
@@ -343,7 +338,6 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             if cid_int < 0:
                 if target_platform in ["all", "max"] and max_bot_token:
                     actual_max_id = str(abs(cid_int))
-                    # Вызываем надежный HTTP запрос для доставки в ЛС
                     await send_max_text(max_bot_token, actual_max_id, max_plain_text)
 
             # --- Отправка ЛИЧНО В TELEGRAM ---
@@ -506,10 +500,11 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
                 attachments=[InputMedia(path=os.path.abspath(filepath))]
             )
             photo_sent = True
+            print("✅ Успех: Фото отправлено в MAX!")
         except Exception as e:
-            print(f"❌ MAX BOT MEDIA ERROR: {e}")
+            print(f"❌ Ошибка отправки фото в MAX: {e}")
 
-        # 2. Отправляем текст с упоминаниями через надежный HTTP
+        # 2. Отправляем текст с упоминаниями через встроенный класс (ГАРАНТИЯ ДОСТАВКИ)
         final_text = max_caption
         if not photo_sent:
             final_text += f"\n\n🖼 Наряд: {file_url}"
@@ -535,7 +530,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
             all_involved.append(app_dict['foreman_id'])
 
         if all_involved:
-            # Эта функция теперь тоже использует send_max_text и 100% доставит уведомление в ЛС MAX!
+            # send_max_text теперь используется и для рассылки личных сообщений в MAX
             msg_inv = f"👷‍♂️ <b>Вас добавили в наряд!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
             await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved)
         return True
