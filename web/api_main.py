@@ -1,11 +1,17 @@
+import sys
+import os
+# Добавляем папку web в пути поиска модулей
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
-import os
 import asyncio
 import json
 from datetime import datetime
+
+# Теперь импорты сработают
 from database_deps import db, TZ_BARNAUL
 from utils import notify_users, execute_app_publish
 from routers import auth, dashboard, users, teams, equipment, applications
