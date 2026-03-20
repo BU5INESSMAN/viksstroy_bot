@@ -67,10 +67,18 @@ async def message_handler(event: MessageCreated):
     elif hasattr(event, "chat_id"):
         chat_id = event.chat_id
 
-    # ИСПРАВЛЕНИЕ: Группы в MAX/MyTeam имеют ID с минусом или содержат '@chat'
-    # ЛС имеют положительный ID (диалог), даже если он не равен user_id.
     chat_str = str(chat_id)
     is_group = chat_str.startswith("-") or "@chat" in chat_str
+
+    # --- СОХРАНЕНИЕ ID ДИАЛОГА ДЛЯ ЛС ---
+    # MAX использует отдельный ID для диалогов, поэтому мы сохраняем его в базу
+    if not is_group and chat_str and chat_str != "None":
+        try:
+            await db.conn.execute("DELETE FROM settings WHERE key = ?", (f'max_dm_{max_id}',))
+            await db.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f'max_dm_{max_id}', chat_str))
+            await db.conn.commit()
+        except Exception as e:
+            logger.error(f"Ошибка сохранения chat_id для ЛС MAX: {e}")
 
     pseudo_tg_id = -int(max_id)
     real_tg_id = await resolve_id(pseudo_tg_id)
@@ -93,11 +101,9 @@ async def message_handler(event: MessageCreated):
                                    f"✅ Группа успешно привязана! (ID: {chat_str})\nТеперь все наряды и системные уведомления для MAX будут автоматически приходить сюда.")
             except Exception as e:
                 await send_max_msg(event, f"❌ Ошибка при сохранении группы в базу данных: {e}")
-
-        # В группе бот больше ни на что не реагирует
         return
 
-    # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ (ЛС) ---
+    # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ ---
 
     if text.startswith("/web"):
         if not user:
@@ -214,7 +220,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (ЛС работают корректно) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Идеальные ЛС) <<<")
     await dp.start_polling(bot)
 
 
