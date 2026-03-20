@@ -13,7 +13,6 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import io
 
-# Используем ТОЛЬКО родную библиотеку для отправки
 from maxapi import Bot
 
 from database_deps import db
@@ -95,7 +94,6 @@ def clean_text(text):
 
 
 def strip_html(text):
-    """Удаляет ВСЕ HTML теги для безопасной отправки текста в MAX"""
     if not text: return ""
     clean = re.compile('<.*?>')
     return re.sub(clean, '', str(text)).strip()
@@ -240,28 +238,37 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
     return buf
 
 
-# === ИЗОЛИРОВАННАЯ ФУНКЦИЯ ДЛЯ MAX (ТОЛЬКО ТЕКСТ) ===
+# === ХЕЛПЕРЫ ДЛЯ MAX ===
+
+async def get_max_group_id():
+    """Получает ID группы, защищая от текстовых заглушек 'None'"""
+    if db.conn is None: await db.init_db()
+    async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
+        row = await cur.fetchone()
+        if row and str(row[0]).strip().lower() not in ["none", "null", ""]:
+            return str(row[0]).strip()
+
+    env_val = os.getenv("MAX_GROUP_CHAT_ID")
+    if env_val and str(env_val).strip().lower() not in ["none", "null", ""]:
+        return str(env_val).strip()
+    return None
+
+
 async def send_max_text(bot_token: str, chat_id: str, text: str):
-    """
-    Отправляет чистый текст через встроенный класс Bot из maxapi.
-    Добавлено подробное логирование.
-    """
-    if not bot_token or not chat_id or str(chat_id) == "None":
+    """Надежная отправка в MAX с логированием и очисткой"""
+    chat_id = str(chat_id).strip()
+    if not bot_token or not chat_id or chat_id.lower() in ["none", "null", ""]:
         print(f"⚠️ Отмена отправки в MAX: Неверный chat_id = {chat_id}")
         return False
 
     print(f"➡️ Попытка отправки в MAX. ChatID: {chat_id} | Длина текста: {len(text)}")
     try:
         bot = Bot(token=bot_token)
-        # Вызываем именно встроенный метод библиотеки
-        await bot.send_message(
-            chat_id=str(chat_id),
-            text=str(text)
-        )
+        await bot.send_message(chat_id=chat_id, text=str(text))
         print(f"✅ Успешно отправлено в MAX! (ChatID: {chat_id})")
         return True
     except Exception as e:
-        print(f"❌ Ошибка отправки в MAX (maxapi): {e}")
+        print(f"❌ Ошибка отправки в MAX: {e}")
         return False
 
 
@@ -273,11 +280,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
 
-    async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
-        row = await cur.fetchone()
-        db_max_group_id = row[0] if row else None
-
-    max_group_id = db_max_group_id or os.getenv("MAX_GROUP_CHAT_ID")
+    max_group_id = await get_max_group_id()
 
     tg_chat_ids = set()
 
@@ -313,7 +316,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
             # --- Отправка в ГРУППУ MAX ---
             if cid_str.startswith("MAX_GROUP:"):
-                if target_platform in ["all", "max"] and max_bot_token:
+                if target_platform in ["all", "max"]:
                     actual_max_id = cid_str.split(":", 1)[1]
                     await send_max_text(max_bot_token, actual_max_id, max_plain_text)
                 continue
@@ -325,7 +328,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
             # --- Отправка ЛИЧНО В MAX ---
             if cid_int < 0:
-                if target_platform in ["all", "max"] and max_bot_token:
+                if target_platform in ["all", "max"]:
                     actual_max_id = str(abs(cid_int))
                     await send_max_text(max_bot_token, actual_max_id, max_plain_text)
 
@@ -348,11 +351,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
 
-    async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
-        row = await cur.fetchone()
-        db_max_group_id = row[0] if row else None
-
-    max_group_id = db_max_group_id or os.getenv("MAX_GROUP_CHAT_ID")
+    max_group_id = await get_max_group_id()
     app_id = app_dict['id']
 
     teams_dict = await fetch_teams_dict()
@@ -441,10 +440,8 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
 
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
-        # ТОЛЬКО ТЕКСТ (Ссылка на картинку включена в текст)
-        max_text = f"{strip_html(html_caption)}\n\n🖼 Ссылка на наряд: {file_url}"
-
-        # Используем безопасную функцию
+        # Отправляем только текст со ссылкой на наряд в конце
+        max_text = f"{strip_html(html_caption)}\n\n🖼 Наряд: {file_url}"
         published_max = await send_max_text(max_bot_token, max_group_id, max_text)
 
     if (published_tg or published_max) and target_platform == "all":
