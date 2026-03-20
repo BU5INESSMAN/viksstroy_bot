@@ -13,6 +13,9 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import io
 
+from maxapi import Bot
+from maxapi.types import InputMedia
+
 from database_deps import db
 
 
@@ -92,6 +95,7 @@ def clean_text(text):
 
 
 def strip_html(text):
+    """Удаляет ВСЕ HTML теги для безопасной отправки текста в MAX"""
     if not text: return ""
     clean = re.compile('<.*?>')
     return re.sub(clean, '', str(text)).strip()
@@ -237,83 +241,67 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
 
 
 async def get_max_group_id():
-    """Получает актуальный ID группы MAX"""
     if db.conn is None: await db.init_db()
     async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
         row = await cur.fetchone()
         if row and str(row[0]).strip().lower() not in ["none", "null", ""]:
             return str(row[0]).strip()
-
     env_val = os.getenv("MAX_GROUP_CHAT_ID")
     if env_val and str(env_val).strip().lower() not in ["none", "null", ""]:
         return str(env_val).strip()
     return None
 
 
-async def send_max_message(bot_token: str, chat_id: str, text: str, file_url: str = None):
-    """
-    Пуленепробиваемая отправка в MAX.
-    Сначала пробуем отправить картинку через URL, если не выходит — шлем чистый текст со ссылкой.
-    """
-    chat_id = str(chat_id).strip()
-    if not bot_token or not chat_id or chat_id.lower() in ["none", "null", ""]:
+# === КОМБИНИРОВАННАЯ ЖЕЛЕЗОБЕТОННАЯ ОТПРАВКА ===
+async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: str = None, file_url: str = None):
+    if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
         return False
 
-    url = "https://platform-api.max.ru/messages"
-    headers = {
-        "Authorization": bot_token,
-        "Content-Type": "application/json"
-    }
-
-    # 1. Попытка отправить с картинкой (через attachments)
-    if file_url:
-        payload = {
-            "chatId": chat_id,  # ВАЖНО: MAX требует chatId
-            "text": text,
-            "attachments": [
-                {
-                    "type": "image",
-                    "payload": {
-                        "url": file_url
-                    }
-                }
-            ]
-        }
+    # 1. Попытка отправки картинки через библиотеку maxapi
+    photo_sent = False
+    if filepath:
+        print(f"➡️ MAX: Попытка загрузки фото в чат {chat_id}...")
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, headers=headers, json=payload) as resp:
-                    if resp.status == 200:
-                        print(f"✅ Успех: Картинка и текст отправлены в MAX! (ChatID: {chat_id})")
-                        return True
-                    else:
-                        err = await resp.text()
-                        print(f"❌ MAX API ERROR (Photo Payload) [{chat_id}]: {resp.status} - {err}")
+            bot = Bot(token=bot_token)
+            # ВАЖНО: Приводим ID к integer, иначе maxapi падает с ошибкой None
+            await bot.send_message(
+                chat_id=int(chat_id),
+                attachments=[InputMedia(path=os.path.abspath(filepath))]
+            )
+            photo_sent = True
+            print(f"✅ Успех: Фото отправлено в MAX!")
         except Exception as e:
-            print(f"❌ MAX HTTP EXCEPTION (Photo Payload): {e}")
+            print(f"❌ Ошибка загрузки фото через maxapi: {e}")
 
-    # 2. Фолбэк на отправку чистого текста (если картинка не сработала или не передана)
-    fallback_text = text
-    if file_url:
-        fallback_text += f"\n\n🖼 Наряд: {file_url}"
+    # 2. Формируем финальный текст
+    final_text = text
+    if not photo_sent and file_url:
+        # Если фото не отправилось, прикрепляем ссылку к тексту
+        final_text += f"\n\n🖼 Наряд: {file_url}"
 
-    payload_text = {
-        "chatId": chat_id,  # ВАЖНО: MAX требует chatId
-        "text": fallback_text
+    # 3. Отправка текста надежным сырым HTTP-запросом
+    print(f"➡️ MAX: Отправка текста в {chat_id}...")
+    url = "https://platform-api.max.ru/messages"
+    headers = {"Authorization": bot_token, "Content-Type": "application/json"}
+
+    # ВАЖНО: Ключ должен быть chat_id (snake_case), иначе API вернет "Unknown recipient"
+    payload = {
+        "chat_id": str(chat_id),
+        "text": final_text
     }
 
-    print(f"➡️ MAX: Отправка текстового фолбэка в {chat_id}...")
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=payload_text) as resp:
+            async with session.post(url, headers=headers, json=payload) as resp:
                 if resp.status == 200:
-                    print(f"✅ Успех: Текст отправлен в MAX! (ChatID: {chat_id})")
+                    print(f"✅ Успех: Текст отправлен в MAX!")
                     return True
                 else:
                     err = await resp.text()
-                    print(f"❌ MAX API ERROR (Text Payload) [{chat_id}]: {resp.status} - {err}")
+                    print(f"❌ MAX API ERROR (Text): {resp.status} - {err}")
                     return False
     except Exception as e:
-        print(f"❌ MAX HTTP EXCEPTION (Text Payload): {e}")
+        print(f"❌ MAX HTTP EXCEPTION (Text): {e}")
         return False
 
 
@@ -484,8 +472,8 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
         max_text = strip_html(html_caption)
-        # Отправляем через надежный метод с передачей ссылки на картинку
-        published_max = await send_max_message(max_bot_token, max_group_id, max_text, file_url=file_url)
+        # Передаем и путь к файлу (для maxapi) и ссылку (для фолбэка)
+        published_max = await send_max_message(max_bot_token, max_group_id, max_text, filepath, file_url)
 
     if (published_tg or published_max) and target_platform == "all":
         try:
