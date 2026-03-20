@@ -13,7 +13,6 @@ import time
 from PIL import Image, ImageDraw, ImageFont
 import io
 
-# Используем ТОЛЬКО родную библиотеку
 from maxapi import Bot
 from maxapi.types import InputMedia
 
@@ -96,6 +95,7 @@ def clean_text(text):
 
 
 def strip_html(text):
+    """Удаляет ВСЕ HTML теги для безопасной отправки текста в MAX"""
     if not text: return ""
     clean = re.compile('<.*?>')
     return re.sub(clean, '', str(text)).strip()
@@ -240,8 +240,6 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
     return buf
 
 
-# === ИДЕАЛЬНЫЕ ФУНКЦИИ ДЛЯ MAX (СТРОГО ЧЕРЕЗ MAXAPI С int) ===
-
 async def get_max_group_id():
     """Получает актуальный ID группы MAX"""
     if db.conn is None: await db.init_db()
@@ -257,64 +255,39 @@ async def get_max_group_id():
 
 
 async def send_max_text(bot_token: str, chat_id: str, text: str):
-    """Отправка чистого текста"""
-    if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
+    """
+    Отправка текста в MAX через надежный HTTP запрос (работает и для ЛС, и для групп).
+    """
+    chat_id = str(chat_id).strip()
+    if not bot_token or not chat_id or chat_id.lower() in ["none", "null", ""]:
         return False
+
+    url = "https://platform-api.max.ru/messages"
+    headers = {
+        "Authorization": bot_token,
+        "Content-Type": "application/json"
+    }
+    # ВАЖНО: Используем правильный snake_case ключ "chat_id"
+    payload = {
+        "chat_id": chat_id,
+        "text": str(text)
+    }
 
     try:
-        bot = Bot(token=bot_token)
-        # ВАЖНО: chat_id ДОЛЖЕН БЫТЬ int!
-        await bot.send_message(chat_id=int(chat_id), text=str(text))
-        return True
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=payload) as resp:
+                if resp.status != 200:
+                    err = await resp.text()
+                    print(f"❌ MAX API TEXT ERROR [{chat_id}]: {resp.status} - {err}")
+                return resp.status == 200
     except Exception as e:
-        print(f"❌ MAX text error [{chat_id}]: {e}")
-        return False
-
-
-async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: str = None, file_url: str = None):
-    """Сначала шлет картинку, затем текст. Все через maxapi!"""
-    if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
-        return False
-
-    bot = Bot(token=bot_token)
-    # ВАЖНО: chat_id ДОЛЖЕН БЫТЬ int! Иначе maxapi падает с ошибкой None
-    int_chat_id = int(chat_id)
-    photo_sent = False
-
-    # 1. Отправляем картинку
-    if filepath:
-        print(f"➡️ MAX: Отправка фото в {chat_id}...")
-        try:
-            await bot.send_message(
-                chat_id=int_chat_id,
-                attachments=[InputMedia(path=os.path.abspath(filepath))]
-            )
-            photo_sent = True
-            print("✅ Успех: Фото отправлено!")
-        except Exception as e:
-            print(f"❌ Ошибка MAX API (Photo): {e}")
-
-    # 2. Формируем текст
-    final_text = text
-    if not photo_sent and file_url:
-        final_text += f"\n\n🖼 Наряд: {file_url}"
-
-    # 3. Отправляем текст
-    print(f"➡️ MAX: Отправка текста в {chat_id}...")
-    try:
-        await bot.send_message(
-            chat_id=int_chat_id,
-            text=str(final_text)
-        )
-        print("✅ Успех: Текст отправлен!")
-        return True
-    except Exception as e:
-        print(f"❌ Ошибка MAX API (Text): {e}")
+        print(f"❌ MAX HTTP TEXT EXCEPTION: {e}")
         return False
 
 
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
                        target_platform: str = "all"):
+    """Универсальная рассылка уведомлений по ролям и ID"""
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
@@ -370,6 +343,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             if cid_int < 0:
                 if target_platform in ["all", "max"] and max_bot_token:
                     actual_max_id = str(abs(cid_int))
+                    # Вызываем надежный HTTP запрос для доставки в ЛС
                     await send_max_text(max_bot_token, actual_max_id, max_plain_text)
 
             # --- Отправка ЛИЧНО В TELEGRAM ---
@@ -385,6 +359,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
 
 async def execute_app_publish(app_dict, target_platform: str = "all"):
+    """Генерация и публикация наряда с упоминанием сотрудников (тегированием)"""
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
@@ -406,18 +381,31 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
                                    selected_list) as cur:
             staff_rows = await cur.fetchall()
 
-    staff_str = ""
+    # --- ПОДГОТОВКА СПИСКА СОТРУДНИКОВ (С РАЗДЕЛЬНЫМИ ТЕГАМИ ДЛЯ TG И MAX) ---
+    staff_str_tg = ""
+    staff_str_max = ""
     workers_ids = []
+
     if staff_rows:
         for r in staff_rows:
-            w_tg_id = r[2]
+            name, position, w_tg_id = r[0], r[1], r[2]
             if w_tg_id:
-                staff_str += f"\n  ├ <a href='tg://user?id={w_tg_id}'>{r[0]}</a> (<i>{r[1]}</i>)"
                 workers_ids.append(w_tg_id)
+                if int(w_tg_id) > 0:
+                    # Рабочий из Telegram
+                    staff_str_tg += f"\n  ├ <a href='tg://user?id={w_tg_id}'>{name}</a> (<i>{position}</i>)"
+                    staff_str_max += f"\n  ├ {name} ({position})"
+                else:
+                    # Рабочий из MAX -> Используем тегирование @[user_id]
+                    max_uid = abs(int(w_tg_id))
+                    staff_str_tg += f"\n  ├ {name} (<i>{position}</i>)"
+                    staff_str_max += f"\n  ├ @[{max_uid}] ({position})"
             else:
-                staff_str += f"\n  ├ {r[0]} (<i>{r[1]}</i>)"
+                staff_str_tg += f"\n  ├ {name} (<i>{position}</i>)"
+                staff_str_max += f"\n  ├ {name} ({position})"
     else:
-        staff_str = "\n  ├ Только техника"
+        staff_str_tg = "\n  ├ Только техника"
+        staff_str_max = "\n  ├ Только техника"
 
     eq_data_str = app_dict.get('equipment_data', '')
     equip_list = []
@@ -451,23 +439,52 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
 
     file_url = f"https://miniapp.viks22.ru/uploads/{filename}"
 
-    comment_html = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
+    comment_html_tg = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
+    comment_html_max = f"\n💬 Комментарий: {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
 
-    approved_by_str = ""
+    # Прораб (Отметка в MAX)
+    foreman_id = int(app_dict.get('foreman_id', 0))
+    foreman_name = app_dict.get('foreman_name', 'Неизвестно')
+
+    if foreman_id > 0:
+        foreman_tg = f"<a href='tg://user?id={foreman_id}'>{foreman_name}</a>"
+        foreman_max = f"{foreman_name}"
+    elif foreman_id < 0:
+        foreman_tg = f"{foreman_name}"
+        foreman_max = f"@[{abs(foreman_id)}]"
+    else:
+        foreman_tg = foreman_name
+        foreman_max = foreman_name
+
+    # Одобривший (Отметка в MAX)
+    approved_tg = ""
+    approved_max = ""
     if app_dict.get('approved_by'):
-        if app_dict.get('approved_by_id'):
-            approved_by_str = f"\n🛡 <b>Одобрил(а):</b> <a href='tg://user?id={app_dict['approved_by_id']}'>{app_dict['approved_by']}</a>"
+        a_name = app_dict['approved_by']
+        a_id = app_dict.get('approved_by_id')
+        if a_id:
+            if int(a_id) > 0:
+                approved_tg = f"\n🛡 <b>Одобрил(а):</b> <a href='tg://user?id={a_id}'>{a_name}</a>"
+                approved_max = f"\n🛡 Одобрил(а): {a_name}"
+            elif int(a_id) < 0:
+                approved_tg = f"\n🛡 <b>Одобрил(а):</b> {a_name}"
+                approved_max = f"\n🛡 Одобрил(а): @[{abs(int(a_id))}]"
         else:
-            approved_by_str = f"\n🛡 <b>Одобрил(а):</b> {app_dict['approved_by']}"
+            approved_tg = f"\n🛡 <b>Одобрил(а):</b> {a_name}"
+            approved_max = f"\n🛡 Одобрил(а): {a_name}"
 
-    html_caption = f"""<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n🚜 <b>Техника:</b>\n{equip_html}👷‍♂️ <b>Прораб:</b> <a href='tg://user?id={app_dict['foreman_id']}'>{app_dict['foreman_name']}</a>\n👥 <b>Бригада «{team_name}»:</b>{staff_str}{comment_html}{approved_by_str}</blockquote>"""
+    # Финальные тексты для платформ
+    tg_caption = f"<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n🚜 <b>Техника:</b>\n{equip_html}👷‍♂️ <b>Прораб:</b> {foreman_tg}\n👥 <b>Бригада «{team_name}»:</b>{staff_str_tg}{comment_html_tg}{approved_tg}</blockquote>"
+
+    # В MAX тексте используются теги @[user_id]
+    max_caption = f"🟢 УТВЕРЖДЕННЫЙ НАРЯД №{app_id}\n📅 Дата: {app_dict['date_target']}\n📍 Объект: {app_dict['object_address']}\n🚜 Техника:\n{equip_html}👷‍♂️ Прораб: {foreman_max}\n👥 Бригада «{team_name}»:{staff_str_max}{comment_html_max}{approved_max}"
 
     published_tg = False
     if target_platform in ["all", "tg"] and bot_token and group_id:
         data = aiohttp.FormData()
         data.add_field('chat_id', str(group_id))
         data.add_field('photo', img_buf.getvalue(), filename='app.png', content_type='image/png')
-        data.add_field('caption', html_caption)
+        data.add_field('caption', tg_caption)
         data.add_field('parse_mode', 'HTML')
 
         try:
@@ -479,11 +496,27 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
 
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
-        max_text = strip_html(html_caption)
 
-        # Передаем всё в нашу идеальную функцию
-        published_max = await send_max_message(max_bot_token, max_group_id, max_text, filepath, file_url)
+        # 1. Отправляем картинку через maxapi (Встроенный класс)
+        photo_sent = False
+        try:
+            max_bot = Bot(token=max_bot_token)
+            await max_bot.send_message(
+                chat_id=int(max_group_id),
+                attachments=[InputMedia(path=os.path.abspath(filepath))]
+            )
+            photo_sent = True
+        except Exception as e:
+            print(f"❌ MAX BOT MEDIA ERROR: {e}")
 
+        # 2. Отправляем текст с упоминаниями через надежный HTTP
+        final_text = max_caption
+        if not photo_sent:
+            final_text += f"\n\n🖼 Наряд: {file_url}"
+
+        published_max = await send_max_text(max_bot_token, max_group_id, final_text)
+
+    # 3. Рассылка ЛИЧНЫХ СООБЩЕНИЙ всем участникам наряда
     if (published_tg or published_max) and target_platform == "all":
         try:
             await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))
@@ -498,7 +531,11 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
             await db.conn.rollback()
 
         all_involved = list(set(workers_ids + drivers_ids))
+        if app_dict.get('foreman_id'):
+            all_involved.append(app_dict['foreman_id'])
+
         if all_involved:
+            # Эта функция теперь тоже использует send_max_text и 100% доставит уведомление в ЛС MAX!
             msg_inv = f"👷‍♂️ <b>Вас добавили в наряд!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
             await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved)
         return True
