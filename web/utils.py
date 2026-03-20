@@ -1,5 +1,6 @@
 import sys
 import os
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 import aiohttp
@@ -14,15 +15,18 @@ import io
 
 from database_deps import db
 
+
 async def resolve_id(raw_id: int):
     async with db.conn.execute("SELECT primary_id FROM account_links WHERE secondary_id = ?", (raw_id,)) as cur:
         row = await cur.fetchone()
         if row: return row[0]
     return raw_id
 
+
 async def fetch_teams_dict():
     async with db.conn.execute("SELECT id, name FROM teams") as cur:
         return {r[0]: r[1] for r in await cur.fetchall()}
+
 
 def enrich_app_with_team_name(app_dict, teams_dict):
     t_val = str(app_dict.get('team_id', '0'))
@@ -33,6 +37,7 @@ def enrich_app_with_team_name(app_dict, teams_dict):
     else:
         app_dict['team_name'] = "Без бригады"
     return app_dict
+
 
 def process_base64_image(base64_str: str, prefix: str) -> str:
     if not base64_str: return ""
@@ -48,6 +53,7 @@ def process_base64_image(base64_str: str, prefix: str) -> str:
     except:
         return ""
 
+
 def download_font(url, filename):
     if not os.path.exists(filename) or os.path.getsize(filename) < 10000:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
@@ -60,6 +66,7 @@ def download_font(url, filename):
                 out_file.write(response.read())
         except Exception:
             pass
+
 
 def get_fonts():
     font_dir = "data/fonts"
@@ -76,9 +83,17 @@ def get_fonts():
         font_header = font_label = font_value = font_time = ImageFont.load_default()
     return font_header, font_label, font_value, font_time
 
+
 def clean_text(text):
     if not text: return ""
     return re.sub(r'[^\w\sА-Яа-яЁёA-Za-z0-9,.:\-!/()«»]', '', str(text))
+
+
+def strip_html(text):
+    if not text: return ""
+    clean = re.compile('<.*?>')
+    return re.sub(clean, '', str(text))
+
 
 def wrap_text(text, font, max_width, draw):
     lines = []
@@ -97,6 +112,7 @@ def wrap_text(text, font, max_width, draw):
                 current_line = word
         lines.append(current_line)
     return lines
+
 
 def create_app_image(date_str, address, foreman, team_name, equip_list, comment_str=""):
     font_header, font_label, font_value, font_time = get_fonts()
@@ -217,14 +233,26 @@ def create_app_image(date_str, address, foreman, team_name, equip_list, comment_
     buf.seek(0)
     return buf
 
-# Старая логика Telegram-уведомлений (из твоего файла, до MAX-изменений)
+
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None):
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
+    max_bot_token = os.getenv("MAX_BOT_TOKEN")
+
+    # Получаем актуальный ID группы MAX из БД
+    async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
+        row = await cur.fetchone()
+        db_max_group_id = row[0] if row else None
+
+    max_group_id = db_max_group_id or os.getenv("MAX_GROUP_CHAT_ID")
+
     tg_chat_ids = set()
 
-    if "report_group" in target_roles and group_id:
-        tg_chat_ids.add(str(group_id))
+    if "report_group" in target_roles:
+        if group_id:
+            tg_chat_ids.add(str(group_id))
+        if max_group_id:
+            tg_chat_ids.add(f"MAX_GROUP:{max_group_id}")
 
     roles_to_fetch = [r for r in target_roles if r != "report_group"]
     if roles_to_fetch:
@@ -241,24 +269,71 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         for tid in extra_tg_ids:
             if tid: tg_chat_ids.add(str(tid))
 
-    if not bot_token or not tg_chat_ids: return
+    if not tg_chat_ids: return
 
     markup = {"inline_keyboard": [
         [{"text": "📱 Открыть платформу", "web_app": {"url": f"https://miniapp.viks22.ru/{url_path}"}}]]}
 
+    max_plain_text = f"{strip_html(text)}\n\n📱 Платформа: https://miniapp.viks22.ru/{url_path}"
+
     async with aiohttp.ClientSession() as session:
-        for cid in tg_chat_ids:
-            if int(cid) < 0: continue
+        for cid_raw in tg_chat_ids:
+            cid_str = str(cid_raw)
+
+            if cid_str.startswith("MAX_GROUP:"):
+                actual_max_id = cid_str.split(":", 1)[1]
+                if max_bot_token:
+                    try:
+                        await session.post(
+                            "https://platform-api.max.ru/messages",
+                            headers={"Authorization": max_bot_token, "Content-Type": "application/json"},
+                            json={"chat_id": actual_max_id, "text": max_plain_text}
+                        )
+                    except:
+                        pass
+                continue
+
             try:
-                await session.post(f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                                   json={"chat_id": cid, "text": text, "parse_mode": "HTML", "reply_markup": markup})
-            except:
-                pass
+                cid_int = int(cid_str)
+            except ValueError:
+                continue
+
+            if cid_int < 0:
+                if max_bot_token:
+                    try:
+                        await session.post(
+                            "https://platform-api.max.ru/messages",
+                            headers={"Authorization": max_bot_token, "Content-Type": "application/json"},
+                            json={"chat_id": str(abs(cid_int)), "text": max_plain_text}
+                        )
+                    except:
+                        pass
+            else:
+                if bot_token:
+                    try:
+                        await session.post(
+                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                            json={"chat_id": cid_int, "text": text, "parse_mode": "HTML", "reply_markup": markup}
+                        )
+                    except:
+                        pass
+
 
 async def execute_app_publish(app_dict):
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
+    max_bot_token = os.getenv("MAX_BOT_TOKEN")
+
+    # Забираем актуальный ID из базы
+    async with db.conn.execute("SELECT value FROM settings WHERE key = 'max_group_chat_id'") as cur:
+        row = await cur.fetchone()
+        db_max_group_id = row[0] if row else None
+
+    max_group_id = db_max_group_id or os.getenv("MAX_GROUP_CHAT_ID")
     app_id = app_dict['id']
+
+    if not ((bot_token and group_id) or (max_bot_token and max_group_id)):
+        return False
 
     teams_dict = await fetch_teams_dict()
     enrich_app_with_team_name(app_dict, teams_dict)
@@ -305,7 +380,16 @@ async def execute_app_publish(app_dict):
     if not equip_html: equip_html = "  ├ Не требуется\n"
 
     comment_text = app_dict.get('comment', '')
-    img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name, equip_list, comment_text)
+
+    img_buf = create_app_image(app_dict['date_target'], app_dict['object_address'], app_dict['foreman_name'], team_name,
+                               equip_list, comment_text)
+
+    filename = f"app_publish_{app_id}_{int(time.time())}.png"
+    filepath = os.path.join("data", "uploads", filename)
+    with open(filepath, "wb") as f:
+        f.write(img_buf.getvalue())
+    file_url = f"https://miniapp.viks22.ru/uploads/{filename}"
+
     comment_html = f"\n💬 <b>Комментарий:</b> {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
 
     approved_by_str = ""
@@ -317,29 +401,53 @@ async def execute_app_publish(app_dict):
 
     html_caption = f"""<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n🚜 <b>Техника:</b>\n{equip_html}👷‍♂️ <b>Прораб:</b> <a href='tg://user?id={app_dict['foreman_id']}'>{app_dict['foreman_name']}</a>\n👥 <b>Бригада «{team_name}»:</b>{staff_str}{comment_html}{approved_by_str}</blockquote>"""
 
-    if not bot_token or not group_id: return False
+    published_tg = False
+    if bot_token and group_id:
+        data = aiohttp.FormData()
+        data.add_field('chat_id', str(group_id))
+        data.add_field('photo', img_buf.getvalue(), filename='app.png', content_type='image/png')
+        data.add_field('caption', html_caption)
+        data.add_field('parse_mode', 'HTML')
 
-    data = aiohttp.FormData()
-    data.add_field('chat_id', str(group_id))
-    data.add_field('photo', img_buf.getvalue(), filename='app.png', content_type='image/png')
-    data.add_field('caption', html_caption)
-    data.add_field('parse_mode', 'HTML')
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=data) as resp:
+                    if resp.status == 200: published_tg = True
+        except:
+            pass
 
-    published = False
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=data) as resp:
-                if resp.status == 200: published = True
-    except:
-        pass
+    published_max = False
+    if max_bot_token and max_group_id:
+        payload = {
+            "chat_id": str(max_group_id),
+            "text": strip_html(html_caption),
+            "attachments": [
+                {
+                    "type": "image",
+                    "payload": {
+                        "url": file_url
+                    }
+                }
+            ]
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post("https://platform-api.max.ru/messages",
+                                        headers={"Authorization": max_bot_token, "Content-Type": "application/json"},
+                                        json=payload) as resp:
+                    if resp.status == 200: published_max = True
+        except:
+            pass
 
-    if published:
+    if published_tg or published_max:
         try:
             await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))
             if eq_data_str:
                 try:
-                    for e in json.loads(eq_data_str): await db.conn.execute("UPDATE equipment SET status = 'work' WHERE id = ?", (e['id'],))
-                except: pass
+                    for e in json.loads(eq_data_str): await db.conn.execute(
+                        "UPDATE equipment SET status = 'work' WHERE id = ?", (e['id'],))
+                except:
+                    pass
             await db.conn.commit()
         except:
             await db.conn.rollback()
