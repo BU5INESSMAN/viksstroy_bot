@@ -102,7 +102,7 @@ export default function Home() {
         date_target: smartDates[0].val,
         object_address: '',
         team_ids: [],
-        team_name: '', // Добавили поле для имени бригады
+        team_name: '',
         members: [],
         members_data: [],
         equipment: [],
@@ -120,7 +120,7 @@ export default function Home() {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
         axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApps(res.data || []); setLoading(false); }).catch(() => { setActiveApps([]); setLoading(false); });
 
-        if (['worker', 'foreman'].includes(role)) {
+        if (['worker', 'foreman', 'boss', 'superadmin'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {
                 if (res.data?.profile?.team_id) {
                     axios.get(`/api/teams/${res.data.profile.team_id}/details`).then(tRes => setMyTeam(tRes.data));
@@ -251,7 +251,7 @@ export default function Home() {
             date_target: app.date_target,
             object_address: app.object_address,
             team_ids: app.team_id ? String(app.team_id).split(',').map(Number) : [],
-            team_name: app.team_name || '', // Передаем имя бригады
+            team_name: app.team_name || '',
             members: app.selected_members ? app.selected_members.split(',').map(Number) : [],
             members_data: app.members_data || [],
             equipment: app.equipment_data ? JSON.parse(app.equipment_data) : [],
@@ -312,7 +312,8 @@ export default function Home() {
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-20">
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {['worker', 'driver', 'foreman'].includes(role) && (
+                {/* Доступно рабочему, водителю, прорабу, боссу и суперадмину */}
+                {['worker', 'driver', 'foreman', 'boss', 'superadmin'].includes(role) && (
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-blue-500 relative h-fit">
                         <h2 className="text-lg font-bold mb-2 flex items-center dark:text-white">📋 Текущие наряды</h2>
                         {activeApps.length > 0 ? (
@@ -354,12 +355,13 @@ export default function Home() {
                                                 </p>
                                             )}
 
-                                            {role === 'foreman' && a.foreman_id === Number(tgId) && a.is_team_freed !== 1 && (
+                                            {/* Боссы и суперадмины тоже могут освобождать свои бригады */}
+                                            {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed !== 1 && (
                                                 <button onClick={() => openFreeModal('team', a)} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
                                                     ✅ Свободен (Освободить бригаду)
                                                 </button>
                                             )}
-                                            {role === 'foreman' && a.foreman_id === Number(tgId) && a.is_team_freed === 1 && (
+                                            {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed === 1 && (
                                                 <p className="mt-4 w-full text-center text-emerald-600 dark:text-emerald-400 py-2.5 font-bold bg-emerald-50 dark:bg-emerald-900/10 rounded-lg border border-emerald-100 dark:border-emerald-800">
                                                     Бригада свободна ✅
                                                 </p>
@@ -479,7 +481,6 @@ export default function Home() {
                                 </div>
                                 <hr className="dark:border-gray-700" />
 
-                                {/* ВОССТАНОВЛЕННЫЙ БЛОК ДЛЯ БРИГАДЫ И СОСТАВА */}
                                 <div className="space-y-3">
                                     <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">
                                         {appForm.isViewOnly ? '👥 Бригада и состав' : '👥 Выбор Бригад'}
@@ -487,7 +488,6 @@ export default function Home() {
 
                                     {appForm.isViewOnly ? (
                                         <div className="flex flex-col gap-3">
-                                            {/* Возвращаем отображение Имени бригады */}
                                             <div>
                                                 <p className={`font-medium ${appForm.is_team_freed === 1 ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
                                                     {appForm.team_name || 'Только техника'}
@@ -495,7 +495,6 @@ export default function Home() {
                                                 {appForm.is_team_freed === 1 && <p className="text-emerald-500 text-xs font-bold mt-1">Бригада свободна ✅</p>}
                                             </div>
 
-                                            {/* Интерактивный список рабочих */}
                                             {appForm.members_data && appForm.members_data.length > 0 && (
                                                 <div className="flex flex-wrap gap-2 mt-1">
                                                     {appForm.members_data.map(m => (
@@ -578,6 +577,7 @@ export default function Home() {
                                         </button>
                                     )}
 
+                                    {/* Боссы тоже могут редактировать ожидающие наряды */}
                                     {appForm.isViewOnly && appForm.status === 'waiting' && ['foreman', 'moderator', 'boss', 'superadmin'].includes(role) && (
                                         <button type="button" onClick={() => setAppForm(prev => ({...prev, isViewOnly: false}))} className="bg-yellow-500 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-yellow-600 transition flex-1">✏️ Редактировать</button>
                                     )}

@@ -49,7 +49,6 @@ export default function Layout() {
 
     const endRoleTest = () => { localStorage.setItem('user_role', realRole); localStorage.removeItem('real_role'); window.location.reload(); };
 
-    // Умная функция открытия профиля (может искать по id техники или рабочего)
     const openProfile = async (targetId, entityType = 'tg', entityId = 0) => {
         try {
             let url = `/api/users/${targetId || 0}/profile?`;
@@ -151,7 +150,8 @@ export default function Layout() {
     const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
 
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
-    const isForeman = role === 'foreman';
+    // Теперь боссы и суперадмины тоже могут создавать заявки (кнопка ПЛЮС)
+    const canCreateApp = ['foreman', 'boss', 'superadmin'].includes(role);
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
     const canEditUsers = ['boss', 'superadmin', 'moderator'].includes(role);
     const isMyProfile = profileData && profileData.user_id === Number(tgId);
@@ -206,7 +206,8 @@ export default function Layout() {
                 {isModOrBoss && <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">🚜</span><span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Автопарк</span></button>}
                 {!isWorkerOrDriver && <button onClick={() => navigate('/teams')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">👥</span><span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Бригады</span></button>}
 
-                {isForeman && (
+                {/* Теперь кнопка Создать доступна Прорабу, Боссу и Админу */}
+                {canCreateApp && (
                     <div className="relative w-full flex justify-center h-full">
                         <button onClick={() => {navigate('/dashboard'); setGlobalCreateAppOpen(true);}} className="absolute -top-5 bg-blue-600 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg border-4 border-white dark:border-gray-800 transform hover:scale-105 transition-transform z-50">
                             <span className="text-3xl font-light leading-none mb-1">+</span>
