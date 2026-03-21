@@ -20,27 +20,51 @@ const getTodayStr = () => {
     }
 };
 
-const KanbanCol = ({ title, icon, colorClass, apps, isOpen, toggleOpen, onAppClick }) => (
-    <div className="flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-        <button onClick={toggleOpen} className={`p-4 flex justify-between items-center w-full text-left font-bold ${colorClass} transition-colors lg:cursor-default`}>
-            <span className="flex items-center">
-                <span className="mr-2 text-xl">{icon}</span> {title}
-                <span className="ml-2 bg-white/60 dark:bg-black/20 text-gray-800 dark:text-white text-xs px-2 py-0.5 rounded-full">{apps.length}</span>
-            </span>
-            <span className="lg:hidden">{isOpen ? '▲' : '▼'}</span>
-        </button>
-        <div className={`p-3 space-y-3 bg-gray-50 dark:bg-gray-900/30 min-h-[100px] ${isOpen ? 'block' : 'hidden lg:block'}`}>
-            {apps.map(a => (
-                <div key={a.id} onClick={() => onAppClick(a)} className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm text-sm cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors group">
-                    <p className="font-bold text-gray-800 dark:text-gray-100 mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400">{a.object_address}</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">📅 {a.date_target}</p>
-                    <p className="text-xs text-gray-600 dark:text-gray-300 truncate">👥 {a.team_name || 'Только техника'}</p>
-                </div>
-            ))}
-            {apps.length === 0 && <p className="text-xs text-gray-400 text-center py-4 italic">Нет заявок</p>}
+const KanbanCol = ({ title, icon, colorClass, apps, isOpen, toggleOpen, onAppClick }) => {
+    const [showAll, setShowAll] = useState(false);
+    const displayedApps = showAll ? apps : apps.slice(0, 10);
+
+    return (
+        <div className="flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+            <button onClick={toggleOpen} className={`p-4 flex justify-between items-center w-full text-left font-bold ${colorClass} transition-colors lg:cursor-default`}>
+                <span className="flex items-center">
+                    <span className="mr-2 text-xl">{icon}</span> {title}
+                    <span className="ml-2 bg-white/60 dark:bg-black/20 text-gray-800 dark:text-white text-xs px-2 py-0.5 rounded-full">{apps.length}</span>
+                </span>
+                <span className="lg:hidden">{isOpen ? '▲' : '▼'}</span>
+            </button>
+            <div className={`p-3 space-y-3 bg-gray-50 dark:bg-gray-900/30 min-h-[100px] ${isOpen ? 'block' : 'hidden lg:block'}`}>
+                {displayedApps.map(a => {
+                    let equipText = '';
+                    if (a.equipment_data) {
+                        try {
+                            const eqList = JSON.parse(a.equipment_data);
+                            if (eqList && eqList.length > 0) {
+                                equipText = eqList.map(e => e.name).join(', ');
+                            }
+                        } catch(e) {}
+                    }
+
+                    return (
+                        <div key={a.id} onClick={() => onAppClick(a)} className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm text-sm cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors group">
+                            <p className="font-bold text-gray-800 dark:text-gray-100 mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400">{a.object_address}</p>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">📅 {a.date_target}</p>
+                            <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1">👥 {a.team_name || 'Без бригады'}</p>
+                            {equipText && <p className="text-xs text-indigo-600 dark:text-indigo-400 truncate">🚜 {equipText}</p>}
+                        </div>
+                    );
+                })}
+                {apps.length === 0 && <p className="text-xs text-gray-400 text-center py-4 italic">Нет заявок</p>}
+
+                {apps.length > 10 && (
+                    <button onClick={() => setShowAll(!showAll)} className="w-full mt-2 py-2 text-xs font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 rounded-lg transition-colors">
+                        {showAll ? 'Свернуть 🔼' : `Показать все (${apps.length}) 🔽`}
+                    </button>
+                )}
+            </div>
         </div>
-    </div>
-);
+    );
+};
 
 export default function Home() {
     const smartDates = getSmartDates();
@@ -173,6 +197,20 @@ export default function Home() {
         } catch (err) { alert(err.response?.data?.detail || "Ошибка сохранения"); }
     };
 
+    const handleDeleteApp = async () => {
+        if (!window.confirm("ВНИМАНИЕ! Вы уверены, что хотите полностью УДАЛИТЬ эту заявку из системы? Это действие необратимо!")) return;
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            await axios.post(`/api/applications/${appForm.id}/delete`, fd);
+            alert("Заявка успешно удалена!");
+            setGlobalCreateAppOpen(false);
+            fetchData();
+        } catch (err) {
+            alert(err.response?.data?.detail || "Ошибка при удалении заявки.");
+        }
+    };
+
     const handleFreeEquipment = async () => {
         if (!window.confirm("Завершить работу на объекте и освободить свою технику?")) return;
         try {
@@ -207,7 +245,7 @@ export default function Home() {
             if (a.status === 'waiting') appsMap.waiting.push(a);
             else if (a.status === 'completed') appsMap.completed.push(a);
             else if (a.status === 'approved') appsMap.approved.push(a);
-            else if (a.status === 'published') {
+            else if (a.status === 'published' || a.status === 'in_progress') {
                 if (a.date_target > todayYYYYMMDD) {
                     appsMap.approved.push(a); // Будущие заявки висят в одобренных
                 } else {
@@ -219,10 +257,10 @@ export default function Home() {
 
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
 
-    if (loading) return <div className="text-center mt-20">Загрузка...</div>;
+    if (loading) return <div className="text-center mt-20 text-gray-500">Загрузка данных...</div>;
 
     return (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-20">
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {['worker', 'driver', 'foreman'].includes(role) && (
@@ -338,14 +376,24 @@ export default function Home() {
                                 <hr className="dark:border-gray-700" />
                                 <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" disabled={appForm.isViewOnly} value={appForm.comment} onChange={e => handleFormChange('comment', e.target.value)} placeholder="Доп. информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" /></div>
 
-                                <div className="flex space-x-3 pt-4">
-                                    <button type="button" onClick={() => setGlobalCreateAppOpen(false)} className={`w-full bg-gray-100 dark:bg-gray-700 py-4 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition ${appForm.isViewOnly && appForm.status !== 'waiting' ? '' : 'w-1/3'}`}>Закрыть</button>
+                                <div className="flex space-x-2 pt-4">
+                                    <button type="button" onClick={() => setGlobalCreateAppOpen(false)} className={`bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 py-4 px-4 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition flex-1`}>Закрыть</button>
 
-                                    {appForm.isViewOnly && appForm.status === 'waiting' && ['foreman', 'moderator', 'boss', 'superadmin'].includes(role) && (
-                                        <button type="button" onClick={() => setAppForm(prev => ({...prev, isViewOnly: false}))} className="w-2/3 bg-yellow-500 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-yellow-600 transition">✏️ Редактировать</button>
+                                    {appForm.isViewOnly && appForm.id && ['superadmin', 'boss', 'moderator'].includes(role) && (
+                                        <button type="button" title="Удалить заявку" onClick={handleDeleteApp} className="bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 py-4 px-5 rounded-xl font-bold transition flex-none border border-red-200 dark:border-red-800">
+                                            🗑️
+                                        </button>
                                     )}
 
-                                    {!appForm.isViewOnly && <button type="submit" className="w-2/3 bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition">{appForm.id ? 'Сохранить изменения' : 'Отправить'}</button>}
+                                    {appForm.isViewOnly && appForm.status === 'waiting' && ['foreman', 'moderator', 'boss', 'superadmin'].includes(role) && (
+                                        <button type="button" onClick={() => setAppForm(prev => ({...prev, isViewOnly: false}))} className="bg-yellow-500 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-yellow-600 transition flex-1">✏️ Редактировать</button>
+                                    )}
+
+                                    {!appForm.isViewOnly && (
+                                        <button type="submit" className="bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition flex-[2]">
+                                            {appForm.id ? 'Сохранить изменения' : 'Отправить'}
+                                        </button>
+                                    )}
                                 </div>
                             </form>
                         </div>
