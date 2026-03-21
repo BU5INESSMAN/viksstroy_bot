@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 
 const getTodayStr = () => {
@@ -9,9 +10,34 @@ const getTodayStr = () => {
     }
 };
 
+const ReviewSection = ({ title, icon, colorClass, titleColorClass, apps, statusType, renderAppCard }) => {
+    const [showAll, setShowAll] = useState(false);
+    const displayedApps = showAll ? apps : apps.slice(0, 10);
+
+    if (apps.length === 0) return null;
+
+    return (
+        <div className={`bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border ${colorClass}`}>
+            <h3 className={`font-bold mb-4 flex items-center ${titleColorClass}`}>
+                <span className="mr-2 text-xl">{icon}</span> {title}
+                <span className="ml-2 bg-white/60 dark:bg-black/20 text-gray-800 dark:text-white text-xs px-2 py-0.5 rounded-full shadow-sm">{apps.length}</span>
+            </h3>
+            <div className="space-y-3">
+                {displayedApps.map(a => renderAppCard(a, statusType))}
+            </div>
+            {apps.length > 10 && (
+                <button onClick={() => setShowAll(!showAll)} className="w-full mt-3 py-2 text-sm font-bold text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 rounded-lg transition-colors shadow-sm">
+                    {showAll ? 'Свернуть 🔼' : `Показать все (${apps.length}) 🔽`}
+                </button>
+            )}
+        </div>
+    );
+};
+
 export default function Review() {
     const tgId = localStorage.getItem('tg_id') || '0';
     const role = localStorage.getItem('user_role') || 'Гость';
+    const { openProfile } = useOutletContext(); // Подключаем открытие профиля
     const [reviewApps, setReviewApps] = useState([]);
 
     const [selectedApp, setSelectedApp] = useState(null);
@@ -86,33 +112,60 @@ export default function Review() {
         : approvedApps.filter(a => a.status === 'approved');
 
     const renderAppCard = (app, statusType) => {
-        let equipText = 'Не требуется';
+        let equipList = [];
         if (app.equipment_data) {
             try {
-                const eqList = JSON.parse(app.equipment_data);
-                if (eqList && eqList.length > 0) equipText = eqList.map(e => e.name).join(', ');
+                const parsed = JSON.parse(app.equipment_data);
+                if (parsed && parsed.length > 0) equipList = parsed;
             } catch(e){}
         }
 
         return (
             <div key={app.id} onClick={() => setSelectedApp(app)} className="p-4 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm flex flex-col md:flex-row justify-between gap-4 transition-colors cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 group">
-                <div className="text-sm space-y-1.5">
+                <div className="text-sm space-y-1.5 w-full md:w-3/4">
                     <p><span className="text-gray-500 dark:text-gray-400 uppercase text-[10px] tracking-widest block mb-0.5">Наряд №{app.id} • {app.date_target}</span> <b className="dark:text-white text-base group-hover:text-blue-600 dark:group-hover:text-blue-400">{app.object_address}</b></p>
-                    <p><span className="text-gray-500 dark:text-gray-400">Бригада:</span> <b className="dark:text-white">{app.team_name || 'Только техника'}</b> (Прораб: {app.foreman_name})</p>
-                    <p><span className="text-gray-500 dark:text-gray-400">Техника:</span> <span className="dark:text-white font-medium truncate">{equipText}</span></p>
+
+                    {/* Интерактивная ссылка на профиль прораба (с остановкой всплытия события) */}
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-1.5 font-medium flex items-center">
+                        <span className="mr-1">👷‍♂️</span>
+                        {app.foreman_id ? (
+                            <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); openProfile(app.foreman_id); }}
+                                className="text-blue-600 dark:text-blue-400 hover:underline font-bold text-left"
+                            >
+                                {app.foreman_name || 'Неизвестный прораб'}
+                            </button>
+                        ) : (
+                            <span>{app.foreman_name || 'Неизвестный прораб'}</span>
+                        )}
+                    </p>
+
+                    <p><span className="text-gray-500 dark:text-gray-400">Бригада:</span> <b className="dark:text-white">{app.team_name || 'Только техника'}</b></p>
+
+                    {/* Отображение техники списком */}
+                    {equipList.length > 0 && (
+                        <div className="mt-1.5 space-y-0.5">
+                            {equipList.map((eq, idx) => (
+                                <p key={idx} className="text-xs text-indigo-600 dark:text-indigo-400 truncate">
+                                    🚜 {eq.name.split('(')[0].trim()}
+                                </p>
+                            ))}
+                        </div>
+                    )}
                 </div>
                 <div className="flex flex-col items-end justify-center min-w-[120px] pt-3 md:pt-0">
-                    {statusType === 'waiting' && <span className="bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-yellow-200 dark:border-yellow-700/50">На модерации</span>}
-                    {statusType === 'approved' && app.status === 'approved' && <span className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-700/50">Одобрено</span>}
-                    {statusType === 'approved' && app.status === 'published' && <span className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-700/50">Ожидает начала</span>}
-                    {statusType === 'published' && <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-700/50">В работе</span>}
+                    {statusType === 'waiting' && <span className="bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-yellow-200 dark:border-yellow-700/50 text-center w-full md:w-auto">На модерации</span>}
+                    {statusType === 'approved' && app.status === 'approved' && <span className="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-700/50 text-center w-full md:w-auto">Одобрено</span>}
+                    {statusType === 'approved' && app.status === 'published' && <span className="bg-indigo-100 dark:bg-indigo-900/40 text-indigo-700 dark:text-indigo-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-indigo-200 dark:border-indigo-700/50 text-center w-full md:w-auto">Ожидает начала</span>}
+                    {statusType === 'published' && <span className="bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-400 text-xs font-bold px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-700/50 text-center w-full md:w-auto">В работе</span>}
                 </div>
             </div>
         );
     };
 
     return (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-20">
             <div className="flex justify-between items-center bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 border border-gray-100 dark:border-gray-700">
                 <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📋</span> Управление заявками</h2>
                 {filteredForPublish.length > 0 && (
@@ -122,26 +175,9 @@ export default function Review() {
                 )}
             </div>
 
-            {waitingApps.length > 0 && (
-                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-yellow-200 dark:border-yellow-900/50">
-                    <h3 className="font-bold text-yellow-700 dark:text-yellow-500 mb-4">⏳ Требуют проверки</h3>
-                    <div className="space-y-3">{waitingApps.map(a => renderAppCard(a, 'waiting'))}</div>
-                </div>
-            )}
-
-            {approvedApps.length > 0 && (
-                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-emerald-200 dark:border-emerald-900/50">
-                    <h3 className="font-bold text-emerald-700 dark:text-emerald-500 mb-4">✅ Одобрены (ожидают начала)</h3>
-                    <div className="space-y-3">{approvedApps.map(a => renderAppCard(a, 'approved'))}</div>
-                </div>
-            )}
-
-            {publishedApps.length > 0 && (
-                <div className="bg-gray-50 dark:bg-gray-800/50 rounded-xl p-4 border border-blue-200 dark:border-blue-900/50">
-                    <h3 className="font-bold text-blue-700 dark:text-blue-500 mb-4">🏗 В работе</h3>
-                    <div className="space-y-3">{publishedApps.map(a => renderAppCard(a, 'published'))}</div>
-                </div>
-            )}
+            <ReviewSection title="Требуют проверки" icon="⏳" colorClass="border-yellow-200 dark:border-yellow-900/50" titleColorClass="text-yellow-700 dark:text-yellow-500" apps={waitingApps} statusType="waiting" renderAppCard={renderAppCard} />
+            <ReviewSection title="Одобрены (ожидают начала)" icon="✅" colorClass="border-emerald-200 dark:border-emerald-900/50" titleColorClass="text-emerald-700 dark:text-emerald-500" apps={approvedApps} statusType="approved" renderAppCard={renderAppCard} />
+            <ReviewSection title="В работе" icon="🏗" colorClass="border-blue-200 dark:border-blue-900/50" titleColorClass="text-blue-700 dark:text-blue-500" apps={publishedApps} statusType="published" renderAppCard={renderAppCard} />
 
             {reviewApps.length === 0 && (
                 <p className="text-center p-6 bg-white dark:bg-gray-800 rounded-xl text-gray-500 dark:text-gray-400 text-sm italic border border-gray-200 dark:border-gray-700 shadow-sm">Активных заявок пока нет.</p>
@@ -202,11 +238,29 @@ export default function Review() {
                             <div className="p-6 space-y-6 text-sm">
                                 <div className="space-y-4">
                                     <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">📅 Дата выезда</label><p className="font-bold text-gray-800 dark:text-gray-100 text-lg">{selectedApp.date_target}</p></div>
-                                    <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">📍 Адрес объекта</label><p className="font-medium text-gray-800 dark:text-gray-100">{selectedApp.object_address}</p></div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">📍 Адрес объекта</label>
+                                        <p className="font-medium text-gray-800 dark:text-gray-100">{selectedApp.object_address}</p>
+
+                                        {/* Блок с кликабельным прорабом внутри модального окна */}
+                                        <div className="mt-4 flex items-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600">
+                                            <span className="text-2xl mr-3">👷‍♂️</span>
+                                            <div>
+                                                <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wide">Прораб (Создатель заявки)</p>
+                                                {selectedApp.foreman_id ? (
+                                                    <button type="button" onClick={() => { setSelectedApp(null); openProfile(selectedApp.foreman_id); }} className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline text-left">
+                                                        {selectedApp.foreman_name}
+                                                    </button>
+                                                ) : (
+                                                    <p className="text-sm font-bold text-gray-800 dark:text-gray-200">{selectedApp.foreman_name}</p>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
-                                    <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">👥 Бригада</label><p className="font-medium text-gray-800 dark:text-gray-100">{selectedApp.team_name || 'Только техника'} <span className="text-gray-500 text-xs ml-2">(Прораб: {selectedApp.foreman_name})</span></p></div>
+                                    <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">👥 Бригада</label><p className="font-medium text-gray-800 dark:text-gray-100">{selectedApp.team_name || 'Только техника'}</p></div>
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
@@ -215,7 +269,7 @@ export default function Review() {
                                         <div className="space-y-2">
                                             {JSON.parse(selectedApp.equipment_data).map(eq => (
                                                 <div key={eq.id} className="flex justify-between items-center bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl border border-gray-200 dark:border-gray-600">
-                                                    <span className="font-bold text-blue-600 dark:text-blue-400">{eq.name}</span>
+                                                    <span className="font-bold text-blue-600 dark:text-blue-400">{eq.name.split('(')[0].trim()}</span>
                                                     <span className="text-xs font-bold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-2 py-1 rounded-md border dark:border-gray-600">⏰ {eq.time_start}:00 - {eq.time_end}:00</span>
                                                 </div>
                                             ))}
