@@ -49,13 +49,11 @@ const KanbanCol = ({ title, icon, colorClass, apps, isOpen, toggleOpen, onAppCli
                         <div key={a.id} onClick={() => onAppClick(a)} className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm text-sm cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors group">
                             <p className="font-bold text-gray-800 dark:text-gray-100 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400">{a.object_address}</p>
 
-                            {/* Отображение прораба в мини-карточке */}
                             <p className="text-xs text-gray-600 dark:text-gray-400 mb-1.5 font-medium">👷‍♂️ {a.foreman_name || 'Неизвестный прораб'}</p>
 
                             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">📅 {a.date_target}</p>
                             <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1">👥 {a.team_name || 'Без бригады'}</p>
 
-                            {/* Отображение техники списком без водителя */}
                             {equipList.length > 0 && (
                                 <div className="mt-1.5 space-y-0.5">
                                     {equipList.map((eq, idx) => (
@@ -84,7 +82,9 @@ export default function Home() {
     const smartDates = getSmartDates();
     const tgId = localStorage.getItem('tg_id') || '0';
     const role = localStorage.getItem('user_role') || 'Гость';
-    const { isGlobalCreateAppOpen, setGlobalCreateAppOpen } = useOutletContext();
+
+    // Подхватываем openProfile из родительского Layout
+    const { isGlobalCreateAppOpen, setGlobalCreateAppOpen, openProfile } = useOutletContext();
 
     const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], kanban_apps: [], recent_addresses: [] });
     const [activeApps, setActiveApps] = useState([]);
@@ -94,7 +94,6 @@ export default function Home() {
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
 
-    // Добавлены поля foreman_id и foreman_name в стейт формы
     const [appForm, setAppForm] = useState({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '' });
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
 
@@ -247,13 +246,12 @@ export default function Home() {
             equipment: app.equipment_data ? JSON.parse(app.equipment_data) : [],
             comment: app.comment || '',
             isViewOnly: true,
-            foreman_id: app.foreman_id, // Подхватываем данные прораба
+            foreman_id: app.foreman_id,
             foreman_name: app.foreman_name
         });
         setGlobalCreateAppOpen(true);
     };
 
-    // ФИЛЬТРАЦИЯ КАНБАН-ДОСКИ ПО ДАТЕ
     const todayYYYYMMDD = getTodayStr();
     const appsMap = { waiting: [], approved: [], published: [], completed: [] };
 
@@ -264,9 +262,9 @@ export default function Home() {
             else if (a.status === 'approved') appsMap.approved.push(a);
             else if (a.status === 'published' || a.status === 'in_progress') {
                 if (a.date_target > todayYYYYMMDD) {
-                    appsMap.approved.push(a); // Будущие заявки висят в одобренных
+                    appsMap.approved.push(a);
                 } else {
-                    appsMap.published.push(a); // Сегодняшние и прошлые идут "В работу"
+                    appsMap.published.push(a);
                 }
             }
         });
@@ -294,9 +292,9 @@ export default function Home() {
                                             <p><b>Дата:</b> {a.date_target}</p>
                                             <p><b>Объект:</b> {a.object_address}</p>
 
-                                            {/* Кликабельный прораб в текущих нарядах */}
-                                            <p><b>Прораб:</b> {a.foreman_id > 0 ? (
-                                                <a href={`tg://user?id=${a.foreman_id}`} className="text-blue-600 dark:text-blue-400 hover:underline">{a.foreman_name || 'Неизвестно'}</a>
+                                            {/* Интерактивная ссылка на профиль */}
+                                            <p><b>Прораб:</b> {a.foreman_id ? (
+                                                <button onClick={() => openProfile(a.foreman_id)} className="text-blue-600 dark:text-blue-400 hover:underline font-bold text-left">{a.foreman_name || 'Неизвестно'}</button>
                                             ) : <span>{a.foreman_name || 'Неизвестно'}</span>}</p>
 
                                             <p><b>Техника:</b> {activeEquipText}</p>
@@ -372,16 +370,16 @@ export default function Home() {
                                             </div>
                                         )}
 
-                                        {/* Блок с кликабельным прорабом под адресом */}
+                                        {/* Блок с кликабельным прорабом внутри модального окна */}
                                         {appForm.id && appForm.foreman_name && (
                                             <div className="mt-4 flex items-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600">
                                                 <span className="text-2xl mr-3">👷‍♂️</span>
                                                 <div>
                                                     <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wide">Прораб (Создатель заявки)</p>
-                                                    {appForm.foreman_id > 0 ? (
-                                                        <a href={`tg://user?id=${appForm.foreman_id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline">
+                                                    {appForm.foreman_id ? (
+                                                        <button type="button" onClick={() => { setGlobalCreateAppOpen(false); openProfile(appForm.foreman_id); }} className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline text-left">
                                                             {appForm.foreman_name}
-                                                        </a>
+                                                        </button>
                                                     ) : (
                                                         <p className="text-sm font-bold text-gray-800 dark:text-gray-200">{appForm.foreman_name}</p>
                                                     )}

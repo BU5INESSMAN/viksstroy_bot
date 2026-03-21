@@ -204,7 +204,40 @@ export default function Layout() {
                         <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-xs font-bold text-white text-center px-2">Изменить</span></div>
                         <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
                     </label>
-                <div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p></div></div></div><div className="p-6 space-y-6"><div className="space-y-4"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div></div>
+                <div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p></div></div></div><div className="p-6 space-y-6">
+
+                {/* КОНТАКТЫ ПОЛЬЗОВАТЕЛЯ (ВИДНО ВСЕМ) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b dark:border-gray-700 pb-6">
+                    <div className={`flex items-center px-4 py-3 rounded-xl border ${profileData.links.has_tg ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 shadow-sm'}`}>
+                        <span className="text-2xl mr-3">✈️</span>
+                        <div>
+                            <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wider">Telegram</p>
+                            {profileData.links.has_tg ? (
+                                <a href={`tg://user?id=${profileData.links.tg_account_id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline">
+                                    Написать в ЛС
+                                </a>
+                            ) : (
+                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500">Не привязан</p>
+                            )}
+                        </div>
+                    </div>
+
+                    <div className={`flex items-center px-4 py-3 rounded-xl border ${profileData.links.has_max ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 shadow-sm'}`}>
+                        <span className="text-2xl mr-3">📱</span>
+                        <div>
+                            <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wider">MAX</p>
+                            {profileData.links.has_max ? (
+                                <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
+                                    Привязан (ID: {profileData.links.max_account_id})
+                                </p>
+                            ) : (
+                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500">Не привязан</p>
+                            )}
+                        </div>
+                    </div>
+                </div>
+
+                <div className="space-y-4"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div></div>
 
                 {profileData.user_id === Number(tgId) && profileData.links && (
                     <div className="mt-6 pt-4 border-t dark:border-gray-700">
@@ -213,7 +246,7 @@ export default function Layout() {
                         {!profileData.links.has_max && (
                             <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
                                 <p className="text-xs text-gray-600 dark:text-gray-300">
-                                    <span className="font-bold">MAX:</span> Для привязки отправьте <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-800 dark:text-gray-200 font-mono">/web</code> в <a href="https://max.ru/id222264297116_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 underline font-medium">MAX боте</a> и введите код ниже.
+                                    <span className="font-bold">MAX:</span> Для привязки отправьте <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-800 dark:text-gray-200 font-mono">/web</code> в MAX боте и введите код ниже.
                                 </p>
                             </div>
                         )}
@@ -233,7 +266,7 @@ export default function Layout() {
                             </div>
                         )}
 
-                        {/* Кнопки отвязки (показываются для каждого привязанного устройства) */}
+                        {/* Кнопки отвязки */}
                         {profileData.links.is_linked && (
                             <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Привязанные устройства:</p>
