@@ -12,13 +12,26 @@ from utils import resolve_id, notify_users, execute_app_publish, fetch_teams_dic
 router = APIRouter(tags=["Applications"])
 
 
-# Авто-добавление колонки, если ее нет (чтобы не лезть в SQLite руками)
 async def ensure_is_team_freed():
     try:
         await db.conn.execute("ALTER TABLE applications ADD COLUMN is_team_freed INTEGER DEFAULT 0")
         await db.conn.commit()
     except:
         pass
+
+
+async def enrich_app_with_members_data(app_dict):
+    selected_m = app_dict.get('selected_members')
+    members_list = []
+    if selected_m:
+        m_ids = [int(x) for x in selected_m.split(',') if x.strip().isdigit()]
+        if m_ids:
+            pl = ','.join(['?'] * len(m_ids))
+            async with db.conn.execute(f"SELECT id, fio, tg_user_id, position FROM team_members WHERE id IN ({pl})",
+                                       m_ids) as cur:
+                for r in await cur.fetchall():
+                    members_list.append({"id": r[0], "fio": r[1], "tg_user_id": r[2], "position": r[3]})
+    app_dict['members_data'] = members_list
 
 
 @router.post("/api/applications/create")
@@ -106,6 +119,7 @@ async def get_review_apps():
     for row in rows:
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
+        await enrich_app_with_members_data(app_dict)
         eq_data_str = app_dict.get('equipment_data', '')
         equip_text = ""
         if eq_data_str:
@@ -200,6 +214,7 @@ async def get_active_app(tg_id: int):
     for row in rows:
         app_dict = dict(zip([col[0] for col in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
+        await enrich_app_with_members_data(app_dict)
         involved = False
 
         if role == 'foreman' and app_dict['foreman_id'] == real_tg_id: involved = True
@@ -221,7 +236,6 @@ async def get_active_app(tg_id: int):
                             for e in eq_list:
                                 if e['id'] == my_eq_id:
                                     involved = True
-                                    # Передаем фронтенду, свободна ли именно МОЯ техника
                                     app_dict['my_equip_is_freed'] = e.get('is_freed', False)
                         except:
                             pass
@@ -245,6 +259,7 @@ async def get_my_apps(tg_id: int):
     for row in rows:
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
+        await enrich_app_with_members_data(app_dict)
         eq_data_str = app_dict.get('equipment_data', '')
         equip_text, equip_list = "", []
         if eq_data_str:
@@ -273,7 +288,6 @@ async def get_my_apps(tg_id: int):
     return result
 
 
-# ЭНДПОИНТЫ ДЛЯ ОСВОБОЖДЕНИЯ ТЕХНИКИ И БРИГАД
 @router.post("/api/applications/{app_id}/free_equipment")
 async def free_app_equipment(app_id: int, tg_id: int = Form(...)):
     await ensure_is_team_freed()
@@ -286,10 +300,8 @@ async def free_app_equipment(app_id: int, tg_id: int = Form(...)):
     if not eq_row: raise HTTPException(404, "Ваша техника не найдена")
     my_eq_id = eq_row[0]
 
-    # 1. Меняем статус в общей базе техники
     await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (my_eq_id,))
 
-    # 2. Меняем статус внутри конкретной заявки
     async with db.conn.execute("SELECT equipment_data, object_address FROM applications WHERE id = ?",
                                (app_id,)) as cur:
         app_row = await cur.fetchone()

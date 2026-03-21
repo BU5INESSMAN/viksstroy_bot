@@ -53,7 +53,6 @@ const KanbanCol = ({ title, icon, colorClass, apps, isOpen, toggleOpen, onAppCli
 
                             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">📅 {a.date_target}</p>
 
-                            {/* СТРОГАЯ ПРОВЕРКА НА === 1, ЧТОБЫ НЕ ВЫВОДИЛОСЬ "0" */}
                             <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1">
                                 👥 <span className={a.is_team_freed === 1 ? 'line-through text-gray-400' : 'font-medium'}>{a.team_name || 'Без бригады'}</span>
                                 {a.is_team_freed === 1 ? <span className="ml-1 text-[10px] text-emerald-500 font-bold">Свободна</span> : null}
@@ -97,7 +96,7 @@ export default function Home() {
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
 
-    const [appForm, setAppForm] = useState({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '' });
+    const [appForm, setAppForm] = useState({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0 });
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
 
     const [freeModal, setFreeModal] = useState({ isOpen: false, type: '', app: null, inputValue: '' });
@@ -119,7 +118,7 @@ export default function Home() {
 
     useEffect(() => {
         if (!isGlobalCreateAppOpen) {
-            setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '' });
+            setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0 });
             setActiveEqCategory(null);
             setTeamMembers([]);
         }
@@ -238,11 +237,13 @@ export default function Home() {
             object_address: app.object_address,
             team_ids: app.team_id ? String(app.team_id).split(',').map(Number) : [],
             members: app.selected_members ? app.selected_members.split(',').map(Number) : [],
+            members_data: app.members_data || [],
             equipment: app.equipment_data ? JSON.parse(app.equipment_data) : [],
             comment: app.comment || '',
             isViewOnly: true,
             foreman_id: app.foreman_id,
-            foreman_name: app.foreman_name
+            foreman_name: app.foreman_name,
+            is_team_freed: app.is_team_freed
         });
         setGlobalCreateAppOpen(true);
     };
@@ -366,7 +367,9 @@ export default function Home() {
                                         <span className="font-bold text-gray-800 dark:text-gray-200 text-sm">{m.fio}</span>
                                         {m.is_foreman ? <span className="ml-2 text-[10px] font-extrabold bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded shadow-sm">БРИГАДИР</span> : null}
                                     </div>
-                                    <span className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">{m.position}</span>
+                                    <div className="flex items-center space-x-3">
+                                        <span className="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium">{m.position}</span>
+                                    </div>
                                 </div>
                             ))}
                         </div>
@@ -417,6 +420,7 @@ export default function Home() {
                 </div>
             )}
 
+            {/* МОДАЛЬНОЕ ОКНО СОЗДАНИЯ/ПРОСМОТРА ЗАЯВКИ */}
             {isGlobalCreateAppOpen && (
                 <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
@@ -460,30 +464,85 @@ export default function Home() {
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
-                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">👥 Выбор Бригад</label>
-                                    <div className="flex flex-wrap gap-2">
-                                        {!appForm.isViewOnly && <button type="button" onClick={() => handleFormChange('team_ids', [])} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${appForm.team_ids.length === 0 ? 'bg-red-50 border-red-500 text-red-700 dark:bg-red-900/30' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>❌ Без бригады</button>}
-                                        {data?.teams?.map(t => {
-                                            const st = checkTeamStatus(t.id);
-                                            const isSelected = appForm.team_ids.includes(t.id);
-                                            let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700';
-                                            if (st.state === 'busy') btnStyles = 'bg-red-50 border-red-300 text-red-500 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400 cursor-not-allowed opacity-75';
-                                            else if (isSelected) btnStyles = 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm';
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">👥 Состав на выезд</label>
 
-                                            if(appForm.isViewOnly && !isSelected) return null;
+                                    {/* РЕЖИМ ПРОСМОТРА: ИНТЕРАКТИВНЫЙ СПИСОК РАБОЧИХ */}
+                                    {appForm.isViewOnly ? (
+                                        <div className="flex flex-col gap-2">
+                                            {appForm.members_data && appForm.members_data.length > 0 ? (
+                                                <div className="flex flex-wrap gap-2">
+                                                    {appForm.members_data.map(m => (
+                                                        <button
+                                                            type="button"
+                                                            key={m.id}
+                                                            onClick={() => { setGlobalCreateAppOpen(false); openProfile(m.tg_user_id, 'member', m.id); }}
+                                                            className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-gray-200 dark:border-gray-600 rounded-lg text-sm transition flex items-center shadow-sm"
+                                                        >
+                                                            👤 {m.fio}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            ) : (
+                                                <p className="text-gray-500 font-medium">Только техника</p>
+                                            )}
+                                            {appForm.is_team_freed === 1 && <p className="text-emerald-500 text-xs font-bold mt-2">Бригада свободна ✅</p>}
+                                        </div>
+                                    ) : (
+                                        /* РЕЖИМ СОЗДАНИЯ (СТАРЫЙ) */
+                                        <div className="flex flex-wrap gap-2">
+                                            <button type="button" onClick={() => handleFormChange('team_ids', [])} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${appForm.team_ids.length === 0 ? 'bg-red-50 border-red-500 text-red-700 dark:bg-red-900/30' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>❌ Без бригады</button>
+                                            {data?.teams?.map(t => {
+                                                const st = checkTeamStatus(t.id);
+                                                const isSelected = appForm.team_ids.includes(t.id);
+                                                let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700';
+                                                if (st.state === 'busy') btnStyles = 'bg-red-50 border-red-300 text-red-500 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400 cursor-not-allowed opacity-75';
+                                                else if (isSelected) btnStyles = 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm';
+                                                return (<button key={t.id} type="button" onClick={() => { if(st.state !== 'free') return alert(st.message); toggleTeamSelection(t.id); }} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${btnStyles}`}>🏗 {t.name}</button>);
+                                            })}
+                                        </div>
+                                    )}
 
-                                            return (<button key={t.id} type="button" onClick={() => { if(appForm.isViewOnly) return; if(st.state !== 'free') return alert(st.message); toggleTeamSelection(t.id); }} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${btnStyles}`}>🏗 {t.name}</button>);
-                                        })}
-                                        {appForm.isViewOnly && appForm.team_ids.length === 0 && <span className="px-4 py-2 text-sm font-medium rounded-xl border bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300">Только техника</span>}
-                                    </div>
-                                    {teamMembers?.length > 0 && (<div className="mt-3 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800/50 shadow-inner"><label className="block text-xs font-bold text-blue-800 dark:text-blue-300 mb-3 uppercase tracking-wide">Состав на выезд</label><div className="flex flex-wrap gap-2">{teamMembers.map(m => { const isSelected = appForm?.members?.includes(m.id); if(appForm.isViewOnly && !isSelected) return null; return (<button key={m.id} type="button" onClick={() => toggleAppMember(m.id)} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>{isSelected ? <span className="mr-1.5 text-white font-bold">✓</span> : <span className="mr-1.5 opacity-0">✓</span>} {m.fio}</button>); })}</div></div>)}
+                                    {!appForm.isViewOnly && teamMembers?.length > 0 && (
+                                        <div className="mt-3 p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-800/50 shadow-inner">
+                                            <label className="block text-xs font-bold text-blue-800 dark:text-blue-300 mb-3 uppercase tracking-wide">Выберите людей:</label>
+                                            <div className="flex flex-wrap gap-2">
+                                                {teamMembers.map(m => {
+                                                    const isSelected = appForm?.members?.includes(m.id);
+                                                    return (
+                                                        <button key={m.id} type="button" onClick={() => toggleAppMember(m.id)} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>
+                                                            {isSelected ? <span className="mr-1.5 text-white font-bold">✓</span> : <span className="mr-1.5 opacity-0">✓</span>} {m.fio}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    )}
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
                                     <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">🚜 Требуемая техника</label>
                                     {!appForm.isViewOnly && <div className="flex flex-wrap gap-2 mb-2">{data?.equip_categories?.map(cat => (<button key={cat} type="button" onClick={() => setActiveEqCategory(activeEqCategory === cat ? null : cat)} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${activeEqCategory === cat ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50'}`}>{cat}</button>))}</div>}
                                     {activeEqCategory && !appForm.isViewOnly && (<div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600 shadow-inner"><div className="flex flex-wrap gap-2">{data.equipment?.filter(e => e.category === activeEqCategory).map(e => { const st = checkEquipStatus(e); const isSelected = appForm.equipment.some(eq => eq.id === e.id); const displayName = e.driver ? `${e.name} (${e.driver})` : e.name; let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100'; if (st.state === 'repair') btnStyles = 'bg-red-50 border-red-300 text-red-500 cursor-not-allowed opacity-75'; else if (st.state === 'busy') btnStyles = 'bg-yellow-50 border-yellow-300 text-yellow-600 cursor-not-allowed opacity-80'; else if (isSelected) btnStyles = 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm'; return (<button key={e.id} type="button" onClick={() => { if (st.state !== 'free') return alert(st.message); toggleEquipmentSelection(e); }} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${btnStyles}`}>{isSelected && <span className="mr-1.5 font-bold">✓</span>}{st.state === 'repair' && <span className="mr-1.5">🛠</span>}{st.state === 'busy' && <span className="mr-1.5">⏳</span>}{displayName}</button>); })}</div></div>)}
-                                    {appForm.equipment.length > 0 ? (<div className="mt-4 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 shadow-inner"><label className="block text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wide border-b border-indigo-200 dark:border-indigo-800 pb-2 mb-3">Время работы машин:</label>{appForm.equipment.map(eq => (<div key={eq.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-indigo-100 dark:border-indigo-700/50 shadow-sm gap-3"><p className={`font-bold text-sm ${eq.is_freed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}>🚜 {eq.name} {eq.is_freed ? '✅' : ''}</p><div className="flex items-center space-x-2"><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">С</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_start} onChange={e => updateEquipmentTime(eq.id, 'time_start', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div><span className="text-gray-400 font-bold">—</span><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">ДО</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_end} onChange={e => updateEquipmentTime(eq.id, 'time_end', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div></div></div>))}</div>) : (appForm.isViewOnly && <p className="text-gray-500 text-sm">Техника не требуется</p>)}
+                                    {appForm.equipment.length > 0 ? (
+                                        <div className="mt-4 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 shadow-inner">
+                                            <label className="block text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wide border-b border-indigo-200 dark:border-indigo-800 pb-2 mb-3">Список машин:</label>
+                                            {appForm.equipment.map(eq => (
+                                                <div key={eq.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-indigo-100 dark:border-indigo-700/50 shadow-sm gap-3">
+
+                                                    {/* ИНТЕРАКТИВНЫЙ ВОДИТЕЛЬ ВМЕСТО ПРОСТО ТЕКСТА */}
+                                                    {appForm.isViewOnly ? (
+                                                        <button type="button" onClick={() => { setGlobalCreateAppOpen(false); openProfile(0, 'equip', eq.id); }} className={`font-bold text-sm text-left hover:underline ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                            🚜 {eq.name.split('(')[0].trim()} {eq.is_freed ? '✅' : ''}
+                                                        </button>
+                                                    ) : (
+                                                        <p className={`font-bold text-sm ${eq.is_freed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}>🚜 {eq.name} {eq.is_freed ? '✅' : ''}</p>
+                                                    )}
+
+                                                    <div className="flex items-center space-x-2"><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">С</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_start} onChange={e => updateEquipmentTime(eq.id, 'time_start', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div><span className="text-gray-400 font-bold">—</span><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">ДО</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_end} onChange={e => updateEquipmentTime(eq.id, 'time_end', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div></div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (appForm.isViewOnly && <p className="text-gray-500 text-sm">Техника не требуется</p>)}
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" disabled={appForm.isViewOnly} value={appForm.comment} onChange={e => handleFormChange('comment', e.target.value)} placeholder="Доп. информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" /></div>

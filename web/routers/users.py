@@ -19,20 +19,46 @@ async def api_get_users():
 
 
 @router.get("/api/users/{target_id}/profile")
-async def api_get_profile(target_id: int):
-    real_target_id = await resolve_id(target_id)
+async def api_get_profile(target_id: int, member_id: int = 0, equip_id: int = 0):
+    real_target_id = await resolve_id(target_id) if target_id != 0 else 0
 
-    # Автоматическая миграция (создаем колонку для ссылки MAX, если её еще нет)
     try:
         await db.conn.execute("ALTER TABLE users ADD COLUMN max_invite_link TEXT")
         await db.conn.commit()
     except:
         pass
 
+    # Если ID неизвестен, пробуем найти его через бригаду или технику
+    if real_target_id == 0:
+        if member_id > 0:
+            async with db.conn.execute("SELECT tg_user_id, fio, position FROM team_members WHERE id = ?",
+                                       (member_id,)) as cur:
+                row = await cur.fetchone()
+                if row:
+                    if row[0]:
+                        real_target_id = row[0]
+                    else:
+                        return {
+                            "profile": {"user_id": 0, "fio": row[1], "role": row[2] or "Рабочий", "unregistered": True},
+                            "logs": [], "links": {}}
+        elif equip_id > 0:
+            async with db.conn.execute("SELECT tg_id, driver_fio, name FROM equipment WHERE id = ?",
+                                       (equip_id,)) as cur:
+                row = await cur.fetchone()
+                if row:
+                    if row[0]:
+                        real_target_id = row[0]
+                    else:
+                        return {
+                            "profile": {"user_id": 0, "fio": row[1] or "Без водителя", "role": f"Водитель ({row[2]})",
+                                        "unregistered": True}, "logs": [], "links": {}}
+
+    if real_target_id == 0:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
     profile = await db.get_user_full_profile(real_target_id)
     if not profile: raise HTTPException(status_code=404, detail="Пользователь не найден")
 
-    # Достаем ссылку MAX из базы
     async with db.conn.execute("SELECT max_invite_link FROM users WHERE user_id = ?", (real_target_id,)) as cur:
         link_row = await cur.fetchone()
         max_invite_link = link_row[0] if link_row else ""
@@ -90,11 +116,9 @@ async def api_update_profile(target_id: int, tg_id: int = Form(...), fio: str = 
     real_target_id = await resolve_id(target_id)
     real_admin_id = await resolve_id(tg_id)
 
-    # Запрещаем редактировать чужой профиль, если ты не админ
     if not is_admin and real_target_id != real_admin_id:
         raise HTTPException(status_code=403, detail="Нет прав")
 
-    # Админы могут редактировать ФИО, роль и бригаду
     if is_admin and fio and role:
         await db.update_user_profile_data(real_target_id, fio, role)
         profile = await db.get_user_full_profile(real_target_id)
@@ -108,7 +132,6 @@ async def api_update_profile(target_id: int, tg_id: int = Form(...), fio: str = 
             await db.conn.execute("INSERT INTO team_members (team_id, fio, position, tg_id) VALUES (?, ?, ?, ?)",
                                   (team_id, fio, position, real_target_id))
 
-    # Любой пользователь может обновить свою ссылку MAX
     try:
         await db.conn.execute("ALTER TABLE users ADD COLUMN max_invite_link TEXT")
     except:
