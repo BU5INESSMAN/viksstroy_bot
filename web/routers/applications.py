@@ -47,7 +47,7 @@ async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_targ
         (real_tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
     await notify_users(["report_group", "moderator"],
-                       f"📝 <b>Новая заявка на выезд</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}",
+                       f"📝 <b>Новая заявка на выезд</b>\n👷‍♂️ Кто создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}",
                        "review")
     return {"status": "ok"}
 
@@ -137,18 +137,27 @@ async def get_review_apps():
 @router.post("/api/applications/{app_id}/review")
 async def review_app(app_id: int, new_status: str = Form(...), reason: str = Form(""), tg_id: int = Form(0)):
     if new_status not in ['approved', 'rejected', 'completed']: raise HTTPException(400, "Неверный статус")
+
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+
+    # Безопасность: Проверяем, что запрос на модерацию отправил модератор, босс или админ
+    user_role = dict(user).get('role') if user else ''
+    if user_role not in ['moderator', 'boss', 'superadmin']:
+        raise HTTPException(403, "Нет прав на модерацию")
+
+    mod_fio = dict(user).get('fio', 'Модератор') if user else 'Модератор'
+
     async with db.conn.execute("SELECT * FROM applications WHERE id = ?", (app_id,)) as cur:
         app_row = await cur.fetchone()
     if not app_row: raise HTTPException(404, "Заявка не найдена")
     app_dict = dict(zip([c[0] for c in cur.description], app_row))
-    user = await db.get_user(tg_id)
-    mod_fio = dict(user).get('fio', 'Модератор') if user else 'Модератор'
 
     try:
         if new_status == 'approved':
             await db.conn.execute(
                 "UPDATE applications SET status = ?, approved_by = ?, approved_by_id = ? WHERE id = ?",
-                (new_status, mod_fio, tg_id, app_id))
+                (new_status, mod_fio, real_tg_id, app_id))
         else:
             await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
 
@@ -203,7 +212,6 @@ async def get_active_app(tg_id: int):
     user = await db.get_user(real_tg_id)
     if not user: return []
     role = dict(user).get('role')
-    if role in ['superadmin', 'boss', 'moderator']: return []
 
     teams_dict = await fetch_teams_dict()
     async with db.conn.execute(
@@ -215,16 +223,23 @@ async def get_active_app(tg_id: int):
         app_dict = dict(zip([col[0] for col in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
         await enrich_app_with_members_data(app_dict)
+
         involved = False
 
-        if role == 'foreman' and app_dict['foreman_id'] == real_tg_id: involved = True
-        if role in ['worker', 'foreman']:
+        # 1. Если пользователь сам создал эту заявку (Прораб, Босс, Админ)
+        if app_dict['foreman_id'] == real_tg_id:
+            involved = True
+
+        # 2. Если пользователь в составе выбранной бригады
+        if role in ['worker', 'foreman', 'boss', 'superadmin', 'moderator']:
             async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_user_id = ?", (real_tg_id,)) as cur:
                 tm_row = await cur.fetchone()
                 if tm_row and tm_row[0]:
                     t_ids = [int(x) for x in str(app_dict['team_id']).split(',') if x.strip().isdigit()]
                     if tm_row[0] in t_ids: involved = True
-        if role in ['driver']:
+
+        # 3. Если пользователь - водитель техники, которая участвует в наряде
+        if role in ['driver', 'boss', 'superadmin', 'moderator']:
             async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (real_tg_id,)) as cur:
                 eq_row = await cur.fetchone()
                 if eq_row:
@@ -239,6 +254,7 @@ async def get_active_app(tg_id: int):
                                     app_dict['my_equip_is_freed'] = e.get('is_freed', False)
                         except:
                             pass
+
         if involved: result.append(app_dict)
     return result
 
@@ -260,6 +276,7 @@ async def get_my_apps(tg_id: int):
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
         await enrich_app_with_members_data(app_dict)
+
         eq_data_str = app_dict.get('equipment_data', '')
         equip_text, equip_list = "", []
         if eq_data_str:
@@ -272,18 +289,27 @@ async def get_my_apps(tg_id: int):
         app_dict['formatted_equip'] = equip_text or "Не требуется"
 
         involved = False
-        if role in ['worker', 'foreman']:
+
+        # 1. Является создателем
+        if app_dict['foreman_id'] == real_tg_id:
+            involved = True
+
+        # 2. Является участником бригады
+        if role in ['worker', 'foreman', 'boss', 'superadmin', 'moderator']:
             async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_user_id = ?", (real_tg_id,)) as cur:
                 tm_row = await cur.fetchone()
                 if tm_row and tm_row[0]:
                     t_ids = [int(x) for x in str(app_dict['team_id']).split(',') if x.strip().isdigit()]
                     if tm_row[0] in t_ids: involved = True
-        if role in ['driver']:
+
+        # 3. Водитель привязанной техники
+        if role in ['driver', 'boss', 'superadmin', 'moderator']:
             async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (real_tg_id,)) as cur:
                 eq_row = await cur.fetchone()
                 if eq_row:
                     my_eq_id = eq_row[0]
                     if any(e['id'] == my_eq_id for e in equip_list): involved = True
+
         if involved: result.append(app_dict)
     return result
 
@@ -344,6 +370,6 @@ async def free_app_team(app_id: int, tg_id: int = Form(...)):
     fio = dict(user).get('fio', '') if user else ''
     await db.add_log(real_tg_id, fio, f"Освободил бригаду на объекте {obj_addr}")
     await notify_users(["report_group"],
-                       f"🟢 <b>Бригада свободна</b>\nПрораб {fio} завершил работу на объекте:\n📍 {obj_addr}",
+                       f"🟢 <b>Бригада свободна</b>\nОтветственный {fio} завершил работу на объекте:\n📍 {obj_addr}",
                        "dashboard")
     return {"status": "ok"}

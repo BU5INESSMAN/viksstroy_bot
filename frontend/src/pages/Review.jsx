@@ -109,6 +109,9 @@ export default function Review() {
         ? approvedApps.filter(a => a.date_target === publishDateFilter && a.status === 'approved')
         : approvedApps.filter(a => a.status === 'approved');
 
+    // Руководители и Админы тоже могут модерировать
+    const canModerate = ['moderator', 'boss', 'superadmin'].includes(role);
+
     const renderAppCard = (app, statusType) => {
         let equipList = [];
         if (app.equipment_data) {
@@ -259,26 +262,27 @@ export default function Review() {
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
                                     <div>
-                                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">👥 Состав на выезд</label>
-
-                                        <div className="flex flex-wrap gap-2">
-                                            {selectedApp.members_data && selectedApp.members_data.length > 0 ? (
-                                                selectedApp.members_data.map(m => (
-                                                    <button
-                                                        type="button"
-                                                        key={m.id}
-                                                        onClick={() => { setSelectedApp(null); openProfile(m.tg_user_id, 'member', m.id); }}
-                                                        className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-gray-200 dark:border-gray-600 rounded-lg text-sm transition flex items-center shadow-sm"
-                                                    >
-                                                        👤 {m.fio}
-                                                    </button>
-                                                ))
-                                            ) : (
-                                                <p className="text-gray-500 font-medium">Только техника</p>
-                                            )}
-                                        </div>
-                                        {selectedApp.is_team_freed === 1 && <p className="text-emerald-500 text-xs font-bold mt-2">Бригада свободна ✅</p>}
+                                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">👥 Бригада</label>
+                                        <p className={`font-medium ${selectedApp.is_team_freed === 1 ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
+                                            {selectedApp.team_name || 'Только техника'}
+                                        </p>
+                                        {selectedApp.is_team_freed === 1 ? <p className="text-emerald-500 text-xs font-bold mt-1">Свободна ✅</p> : null}
                                     </div>
+
+                                    {selectedApp.members_data && selectedApp.members_data.length > 0 && (
+                                        <div className="flex flex-wrap gap-2 mt-1">
+                                            {selectedApp.members_data.map(m => (
+                                                <button
+                                                    type="button"
+                                                    key={m.id}
+                                                    onClick={() => { setSelectedApp(null); openProfile(m.tg_user_id, 'member', m.id); }}
+                                                    className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-gray-200 dark:border-gray-600 rounded-lg text-sm transition flex items-center shadow-sm"
+                                                >
+                                                    👤 {m.fio}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
@@ -300,16 +304,16 @@ export default function Review() {
                                 <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">💬 Комментарий</label><p className="font-medium text-gray-800 dark:text-gray-100">{selectedApp.comment || 'Нет'}</p></div>
 
                                 <div className="flex space-x-3 pt-4 border-t dark:border-gray-700">
-                                    {selectedApp.status === 'waiting' && role === 'moderator' && (
+                                    {selectedApp.status === 'waiting' && canModerate && (
                                         <>
                                             <button onClick={() => handleReviewAction('rejected')} className="w-1/2 bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-200 transition">❌ Отклонить</button>
                                             <button onClick={() => handleReviewAction('approved')} className="w-1/2 bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-md hover:bg-emerald-600 transition">✅ Одобрить</button>
                                         </>
                                     )}
-                                    {selectedApp.status === 'approved' && role === 'moderator' && (
+                                    {selectedApp.status === 'approved' && canModerate && (
                                         <button onClick={() => handleReviewAction('rejected')} className="w-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-200 transition">🔙 Отозвать заявку</button>
                                     )}
-                                    {selectedApp.status === 'published' && role === 'moderator' && (
+                                    {selectedApp.status === 'published' && canModerate && (
                                         <button onClick={() => handleReviewAction('completed')} className="w-full bg-gray-800 text-white dark:bg-gray-600 py-3 rounded-xl font-bold hover:bg-gray-900 transition shadow-md">🏁 Отменить / Завершить наряд</button>
                                     )}
                                 </div>
