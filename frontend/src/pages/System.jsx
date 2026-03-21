@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 
 export default function System() {
-    const { openProfile } = useOutletContext();
+    const { openProfile } = useOutletContext(); // ВОЗВРАЩЕНО: Контекст для открытия модалки редактирования пользователя
     const role = localStorage.getItem('user_role') || 'Гость';
     const tgId = localStorage.getItem('tg_id') || '0';
 
@@ -13,8 +13,10 @@ export default function System() {
         auto_publish_time: '',
         foreman_reminder_time: '',
         foreman_reminder_weekends: false,
-        auto_complete_time: '' // Новое поле
+        auto_complete_time: ''
     });
+
+    const [testPlatform, setTestPlatform] = useState('all');
 
     const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
 
@@ -27,8 +29,8 @@ export default function System() {
                 setSettings({
                     auto_publish_time: res.data.auto_publish_time || '',
                     foreman_reminder_time: res.data.foreman_reminder_time || '',
-                    foreman_reminder_weekends: res.data.foreman_reminder_weekends === 'true',
-                    auto_complete_time: res.data.auto_complete_time || '' // Загружаем новое поле
+                    foreman_reminder_weekends: res.data.foreman_reminder_weekends === '1' || res.data.foreman_reminder_weekends === 'true',
+                    auto_complete_time: res.data.auto_complete_time || ''
                 });
             }).catch(() => {});
         }
@@ -45,7 +47,7 @@ export default function System() {
                 auto_publish_time: settings.auto_publish_time,
                 foreman_reminder_time: settings.foreman_reminder_time,
                 foreman_reminder_weekends: settings.foreman_reminder_weekends ? '1' : '0',
-                auto_complete_time: settings.auto_complete_time, // Сохраняем новое поле
+                auto_complete_time: settings.auto_complete_time,
                 tg_id: tgId
             }, {
                 headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
@@ -60,9 +62,9 @@ export default function System() {
         try {
             const formData = new FormData();
             formData.append('tg_id', tgId);
-            formData.append('platform', 'all');
+            formData.append('platform', testPlatform);
             await axios.post('/api/system/test_notification', formData);
-            alert("Тестовое уведомление отправлено!");
+            alert("Тестовые уведомления (анкета и проверка ролей) успешно отправлены!");
         } catch (err) {
             alert("Ошибка отправки теста.");
         }
@@ -91,7 +93,6 @@ export default function System() {
                         <input type="time" name="auto_publish_time" value={settings.auto_publish_time} onChange={handleSettingChange} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                     </div>
 
-                    {/* НОВОЕ ПОЛЕ АВТОЗАВЕРШЕНИЯ */}
                     <div>
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Авто-завершение нарядов</h3>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Система переведет активные наряды в статус "Ожидает отчета" и запросит табель у прораба.</p>
@@ -111,25 +112,48 @@ export default function System() {
                         <label className="ml-2 text-sm font-medium text-gray-900 dark:text-gray-300">Включить напоминания по выходным</label>
                     </div>
 
-                    <button onClick={saveSettings} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-5 py-2.5 focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800 transition-colors flex items-center justify-center gap-2">
-                        <span>💾</span> Сохранить настройки
-                    </button>
-
-                    <button onClick={testNotification} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium rounded-lg text-sm px-5 py-2.5 border border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2">
-                        <span>🧪</span> Отправить тестовое уведомление
+                    <button onClick={saveSettings} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-5 py-3 focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800 transition-colors flex items-center justify-center gap-2">
+                        <span>💾</span> Сохранить настройки автоматизации
                     </button>
                 </div>
             </div>
 
-            {/* ТАБЛИЦЫ */}
+            {/* ВОЗВРАЩЕНО: БЛОК ТЕСТИРОВАНИЯ АНКЕТ И РОЛЕЙ */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
-                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">👥</span> Пользователи системы</h2>
+                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
+                    <span className="text-2xl mr-2">🧪</span> Отладка и тестирование
+                </h2>
+                <div className="space-y-4">
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Платформа для отправки тестов (анкет и ролей)</label>
+                        <select value={testPlatform} onChange={(e) => setTestPlatform(e.target.value)} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
+                            <option value="all">Все платформы (MAX + Telegram)</option>
+                            <option value="max">Только MAX</option>
+                            <option value="telegram">Только Telegram</option>
+                        </select>
+                    </div>
+                    <button onClick={testNotification} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium rounded-lg text-sm px-5 py-3 border border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2">
+                        <span>🚀</span> Запустить тест анкет и ролей (Уведомления)
+                    </button>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                        * Нажатие на эту кнопку сгенерирует тестовую заявку-анкету и разошлет проверочные системные уведомления для ролей.
+                    </p>
+                </div>
+            </div>
+
+            {/* ТАБЛИЦА ПОЛЬЗОВАТЕЛЕЙ (С ВОЗВРАЩЕННЫМ КЛИКОМ ДЛЯ РЕДАКТИРОВАНИЯ) */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
+                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
+                    <span className="text-2xl mr-2">👥</span> Пользователи системы
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Нажмите на пользователя, чтобы изменить его роль или заблокировать.</p>
                 <div className="overflow-x-auto">
                     <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
                         <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700"><tr><th className="px-6 py-3">ФИО</th><th className="px-6 py-3">Роль</th><th className="px-6 py-3">Платформа</th></tr></thead>
                         <tbody>
                             {users.map((u) => (
-                                <tr key={u.user_id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50">
+                                /* ВОЗВРАЩЕНО: onClick={() => openProfile(u)} и класс cursor-pointer */
+                                <tr key={u.user_id} onClick={() => openProfile(u)} className="cursor-pointer bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{u.fio}</td>
                                     <td className="px-6 py-4"><span className="bg-blue-100 text-blue-800 text-xs font-medium mr-2 px-2.5 py-0.5 rounded dark:bg-blue-900 dark:text-blue-300">{roleNames[u.role] || u.role}</span></td>
                                     <td className="px-6 py-4">{u.user_id > 0 ? 'Telegram' : 'MAX'}</td>
@@ -140,6 +164,7 @@ export default function System() {
                 </div>
             </div>
 
+            {/* ЖУРНАЛ ДЕЙСТВИЙ */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
                 <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📜</span> Журнал действий системы</h2>
                 <div className="overflow-x-auto">
