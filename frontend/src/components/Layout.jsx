@@ -150,7 +150,6 @@ export default function Layout() {
 
     return (
         <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
-            {/* ОГРОМНЫЙ pt-16 ДЛЯ TMA, чтобы панель Telegram не перекрывала интерфейс */}
             <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 ${isTMA ? 'pt-16' : 'pt-4'}`}>
                 {realRole && (
                     <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-50">
@@ -178,7 +177,6 @@ export default function Layout() {
                                 <div className="fixed inset-0 z-[90]" onClick={() => setIsMenuOpen(false)}></div>
                                 <div className="absolute top-full right-0 mt-3 w-56 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 z-[100] overflow-hidden transition-all origin-top-right">
                                     <div className="flex flex-col py-2">
-                                        {/* Кнопка Профиль убрана отсюда, теперь она внизу */}
                                         <button onClick={() => { setIsMenuOpen(false); navigate('/guide'); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">📖</span> Инструкция</button>
                                         <button onClick={() => { setIsMenuOpen(false); navigate('/updates'); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">🚀</span> Обновления</button>
                                         <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" onClick={() => setIsMenuOpen(false)} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">💬</span> Техподдержка</a>
@@ -212,144 +210,162 @@ export default function Layout() {
                 {isModOrBoss && <button onClick={() => navigate('/review')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/review' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5 relative">📋</span><span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Заявки</span></button>}
                 {isModOrBoss && <button onClick={() => navigate('/system')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/system' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">⚙️</span><span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Система</span></button>}
 
-                {/* НОВАЯ КНОПКА ПРОФИЛЯ */}
                 <button onClick={() => openProfile(tgId)} className={`flex flex-col items-center pb-2 w-full transition-colors ${isProfileModalOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
                     <span className="text-2xl mb-0.5">👤</span>
                     <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Профиль</span>
                 </button>
             </div>
 
+            {/* МОДАЛЬНОЕ ОКНО ПРОФИЛЯ */}
             {isProfileModalOpen && profileData && (
-                <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm"><div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24"><div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden transition-colors"><div className="bg-gradient-to-r from-blue-600 to-blue-800 dark:from-blue-800 dark:to-blue-900 px-6 py-8 text-white relative"><button onClick={() => setProfileModalOpen(false)} className="absolute top-4 right-4 text-white text-3xl font-bold leading-none">&times;</button><div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-6">
-                    <label className="relative group cursor-pointer block">
-                        <div className="w-24 h-24 rounded-full border-4 border-white shadow-lg bg-gray-200 dark:bg-gray-700 bg-cover bg-center overflow-hidden" style={{ backgroundImage: profileData.avatar_url ? `url(${profileData.avatar_url})` : 'none' }}>{!profileData.avatar_url && <span className="flex items-center justify-center w-full h-full text-4xl text-gray-400">👤</span>}</div>
-                        <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"><span className="text-xs font-bold text-white text-center px-2">Изменить</span></div>
-                        <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-                    </label>
-                <div className="text-center sm:text-left"><h3 className="text-2xl font-bold">{profileData.fio}</h3><p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p></div></div></div><div className="p-6 space-y-6">
+                <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm">
+                    <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
+                        <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden transition-colors">
 
-                {/* КОНТАКТЫ ПОЛЬЗОВАТЕЛЯ (ВИДНО ВСЕМ) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b dark:border-gray-700 pb-6">
-                    <div className={`flex items-center px-4 py-3 rounded-xl border ${profileData.links.has_tg ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 shadow-sm'}`}>
-                        <span className="text-2xl mr-3">✈️</span>
-                        <div className="w-full">
-                            <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wider">Telegram</p>
-                            {profileData.links.has_tg ? (
-                                <a href={`tg://user?id=${profileData.links.tg_account_id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline block mt-0.5">
-                                    Написать в ЛС
-                                </a>
-                            ) : (
-                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500 mt-0.5">Не привязан</p>
-                            )}
-                        </div>
-                    </div>
+                            <div className="bg-gradient-to-r from-blue-600 to-blue-800 dark:from-blue-800 dark:to-blue-900 px-6 py-8 text-white relative">
+                                <button onClick={() => setProfileModalOpen(false)} className="absolute top-4 right-4 text-white text-3xl font-bold leading-none">&times;</button>
+                                <div className="flex flex-col sm:flex-row items-center sm:items-start space-y-4 sm:space-y-0 sm:space-x-6">
+                                    <label className="relative group cursor-pointer block">
+                                        <div className="w-24 h-24 rounded-full border-4 border-white shadow-lg bg-gray-200 dark:bg-gray-700 bg-cover bg-center overflow-hidden" style={{ backgroundImage: profileData.avatar_url ? `url(${profileData.avatar_url})` : 'none' }}>
+                                            {!profileData.avatar_url && <span className="flex items-center justify-center w-full h-full text-4xl text-gray-400">👤</span>}
+                                        </div>
+                                        <div className="absolute inset-0 bg-black/50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <span className="text-xs font-bold text-white text-center px-2">Изменить</span>
+                                        </div>
+                                        <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                                    </label>
+                                    <div className="text-center sm:text-left">
+                                        <h3 className="text-2xl font-bold">{profileData.fio}</h3>
+                                        <p className="text-blue-200 uppercase tracking-wide text-sm font-semibold mt-1">{roleNames[profileData.role]}</p>
+                                    </div>
+                                </div>
+                            </div>
 
-                    <div className={`flex items-center px-4 py-3 rounded-xl border ${profileData.links.has_max ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 shadow-sm'}`}>
-                        <span className="text-2xl mr-3">📱</span>
-                        <div className="w-full">
-                            <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wider">MAX</p>
-                            {profileData.links.has_max ? (
-                                <>
-                                    <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">Привязан (ID: {profileData.links.max_account_id})</p>
-                                    {profileData.max_invite_link ? (
-                                        <a href={profileData.max_invite_link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline block mt-0.5">
-                                            Ссылка на диалог
-                                        </a>
-                                    ) : (
-                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Ссылка не привязана</p>
-                                    )}
-                                </>
-                            ) : (
-                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500 mt-0.5">Не привязан</p>
-                            )}
+                            <div className="p-6 space-y-6">
+                                {/* КОНТАКТЫ ПОЛЬЗОВАТЕЛЯ */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b dark:border-gray-700 pb-6">
+                                    <div className={`flex items-center px-4 py-3 rounded-xl border ${profileData.links.has_tg ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 shadow-sm'}`}>
+                                        <span className="text-2xl mr-3">✈️</span>
+                                        <div className="w-full">
+                                            <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wider">Telegram</p>
+                                            {profileData.links.has_tg ? (
+                                                <a href={`tg://user?id=${profileData.links.tg_account_id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline block mt-0.5">
+                                                    Написать в ЛС
+                                                </a>
+                                            ) : (
+                                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500 mt-0.5">Не привязан</p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    <div className={`flex items-center px-4 py-3 rounded-xl border ${profileData.links.has_max ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 shadow-sm'}`}>
+                                        <span className="text-2xl mr-3">📱</span>
+                                        <div className="w-full">
+                                            <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wider">MAX</p>
+                                            {profileData.links.has_max ? (
+                                                <>
+                                                    <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">Привязан (ID: {profileData.links.max_account_id})</p>
+                                                    {profileData.max_invite_link ? (
+                                                        <a href={profileData.max_invite_link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline block mt-0.5">
+                                                            Ссылка на диалог
+                                                        </a>
+                                                    ) : (
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Ссылка не привязана</p>
+                                                    )}
+                                                </>
+                                            ) : (
+                                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500 mt-0.5">Не привязан</p>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* УПРАВЛЕНИЕ ПРОФИЛЕМ */}
+                                {(canEditUsers || isMyProfile) && (
+                                    <div className="space-y-4">
+                                        <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Данные профиля</h4>
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label>
+                                                <input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" />
+                                            </div>
+                                            <div>
+                                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label>
+                                                <input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" />
+                                            </div>
+
+                                            <div className="sm:col-span-2">
+                                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Ссылка-приглашение MAX (Для диалога)</label>
+                                                <input type="text" placeholder="Например: https://max.ru/invite/..." value={editProfile.max_invite_link} onChange={e => setEditProfile({...editProfile, max_invite_link: e.target.value})} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none text-sm" />
+                                                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">* Добавьте сюда вашу прямую ссылку, чтобы коллеги могли написать вам в мессенджер MAX.</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ПРИВЯЗКА УСТРОЙСТВ */}
+                                {isMyProfile && profileData.links && (
+                                    <div className="mt-6 pt-4 border-t dark:border-gray-700">
+                                        <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider mb-3">Привязка мессенджеров</h4>
+
+                                        {!profileData.links.has_max && (
+                                            <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+                                                <p className="text-xs text-gray-600 dark:text-gray-300">
+                                                    <span className="font-bold">MAX:</span> Для привязки отправьте <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-800 dark:text-gray-200 font-mono">/web</code> в MAX боте и введите код ниже.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {!profileData.links.has_tg && (
+                                            <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+                                                <p className="text-xs text-gray-600 dark:text-gray-300">
+                                                    <span className="font-bold">Telegram:</span> Для привязки отправьте <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-800 dark:text-gray-200 font-mono">/web</code> в <a href="https://t.me/viksstroy_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 underline font-medium">Telegram боте</a> и введите код ниже.
+                                                </p>
+                                            </div>
+                                        )}
+
+                                        {(!profileData.links.has_max || !profileData.links.has_tg) && (
+                                            <div className="flex space-x-2 mb-4">
+                                                <input type="text" maxLength={6} value={linkCode} onChange={e => setLinkCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="w-full px-4 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg outline-none font-mono tracking-widest text-center shadow-inner" />
+                                                <button onClick={handleLinkAccount} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-bold text-sm transition shadow-md whitespace-nowrap active:scale-95">Привязать</button>
+                                            </div>
+                                        )}
+
+                                        {profileData.links.is_linked && (
+                                            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+                                                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Привязанные устройства:</p>
+                                                <div className="flex flex-col space-y-2">
+                                                    {profileData.links.has_max && (
+                                                        <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+                                                            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">📱 Мессенджер MAX</span>
+                                                            <button onClick={() => handleUnlinkPlatform('max')} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1 rounded text-xs font-bold transition">Отвязать</button>
+                                                        </div>
+                                                    )}
+                                                    {profileData.links.has_tg && (
+                                                        <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
+                                                            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">✈️ Telegram</span>
+                                                            <button onClick={() => handleUnlinkPlatform('tg')} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1 rounded text-xs font-bold transition">Отвязать</button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* КНОПКИ СОХРАНЕНИЯ */}
+                                {(canEditUsers || isMyProfile) && (
+                                    <div className="flex justify-between items-center pt-4 mt-2 border-t dark:border-gray-700">
+                                        {canEditUsers && !isMyProfile ? (
+                                            <button onClick={handleDeleteUser} className="bg-red-50 hover:bg-red-100 text-red-600 font-bold text-sm px-4 py-2.5 rounded-lg transition">🗑 Удалить профиль</button>
+                                        ) : <div></div>}
+                                        <button onClick={handleSaveProfile} className="bg-blue-600 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-md hover:bg-blue-700 transition">Сохранить</button>
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>
-
-                {/* УПРАВЛЕНИЕ ПРОФИЛЕМ (ВИДНО АДМИНАМ ИЛИ ВЛАДЕЛЬЦУ ПРОФИЛЯ) */}
-                {(canEditUsers || isMyProfile) && (
-                    <div className="space-y-4">
-                        <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Данные профиля</h4>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label>
-                                <input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label>
-                                <input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" />
-                            </div>
-
-                            {/* Поле для ввода ссылки MAX */}
-                            <div className="sm:col-span-2">
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Ссылка-приглашение MAX (Для диалога)</label>
-                                <input type="text" placeholder="Например: https://max.ru/invite/..." value={editProfile.max_invite_link} onChange={e => setEditProfile({...editProfile, max_invite_link: e.target.value})} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none text-sm" />
-                                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">* Добавьте сюда вашу прямую ссылку, чтобы коллеги могли написать вам в мессенджер MAX.</p>
-                            </div>
-                        </div>
-                    </div>
-                )}
-
-                {/* ПРИВЯЗКА УСТРОЙСТВ */}
-                {isMyProfile && profileData.links && (
-                    <div className="mt-6 pt-4 border-t dark:border-gray-700">
-                        <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider mb-3">Привязка мессенджеров</h4>
-
-                        {!profileData.links.has_max && (
-                            <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
-                                <p className="text-xs text-gray-600 dark:text-gray-300">
-                                    <span className="font-bold">MAX:</span> Для привязки отправьте <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-800 dark:text-gray-200 font-mono">/web</code> в MAX боте и введите код ниже.
-                                </p>
-                            </div>
-                        )}
-
-                        {!profileData.links.has_tg && (
-                            <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
-                                <p className="text-xs text-gray-600 dark:text-gray-300">
-                                    <span className="font-bold">Telegram:</span> Для привязки отправьте <code className="bg-gray-200 dark:bg-gray-700 px-1 py-0.5 rounded text-gray-800 dark:text-gray-200 font-mono">/web</code> в <a href="https://t.me/viksstroy_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:text-blue-600 underline font-medium">Telegram боте</a> и введите код ниже.
-                                </p>
-                            </div>
-                        )}
-
-                        {(!profileData.links.has_max || !profileData.links.has_tg) && (
-                            <div className="flex space-x-2 mb-4">
-                                <input type="text" maxLength={6} value={linkCode} onChange={e => setLinkCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="w-full px-4 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-lg outline-none font-mono tracking-widest text-center shadow-inner" />
-                                <button onClick={handleLinkAccount} className="bg-green-600 hover:bg-green-700 text-white px-5 py-2 rounded-lg font-bold text-sm transition shadow-md whitespace-nowrap active:scale-95">Привязать</button>
-                            </div>
-                        )}
-
-                        {profileData.links.is_linked && (
-                            <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
-                                <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Привязанные устройства:</p>
-                                <div className="flex flex-col space-y-2">
-                                    {profileData.links.has_max && (
-                                        <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
-                                            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">📱 Мессенджер MAX</span>
-                                            <button onClick={() => handleUnlinkPlatform('max')} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1 rounded text-xs font-bold transition">Отвязать</button>
-                                        </div>
-                                    )}
-                                    {profileData.links.has_tg && (
-                                        <div className="flex justify-between items-center bg-gray-50 dark:bg-gray-800 px-4 py-2.5 rounded-lg border border-gray-200 dark:border-gray-600 shadow-sm">
-                                            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">✈️ Telegram</span>
-                                            <button onClick={() => handleUnlinkPlatform('tg')} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1 rounded text-xs font-bold transition">Отвязать</button>
-                                        </div>
-                                    )}
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                {/* КНОПКИ СОХРАНЕНИЯ (ВИДНО АДМИНАМ ИЛИ ВЛАДЕЛЬЦУ ПРОФИЛЯ) */}
-                {(canEditUsers || isMyProfile) && (
-                    <div className="flex justify-between items-center pt-4 mt-2 border-t dark:border-gray-700">
-                        {canEditUsers && !isMyProfile ? (
-                            <button onClick={handleDeleteUser} className="bg-red-50 hover:bg-red-100 text-red-600 font-bold text-sm px-4 py-2.5 rounded-lg transition">🗑 Удалить профиль</button>
-                        ) : <div></div>}
-                        <button onClick={handleSaveProfile} className="bg-blue-600 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-md hover:bg-blue-700 transition">Сохранить</button>
-                    </div>
-                )}
-                </div></div></div></div></div>
             )}
         </div>
     );
