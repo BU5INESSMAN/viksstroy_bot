@@ -35,12 +35,12 @@ const KanbanCol = ({ title, icon, colorClass, apps, isOpen, toggleOpen, onAppCli
             </button>
             <div className={`p-3 space-y-3 bg-gray-50 dark:bg-gray-900/30 min-h-[100px] ${isOpen ? 'block' : 'hidden lg:block'}`}>
                 {displayedApps.map(a => {
-                    let equipText = '';
+                    let equipList = [];
                     if (a.equipment_data) {
                         try {
-                            const eqList = JSON.parse(a.equipment_data);
-                            if (eqList && eqList.length > 0) {
-                                equipText = eqList.map(e => e.name).join(', ');
+                            const parsed = JSON.parse(a.equipment_data);
+                            if (parsed && parsed.length > 0) {
+                                equipList = parsed;
                             }
                         } catch(e) {}
                     }
@@ -50,7 +50,17 @@ const KanbanCol = ({ title, icon, colorClass, apps, isOpen, toggleOpen, onAppCli
                             <p className="font-bold text-gray-800 dark:text-gray-100 mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400">{a.object_address}</p>
                             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">📅 {a.date_target}</p>
                             <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1">👥 {a.team_name || 'Без бригады'}</p>
-                            {equipText && <p className="text-xs text-indigo-600 dark:text-indigo-400 truncate">🚜 {equipText}</p>}
+
+                            {/* Отображение техники списком без водителя */}
+                            {equipList.length > 0 && (
+                                <div className="mt-1.5 space-y-0.5">
+                                    {equipList.map((eq, idx) => (
+                                        <p key={idx} className="text-xs text-indigo-600 dark:text-indigo-400 truncate">
+                                            🚜 {eq.name.split('(')[0].trim()}
+                                        </p>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     );
                 })}
