@@ -52,13 +52,19 @@ const KanbanCol = ({ title, icon, colorClass, apps, isOpen, toggleOpen, onAppCli
                             <p className="text-xs text-gray-600 dark:text-gray-400 mb-1.5 font-medium">👷‍♂️ {a.foreman_name || 'Неизвестный прораб'}</p>
 
                             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">📅 {a.date_target}</p>
-                            <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1">👥 {a.team_name || 'Без бригады'}</p>
 
+                            {/* Отображение бригады (с зачеркиванием если свободна) */}
+                            <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1">
+                                👥 <span className={a.is_team_freed ? 'line-through text-gray-400' : 'font-medium'}>{a.team_name || 'Без бригады'}</span>
+                                {a.is_team_freed && <span className="ml-1 text-[10px] text-emerald-500 font-bold">Свободна</span>}
+                            </p>
+
+                            {/* Отображение техники списком (с зачеркиванием свободных) */}
                             {equipList.length > 0 && (
                                 <div className="mt-1.5 space-y-0.5">
                                     {equipList.map((eq, idx) => (
-                                        <p key={idx} className="text-xs text-indigo-600 dark:text-indigo-400 truncate">
-                                            🚜 {eq.name.split('(')[0].trim()}
+                                        <p key={idx} className={`text-xs truncate ${eq.is_freed ? 'text-gray-400 line-through' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                                            🚜 {eq.name.split('(')[0].trim()} {eq.is_freed && '✅'}
                                         </p>
                                     ))}
                                 </div>
@@ -82,8 +88,6 @@ export default function Home() {
     const smartDates = getSmartDates();
     const tgId = localStorage.getItem('tg_id') || '0';
     const role = localStorage.getItem('user_role') || 'Гость';
-
-    // Подхватываем openProfile из родительского Layout
     const { isGlobalCreateAppOpen, setGlobalCreateAppOpen, openProfile } = useOutletContext();
 
     const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], kanban_apps: [], recent_addresses: [] });
@@ -96,6 +100,9 @@ export default function Home() {
 
     const [appForm, setAppForm] = useState({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '' });
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
+
+    // Состояние для окна подтверждения "Свободен"
+    const [freeModal, setFreeModal] = useState({ isOpen: false, type: '', app: null, inputValue: '' });
 
     const fetchData = () => {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
@@ -225,16 +232,6 @@ export default function Home() {
         }
     };
 
-    const handleFreeEquipment = async () => {
-        if (!window.confirm("Завершить работу на объекте и освободить свою технику?")) return;
-        try {
-            const fd = new FormData(); fd.append('tg_id', tgId);
-            await axios.post('/api/equipment/set_free', fd);
-            alert("Техника успешно переведена в статус 'Свободна'!");
-            fetchData();
-        } catch (e) { alert("Ошибка при освобождении техники."); }
-    };
-
     const openAppModalFromKanban = (app) => {
         setAppForm({
             id: app.id,
@@ -250,6 +247,29 @@ export default function Home() {
             foreman_name: app.foreman_name
         });
         setGlobalCreateAppOpen(true);
+    };
+
+    // УПРАВЛЕНИЕ ОСВОБОЖДЕНИЕМ (Техники и Бригад)
+    const openFreeModal = (type, app) => {
+        setFreeModal({ isOpen: true, type, app, inputValue: '' });
+    };
+
+    const executeFree = async () => {
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            if (freeModal.type === 'equipment') {
+                await axios.post(`/api/applications/${freeModal.app.id}/free_equipment`, fd);
+                alert("Успешно! Вы переведены в статус 'Свободен'.");
+            } else if (freeModal.type === 'team') {
+                await axios.post(`/api/applications/${freeModal.app.id}/free_team`, fd);
+                alert("Успешно! Бригада переведена в статус 'Свободна'.");
+            }
+            setFreeModal({ isOpen: false, type: '', app: null, inputValue: '' });
+            fetchData();
+        } catch(e) {
+            alert(e.response?.data?.detail || "Ошибка при освобождении.");
+        }
     };
 
     const todayYYYYMMDD = getTodayStr();
@@ -284,26 +304,52 @@ export default function Home() {
                         {activeApps.length > 0 ? (
                             <div className="space-y-4">
                                 {activeApps.map(a => {
-                                    let activeEquipText = 'Не требуется';
-                                    if (a.equipment_data) { try { const eqList = JSON.parse(a.equipment_data); if (eqList && eqList.length > 0) activeEquipText = eqList.map(e => `${e.name} (${e.time_start}:00-${e.time_end}:00)`).join(', '); } catch(e){} }
+                                    let activeEquipList = [];
+                                    if (a.equipment_data) { try { activeEquipList = JSON.parse(a.equipment_data) || []; } catch(e){} }
 
                                     return (
                                         <div key={a.id} className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-sm space-y-2 text-gray-800 dark:text-gray-200">
                                             <p><b>Дата:</b> {a.date_target}</p>
                                             <p><b>Объект:</b> {a.object_address}</p>
 
-                                            {/* Интерактивная ссылка на профиль */}
                                             <p><b>Прораб:</b> {a.foreman_id ? (
                                                 <button onClick={() => openProfile(a.foreman_id)} className="text-blue-600 dark:text-blue-400 hover:underline font-bold text-left">{a.foreman_name || 'Неизвестно'}</button>
                                             ) : <span>{a.foreman_name || 'Неизвестно'}</span>}</p>
 
-                                            <p><b>Техника:</b> {activeEquipText}</p>
-                                            <p><b>Бригада:</b> {a.team_name || 'Только техника'}</p>
+                                            <div className="flex flex-wrap items-center gap-1">
+                                                <b className="mr-1">Техника:</b>
+                                                {activeEquipList.length > 0 ? activeEquipList.map((e, idx) => (
+                                                    <span key={idx} className={e.is_freed ? 'line-through text-gray-400' : ''}>
+                                                        {e.name} ({e.time_start}:00-{e.time_end}:00){idx < activeEquipList.length - 1 ? ', ' : ''}
+                                                    </span>
+                                                )) : 'Не требуется'}
+                                            </div>
 
-                                            {role === 'driver' && (
-                                                <button onClick={handleFreeEquipment} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
-                                                    ✅ Готово (Освободить технику)
+                                            <p>
+                                                <b>Бригада:</b> <span className={a.is_team_freed ? 'line-through text-gray-400' : ''}>{a.team_name || 'Только техника'}</span>
+                                            </p>
+
+                                            {/* Кнопки СВОБОДЕН для Водителя и Прораба */}
+                                            {role === 'driver' && !a.my_equip_is_freed && (
+                                                <button onClick={() => openFreeModal('equipment', a)} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
+                                                    ✅ Свободен
                                                 </button>
+                                            )}
+                                            {role === 'driver' && a.my_equip_is_freed && (
+                                                <p className="mt-4 w-full text-center text-emerald-600 dark:text-emerald-400 py-2.5 font-bold bg-emerald-50 dark:bg-emerald-900/10 rounded-lg border border-emerald-100 dark:border-emerald-800">
+                                                    Вы свободны ✅
+                                                </p>
+                                            )}
+
+                                            {role === 'foreman' && a.foreman_id === Number(tgId) && !a.is_team_freed && (
+                                                <button onClick={() => openFreeModal('team', a)} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
+                                                    ✅ Свободен (Освободить бригаду)
+                                                </button>
+                                            )}
+                                            {role === 'foreman' && a.foreman_id === Number(tgId) && a.is_team_freed && (
+                                                <p className="mt-4 w-full text-center text-emerald-600 dark:text-emerald-400 py-2.5 font-bold bg-emerald-50 dark:bg-emerald-900/10 rounded-lg border border-emerald-100 dark:border-emerald-800">
+                                                    Бригада свободна ✅
+                                                </p>
                                             )}
                                         </div>
                                     );
@@ -346,6 +392,36 @@ export default function Home() {
                 </div>
             )}
 
+            {/* МОДАЛЬНОЕ ОКНО "СВОБОДЕН" */}
+            {freeModal.isOpen && (
+                <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+                    <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl relative">
+                        <h3 className="text-2xl font-bold mb-2 dark:text-white">Подтверждение</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                            Для завершения работы и освобождения, напишите слово <b className="text-gray-900 dark:text-white uppercase">свободен</b>:
+                        </p>
+                        <input
+                            type="text"
+                            value={freeModal.inputValue}
+                            onChange={e => setFreeModal({...freeModal, inputValue: e.target.value})}
+                            className="w-full border-2 border-gray-200 focus:border-emerald-500 focus:ring-0 p-4 rounded-xl mb-6 dark:bg-gray-700 dark:border-gray-600 dark:text-white uppercase text-center font-bold tracking-widest outline-none transition-colors"
+                            placeholder="СВОБОДЕН"
+                        />
+                        <div className="flex space-x-3">
+                            <button onClick={() => setFreeModal({isOpen: false, type: '', app: null, inputValue: ''})} className="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition-colors">Отмена</button>
+                            <button
+                                onClick={executeFree}
+                                disabled={freeModal.inputValue.trim().toLowerCase() !== 'свободен'}
+                                className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed disabled:text-gray-500 text-white py-3.5 rounded-xl font-bold transition-colors"
+                            >
+                                Подтвердить
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* МОДАЛЬНОЕ ОКНО СОЗДАНИЯ/ПРОСМОТРА ЗАЯВКИ */}
             {isGlobalCreateAppOpen && (
                 <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
@@ -370,7 +446,6 @@ export default function Home() {
                                             </div>
                                         )}
 
-                                        {/* Блок с кликабельным прорабом внутри модального окна */}
                                         {appForm.id && appForm.foreman_name && (
                                             <div className="mt-4 flex items-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600">
                                                 <span className="text-2xl mr-3">👷‍♂️</span>
@@ -413,7 +488,7 @@ export default function Home() {
                                     <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">🚜 Требуемая техника</label>
                                     {!appForm.isViewOnly && <div className="flex flex-wrap gap-2 mb-2">{data?.equip_categories?.map(cat => (<button key={cat} type="button" onClick={() => setActiveEqCategory(activeEqCategory === cat ? null : cat)} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${activeEqCategory === cat ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50'}`}>{cat}</button>))}</div>}
                                     {activeEqCategory && !appForm.isViewOnly && (<div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600 shadow-inner"><div className="flex flex-wrap gap-2">{data.equipment?.filter(e => e.category === activeEqCategory).map(e => { const st = checkEquipStatus(e); const isSelected = appForm.equipment.some(eq => eq.id === e.id); const displayName = e.driver ? `${e.name} (${e.driver})` : e.name; let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100'; if (st.state === 'repair') btnStyles = 'bg-red-50 border-red-300 text-red-500 cursor-not-allowed opacity-75'; else if (st.state === 'busy') btnStyles = 'bg-yellow-50 border-yellow-300 text-yellow-600 cursor-not-allowed opacity-80'; else if (isSelected) btnStyles = 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm'; return (<button key={e.id} type="button" onClick={() => { if (st.state !== 'free') return alert(st.message); toggleEquipmentSelection(e); }} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${btnStyles}`}>{isSelected && <span className="mr-1.5 font-bold">✓</span>}{st.state === 'repair' && <span className="mr-1.5">🛠</span>}{st.state === 'busy' && <span className="mr-1.5">⏳</span>}{displayName}</button>); })}</div></div>)}
-                                    {appForm.equipment.length > 0 ? (<div className="mt-4 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 shadow-inner"><label className="block text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wide border-b border-indigo-200 dark:border-indigo-800 pb-2 mb-3">Время работы машин:</label>{appForm.equipment.map(eq => (<div key={eq.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-indigo-100 dark:border-indigo-700/50 shadow-sm gap-3"><p className="font-bold text-gray-800 dark:text-gray-200 text-sm">🚜 {eq.name}</p><div className="flex items-center space-x-2"><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">С</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_start} onChange={e => updateEquipmentTime(eq.id, 'time_start', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div><span className="text-gray-400 font-bold">—</span><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">ДО</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_end} onChange={e => updateEquipmentTime(eq.id, 'time_end', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div></div></div>))}</div>) : (appForm.isViewOnly && <p className="text-gray-500 text-sm">Техника не требуется</p>)}
+                                    {appForm.equipment.length > 0 ? (<div className="mt-4 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 shadow-inner"><label className="block text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wide border-b border-indigo-200 dark:border-indigo-800 pb-2 mb-3">Время работы машин:</label>{appForm.equipment.map(eq => (<div key={eq.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-indigo-100 dark:border-indigo-700/50 shadow-sm gap-3"><p className={`font-bold text-sm ${eq.is_freed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}>🚜 {eq.name} {eq.is_freed && '✅'}</p><div className="flex items-center space-x-2"><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">С</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_start} onChange={e => updateEquipmentTime(eq.id, 'time_start', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div><span className="text-gray-400 font-bold">—</span><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">ДО</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_end} onChange={e => updateEquipmentTime(eq.id, 'time_end', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div></div></div>))}</div>) : (appForm.isViewOnly && <p className="text-gray-500 text-sm">Техника не требуется</p>)}
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" disabled={appForm.isViewOnly} value={appForm.comment} onChange={e => handleFormChange('comment', e.target.value)} placeholder="Доп. информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" /></div>

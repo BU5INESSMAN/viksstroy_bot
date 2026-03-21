@@ -12,15 +12,25 @@ from utils import resolve_id, notify_users, execute_app_publish, fetch_teams_dic
 router = APIRouter(tags=["Applications"])
 
 
+# Авто-добавление колонки, если ее нет (чтобы не лезть в SQLite руками)
+async def ensure_is_team_freed():
+    try:
+        await db.conn.execute("ALTER TABLE applications ADD COLUMN is_team_freed INTEGER DEFAULT 0")
+        await db.conn.commit()
+    except:
+        pass
+
+
 @router.post("/api/applications/create")
 async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form("")):
+    await ensure_is_team_freed()
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     fio = dict(user).get('fio', 'Web-Пользователь') if user else "Web-Пользователь"
     await db.conn.execute(
-        "INSERT INTO applications (foreman_id, foreman_name, team_id, equip_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data) VALUES (?, ?, ?, 0, ?, ?, '08', '17', ?, 'waiting', ?, ?)",
+        "INSERT INTO applications (foreman_id, foreman_name, team_id, equip_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed) VALUES (?, ?, ?, 0, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0)",
         (real_tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
     await notify_users(["report_group", "moderator"],
@@ -64,7 +74,6 @@ async def delete_app(app_id: int, tg_id: int = Form(0)):
         raise HTTPException(404, "Заявка не найдена")
 
     try:
-        # Если заявка была одобрена или в работе и у нее есть техника, освобождаем технику (на всякий случай)
         app_dict = dict(zip([c[0] for c in cur.description], app_row))
         if app_dict.get('status') in ['approved', 'published', 'in_progress']:
             if app_dict.get('equipment_data'):
@@ -88,9 +97,10 @@ async def delete_app(app_id: int, tg_id: int = Form(0)):
 
 @router.get("/api/applications/review")
 async def get_review_apps():
+    await ensure_is_team_freed()
     teams_dict = await fetch_teams_dict()
     async with db.conn.execute(
-            "SELECT * FROM applications WHERE status IN ('waiting', 'approved', 'published') ORDER BY id DESC") as cursor:
+            "SELECT * FROM applications WHERE status IN ('waiting', 'approved', 'published', 'in_progress') ORDER BY id DESC") as cursor:
         rows = await cursor.fetchall()
     result = []
     for row in rows:
@@ -174,6 +184,7 @@ async def publish_apps(app_ids: str = Form(...), tg_id: int = Form(0)):
 
 @router.get("/api/applications/active")
 async def get_active_app(tg_id: int):
+    await ensure_is_team_freed()
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     if not user: return []
@@ -198,7 +209,7 @@ async def get_active_app(tg_id: int):
                 if tm_row and tm_row[0]:
                     t_ids = [int(x) for x in str(app_dict['team_id']).split(',') if x.strip().isdigit()]
                     if tm_row[0] in t_ids: involved = True
-        if role == 'driver':
+        if role in ['driver']:
             async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (real_tg_id,)) as cur:
                 eq_row = await cur.fetchone()
                 if eq_row:
@@ -207,7 +218,11 @@ async def get_active_app(tg_id: int):
                     if eq_data_str:
                         try:
                             eq_list = json.loads(eq_data_str)
-                            if any(e['id'] == my_eq_id for e in eq_list): involved = True
+                            for e in eq_list:
+                                if e['id'] == my_eq_id:
+                                    involved = True
+                                    # Передаем фронтенду, свободна ли именно МОЯ техника
+                                    app_dict['my_equip_is_freed'] = e.get('is_freed', False)
                         except:
                             pass
         if involved: result.append(app_dict)
@@ -216,6 +231,7 @@ async def get_active_app(tg_id: int):
 
 @router.get("/api/applications/my")
 async def get_my_apps(tg_id: int):
+    await ensure_is_team_freed()
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     if not user: return []
@@ -255,3 +271,67 @@ async def get_my_apps(tg_id: int):
                     if any(e['id'] == my_eq_id for e in equip_list): involved = True
         if involved: result.append(app_dict)
     return result
+
+
+# ЭНДПОИНТЫ ДЛЯ ОСВОБОЖДЕНИЯ ТЕХНИКИ И БРИГАД
+@router.post("/api/applications/{app_id}/free_equipment")
+async def free_app_equipment(app_id: int, tg_id: int = Form(...)):
+    await ensure_is_team_freed()
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+    if not user: raise HTTPException(403)
+
+    async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (real_tg_id,)) as cur:
+        eq_row = await cur.fetchone()
+    if not eq_row: raise HTTPException(404, "Ваша техника не найдена")
+    my_eq_id = eq_row[0]
+
+    # 1. Меняем статус в общей базе техники
+    await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (my_eq_id,))
+
+    # 2. Меняем статус внутри конкретной заявки
+    async with db.conn.execute("SELECT equipment_data, object_address FROM applications WHERE id = ?",
+                               (app_id,)) as cur:
+        app_row = await cur.fetchone()
+
+    if app_row and app_row[0]:
+        eq_data_str = app_row[0]
+        obj_addr = app_row[1]
+        try:
+            eq_list = json.loads(eq_data_str)
+            for eq in eq_list:
+                if eq['id'] == my_eq_id:
+                    eq['is_freed'] = True
+            new_eq_data = json.dumps(eq_list, ensure_ascii=False)
+            await db.conn.execute("UPDATE applications SET equipment_data = ? WHERE id = ?", (new_eq_data, app_id))
+        except:
+            pass
+
+    await db.conn.commit()
+    fio = dict(user).get('fio', '')
+    await db.add_log(real_tg_id, fio, f"Освободил технику на объекте {obj_addr}")
+    await notify_users(["report_group"],
+                       f"🟢 <b>Техника свободна</b>\nВодитель {fio} завершил работу на объекте:\n📍 {obj_addr}",
+                       "equipment")
+    return {"status": "ok"}
+
+
+@router.post("/api/applications/{app_id}/free_team")
+async def free_app_team(app_id: int, tg_id: int = Form(...)):
+    await ensure_is_team_freed()
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+
+    async with db.conn.execute("SELECT object_address FROM applications WHERE id = ?", (app_id,)) as cur:
+        app_row = await cur.fetchone()
+        obj_addr = app_row[0] if app_row else ""
+
+    await db.conn.execute("UPDATE applications SET is_team_freed = 1 WHERE id = ?", (app_id,))
+    await db.conn.commit()
+
+    fio = dict(user).get('fio', '') if user else ''
+    await db.add_log(real_tg_id, fio, f"Освободил бригаду на объекте {obj_addr}")
+    await notify_users(["report_group"],
+                       f"🟢 <b>Бригада свободна</b>\nПрораб {fio} завершил работу на объекте:\n📍 {obj_addr}",
+                       "dashboard")
+    return {"status": "ok"}

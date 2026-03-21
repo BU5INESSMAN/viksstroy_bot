@@ -37,7 +37,7 @@ const ReviewSection = ({ title, icon, colorClass, titleColorClass, apps, statusT
 export default function Review() {
     const tgId = localStorage.getItem('tg_id') || '0';
     const role = localStorage.getItem('user_role') || 'Гость';
-    const { openProfile } = useOutletContext(); // Подключаем открытие профиля
+    const { openProfile } = useOutletContext();
     const [reviewApps, setReviewApps] = useState([]);
 
     const [selectedApp, setSelectedApp] = useState(null);
@@ -101,11 +101,9 @@ export default function Review() {
 
     const waitingApps = reviewApps.filter(a => a.status === 'waiting');
 
-    // В одобренных показываются одобренные + те, что опубликованы, но дата еще не наступила
     const approvedApps = reviewApps.filter(a => a.status === 'approved' || (a.status === 'published' && a.date_target > todayYYYYMMDD));
 
-    // В работе - те, что опубликованы и дата которых сегодня или в прошлом
-    const publishedApps = reviewApps.filter(a => a.status === 'published' && a.date_target <= todayYYYYMMDD);
+    const publishedApps = reviewApps.filter(a => (a.status === 'published' || a.status === 'in_progress') && a.date_target <= todayYYYYMMDD);
 
     const filteredForPublish = publishDateFilter
         ? approvedApps.filter(a => a.date_target === publishDateFilter && a.status === 'approved')
@@ -125,7 +123,6 @@ export default function Review() {
                 <div className="text-sm space-y-1.5 w-full md:w-3/4">
                     <p><span className="text-gray-500 dark:text-gray-400 uppercase text-[10px] tracking-widest block mb-0.5">Наряд №{app.id} • {app.date_target}</span> <b className="dark:text-white text-base group-hover:text-blue-600 dark:group-hover:text-blue-400">{app.object_address}</b></p>
 
-                    {/* Интерактивная ссылка на профиль прораба (с остановкой всплытия события) */}
                     <p className="text-xs text-gray-600 dark:text-gray-400 mb-1.5 font-medium flex items-center">
                         <span className="mr-1">👷‍♂️</span>
                         {app.foreman_id ? (
@@ -141,14 +138,17 @@ export default function Review() {
                         )}
                     </p>
 
-                    <p><span className="text-gray-500 dark:text-gray-400">Бригада:</span> <b className="dark:text-white">{app.team_name || 'Только техника'}</b></p>
+                    <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1">
+                        👥 <span className={app.is_team_freed ? 'line-through text-gray-400' : 'dark:text-white font-bold'}>{app.team_name || 'Без бригады'}</span>
+                        {app.is_team_freed && <span className="ml-1 text-[10px] text-emerald-500 font-bold">Свободна</span>}
+                    </p>
 
-                    {/* Отображение техники списком */}
+                    {/* Отображение техники списком с зачеркиванием */}
                     {equipList.length > 0 && (
                         <div className="mt-1.5 space-y-0.5">
                             {equipList.map((eq, idx) => (
-                                <p key={idx} className="text-xs text-indigo-600 dark:text-indigo-400 truncate">
-                                    🚜 {eq.name.split('(')[0].trim()}
+                                <p key={idx} className={`text-xs truncate ${eq.is_freed ? 'text-gray-400 line-through' : 'text-indigo-600 dark:text-indigo-400'}`}>
+                                    🚜 {eq.name.split('(')[0].trim()} {eq.is_freed && '✅'}
                                 </p>
                             ))}
                         </div>
@@ -242,7 +242,6 @@ export default function Review() {
                                         <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">📍 Адрес объекта</label>
                                         <p className="font-medium text-gray-800 dark:text-gray-100">{selectedApp.object_address}</p>
 
-                                        {/* Блок с кликабельным прорабом внутри модального окна */}
                                         <div className="mt-4 flex items-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600">
                                             <span className="text-2xl mr-3">👷‍♂️</span>
                                             <div>
@@ -260,7 +259,13 @@ export default function Review() {
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
-                                    <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">👥 Бригада</label><p className="font-medium text-gray-800 dark:text-gray-100">{selectedApp.team_name || 'Только техника'}</p></div>
+                                    <div>
+                                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">👥 Бригада</label>
+                                        <p className={`font-medium ${selectedApp.is_team_freed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
+                                            {selectedApp.team_name || 'Только техника'}
+                                        </p>
+                                        {selectedApp.is_team_freed && <p className="text-emerald-500 text-xs font-bold mt-1">Свободна ✅</p>}
+                                    </div>
                                 </div>
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
@@ -269,7 +274,9 @@ export default function Review() {
                                         <div className="space-y-2">
                                             {JSON.parse(selectedApp.equipment_data).map(eq => (
                                                 <div key={eq.id} className="flex justify-between items-center bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl border border-gray-200 dark:border-gray-600">
-                                                    <span className="font-bold text-blue-600 dark:text-blue-400">{eq.name.split('(')[0].trim()}</span>
+                                                    <span className={`font-bold ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                        {eq.name.split('(')[0].trim()} {eq.is_freed && '✅'}
+                                                    </span>
                                                     <span className="text-xs font-bold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-2 py-1 rounded-md border dark:border-gray-600">⏰ {eq.time_start}:00 - {eq.time_end}:00</span>
                                                 </div>
                                             ))}
