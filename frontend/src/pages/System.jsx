@@ -17,6 +17,7 @@ export default function System() {
     });
 
     const [testPlatform, setTestPlatform] = useState('all');
+    const [logsExpanded, setLogsExpanded] = useState(false); // Состояние для кнопки "Развернуть"
 
     const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
 
@@ -70,6 +71,21 @@ export default function System() {
         }
     };
 
+    // Умная функция парсинга времени логов (переводит SQLite UTC в Барнаул)
+    const formatLogTime = (timestamp) => {
+        if (!timestamp) return '';
+        let safeTimestamp = timestamp;
+        // Если время из базы (SQLite) не содержит указателя часового пояса
+        if (typeof timestamp === 'string' && !timestamp.includes('Z') && !timestamp.includes('+')) {
+            safeTimestamp = timestamp.replace(' ', 'T') + 'Z'; // Принудительно делаем UTC
+        }
+        try {
+            return new Date(safeTimestamp).toLocaleString('ru-RU', { timeZone: 'Asia/Barnaul' });
+        } catch (e) {
+            return new Date(timestamp).toLocaleString('ru-RU'); // Запасной вариант
+        }
+    };
+
     if (!['superadmin', 'boss', 'moderator'].includes(role)) {
         return (
             <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
@@ -77,6 +93,9 @@ export default function System() {
             </div>
         );
     }
+
+    // Отрезаем первые 10 логов, если список не развернут
+    const displayedLogs = logsExpanded ? logs : logs.slice(0, 10);
 
     return (
         <div className="max-w-4xl mx-auto space-y-6 pb-20">
@@ -152,7 +171,6 @@ export default function System() {
                         <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700"><tr><th className="px-6 py-3">ФИО</th><th className="px-6 py-3">Роль</th><th className="px-6 py-3">Платформа</th></tr></thead>
                         <tbody>
                             {users.map((u) => (
-                                /* ИСПРАВЛЕНИЕ: Передаем u.user_id вместо всего объекта u */
                                 <tr key={u.user_id} onClick={() => openProfile(u.user_id)} className="cursor-pointer bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{u.fio}</td>
                                     <td className="px-6 py-4"><span className="bg-blue-100 text-blue-800 text-xs font-medium mr-2 px-2.5 py-0.5 rounded dark:bg-blue-900 dark:text-blue-300">{roleNames[u.role] || u.role}</span></td>
@@ -171,9 +189,9 @@ export default function System() {
                     <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
                         <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700"><tr><th className="px-6 py-3">Время</th><th className="px-6 py-3">Пользователь</th><th className="px-6 py-3">Действие</th></tr></thead>
                         <tbody>
-                            {logs.map((log) => (
+                            {displayedLogs.map((log) => (
                                 <tr key={log.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                    <td className="px-6 py-4 whitespace-nowrap">{log.timestamp ? new Date(log.timestamp).toLocaleString('ru-RU') : ''}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap">{formatLogTime(log.timestamp)}</td>
                                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{log.fio || 'Неизвестно'}</td>
                                     <td className="px-6 py-4">{log.action}</td>
                                 </tr>
@@ -181,6 +199,17 @@ export default function System() {
                         </tbody>
                     </table>
                 </div>
+                {/* Кнопка Развернуть/Свернуть лог */}
+                {logs.length > 10 && (
+                    <div className="mt-5 text-center">
+                        <button
+                            onClick={() => setLogsExpanded(!logsExpanded)}
+                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold text-sm transition-colors py-2 px-4 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40"
+                        >
+                            {logsExpanded ? 'Свернуть журнал 🔼' : `Показать все записи (${logs.length}) 🔽`}
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
