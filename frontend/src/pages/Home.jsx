@@ -47,7 +47,11 @@ const KanbanCol = ({ title, icon, colorClass, apps, isOpen, toggleOpen, onAppCli
 
                     return (
                         <div key={a.id} onClick={() => onAppClick(a)} className="bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm text-sm cursor-pointer hover:border-blue-400 dark:hover:border-blue-500 transition-colors group">
-                            <p className="font-bold text-gray-800 dark:text-gray-100 mb-1 group-hover:text-blue-600 dark:group-hover:text-blue-400">{a.object_address}</p>
+                            <p className="font-bold text-gray-800 dark:text-gray-100 mb-0.5 group-hover:text-blue-600 dark:group-hover:text-blue-400">{a.object_address}</p>
+
+                            {/* Отображение прораба в мини-карточке */}
+                            <p className="text-xs text-gray-600 dark:text-gray-400 mb-1.5 font-medium">👷‍♂️ {a.foreman_name || 'Неизвестный прораб'}</p>
+
                             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">📅 {a.date_target}</p>
                             <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1">👥 {a.team_name || 'Без бригады'}</p>
 
@@ -90,7 +94,8 @@ export default function Home() {
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
 
-    const [appForm, setAppForm] = useState({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false });
+    // Добавлены поля foreman_id и foreman_name в стейт формы
+    const [appForm, setAppForm] = useState({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '' });
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
 
     const fetchData = () => {
@@ -110,7 +115,7 @@ export default function Home() {
 
     useEffect(() => {
         if (!isGlobalCreateAppOpen) {
-            setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false });
+            setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], members: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '' });
             setActiveEqCategory(null);
             setTeamMembers([]);
         }
@@ -241,7 +246,9 @@ export default function Home() {
             members: app.selected_members ? app.selected_members.split(',').map(Number) : [],
             equipment: app.equipment_data ? JSON.parse(app.equipment_data) : [],
             comment: app.comment || '',
-            isViewOnly: true
+            isViewOnly: true,
+            foreman_id: app.foreman_id, // Подхватываем данные прораба
+            foreman_name: app.foreman_name
         });
         setGlobalCreateAppOpen(true);
     };
@@ -284,7 +291,17 @@ export default function Home() {
 
                                     return (
                                         <div key={a.id} className="p-4 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800 text-sm space-y-2 text-gray-800 dark:text-gray-200">
-                                            <p><b>Дата:</b> {a.date_target}</p><p><b>Объект:</b> {a.object_address}</p><p><b>Техника:</b> {activeEquipText}</p><p><b>Бригада:</b> {a.team_name || 'Только техника'}</p>
+                                            <p><b>Дата:</b> {a.date_target}</p>
+                                            <p><b>Объект:</b> {a.object_address}</p>
+
+                                            {/* Кликабельный прораб в текущих нарядах */}
+                                            <p><b>Прораб:</b> {a.foreman_id > 0 ? (
+                                                <a href={`tg://user?id=${a.foreman_id}`} className="text-blue-600 dark:text-blue-400 hover:underline">{a.foreman_name || 'Неизвестно'}</a>
+                                            ) : <span>{a.foreman_name || 'Неизвестно'}</span>}</p>
+
+                                            <p><b>Техника:</b> {activeEquipText}</p>
+                                            <p><b>Бригада:</b> {a.team_name || 'Только техника'}</p>
+
                                             {role === 'driver' && (
                                                 <button onClick={handleFreeEquipment} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
                                                     ✅ Готово (Освободить технику)
@@ -352,6 +369,23 @@ export default function Home() {
                                                         {addr}
                                                     </button>
                                                 ))}
+                                            </div>
+                                        )}
+
+                                        {/* Блок с кликабельным прорабом под адресом */}
+                                        {appForm.id && appForm.foreman_name && (
+                                            <div className="mt-4 flex items-center p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600">
+                                                <span className="text-2xl mr-3">👷‍♂️</span>
+                                                <div>
+                                                    <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wide">Прораб (Создатель заявки)</p>
+                                                    {appForm.foreman_id > 0 ? (
+                                                        <a href={`tg://user?id=${appForm.foreman_id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline">
+                                                            {appForm.foreman_name}
+                                                        </a>
+                                                    ) : (
+                                                        <p className="text-sm font-bold text-gray-800 dark:text-gray-200">{appForm.foreman_name}</p>
+                                                    )}
+                                                </div>
                                             </div>
                                         )}
                                     </div>
