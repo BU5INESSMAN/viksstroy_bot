@@ -37,7 +37,6 @@ export default function Layout() {
                 tg.disableVerticalSwipes();
             }
         }
-        // MAX detection check added to Layout specific for top padding
         if (window.location.pathname.includes('/max') || window.location.search.includes('WebAppData') || window.location.hash.includes('WebAppData')) {
             setIsTMA(true);
         }
@@ -55,7 +54,13 @@ export default function Layout() {
             const res = await axios.get(`/api/users/${targetId}/profile`);
             const newProfileData = { ...res.data.profile, links: res.data.links };
             setProfileData(newProfileData);
-            setEditProfile({ fio: res.data.profile.fio, role: res.data.profile.role, team_id: res.data.profile.team_id || '', position: res.data.profile.position || '' });
+            setEditProfile({
+                fio: res.data.profile.fio,
+                role: res.data.profile.role,
+                team_id: res.data.profile.team_id || '',
+                position: res.data.profile.position || '',
+                max_invite_link: res.data.profile.max_invite_link || ''
+            });
             setLinkCode('');
             setProfileModalOpen(true);
         } catch (err) { alert("Ошибка загрузки профиля"); }
@@ -77,7 +82,14 @@ export default function Layout() {
 
     const handleSaveProfile = async () => {
         try {
-            const fd = new FormData(); fd.append('tg_id', tgId); fd.append('fio', editProfile.fio); fd.append('role', editProfile.role); fd.append('team_id', editProfile.team_id); fd.append('position', editProfile.position);
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            fd.append('fio', editProfile.fio);
+            fd.append('role', editProfile.role);
+            fd.append('team_id', editProfile.team_id);
+            fd.append('position', editProfile.position);
+            fd.append('max_invite_link', editProfile.max_invite_link || '');
+
             await axios.post(`/api/users/${profileData.user_id}/update_profile`, fd);
             alert("Успешно!"); setProfileModalOpen(false); window.location.reload();
         } catch (e) { alert("Ошибка сохранения"); }
@@ -134,10 +146,12 @@ export default function Layout() {
     const isForeman = role === 'foreman';
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
     const canEditUsers = ['boss', 'superadmin', 'moderator'].includes(role);
+    const isMyProfile = profileData && profileData.user_id === Number(tgId);
 
     return (
         <div className="bg-gray-100 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
-            <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 ${isTMA ? 'pt-8' : 'pt-4'}`}>
+            {/* ОГРОМНЫЙ pt-16 ДЛЯ TMA, чтобы панель Telegram не перекрывала интерфейс */}
+            <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-transparent dark:border-gray-700 mb-6 ${isTMA ? 'pt-16' : 'pt-4'}`}>
                 {realRole && (
                     <div className="bg-yellow-500 text-white text-center py-2 font-bold flex justify-center items-center space-x-4 relative z-50">
                         <span>Тест роли: {roleNames[role]}</span>
@@ -164,7 +178,7 @@ export default function Layout() {
                                 <div className="fixed inset-0 z-[90]" onClick={() => setIsMenuOpen(false)}></div>
                                 <div className="absolute top-full right-0 mt-3 w-56 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 z-[100] overflow-hidden transition-all origin-top-right">
                                     <div className="flex flex-col py-2">
-                                        <button onClick={() => { setIsMenuOpen(false); openProfile(tgId); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">👤</span> Мой профиль</button>
+                                        {/* Кнопка Профиль убрана отсюда, теперь она внизу */}
                                         <button onClick={() => { setIsMenuOpen(false); navigate('/guide'); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">📖</span> Инструкция</button>
                                         <button onClick={() => { setIsMenuOpen(false); navigate('/updates'); }} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">🚀</span> Обновления</button>
                                         <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" onClick={() => setIsMenuOpen(false)} className="flex items-center px-4 py-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><span className="mr-3 text-xl">💬</span> Техподдержка</a>
@@ -180,21 +194,29 @@ export default function Layout() {
 
             <Outlet context={{ openProfile, isGlobalCreateAppOpen, setGlobalCreateAppOpen }} />
 
-            <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-40 flex justify-around items-end pb-safe shadow-[0_-10px_20px_-5px_rgba(0,0,0,0.05)] transition-colors h-16">
-                <button onClick={() => navigate('/dashboard')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/dashboard' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">🏠</span><span className="text-[10px] font-bold uppercase tracking-wide">Главная</span></button>
-                {isWorkerOrDriver && <button onClick={() => navigate('/my-apps')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/my-apps' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">📋</span><span className="text-[10px] font-bold uppercase tracking-wide">Мои заявки</span></button>}
-                {isModOrBoss && <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">🚜</span><span className="text-[10px] font-bold uppercase tracking-wide">Автопарк</span></button>}
-                {!isWorkerOrDriver && <button onClick={() => navigate('/teams')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">👥</span><span className="text-[10px] font-bold uppercase tracking-wide">Бригады</span></button>}
+            <div className="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-40 flex justify-around items-end pb-safe shadow-[0_-10px_20px_-5px_rgba(0,0,0,0.05)] transition-colors h-16 px-1">
+                <button onClick={() => navigate('/dashboard')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/dashboard' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">🏠</span><span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Главная</span></button>
+                {isWorkerOrDriver && <button onClick={() => navigate('/my-apps')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/my-apps' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">📋</span><span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Заявки</span></button>}
+                {isModOrBoss && <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">🚜</span><span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Автопарк</span></button>}
+                {!isWorkerOrDriver && <button onClick={() => navigate('/teams')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">👥</span><span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Бригады</span></button>}
+
                 {isForeman && (
                     <div className="relative w-full flex justify-center h-full">
                         <button onClick={() => {navigate('/dashboard'); setGlobalCreateAppOpen(true);}} className="absolute -top-5 bg-blue-600 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-lg border-4 border-white dark:border-gray-800 transform hover:scale-105 transition-transform z-50">
                             <span className="text-3xl font-light leading-none mb-1">+</span>
                         </button>
-                        <span className="absolute bottom-1.5 text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wide">Создать</span>
+                        <span className="absolute bottom-1.5 text-[9px] sm:text-[10px] font-bold text-blue-600 dark:text-blue-400 uppercase tracking-wide truncate">Создать</span>
                     </div>
                 )}
-                {isModOrBoss && <button onClick={() => navigate('/review')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/review' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5 relative">📋</span><span className="text-[10px] font-bold uppercase tracking-wide">Заявки</span></button>}
-                {isModOrBoss && <button onClick={() => navigate('/system')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/system' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">⚙️</span><span className="text-[10px] font-bold uppercase tracking-wide">Система</span></button>}
+
+                {isModOrBoss && <button onClick={() => navigate('/review')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/review' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5 relative">📋</span><span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Заявки</span></button>}
+                {isModOrBoss && <button onClick={() => navigate('/system')} className={`flex flex-col items-center pb-2 w-full transition-colors ${location.pathname === '/system' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><span className="text-2xl mb-0.5">⚙️</span><span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Система</span></button>}
+
+                {/* НОВАЯ КНОПКА ПРОФИЛЯ */}
+                <button onClick={() => openProfile(tgId)} className={`flex flex-col items-center pb-2 w-full transition-colors ${isProfileModalOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                    <span className="text-2xl mb-0.5">👤</span>
+                    <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-wide truncate">Профиль</span>
+                </button>
             </div>
 
             {isProfileModalOpen && profileData && (
@@ -210,36 +232,66 @@ export default function Layout() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 border-b dark:border-gray-700 pb-6">
                     <div className={`flex items-center px-4 py-3 rounded-xl border ${profileData.links.has_tg ? 'bg-blue-50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 shadow-sm'}`}>
                         <span className="text-2xl mr-3">✈️</span>
-                        <div>
+                        <div className="w-full">
                             <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wider">Telegram</p>
                             {profileData.links.has_tg ? (
-                                <a href={`tg://user?id=${profileData.links.tg_account_id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline">
+                                <a href={`tg://user?id=${profileData.links.tg_account_id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline block mt-0.5">
                                     Написать в ЛС
                                 </a>
                             ) : (
-                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500">Не привязан</p>
+                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500 mt-0.5">Не привязан</p>
                             )}
                         </div>
                     </div>
 
                     <div className={`flex items-center px-4 py-3 rounded-xl border ${profileData.links.has_max ? 'bg-indigo-50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800' : 'bg-gray-50 border-gray-200 dark:bg-gray-800 dark:border-gray-700 shadow-sm'}`}>
                         <span className="text-2xl mr-3">📱</span>
-                        <div>
+                        <div className="w-full">
                             <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wider">MAX</p>
                             {profileData.links.has_max ? (
-                                <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400">
-                                    Привязан (ID: {profileData.links.max_account_id})
-                                </p>
+                                <>
+                                    <p className="text-sm font-bold text-indigo-600 dark:text-indigo-400 mt-0.5">Привязан (ID: {profileData.links.max_account_id})</p>
+                                    {profileData.max_invite_link ? (
+                                        <a href={profileData.max_invite_link} target="_blank" rel="noopener noreferrer" className="text-xs font-bold text-blue-600 dark:text-blue-400 hover:underline block mt-0.5">
+                                            Ссылка на диалог
+                                        </a>
+                                    ) : (
+                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Ссылка не привязана</p>
+                                    )}
+                                </>
                             ) : (
-                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500">Не привязан</p>
+                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500 mt-0.5">Не привязан</p>
                             )}
                         </div>
                     </div>
                 </div>
 
-                <div className="space-y-4"><h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Управление профилем</h4><div className="grid grid-cols-1 sm:grid-cols-2 gap-4"><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label><input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div><div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label><input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" /></div></div>
+                {/* УПРАВЛЕНИЕ ПРОФИЛЕМ (ВИДНО АДМИНАМ ИЛИ ВЛАДЕЛЬЦУ ПРОФИЛЯ) */}
+                {(canEditUsers || isMyProfile) && (
+                    <div className="space-y-4">
+                        <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider border-b dark:border-gray-700 pb-2">Данные профиля</h4>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">ФИО</label>
+                                <input type="text" value={editProfile.fio} onChange={e => setEditProfile({...editProfile, fio: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Специальность</label>
+                                <input type="text" value={editProfile.position} onChange={e => setEditProfile({...editProfile, position: e.target.value})} disabled={!canEditUsers} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none disabled:opacity-70" />
+                            </div>
 
-                {profileData.user_id === Number(tgId) && profileData.links && (
+                            {/* Поле для ввода ссылки MAX */}
+                            <div className="sm:col-span-2">
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1">Ссылка-приглашение MAX (Для диалога)</label>
+                                <input type="text" placeholder="Например: https://max.ru/invite/..." value={editProfile.max_invite_link} onChange={e => setEditProfile({...editProfile, max_invite_link: e.target.value})} className="w-full px-3 py-2 border dark:border-gray-600 bg-white dark:bg-gray-700 rounded-lg outline-none text-sm" />
+                                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">* Добавьте сюда вашу прямую ссылку, чтобы коллеги могли написать вам в мессенджер MAX.</p>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ПРИВЯЗКА УСТРОЙСТВ */}
+                {isMyProfile && profileData.links && (
                     <div className="mt-6 pt-4 border-t dark:border-gray-700">
                         <h4 className="font-bold text-gray-800 dark:text-gray-200 uppercase text-sm tracking-wider mb-3">Привязка мессенджеров</h4>
 
@@ -266,7 +318,6 @@ export default function Layout() {
                             </div>
                         )}
 
-                        {/* Кнопки отвязки */}
                         {profileData.links.is_linked && (
                             <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
                                 <p className="text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Привязанные устройства:</p>
@@ -289,9 +340,10 @@ export default function Layout() {
                     </div>
                 )}
 
-                {canEditUsers && (
+                {/* КНОПКИ СОХРАНЕНИЯ (ВИДНО АДМИНАМ ИЛИ ВЛАДЕЛЬЦУ ПРОФИЛЯ) */}
+                {(canEditUsers || isMyProfile) && (
                     <div className="flex justify-between items-center pt-4 mt-2 border-t dark:border-gray-700">
-                        {profileData.user_id !== Number(tgId) ? (
+                        {canEditUsers && !isMyProfile ? (
                             <button onClick={handleDeleteUser} className="bg-red-50 hover:bg-red-100 text-red-600 font-bold text-sm px-4 py-2.5 rounded-lg transition">🗑 Удалить профиль</button>
                         ) : <div></div>}
                         <button onClick={handleSaveProfile} className="bg-blue-600 text-white font-bold text-sm px-6 py-2.5 rounded-lg shadow-md hover:bg-blue-700 transition">Сохранить</button>
