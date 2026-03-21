@@ -3,7 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 
 export default function System() {
-    const { openProfile } = useOutletContext(); // ВОЗВРАЩЕНО: Контекст для открытия модалки редактирования пользователя
+    const { openProfile } = useOutletContext();
     const role = localStorage.getItem('user_role') || 'Гость';
     const tgId = localStorage.getItem('tg_id') || '0';
 
@@ -118,7 +118,7 @@ export default function System() {
                 </div>
             </div>
 
-            {/* ВОЗВРАЩЕНО: БЛОК ТЕСТИРОВАНИЯ АНКЕТ И РОЛЕЙ */}
+            {/* БЛОК ТЕСТИРОВАНИЯ АНКЕТ И РОЛЕЙ */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
                 <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
                     <span className="text-2xl mr-2">🧪</span> Отладка и тестирование
@@ -141,7 +141,7 @@ export default function System() {
                 </div>
             </div>
 
-            {/* ТАБЛИЦА ПОЛЬЗОВАТЕЛЕЙ (С ВОЗВРАЩЕННЫМ КЛИКОМ ДЛЯ РЕДАКТИРОВАНИЯ) */}
+            {/* ТАБЛИЦА ПОЛЬЗОВАТЕЛЕЙ */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
                 <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
                     <span className="text-2xl mr-2">👥</span> Пользователи системы
@@ -152,8 +152,8 @@ export default function System() {
                         <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700"><tr><th className="px-6 py-3">ФИО</th><th className="px-6 py-3">Роль</th><th className="px-6 py-3">Платформа</th></tr></thead>
                         <tbody>
                             {users.map((u) => (
-                                /* ВОЗВРАЩЕНО: onClick={() => openProfile(u)} и класс cursor-pointer */
-                                <tr key={u.user_id} onClick={() => openProfile(u)} className="cursor-pointer bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
+                                /* ИСПРАВЛЕНИЕ: Передаем u.user_id вместо всего объекта u */
+                                <tr key={u.user_id} onClick={() => openProfile(u.user_id)} className="cursor-pointer bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
                                     <td className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{u.fio}</td>
                                     <td className="px-6 py-4"><span className="bg-blue-100 text-blue-800 text-xs font-medium mr-2 px-2.5 py-0.5 rounded dark:bg-blue-900 dark:text-blue-300">{roleNames[u.role] || u.role}</span></td>
                                     <td className="px-6 py-4">{u.user_id > 0 ? 'Telegram' : 'MAX'}</td>
