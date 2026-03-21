@@ -17,7 +17,7 @@ export default function System() {
     });
 
     const [testPlatform, setTestPlatform] = useState('all');
-    const [logsExpanded, setLogsExpanded] = useState(false); // Состояние для кнопки "Развернуть"
+    const [logsExpanded, setLogsExpanded] = useState(false);
 
     const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
 
@@ -65,24 +65,30 @@ export default function System() {
             formData.append('tg_id', tgId);
             formData.append('platform', testPlatform);
             await axios.post('/api/system/test_notification', formData);
-            alert("Тестовые уведомления (анкета и проверка ролей) успешно отправлены!");
+            alert("Тестовые уведомления успешно отправлены!");
         } catch (err) {
             alert("Ошибка отправки теста.");
         }
     };
 
-    // Умная функция парсинга времени логов (переводит SQLite UTC в Барнаул)
+    const handleRoleSimulation = (targetRole) => {
+        if (!localStorage.getItem('real_role')) {
+            localStorage.setItem('real_role', role); // Запоминаем настоящую админскую роль
+        }
+        localStorage.setItem('user_role', targetRole);
+        window.location.href = '/dashboard'; // Перебрасываем на главную
+    };
+
     const formatLogTime = (timestamp) => {
         if (!timestamp) return '';
         let safeTimestamp = timestamp;
-        // Если время из базы (SQLite) не содержит указателя часового пояса
         if (typeof timestamp === 'string' && !timestamp.includes('Z') && !timestamp.includes('+')) {
-            safeTimestamp = timestamp.replace(' ', 'T') + 'Z'; // Принудительно делаем UTC
+            safeTimestamp = timestamp.replace(' ', 'T') + 'Z';
         }
         try {
             return new Date(safeTimestamp).toLocaleString('ru-RU', { timeZone: 'Asia/Barnaul' });
         } catch (e) {
-            return new Date(timestamp).toLocaleString('ru-RU'); // Запасной вариант
+            return new Date(timestamp).toLocaleString('ru-RU');
         }
     };
 
@@ -94,7 +100,6 @@ export default function System() {
         );
     }
 
-    // Отрезаем первые 10 логов, если список не развернут
     const displayedLogs = logsExpanded ? logs : logs.slice(0, 10);
 
     return (
@@ -104,47 +109,41 @@ export default function System() {
                 <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
                     <span className="text-2xl mr-2">⚙️</span> Настройки автоматизации
                 </h2>
-
                 <div className="space-y-6">
                     <div>
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Авто-старт нарядов</h3>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Система автоматически начнет работу по нарядам на этот день и уведомит рабочих.</p>
                         <input type="time" name="auto_publish_time" value={settings.auto_publish_time} onChange={handleSettingChange} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                     </div>
-
                     <div>
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Авто-завершение нарядов</h3>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Система переведет активные наряды в статус "Ожидает отчета" и запросит табель у прораба.</p>
                         <input type="time" name="auto_complete_time" value={settings.auto_complete_time} onChange={handleSettingChange} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                     </div>
-
                     <hr className="border-gray-200 dark:border-gray-700" />
-
                     <div>
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Напоминание прорабам</h3>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Бот напомнит прорабам заполнить заявки на следующий день.</p>
                         <input type="time" name="foreman_reminder_time" value={settings.foreman_reminder_time} onChange={handleSettingChange} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                     </div>
-
                     <div className="flex items-center">
                         <input type="checkbox" name="foreman_reminder_weekends" checked={settings.foreman_reminder_weekends} onChange={handleSettingChange} className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600" />
                         <label className="ml-2 text-sm font-medium text-gray-900 dark:text-gray-300">Включить напоминания по выходным</label>
                     </div>
-
                     <button onClick={saveSettings} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-5 py-3 focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800 transition-colors flex items-center justify-center gap-2">
                         <span>💾</span> Сохранить настройки автоматизации
                     </button>
                 </div>
             </div>
 
-            {/* БЛОК ТЕСТИРОВАНИЯ АНКЕТ И РОЛЕЙ */}
+            {/* БЛОК ТЕСТИРОВАНИЯ УВЕДОМЛЕНИЙ */}
             <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
                 <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
-                    <span className="text-2xl mr-2">🧪</span> Отладка и тестирование
+                    <span className="text-2xl mr-2">📩</span> Отладка уведомлений
                 </h2>
                 <div className="space-y-4">
                     <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Платформа для отправки тестов (анкет и ролей)</label>
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Платформа для отправки тестов</label>
                         <select value={testPlatform} onChange={(e) => setTestPlatform(e.target.value)} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
                             <option value="all">Все платформы (MAX + Telegram)</option>
                             <option value="max">Только MAX</option>
@@ -152,11 +151,33 @@ export default function System() {
                         </select>
                     </div>
                     <button onClick={testNotification} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium rounded-lg text-sm px-5 py-3 border border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2">
-                        <span>🚀</span> Запустить тест анкет и ролей (Уведомления)
+                        <span>🚀</span> Запустить тест (сгенерировать анкету)
                     </button>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                        * Нажатие на эту кнопку сгенерирует тестовую заявку-анкету и разошлет проверочные системные уведомления для ролей.
-                    </p>
+                </div>
+            </div>
+
+            {/* БЛОК СИМУЛЯЦИИ РОЛЕЙ */}
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
+                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
+                    <span className="text-2xl mr-2">🎭</span> Тестирование ролей (Симуляция)
+                </h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+                    Временно переключите свой аккаунт на другую роль, чтобы проверить интерфейс. Вернуться обратно в админку можно будет через меню профиля.
+                </p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {Object.entries(roleNames).map(([rKey, rName]) => (
+                        <button
+                            key={rKey}
+                            onClick={() => handleRoleSimulation(rKey)}
+                            className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors shadow-sm border ${
+                                role === rKey 
+                                ? 'bg-blue-600 text-white border-blue-600 dark:border-blue-500 ring-2 ring-blue-300 dark:ring-blue-800' 
+                                : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-600'
+                            }`}
+                        >
+                            {rName}
+                        </button>
+                    ))}
                 </div>
             </div>
 
@@ -199,7 +220,6 @@ export default function System() {
                         </tbody>
                     </table>
                 </div>
-                {/* Кнопка Развернуть/Свернуть лог */}
                 {logs.length > 10 && (
                     <div className="mt-5 text-center">
                         <button
