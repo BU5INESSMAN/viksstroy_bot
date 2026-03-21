@@ -7,6 +7,7 @@ from fastapi import APIRouter, Form, HTTPException
 from database_deps import db, TZ_BARNAUL
 from datetime import datetime
 from utils import resolve_id, fetch_teams_dict, enrich_app_with_team_name, notify_users, execute_app_publish
+from routers.applications import enrich_app_with_members_data
 
 router = APIRouter(tags=["Dashboard"])
 
@@ -28,7 +29,10 @@ async def get_dashboard_data(tg_id: int = 0):
             "SELECT * FROM applications WHERE date_target >= date('now', '-14 days') ORDER BY id DESC") as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
-    for a in all_apps: enrich_app_with_team_name(a, teams_dict)
+    for a in all_apps:
+        enrich_app_with_team_name(a, teams_dict)
+        # Обогащаем заявки в канбане списком рабочих для кликабельных профилей
+        await enrich_app_with_members_data(a)
 
     recent_addresses = []
     if tg_id != 0:
@@ -63,7 +67,6 @@ async def update_settings(auto_publish_time: str = Form(""), foreman_reminder_ti
                                                                                                           "Нет прав")
 
     try:
-        # Надежное обновление или создание ключей настроек
         for k, v in [
             ('auto_publish_time', auto_publish_time),
             ('foreman_reminder_time', foreman_reminder_time),
@@ -94,7 +97,6 @@ async def cron_end_day(): return {"status": "ok"}
 async def cron_check_timeouts(): return {"status": "ok"}
 
 
-# ОБНОВЛЕННЫЙ ЭНДПОИНТ С ПОДДЕРЖКОЙ platform
 @router.post("/api/system/test_notification")
 async def test_notification(tg_id: int = Form(...), platform: str = Form("all")):
     real_tg_id = await resolve_id(tg_id)
@@ -124,7 +126,6 @@ async def test_notification(tg_id: int = Form(...), platform: str = Form("all"))
         'approved_by': 'Автоматика',
         'approved_by_id': real_tg_id
     }
-    # Передаем параметр целевой платформы в функцию публикации
     await execute_app_publish(fake_app, target_platform=platform)
 
     return {"status": "ok"}
