@@ -11,67 +11,73 @@ export default function Updates() {
                 </div>
 
                 <div className="space-y-8 mt-8">
-                    {/* ВЕРСИЯ 1.1.1 */}
-                    <div className="relative pl-6 border-l-2 border-blue-500">
-                        <div className="absolute w-4 h-4 bg-blue-500 rounded-full -left-[9px] top-1 border-4 border-white dark:border-gray-800"></div>
-                        <h3 className="text-xl font-bold text-blue-600 dark:text-blue-400">Версия 1.1.1 (Стабильность и маршрутизация)</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 mt-1">20 Марта 2026</p>
+                    {/* ВЕРСИЯ 1.2.0 */}
+                    <div className="relative pl-6 border-l-2 border-indigo-500">
+                        <div className="absolute w-4 h-4 bg-indigo-500 rounded-full -left-[9px] top-1 border-4 border-white dark:border-gray-800"></div>
+                        <h3 className="text-xl font-bold text-indigo-600 dark:text-indigo-400">Версия 1.2.0 (Связанность и Контроль)</h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 mt-1">Текущая версия</p>
 
                         <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
                             <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-600">
-                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">🤖 Интеграция с мессенджером MAX:</b>
+                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">👤 Интерактивные профили и Навигация:</b>
                                 <ul className="list-disc pl-5 space-y-1">
-                                    <li><b>Идеальные ЛС:</b> Бот теперь гарантированно доставляет личные сообщения (уведомления о добавлении в наряд) прямо в личку MAX.</li>
-                                    <li><b>Чистый текст:</b> Из системных уведомлений убраны технические теги, теперь отображаются только аккуратные ФИО сотрудников.</li>
+                                    <li><b>Всё кликабельно:</b> Имена прорабов, рабочих и названия техники в карточках нарядов теперь являются ссылками. Нажатие открывает подробный профиль.</li>
+                                    <li><b>Контакты коллег:</b> В профиле каждого пользователя отображается статус привязки его Telegram и MAX. Добавлена возможность указать прямую ссылку на диалог в MAX для быстрой связи.</li>
+                                    <li>Даже если сотрудник еще ни разу не заходил в систему, для него генерируется "заглушка" профиля с его должностью.</li>
                                 </ul>
                             </div>
 
                             <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-600">
-                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">⚡️ Умная регистрация:</b>
+                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">✅ Умный контроль статуса "Свободен":</b>
                                 <ul className="list-disc pl-5 space-y-1">
-                                    <li><b>Вход без паролей:</b> Рабочим и водителям при вводе команды <code>/join [код]</code> больше не нужно вводить системные пароли или ФИО. Бот берет имя из профиля и мгновенно регистрирует сотрудника.</li>
-                                    <li><b>Веерная рассылка:</b> Если сотрудник привязал свой аккаунт и к Telegram, и к MAX, система автоматически доставит уведомление на обе платформы.</li>
+                                    <li>Добавлена <b>защита от случайных нажатий</b>. Для завершения работы прорабам и водителям необходимо вручную ввести слово <code>СВОБОДЕН</code> в появившемся окне.</li>
+                                    <li><b>Визуализация в реальном времени:</b> Освободившаяся техника и бригады теперь наглядно зачеркиваются в карточках Канбан-доски и помечаются зеленой галочкой.</li>
                                 </ul>
                             </div>
 
                             <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-600">
-                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">🛡 Оптимизация ядра:</b>
+                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">📱 Улучшения интерфейса и Безопасность:</b>
                                 <ul className="list-disc pl-5 space-y-1">
-                                    <li>Полностью устранены ошибки блокировки базы данных (Database is locked) при одновременных действиях пользователей.</li>
+                                    <li><b>Унифицированный вход:</b> Вход через веб-браузер теперь осуществляется исключительно по безопасному 6-значному коду из бота. Убран сторонний виджет Telegram.</li>
+                                    <li><b>Мобильное меню:</b> Кнопка "Профиль" перенесена в удобный нижний навигационный бар.</li>
+                                    <li>Добавлена специальная адаптация верхних отступов для Telegram Mini App, чтобы системная панель мессенджера не перекрывала кнопки платформы.</li>
+                                    <li>Длинные списки заявок в разделе "Модерация" теперь по умолчанию скрыты под кат (по 10 штук).</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ВЕРСИЯ 1.1.1 */}
+                    <div className="relative pl-6 border-l-2 border-blue-500 opacity-80 hover:opacity-100 transition-opacity">
+                        <div className="absolute w-4 h-4 bg-blue-500 rounded-full -left-[9px] top-1 border-4 border-white dark:border-gray-800"></div>
+                        <h3 className="text-xl font-bold text-blue-600 dark:text-blue-400">Версия 1.1.1 (Стабильность и автоматизация)</h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 mt-1">Ранее</p>
+
+                        <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+                            <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-600">
+                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">⚙️ Автоматизация процессов (APScheduler):</b>
+                                <ul className="list-disc pl-5 space-y-1">
+                                    <li>Внедрена система точного авто-старта нарядов, авто-завершения (перевод в ожидание отчета) и напоминаний прорабам строго по часовому поясу Барнаула.</li>
+                                    <li>Идеальная маршрутизация ЛС в корпоративный мессенджер MAX.</li>
+                                    <li>Вход по коду приглашения без ввода ФИО (умная регистрация).</li>
                                 </ul>
                             </div>
                         </div>
                     </div>
 
                     {/* ВЕРСИЯ 1.1.0 */}
-                    <div className="relative pl-6 border-l-2 border-green-500 opacity-80 hover:opacity-100 transition-opacity">
+                    <div className="relative pl-6 border-l-2 border-green-500 opacity-70 hover:opacity-100 transition-opacity">
                         <div className="absolute w-4 h-4 bg-green-500 rounded-full -left-[9px] top-1 border-4 border-white dark:border-gray-800"></div>
                         <h3 className="text-xl font-bold text-green-600 dark:text-green-400">Версия 1.1.0 (Омниканальность)</h3>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 mt-1">Ранее</p>
 
                         <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
                             <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-600">
-                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">📱 Telegram Mini App & MAX:</b>
+                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">📱 Базовый функционал:</b>
                                 <ul className="list-disc pl-5 space-y-1">
-                                    <li>Возможность открывать платформу прямо внутри мессенджеров Telegram и MAX без необходимости логиниться на сайте.</li>
-                                    <li>Система <b>связывания аккаунтов</b> (команда <code>/web</code>), позволяющая пользоваться платформой как с телефона, так и с компьютера под одним профилем.</li>
-                                </ul>
-                            </div>
-
-                            <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-600">
-                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">🎨 Улучшения UI/UX:</b>
-                                <ul className="list-disc pl-5 space-y-1">
-                                    <li>Полностью переписан алгоритм генерации картинок-нарядов: идеальное выравнивание и перенос строк.</li>
-                                    <li>Время работы техники на карточке вынесено на отдельную строку.</li>
-                                    <li>Имя модератора, одобрившего заявку, теперь является <b>кликабельной ссылкой</b>.</li>
-                                </ul>
-                            </div>
-
-                            <div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-100 dark:border-gray-600">
-                                <b className="text-gray-900 dark:text-gray-100 mb-1 block">🗑 Глобальное администрирование:</b>
-                                <ul className="list-disc pl-5 space-y-1">
-                                    <li>Возможность полного удаления бригады со снятием участников.</li>
-                                    <li>Возможность удаления пользователей из базы навсегда.</li>
+                                    <li>Telegram Mini App & MAX WebApp.</li>
+                                    <li>Система связывания аккаунтов (команда /web).</li>
+                                    <li>Генерация картинок-нарядов.</li>
                                 </ul>
                             </div>
                         </div>
