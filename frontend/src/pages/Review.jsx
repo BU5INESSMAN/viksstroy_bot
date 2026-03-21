@@ -138,7 +138,6 @@ export default function Review() {
                         )}
                     </p>
 
-                    {/* СТРОГАЯ ПРОВЕРКА НА === 1 */}
                     <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1">
                         👥 <span className={app.is_team_freed === 1 ? 'line-through text-gray-400' : 'dark:text-white font-bold'}>{app.team_name || 'Без бригады'}</span>
                         {app.is_team_freed === 1 ? <span className="ml-1 text-[10px] text-emerald-500 font-bold">Свободна</span> : null}
@@ -260,12 +259,25 @@ export default function Review() {
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
                                     <div>
-                                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">👥 Бригада</label>
-                                        {/* СТРОГАЯ ПРОВЕРКА НА === 1 */}
-                                        <p className={`font-medium ${selectedApp.is_team_freed === 1 ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
-                                            {selectedApp.team_name || 'Только техника'}
-                                        </p>
-                                        {selectedApp.is_team_freed === 1 ? <p className="text-emerald-500 text-xs font-bold mt-1">Свободна ✅</p> : null}
+                                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">👥 Состав на выезд</label>
+
+                                        <div className="flex flex-wrap gap-2">
+                                            {selectedApp.members_data && selectedApp.members_data.length > 0 ? (
+                                                selectedApp.members_data.map(m => (
+                                                    <button
+                                                        type="button"
+                                                        key={m.id}
+                                                        onClick={() => { setSelectedApp(null); openProfile(m.tg_user_id, 'member', m.id); }}
+                                                        className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-gray-200 dark:border-gray-600 rounded-lg text-sm transition flex items-center shadow-sm"
+                                                    >
+                                                        👤 {m.fio}
+                                                    </button>
+                                                ))
+                                            ) : (
+                                                <p className="text-gray-500 font-medium">Только техника</p>
+                                            )}
+                                        </div>
+                                        {selectedApp.is_team_freed === 1 && <p className="text-emerald-500 text-xs font-bold mt-2">Бригада свободна ✅</p>}
                                     </div>
                                 </div>
                                 <hr className="dark:border-gray-700" />
@@ -275,9 +287,9 @@ export default function Review() {
                                         <div className="space-y-2">
                                             {JSON.parse(selectedApp.equipment_data).map(eq => (
                                                 <div key={eq.id} className="flex justify-between items-center bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl border border-gray-200 dark:border-gray-600">
-                                                    <span className={`font-bold ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
-                                                        {eq.name.split('(')[0].trim()} {eq.is_freed ? '✅' : ''}
-                                                    </span>
+                                                    <button type="button" onClick={() => { setSelectedApp(null); openProfile(0, 'equip', eq.id); }} className={`font-bold hover:underline ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                        🚜 {eq.name.split('(')[0].trim()} {eq.is_freed ? '✅' : ''}
+                                                    </button>
                                                     <span className="text-xs font-bold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-2 py-1 rounded-md border dark:border-gray-600">⏰ {eq.time_start}:00 - {eq.time_end}:00</span>
                                                 </div>
                                             ))}
