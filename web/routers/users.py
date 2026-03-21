@@ -1,5 +1,6 @@
 import sys
 import os
+
 # Переходим на уровень выше (в папку web), чтобы импорты сработали
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -27,8 +28,17 @@ async def api_get_profile(target_id: int):
         rows = await cur.fetchall()
 
     linked_ids = [r[0] for r in rows]
-    has_tg = (real_target_id > 0) or any(sid > 0 for sid in linked_ids)
-    has_max = (real_target_id < 0) or any(sid < 0 for sid in linked_ids)
+
+    # Определяем точные ID для кнопок-ссылок
+    tg_account_id = real_target_id if real_target_id > 0 else None
+    max_account_id = abs(real_target_id) if real_target_id < 0 else None
+
+    for sid in linked_ids:
+        if sid > 0: tg_account_id = sid
+        if sid < 0: max_account_id = abs(sid)
+
+    has_tg = tg_account_id is not None
+    has_max = max_account_id is not None
 
     return {
         "profile": dict(profile),
@@ -36,6 +46,8 @@ async def api_get_profile(target_id: int):
         "links": {
             "has_tg": has_tg,
             "has_max": has_max,
+            "tg_account_id": tg_account_id,
+            "max_account_id": max_account_id,
             "is_linked": len(linked_ids) > 0,
             "secondary_tg": any(sid > 0 for sid in linked_ids) or (real_target_id > 0 and len(linked_ids) > 0),
             "secondary_max": any(sid < 0 for sid in linked_ids) or (real_target_id < 0 and len(linked_ids) > 0)
