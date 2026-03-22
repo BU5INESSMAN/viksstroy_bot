@@ -31,7 +31,6 @@ async def get_dashboard_data(tg_id: int = 0):
 
     for a in all_apps:
         enrich_app_with_team_name(a, teams_dict)
-        # Обогащаем заявки в канбане списком рабочих для кликабельных профилей
         await enrich_app_with_members_data(a)
 
     recent_addresses = []
@@ -59,7 +58,7 @@ async def get_settings():
 
 
 @router.post("/api/settings/update")
-async def update_settings(auto_publish_time: str = Form(""), foreman_reminder_time: str = Form(""),
+async def update_settings(auto_publish_enabled: str = Form("0"), foreman_reminder_time: str = Form(""),
                           foreman_reminder_weekends: str = Form("0"), auto_complete_time: str = Form(""),
                           tg_id: int = Form(0)):
     user = await db.get_user(tg_id)
@@ -68,7 +67,7 @@ async def update_settings(auto_publish_time: str = Form(""), foreman_reminder_ti
 
     try:
         for k, v in [
-            ('auto_publish_time', auto_publish_time),
+            ('auto_publish_enabled', auto_publish_enabled),
             ('foreman_reminder_time', foreman_reminder_time),
             ('foreman_reminder_weekends', foreman_reminder_weekends),
             ('auto_complete_time', auto_complete_time)
@@ -85,8 +84,46 @@ async def update_settings(auto_publish_time: str = Form(""), foreman_reminder_ti
     return {"status": "ok"}
 
 
+# УМНЫЙ КРОН ДЛЯ АВТОПУБЛИКАЦИИ ЗАЯВОК (Вызывается раз в час)
 @router.post("/api/cron/start_day")
-async def cron_start_day(): return {"status": "ok"}
+async def cron_start_day():
+    # 1. Проверяем, включена ли настройка автопубликации
+    async with db.conn.execute("SELECT value FROM settings WHERE key = 'auto_publish_enabled'") as cur:
+        row = await cur.fetchone()
+        if not row or row[0] != '1':
+            return {"status": "disabled", "reason": "auto_publish_enabled is off"}
+
+    now = datetime.now(TZ_BARNAUL)
+    current_date = now.strftime("%Y-%m-%d")
+    current_hour = now.strftime("%H")
+
+    # 2. Ищем все одобренные заявки на сегодня
+    async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved' AND date_target = ?",
+                               (current_date,)) as cur:
+        apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
+
+    published_count = 0
+    for app in apps:
+        # По умолчанию берем время начала наряда (обычно 08)
+        app_start_hour = str(app.get('time_start', '08')).zfill(2)
+
+        # Если есть техника, берем САМОЕ РАННЕЕ время среди всех машин
+        if app.get('equipment_data'):
+            try:
+                import json
+                eq_list = json.loads(app['equipment_data'])
+                if eq_list:
+                    min_eq_hour = min([int(e.get('time_start', 8)) for e in eq_list])
+                    app_start_hour = str(min_eq_hour).zfill(2)
+            except:
+                pass
+
+        # 3. Если текущий час совпадает с вычисленным временем начала — публикуем!
+        if app_start_hour == current_hour:
+            if await execute_app_publish(app):
+                published_count += 1
+
+    return {"status": "ok", "published": published_count}
 
 
 @router.post("/api/cron/end_day")

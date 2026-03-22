@@ -10,7 +10,7 @@ export default function System() {
     const [users, setUsers] = useState([]);
     const [logs, setLogs] = useState([]);
     const [settings, setSettings] = useState({
-        auto_publish_time: '',
+        auto_publish_enabled: false,
         foreman_reminder_time: '',
         foreman_reminder_weekends: false,
         auto_complete_time: ''
@@ -28,7 +28,7 @@ export default function System() {
         if (['superadmin', 'boss', 'moderator'].includes(role)) {
             axios.get('/api/settings').then(res => {
                 setSettings({
-                    auto_publish_time: res.data.auto_publish_time || '',
+                    auto_publish_enabled: res.data.auto_publish_enabled === '1' || res.data.auto_publish_enabled === 'true',
                     foreman_reminder_time: res.data.foreman_reminder_time || '',
                     foreman_reminder_weekends: res.data.foreman_reminder_weekends === '1' || res.data.foreman_reminder_weekends === 'true',
                     auto_complete_time: res.data.auto_complete_time || ''
@@ -45,7 +45,7 @@ export default function System() {
     const saveSettings = async () => {
         try {
             await axios.post('/api/settings/update', {
-                auto_publish_time: settings.auto_publish_time,
+                auto_publish_enabled: settings.auto_publish_enabled ? '1' : '0',
                 foreman_reminder_time: settings.foreman_reminder_time,
                 foreman_reminder_weekends: settings.foreman_reminder_weekends ? '1' : '0',
                 auto_complete_time: settings.auto_complete_time,
@@ -73,10 +73,10 @@ export default function System() {
 
     const handleRoleSimulation = (targetRole) => {
         if (!localStorage.getItem('real_role')) {
-            localStorage.setItem('real_role', role); // Запоминаем настоящую админскую роль
+            localStorage.setItem('real_role', role);
         }
         localStorage.setItem('user_role', targetRole);
-        window.location.href = '/dashboard'; // Перебрасываем на главную
+        window.location.href = '/dashboard';
     };
 
     const formatLogTime = (timestamp) => {
@@ -110,27 +110,47 @@ export default function System() {
                     <span className="text-2xl mr-2">⚙️</span> Настройки автоматизации
                 </h2>
                 <div className="space-y-6">
+
+                    {/* НОВЫЙ БЛОК: Автопубликация */}
                     <div>
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Авто-старт нарядов</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Система автоматически начнет работу по нарядам на этот день и уведомит рабочих.</p>
-                        <input type="time" name="auto_publish_time" value={settings.auto_publish_time} onChange={handleSettingChange} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Авто-публикация заявок</h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                            Если включено, одобренные заявки на текущий день будут автоматически опубликованы в беседу ровно в то время, которое указано как начало их работы (по технике или в 08:00).
+                        </p>
+                        <div className="flex items-center bg-gray-50 dark:bg-gray-700/50 p-3 rounded-lg border border-gray-200 dark:border-gray-600">
+                            <input
+                                type="checkbox"
+                                name="auto_publish_enabled"
+                                checked={settings.auto_publish_enabled}
+                                onChange={handleSettingChange}
+                                className="w-5 h-5 text-blue-600 bg-white border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-500"
+                            />
+                            <label className="ml-3 text-sm font-bold text-gray-900 dark:text-gray-200">Включить автоматическую публикацию</label>
+                        </div>
                     </div>
+
+                    <hr className="border-gray-200 dark:border-gray-700" />
+
                     <div>
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Авто-завершение нарядов</h3>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Система переведет активные наряды в статус "Ожидает отчета" и запросит табель у прораба.</p>
                         <input type="time" name="auto_complete_time" value={settings.auto_complete_time} onChange={handleSettingChange} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                     </div>
+
                     <hr className="border-gray-200 dark:border-gray-700" />
+
                     <div>
                         <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Напоминание прорабам</h3>
                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Бот напомнит прорабам заполнить заявки на следующий день.</p>
                         <input type="time" name="foreman_reminder_time" value={settings.foreman_reminder_time} onChange={handleSettingChange} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
                     </div>
+
                     <div className="flex items-center">
                         <input type="checkbox" name="foreman_reminder_weekends" checked={settings.foreman_reminder_weekends} onChange={handleSettingChange} className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600" />
                         <label className="ml-2 text-sm font-medium text-gray-900 dark:text-gray-300">Включить напоминания по выходным</label>
                     </div>
-                    <button onClick={saveSettings} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-5 py-3 focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800 transition-colors flex items-center justify-center gap-2">
+
+                    <button onClick={saveSettings} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-5 py-3 focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800 transition-colors flex items-center justify-center gap-2 shadow-sm">
                         <span>💾</span> Сохранить настройки автоматизации
                     </button>
                 </div>
