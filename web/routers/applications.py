@@ -6,7 +6,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Form, HTTPException
 import json
-from database_deps import db
+from datetime import datetime
+from database_deps import db, TZ_BARNAUL
 from utils import resolve_id, notify_users, execute_app_publish, fetch_teams_dict, enrich_app_with_team_name
 
 router = APIRouter(tags=["Applications"])
@@ -46,8 +47,11 @@ async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_targ
         "INSERT INTO applications (foreman_id, foreman_name, team_id, equip_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed) VALUES (?, ?, ?, 0, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0)",
         (real_tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
-    await notify_users(["report_group", "moderator"],
-                       f"📝 <b>Новая заявка на выезд</b>\n👷‍♂️ Кто создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}",
+
+    # Добавляем время и уведомляем Модераторов, Боссов и Суперадминов
+    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+    await notify_users(["report_group", "moderator", "boss", "superadmin"],
+                       f"📝 <b>Новая заявка на выезд</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}\n🕒 Время: {now}",
                        "review")
     return {"status": "ok"}
 
@@ -69,7 +73,13 @@ async def update_app(app_id: int, tg_id: int = Form(...), team_id: str = Form("0
         await db.conn.commit()
     except:
         await db.conn.rollback()
-    await db.add_log(real_tg_id, dict(user).get('fio', 'Пользователь'), f"Отредактировал заявку №{app_id}")
+
+    fio = dict(user).get('fio', 'Пользователь')
+    await db.add_log(real_tg_id, fio, f"Отредактировал заявку №{app_id}")
+    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+    await notify_users(["report_group", "boss", "superadmin"],
+                       f"✏️ <b>Заявка №{app_id} изменена</b>\n👤 Кто: {fio}\n📍 Объект: {object_address}\n🕒 Время: {now}",
+                       "review")
     return {"status": "ok"}
 
 
@@ -99,8 +109,15 @@ async def delete_app(app_id: int, tg_id: int = Form(0)):
 
         await db.conn.execute("DELETE FROM applications WHERE id = ?", (app_id,))
         await db.conn.commit()
-        await db.add_log(real_tg_id, dict(user).get('fio', 'Админ'),
+
+        fio = dict(user).get('fio', 'Админ')
+        await db.add_log(real_tg_id, fio,
                          f"Полностью удалил заявку №{app_id} (Объект: {app_dict.get('object_address')})")
+
+        now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+        await notify_users(["report_group", "boss", "superadmin"],
+                           f"🗑 <b>Заявка №{app_id} удалена</b>\n👤 Кто: {fio}\n📍 Объект: {app_dict.get('object_address')}\n🕒 Время: {now}",
+                           "review")
     except Exception as e:
         await db.conn.rollback()
         raise HTTPException(500, f"Ошибка удаления: {e}")
@@ -141,7 +158,6 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
 
-    # Безопасность: Проверяем, что запрос на модерацию отправил модератор, босс или админ
     user_role = dict(user).get('role') if user else ''
     if user_role not in ['moderator', 'boss', 'superadmin']:
         raise HTTPException(403, "Нет прав на модерацию")
@@ -175,9 +191,11 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
 
     status_ru = "✅ Одобрена" if new_status == 'approved' else (
         "❌ Отклонена / Отозвана" if new_status == 'rejected' else "🏁 Досрочно завершена")
-    msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Кто: {mod_fio}\n📍 Объект: {app_dict['object_address']}"
+    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+
+    msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Проверил: {mod_fio}\n📍 Объект: {app_dict['object_address']}\n🕒 Время: {now}"
     if reason: msg_group += f"\n💬 Причина: {reason}"
-    await notify_users(["report_group"], msg_group, "review")
+    await notify_users(["report_group", "boss", "superadmin"], msg_group, "review")
 
     if new_status in ['approved', 'rejected']:
         msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
@@ -200,8 +218,14 @@ async def publish_apps(app_ids: str = Form(...), tg_id: int = Form(0)):
         if await execute_app_publish(app_dict): count += 1
 
     user = await db.get_user(tg_id)
-    await db.add_log(tg_id, dict(user).get('fio', 'Руководство') if user else "Руководство",
-                     f"Опубликовал {count} нарядов в группу")
+    fio = dict(user).get('fio', 'Руководство') if user else "Руководство"
+    await db.add_log(tg_id, fio, f"Опубликовал {count} нарядов в группу")
+
+    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+    await notify_users(["boss", "superadmin"],
+                       f"📤 <b>Публикация нарядов</b>\n👤 Кто: {fio}\n✅ Опубликовано: {count} шт.\n🕒 Время: {now}",
+                       "dashboard")
+
     return {"status": "ok", "published": count}
 
 
@@ -226,11 +250,9 @@ async def get_active_app(tg_id: int):
 
         involved = False
 
-        # 1. Если пользователь сам создал эту заявку (Прораб, Босс, Админ)
         if app_dict['foreman_id'] == real_tg_id:
             involved = True
 
-        # 2. Если пользователь в составе выбранной бригады
         if role in ['worker', 'foreman', 'boss', 'superadmin', 'moderator']:
             async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_user_id = ?", (real_tg_id,)) as cur:
                 tm_row = await cur.fetchone()
@@ -238,7 +260,6 @@ async def get_active_app(tg_id: int):
                     t_ids = [int(x) for x in str(app_dict['team_id']).split(',') if x.strip().isdigit()]
                     if tm_row[0] in t_ids: involved = True
 
-        # 3. Если пользователь - водитель техники, которая участвует в наряде
         if role in ['driver', 'boss', 'superadmin', 'moderator']:
             async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (real_tg_id,)) as cur:
                 eq_row = await cur.fetchone()
@@ -290,11 +311,9 @@ async def get_my_apps(tg_id: int):
 
         involved = False
 
-        # 1. Является создателем
         if app_dict['foreman_id'] == real_tg_id:
             involved = True
 
-        # 2. Является участником бригады
         if role in ['worker', 'foreman', 'boss', 'superadmin', 'moderator']:
             async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_user_id = ?", (real_tg_id,)) as cur:
                 tm_row = await cur.fetchone()
@@ -302,7 +321,6 @@ async def get_my_apps(tg_id: int):
                     t_ids = [int(x) for x in str(app_dict['team_id']).split(',') if x.strip().isdigit()]
                     if tm_row[0] in t_ids: involved = True
 
-        # 3. Водитель привязанной техники
         if role in ['driver', 'boss', 'superadmin', 'moderator']:
             async with db.conn.execute("SELECT id FROM equipment WHERE tg_id = ?", (real_tg_id,)) as cur:
                 eq_row = await cur.fetchone()
@@ -348,8 +366,10 @@ async def free_app_equipment(app_id: int, tg_id: int = Form(...)):
     await db.conn.commit()
     fio = dict(user).get('fio', '')
     await db.add_log(real_tg_id, fio, f"Освободил технику на объекте {obj_addr}")
-    await notify_users(["report_group"],
-                       f"🟢 <b>Техника свободна</b>\nВодитель {fio} завершил работу на объекте:\n📍 {obj_addr}",
+
+    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+    await notify_users(["report_group", "boss", "superadmin"],
+                       f"🟢 <b>Техника свободна</b>\n👤 Водитель: {fio}\n📍 Объект: {obj_addr}\n🕒 Время: {now}",
                        "equipment")
     return {"status": "ok"}
 
@@ -369,7 +389,9 @@ async def free_app_team(app_id: int, tg_id: int = Form(...)):
 
     fio = dict(user).get('fio', '') if user else ''
     await db.add_log(real_tg_id, fio, f"Освободил бригаду на объекте {obj_addr}")
-    await notify_users(["report_group"],
-                       f"🟢 <b>Бригада свободна</b>\nОтветственный {fio} завершил работу на объекте:\n📍 {obj_addr}",
+
+    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+    await notify_users(["report_group", "boss", "superadmin"],
+                       f"🟢 <b>Бригада свободна</b>\n👤 Ответственный: {fio}\n📍 Объект: {obj_addr}\n🕒 Время: {now}",
                        "dashboard")
     return {"status": "ok"}
