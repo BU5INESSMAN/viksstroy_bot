@@ -6,7 +6,7 @@ export default function Equipment() {
     const navigate = useNavigate();
     const role = localStorage.getItem('user_role') || 'Гость';
     const tgId = localStorage.getItem('tg_id') || '0';
-    const { openProfile } = useOutletContext(); // Подключаем профиль
+    const { openProfile } = useOutletContext();
 
     const [equipment, setEquipment] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -101,7 +101,8 @@ export default function Equipment() {
     };
 
     const copyEquipMessage = () => {
-        const message = `🚜 Привет! Вот приглашение для привязки техники в «ВИКС Расписание».\n\nМашина: ${inviteInfo.equipName}\n\n📱 Прямая ссылка:\n${inviteInfo.invite_link}\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}`;
+        const code = inviteInfo.invite_code || inviteInfo.join_password;
+        const message = `🚜 Привет! Вот приглашение для привязки техники в «ВИКС Расписание».\n\nМашина: ${inviteInfo.equipName}\n\n📱 Прямая ссылка:\n${inviteInfo.invite_link}\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
         copyToClipboard(message, 'all');
         alert('Сообщение скопировано в буфер обмена!');
     };
@@ -120,7 +121,6 @@ export default function Equipment() {
                 )}
             </div>
 
-            {/* ВКЛАДКИ КАТЕГОРИЙ */}
             <div className="flex overflow-x-auto space-x-2 pb-2 scrollbar-hide">
                 <button onClick={() => setActiveTab('list')} className={`whitespace-nowrap px-4 py-2 rounded-xl text-sm font-bold transition-all shadow-sm ${activeTab === 'list' ? 'bg-blue-600 text-white shadow-blue-500/30' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700'}`}>Все машины</button>
                 {categories.map(c => (
@@ -128,7 +128,6 @@ export default function Equipment() {
                 ))}
             </div>
 
-            {/* СПИСОК ТЕХНИКИ */}
             {['list', ...categories].includes(activeTab) && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {equipment.filter(e => activeTab === 'list' || e.category === activeTab).map(eq => (
@@ -146,7 +145,6 @@ export default function Equipment() {
 
                             {canEditEquipment && (
                                 <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex flex-col space-y-2">
-                                    {/* Новая кнопка Профиль Водителя */}
                                     <div className="flex space-x-2">
                                         <button onClick={() => openProfile(eq.tg_id, 'equip', eq.id)} className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 dark:text-blue-400 py-2 rounded-lg text-xs font-bold transition text-center whitespace-nowrap">👤 Профиль</button>
                                         <button onClick={() => generateInvite(eq)} className="flex-[2] bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 dark:text-indigo-400 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap">🔗 Дать доступ водителю</button>
@@ -167,7 +165,6 @@ export default function Equipment() {
                 </div>
             )}
 
-            {/* ФОРМА ДОБАВЛЕНИЯ ОДНОЙ МАШИНЫ */}
             {activeTab === 'new' && canEditEquipment && (
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 max-w-lg mx-auto">
                     <h3 className="text-xl font-bold mb-4 dark:text-white">Добавить машину</h3>
@@ -196,7 +193,6 @@ export default function Equipment() {
                 </div>
             )}
 
-            {/* МАССОВАЯ ЗАГРУЗКА */}
             {activeTab === 'bulk' && canEditEquipment && (
                 <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 max-w-2xl mx-auto">
                     <h3 className="text-xl font-bold mb-2 dark:text-white">Массовая загрузка</h3>
@@ -236,6 +232,17 @@ export default function Equipment() {
                                 <button onClick={() => copyToClipboard(inviteInfo.invite_link, 'web')} className="w-full text-left px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-gray-50 dark:bg-gray-700 font-medium hover:bg-gray-100 dark:hover:bg-gray-600 transition shadow-sm text-blue-600 dark:text-blue-400">
                                     {copiedLink === 'web' ? '✅ Успешно скопировано!' : '🔗 Нажмите, чтобы скопировать'}
                                 </button>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wide">💬 Для мессенджера MAX:</label>
+                                <div className="w-full text-center px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-gray-50 dark:bg-gray-700 font-medium shadow-sm flex items-center justify-center">
+                                    <code
+                                        className="text-blue-600 dark:text-blue-400 font-bold text-lg cursor-pointer"
+                                        onClick={() => copyToClipboard(`/join ${inviteInfo.invite_code || inviteInfo.join_password}`, 'max')}
+                                    >
+                                        {copiedLink === 'max' ? '✅ Скопировано!' : `/join ${inviteInfo.invite_code || inviteInfo.join_password}`}
+                                    </code>
+                                </div>
                             </div>
                         </div>
 

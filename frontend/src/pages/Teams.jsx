@@ -5,7 +5,7 @@ import axios from 'axios';
 export default function Teams() {
     const tgId = localStorage.getItem('tg_id') || '0';
     const role = localStorage.getItem('user_role') || 'Гость';
-    const { openProfile } = useOutletContext(); // Подключаем функцию открытия профиля
+    const { openProfile } = useOutletContext();
 
     const [teams, setTeams] = useState([]);
 
@@ -99,7 +99,8 @@ export default function Teams() {
     };
 
     const copyInviteMessage = () => {
-        const message = `👋 Привет! Присоединяйся к нашей бригаде в системе «ВИКС Расписание».\n\n📱 Прямая ссылка:\n${inviteInfo.invite_link}\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}`;
+        const code = inviteInfo.invite_code || inviteInfo.join_password;
+        const message = `👋 Привет! Присоединяйся к нашей бригаде в системе «ВИКС Расписание».\n\n📱 Прямая ссылка:\n${inviteInfo.invite_link}\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
         copyToClipboard(message, 'all');
         alert('Полное сообщение скопировано в буфер обмена!');
     };
@@ -195,7 +196,6 @@ export default function Teams() {
 
                                                     {canEdit && (
                                                         <div className="flex flex-wrap gap-2">
-                                                            {/* Кнопка открытия профиля */}
                                                             <button type="button" onClick={() => { setManageModalOpen(false); openProfile(m.tg_user_id, 'member', m.id); }} className="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-200 transition whitespace-nowrap">
                                                                 👤 Профиль
                                                             </button>
@@ -238,6 +238,17 @@ export default function Teams() {
                                 <button onClick={() => copyToClipboard(inviteInfo.invite_link, 'web')} className="w-full text-left px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-gray-50 dark:bg-gray-700 font-medium hover:bg-gray-100 dark:hover:bg-gray-600 transition shadow-sm text-blue-600 dark:text-blue-400">
                                     {copiedLink === 'web' ? '✅ Успешно скопировано!' : '🔗 Нажмите, чтобы скопировать'}
                                 </button>
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-700 dark:text-gray-300 mb-1 uppercase tracking-wide">💬 Для мессенджера MAX:</label>
+                                <div className="w-full text-center px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-gray-50 dark:bg-gray-700 font-medium shadow-sm flex items-center justify-center">
+                                    <code
+                                        className="text-blue-600 dark:text-blue-400 font-bold text-lg cursor-pointer"
+                                        onClick={() => copyToClipboard(`/join ${inviteInfo.invite_code || inviteInfo.join_password}`, 'max')}
+                                    >
+                                        {copiedLink === 'max' ? '✅ Скопировано!' : `/join ${inviteInfo.invite_code || inviteInfo.join_password}`}
+                                    </code>
+                                </div>
                             </div>
                         </div>
 

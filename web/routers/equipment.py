@@ -106,6 +106,7 @@ async def generate_equip_invite(equip_id: int):
     return {
         "invite_link": f"https://miniapp.viks22.ru/equip-invite/{code}",
         "tg_bot_link": f"https://t.me/viksstroy_bot?start=equip_{code}",
+        "invite_code": code,
         "join_password": code
     }
 
