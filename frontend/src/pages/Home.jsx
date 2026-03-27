@@ -93,6 +93,9 @@ export default function Home() {
     const [myTeam, setMyTeam] = useState(null);
     const [loading, setLoading] = useState(true);
 
+    // Стейт для блокировки кнопок во время загрузки (защита от двойного клика)
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
 
@@ -136,6 +139,7 @@ export default function Home() {
             setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0 });
             setActiveEqCategory(null);
             setTeamMembers([]);
+            setIsSubmitting(false); // Сбрасываем блокировку при закрытии
         }
     }, [isGlobalCreateAppOpen]);
 
@@ -211,6 +215,7 @@ export default function Home() {
         if (appForm.team_ids.length === 0 && !window.confirm("Создать заявку ТОЛЬКО на технику (без людей)?")) return;
         if (appForm.team_ids.length > 0 && appForm.members.length === 0) return alert("Выберите хотя бы одного рабочего из бригады!");
 
+        setIsSubmitting(true); // Блокируем кнопку
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId); fd.append('date_target', appForm.date_target); fd.append('object_address', appForm.object_address);
@@ -227,11 +232,16 @@ export default function Home() {
             }
 
             setGlobalCreateAppOpen(false); fetchData();
-        } catch (err) { alert(err.response?.data?.detail || "Ошибка сохранения"); }
+        } catch (err) {
+            alert(err.response?.data?.detail || "Ошибка сохранения");
+        } finally {
+            setIsSubmitting(false); // Снимаем блокировку
+        }
     };
 
     const handleDeleteApp = async () => {
         if (!window.confirm("ВНИМАНИЕ! Вы уверены, что хотите полностью УДАЛИТЬ эту заявку из системы? Это действие необратимо!")) return;
+        setIsSubmitting(true);
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
@@ -241,6 +251,8 @@ export default function Home() {
             fetchData();
         } catch (err) {
             alert(err.response?.data?.detail || "Ошибка при удалении заявки.");
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -269,6 +281,7 @@ export default function Home() {
     };
 
     const executeFree = async () => {
+        setIsSubmitting(true);
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
@@ -283,6 +296,8 @@ export default function Home() {
             fetchData();
         } catch(e) {
             alert(e.response?.data?.detail || "Ошибка при освобождении.");
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -312,7 +327,6 @@ export default function Home() {
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-20">
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Доступно рабочему, водителю, прорабу, боссу и суперадмину */}
                 {['worker', 'driver', 'foreman', 'boss', 'superadmin'].includes(role) && (
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-6 border-l-4 border-blue-500 relative h-fit">
                         <h2 className="text-lg font-bold mb-2 flex items-center dark:text-white">📋 Текущие наряды</h2>
@@ -355,7 +369,6 @@ export default function Home() {
                                                 </p>
                                             )}
 
-                                            {/* Боссы и суперадмины тоже могут освобождать свои бригады */}
                                             {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed !== 1 && (
                                                 <button onClick={() => openFreeModal('team', a)} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
                                                     ✅ Свободен (Освободить бригаду)
@@ -422,15 +435,16 @@ export default function Home() {
                             onChange={e => setFreeModal({...freeModal, inputValue: e.target.value})}
                             className="w-full border-2 border-gray-200 focus:border-emerald-500 focus:ring-0 p-4 rounded-xl mb-6 dark:bg-gray-700 dark:border-gray-600 dark:text-white uppercase text-center font-bold tracking-widest outline-none transition-colors"
                             placeholder="СВОБОДЕН"
+                            disabled={isSubmitting}
                         />
                         <div className="flex space-x-3">
-                            <button onClick={() => setFreeModal({isOpen: false, type: '', app: null, inputValue: ''})} className="flex-1 bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition-colors">Отмена</button>
+                            <button disabled={isSubmitting} onClick={() => setFreeModal({isOpen: false, type: '', app: null, inputValue: ''})} className="flex-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition-colors">Отмена</button>
                             <button
                                 onClick={executeFree}
-                                disabled={freeModal.inputValue.trim().toLowerCase() !== 'свободен'}
-                                className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 disabled:cursor-not-allowed disabled:text-gray-500 text-white py-3.5 rounded-xl font-bold transition-colors"
+                                disabled={isSubmitting || freeModal.inputValue.trim().toLowerCase() !== 'свободен'}
+                                className="flex-1 bg-emerald-500 hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed text-white py-3.5 rounded-xl font-bold transition-colors flex justify-center items-center"
                             >
-                                Подтвердить
+                                {isSubmitting ? '⏳ Обработка...' : 'Подтвердить'}
                             </button>
                         </div>
                     </div>
@@ -442,20 +456,29 @@ export default function Home() {
                 <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                         <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden">
+
+                            {/* Экран загрузки поверх модалки */}
+                            {isSubmitting && (
+                                <div className="absolute inset-0 bg-white/50 dark:bg-black/50 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
+                                    <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+                                    <p className="font-bold text-blue-700 dark:text-blue-400">⏳ Выполняется...</p>
+                                </div>
+                            )}
+
                             <div className="flex justify-between items-center px-6 py-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
                                 <h3 className="text-xl font-bold dark:text-white">{appForm.id ? `Наряд №${appForm.id}` : 'Создание заявки'}</h3>
-                                <button type="button" onClick={() => setGlobalCreateAppOpen(false)} className="text-gray-400 hover:text-red-500 text-3xl leading-none transition">&times;</button>
+                                <button type="button" disabled={isSubmitting} onClick={() => setGlobalCreateAppOpen(false)} className="text-gray-400 hover:text-red-500 disabled:opacity-50 text-3xl leading-none transition">&times;</button>
                             </div>
                             <form onSubmit={handleCreateApp} className="p-6 space-y-6 text-sm">
                                 <div className="space-y-4">
-                                    <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📅 Дата выезда</label><input type="date" disabled={appForm.isViewOnly} required value={appForm.date_target} onChange={e => handleFormChange('date_target', e.target.value)} className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-bold text-gray-800 dark:text-gray-100 shadow-sm mb-3 disabled:opacity-80 bg-transparent" />{!appForm.isViewOnly && <div className="flex flex-wrap gap-2">{smartDates.map(d => (<button key={d.val} type="button" onClick={() => handleFormChange('date_target', d.val)} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${appForm.date_target === d.val ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 shadow-sm' : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>{d.label}</button>))}</div>}</div>
+                                    <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📅 Дата выезда</label><input type="date" disabled={appForm.isViewOnly || isSubmitting} required value={appForm.date_target} onChange={e => handleFormChange('date_target', e.target.value)} className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-bold text-gray-800 dark:text-gray-100 shadow-sm mb-3 disabled:opacity-80 bg-transparent" />{!appForm.isViewOnly && <div className="flex flex-wrap gap-2">{smartDates.map(d => (<button key={d.val} type="button" disabled={isSubmitting} onClick={() => handleFormChange('date_target', d.val)} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition disabled:opacity-50 ${appForm.date_target === d.val ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 shadow-sm' : 'bg-gray-50 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>{d.label}</button>))}</div>}</div>
                                     <div>
                                         <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">📍 Адрес объекта</label>
-                                        <input type="text" disabled={appForm.isViewOnly} required value={appForm.object_address} onChange={e => handleFormChange('object_address', e.target.value)} placeholder="г. Москва, ул. Ленина, 10" className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-medium dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" />
+                                        <input type="text" disabled={appForm.isViewOnly || isSubmitting} required value={appForm.object_address} onChange={e => handleFormChange('object_address', e.target.value)} placeholder="г. Москва, ул. Ленина, 10" className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none font-medium dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" />
                                         {!appForm.isViewOnly && data.recent_addresses && data.recent_addresses.length > 0 && (
                                             <div className="flex flex-wrap gap-2 mt-3">
                                                 {data.recent_addresses.map((addr, idx) => (
-                                                    <button key={idx} type="button" onClick={() => handleFormChange('object_address', addr)} className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm border border-gray-200 dark:border-gray-600 truncate max-w-full">
+                                                    <button key={idx} type="button" disabled={isSubmitting} onClick={() => handleFormChange('object_address', addr)} className="bg-gray-100 disabled:opacity-50 dark:bg-gray-700 text-gray-600 dark:text-gray-300 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition shadow-sm border border-gray-200 dark:border-gray-600 truncate max-w-full">
                                                         {addr}
                                                     </button>
                                                 ))}
@@ -512,7 +535,7 @@ export default function Home() {
                                         </div>
                                     ) : (
                                         <div className="flex flex-wrap gap-2">
-                                            <button type="button" onClick={() => handleFormChange('team_ids', [])} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${appForm.team_ids.length === 0 ? 'bg-red-50 border-red-500 text-red-700 dark:bg-red-900/30' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>❌ Без бригады</button>
+                                            <button type="button" disabled={isSubmitting} onClick={() => handleFormChange('team_ids', [])} className={`px-4 py-2 text-sm disabled:opacity-50 font-medium rounded-xl border transition ${appForm.team_ids.length === 0 ? 'bg-red-50 border-red-500 text-red-700 dark:bg-red-900/30' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300'}`}>❌ Без бригады</button>
                                             {data?.teams?.map(t => {
                                                 const st = checkTeamStatus(t.id);
                                                 const isSelected = appForm.team_ids.includes(t.id);
@@ -520,7 +543,7 @@ export default function Home() {
                                                 if (st.state === 'busy') btnStyles = 'bg-red-50 border-red-300 text-red-500 dark:bg-red-900/30 dark:border-red-800 dark:text-red-400 cursor-not-allowed opacity-75';
                                                 else if (isSelected) btnStyles = 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 shadow-sm';
 
-                                                return (<button key={t.id} type="button" onClick={() => { if(st.state !== 'free') return alert(st.message); toggleTeamSelection(t.id); }} className={`px-4 py-2 text-sm font-medium rounded-xl border transition ${btnStyles}`}>🏗 {t.name}</button>);
+                                                return (<button key={t.id} type="button" disabled={isSubmitting} onClick={() => { if(st.state !== 'free') return alert(st.message); toggleTeamSelection(t.id); }} className={`px-4 py-2 disabled:opacity-50 text-sm font-medium rounded-xl border transition ${btnStyles}`}>🏗 {t.name}</button>);
                                             })}
                                         </div>
                                     )}
@@ -532,7 +555,7 @@ export default function Home() {
                                                 {teamMembers.map(m => {
                                                     const isSelected = appForm?.members?.includes(m.id);
                                                     return (
-                                                        <button key={m.id} type="button" onClick={() => toggleAppMember(m.id)} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>
+                                                        <button key={m.id} type="button" disabled={isSubmitting} onClick={() => toggleAppMember(m.id)} className={`px-3 py-1.5 disabled:opacity-50 text-sm font-medium rounded-lg border transition flex items-center ${isSelected ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-100'}`}>
                                                             {isSelected ? <span className="mr-1.5 text-white font-bold">✓</span> : <span className="mr-1.5 opacity-0">✓</span>} {m.fio}
                                                         </button>
                                                     );
@@ -545,46 +568,45 @@ export default function Home() {
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
                                     <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">🚜 Требуемая техника</label>
-                                    {!appForm.isViewOnly && <div className="flex flex-wrap gap-2 mb-2">{data?.equip_categories?.map(cat => (<button key={cat} type="button" onClick={() => setActiveEqCategory(activeEqCategory === cat ? null : cat)} className={`px-3 py-1.5 text-xs font-bold rounded-lg border transition ${activeEqCategory === cat ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50'}`}>{cat}</button>))}</div>}
-                                    {activeEqCategory && !appForm.isViewOnly && (<div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600 shadow-inner"><div className="flex flex-wrap gap-2">{data.equipment?.filter(e => e.category === activeEqCategory).map(e => { const st = checkEquipStatus(e); const isSelected = appForm.equipment.some(eq => eq.id === e.id); const displayName = e.driver ? `${e.name} (${e.driver})` : e.name; let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100'; if (st.state === 'repair') btnStyles = 'bg-red-50 border-red-300 text-red-500 cursor-not-allowed opacity-75'; else if (st.state === 'busy') btnStyles = 'bg-yellow-50 border-yellow-300 text-yellow-600 cursor-not-allowed opacity-80'; else if (isSelected) btnStyles = 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm'; return (<button key={e.id} type="button" onClick={() => { if (st.state !== 'free') return alert(st.message); toggleEquipmentSelection(e); }} className={`px-3 py-1.5 text-sm font-medium rounded-lg border transition flex items-center ${btnStyles}`}>{isSelected && <span className="mr-1.5 font-bold">✓</span>}{st.state === 'repair' && <span className="mr-1.5">🛠</span>}{st.state === 'busy' && <span className="mr-1.5">⏳</span>}{displayName}</button>); })}</div></div>)}
+                                    {!appForm.isViewOnly && <div className="flex flex-wrap gap-2 mb-2">{data?.equip_categories?.map(cat => (<button key={cat} type="button" disabled={isSubmitting} onClick={() => setActiveEqCategory(activeEqCategory === cat ? null : cat)} className={`px-3 py-1.5 disabled:opacity-50 text-xs font-bold rounded-lg border transition ${activeEqCategory === cat ? 'bg-indigo-500 text-white border-indigo-600' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-50'}`}>{cat}</button>))}</div>}
+                                    {activeEqCategory && !appForm.isViewOnly && (<div className="p-3 bg-gray-50 dark:bg-gray-700/30 rounded-xl border border-gray-200 dark:border-gray-600 shadow-inner"><div className="flex flex-wrap gap-2">{data.equipment?.filter(e => e.category === activeEqCategory).map(e => { const st = checkEquipStatus(e); const isSelected = appForm.equipment.some(eq => eq.id === e.id); const displayName = e.driver ? `${e.name} (${e.driver})` : e.name; let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 dark:border-gray-600 hover:bg-gray-100'; if (st.state === 'repair') btnStyles = 'bg-red-50 border-red-300 text-red-500 cursor-not-allowed opacity-75'; else if (st.state === 'busy') btnStyles = 'bg-yellow-50 border-yellow-300 text-yellow-600 cursor-not-allowed opacity-80'; else if (isSelected) btnStyles = 'bg-emerald-50 border-emerald-500 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 shadow-sm'; return (<button key={e.id} type="button" disabled={isSubmitting} onClick={() => { if (st.state !== 'free') return alert(st.message); toggleEquipmentSelection(e); }} className={`px-3 py-1.5 disabled:opacity-50 text-sm font-medium rounded-lg border transition flex items-center ${btnStyles}`}>{isSelected && <span className="mr-1.5 font-bold">✓</span>}{st.state === 'repair' && <span className="mr-1.5">🛠</span>}{st.state === 'busy' && <span className="mr-1.5">⏳</span>}{displayName}</button>); })}</div></div>)}
                                     {appForm.equipment.length > 0 ? (
                                         <div className="mt-4 space-y-3 p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/50 shadow-inner">
                                             <label className="block text-xs font-bold text-indigo-800 dark:text-indigo-300 uppercase tracking-wide border-b border-indigo-200 dark:border-indigo-800 pb-2 mb-3">Список машин:</label>
                                             {appForm.equipment.map(eq => (
                                                 <div key={eq.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-indigo-100 dark:border-indigo-700/50 shadow-sm gap-3">
                                                     {appForm.isViewOnly ? (
-                                                        <button type="button" onClick={() => { setGlobalCreateAppOpen(false); openProfile(0, 'equip', eq.id); }} className={`font-bold text-sm text-left hover:underline ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                        <button type="button" disabled={isSubmitting} onClick={() => { setGlobalCreateAppOpen(false); openProfile(0, 'equip', eq.id); }} className={`font-bold text-sm text-left hover:underline disabled:opacity-50 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
                                                             🚜 {eq.name.split('(')[0].trim()} {eq.is_freed ? '✅' : ''}
                                                         </button>
                                                     ) : (
                                                         <p className={`font-bold text-sm ${eq.is_freed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}>🚜 {eq.name} {eq.is_freed ? '✅' : ''}</p>
                                                     )}
-                                                    <div className="flex items-center space-x-2"><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">С</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_start} onChange={e => updateEquipmentTime(eq.id, 'time_start', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div><span className="text-gray-400 font-bold">—</span><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">ДО</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly} value={eq.time_end} onChange={e => updateEquipmentTime(eq.id, 'time_end', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div></div>
+                                                    <div className="flex items-center space-x-2"><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">С</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly || isSubmitting} value={eq.time_start} onChange={e => updateEquipmentTime(eq.id, 'time_start', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div><span className="text-gray-400 font-bold">—</span><div className="flex items-center border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"><span className="bg-gray-100 dark:bg-gray-700 px-2 py-1.5 text-xs font-bold text-gray-500 border-r dark:border-gray-600">ДО</span><input type="number" min="0" max="23" disabled={appForm.isViewOnly || isSubmitting} value={eq.time_end} onChange={e => updateEquipmentTime(eq.id, 'time_end', e.target.value)} className="w-12 text-center py-1.5 text-sm font-bold outline-none dark:bg-gray-800 dark:text-white disabled:opacity-80 bg-transparent" /><span className="pr-2 font-bold text-gray-400 text-sm">:00</span></div></div>
                                                 </div>
                                             ))}
                                         </div>
                                     ) : (appForm.isViewOnly && <p className="text-gray-500 text-sm">Техника не требуется</p>)}
                                 </div>
                                 <hr className="dark:border-gray-700" />
-                                <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" disabled={appForm.isViewOnly} value={appForm.comment} onChange={e => handleFormChange('comment', e.target.value)} placeholder="Доп. информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" /></div>
+                                <div><label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">💬 Комментарий</label><input type="text" disabled={appForm.isViewOnly || isSubmitting} value={appForm.comment} onChange={e => handleFormChange('comment', e.target.value)} placeholder="Доп. информация..." className="w-full border dark:border-gray-600 bg-white dark:bg-gray-700 p-3 rounded-xl outline-none dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 disabled:opacity-80 bg-transparent" /></div>
 
                                 <div className="flex space-x-2 pt-4">
-                                    <button type="button" onClick={() => setGlobalCreateAppOpen(false)} className={`bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 py-4 px-4 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition flex-1`}>Закрыть</button>
+                                    <button type="button" disabled={isSubmitting} onClick={() => setGlobalCreateAppOpen(false)} className={`bg-gray-100 hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600 py-4 px-4 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition flex-1`}>Закрыть</button>
 
                                     {appForm.isViewOnly && appForm.id && ['superadmin', 'boss', 'moderator'].includes(role) && (
-                                        <button type="button" title="Удалить заявку" onClick={handleDeleteApp} className="bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 py-4 px-5 rounded-xl font-bold transition flex-none border border-red-200 dark:border-red-800">
-                                            🗑️
+                                        <button type="button" title="Удалить заявку" disabled={isSubmitting} onClick={handleDeleteApp} className="bg-red-100 text-red-700 hover:bg-red-200 disabled:opacity-50 dark:bg-red-900/30 dark:text-red-400 dark:hover:bg-red-900/50 py-4 px-5 rounded-xl font-bold transition flex-none border border-red-200 dark:border-red-800 flex justify-center items-center">
+                                            {isSubmitting ? '⏳' : '🗑️'}
                                         </button>
                                     )}
 
-                                    {/* Боссы тоже могут редактировать ожидающие наряды */}
                                     {appForm.isViewOnly && appForm.status === 'waiting' && ['foreman', 'moderator', 'boss', 'superadmin'].includes(role) && (
-                                        <button type="button" onClick={() => setAppForm(prev => ({...prev, isViewOnly: false}))} className="bg-yellow-500 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-yellow-600 transition flex-1">✏️ Редактировать</button>
+                                        <button type="button" disabled={isSubmitting} onClick={() => setAppForm(prev => ({...prev, isViewOnly: false}))} className="bg-yellow-500 text-white py-4 rounded-xl font-bold disabled:opacity-50 shadow-lg hover:bg-yellow-600 transition flex-1">✏️ Редактировать</button>
                                     )}
 
                                     {!appForm.isViewOnly && (
-                                        <button type="submit" className="bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition flex-[2]">
-                                            {appForm.id ? 'Сохранить изменения' : 'Отправить'}
+                                        <button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white py-4 rounded-xl font-bold shadow-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition flex-[2] flex justify-center items-center">
+                                            {isSubmitting ? '⏳ Обработка...' : (appForm.id ? 'Сохранить изменения' : 'Отправить')}
                                         </button>
                                     )}
                                 </div>

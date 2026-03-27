@@ -45,6 +45,9 @@ export default function Review() {
     const [publishDateFilter, setPublishDateFilter] = useState('');
     const [selectedToPublish, setSelectedToPublish] = useState([]);
 
+    // Единый стейт блокировки для модерации и массовой публикации
+    const [isProcessing, setIsProcessing] = useState(false);
+
     const fetchData = () => {
         axios.get('/api/applications/review').then(res => setReviewApps(res.data || [])).catch(() => {});
     };
@@ -62,6 +65,7 @@ export default function Review() {
             if (!window.confirm('Одобрить заявку?')) return;
         }
 
+        setIsProcessing(true); // Включаем блокировку
         try {
             const fd = new FormData();
             fd.append('new_status', status);
@@ -71,7 +75,11 @@ export default function Review() {
             await axios.post(`/api/applications/${selectedApp.id}/review`, fd);
             setSelectedApp(null);
             fetchData();
-        } catch (err) { alert("Ошибка при обновлении статуса"); }
+        } catch (err) {
+            alert("Ошибка при обновлении статуса");
+        } finally {
+            setIsProcessing(false); // Снимаем блокировку
+        }
     };
 
     const openPublishModal = () => {
@@ -81,11 +89,14 @@ export default function Review() {
     };
 
     const togglePublishSelect = (id) => {
+        if (isProcessing) return;
         setSelectedToPublish(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
     };
 
     const handleExecutePublish = async () => {
         if(selectedToPublish.length === 0) return alert("Выберите хотя бы одну заявку!");
+
+        setIsProcessing(true); // Включаем блокировку (Глобальную для публикации)
         try {
             const fd = new FormData();
             fd.append('app_ids', selectedToPublish.join(','));
@@ -94,7 +105,11 @@ export default function Review() {
             alert(`Опубликовано нарядов: ${res.data.published}`);
             setPublishModalOpen(false);
             fetchData();
-        } catch(e) { alert("Ошибка публикации"); }
+        } catch(e) {
+            alert("Ошибка публикации");
+        } finally {
+            setIsProcessing(false); // Снимаем блокировку
+        }
     };
 
     const todayYYYYMMDD = getTodayStr();
@@ -109,7 +124,6 @@ export default function Review() {
         ? approvedApps.filter(a => a.date_target === publishDateFilter && a.status === 'approved')
         : approvedApps.filter(a => a.status === 'approved');
 
-    // Руководители и Админы тоже могут модерировать
     const canModerate = ['moderator', 'boss', 'superadmin'].includes(role);
 
     const renderAppCard = (app, statusType) => {
@@ -167,11 +181,23 @@ export default function Review() {
     };
 
     return (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-20">
+        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-20 relative">
+
+            {/* ГЛОБАЛЬНЫЙ ЭКРАН ЗАГРУЗКИ (Особенно для массовой публикации) */}
+            {isProcessing && isPublishModalOpen && (
+                <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center transition-opacity">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-2xl shadow-2xl flex flex-col items-center">
+                        <div className="w-16 h-16 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-1">Публикация нарядов...</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">Пожалуйста, не закрывайте страницу</p>
+                    </div>
+                </div>
+            )}
+
             <div className="flex justify-between items-center bg-white dark:bg-gray-800 rounded-lg shadow-sm p-4 border border-gray-100 dark:border-gray-700">
                 <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📋</span> Управление заявками</h2>
                 {filteredForPublish.length > 0 && (
-                    <button onClick={openPublishModal} className="bg-emerald-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-emerald-600 animate-pulse transition">
+                    <button onClick={openPublishModal} disabled={isProcessing} className="bg-emerald-500 text-white px-5 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed animate-pulse transition">
                         📤 Опубликовать ({filteredForPublish.length})
                     </button>
                 )}
@@ -192,22 +218,22 @@ export default function Review() {
                         <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden">
                             <div className="flex justify-between items-center px-6 py-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
                                 <h3 className="text-xl font-bold dark:text-white">Опубликовать заявки</h3>
-                                <button onClick={() => setPublishModalOpen(false)} className="text-gray-400 hover:text-red-500 text-3xl leading-none transition">&times;</button>
+                                <button disabled={isProcessing} onClick={() => setPublishModalOpen(false)} className="text-gray-400 hover:text-red-500 disabled:opacity-50 text-3xl leading-none transition">&times;</button>
                             </div>
 
                             <div className="p-6 space-y-4">
                                 <div>
                                     <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase">Фильтр по дате:</label>
                                     <div className="flex space-x-2">
-                                        <button onClick={() => setPublishDateFilter('')} className={`px-4 py-2 rounded-lg text-sm font-bold border transition ${!publishDateFilter ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>Все даты</button>
-                                        <input type="date" value={publishDateFilter} onChange={e => setPublishDateFilter(e.target.value)} className="flex-1 p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white outline-none" />
+                                        <button disabled={isProcessing} onClick={() => setPublishDateFilter('')} className={`px-4 py-2 rounded-lg text-sm font-bold border transition disabled:opacity-50 ${!publishDateFilter ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}>Все даты</button>
+                                        <input type="date" disabled={isProcessing} value={publishDateFilter} onChange={e => setPublishDateFilter(e.target.value)} className="flex-1 p-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 disabled:opacity-50 dark:text-white outline-none" />
                                     </div>
                                 </div>
 
                                 <div className="max-h-64 overflow-y-auto space-y-2 border dark:border-gray-700 p-2 rounded-xl bg-gray-50 dark:bg-gray-900/30">
                                     {filteredForPublish.map(app => (
-                                        <div key={app.id} onClick={() => togglePublishSelect(app.id)} className={`p-3 rounded-lg border cursor-pointer flex items-center transition ${selectedToPublish.includes(app.id) ? 'bg-emerald-50 border-emerald-500 dark:bg-emerald-900/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
-                                            <input type="checkbox" checked={selectedToPublish.includes(app.id)} readOnly className="w-5 h-5 mr-3 text-emerald-600 rounded focus:ring-emerald-500" />
+                                        <div key={app.id} onClick={() => togglePublishSelect(app.id)} className={`p-3 rounded-lg border cursor-pointer flex items-center transition ${isProcessing ? 'opacity-70 cursor-not-allowed' : ''} ${selectedToPublish.includes(app.id) ? 'bg-emerald-50 border-emerald-500 dark:bg-emerald-900/30' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700'}`}>
+                                            <input type="checkbox" checked={selectedToPublish.includes(app.id)} readOnly className="w-5 h-5 mr-3 text-emerald-600 rounded focus:ring-emerald-500 pointer-events-none" />
                                             <div className="flex-1">
                                                 <p className="font-bold text-sm dark:text-white">{app.object_address}</p>
                                                 <p className="text-xs text-gray-500">{app.date_target} | {app.team_name || 'Только техника'}</p>
@@ -218,8 +244,10 @@ export default function Review() {
                                 </div>
 
                                 <div className="flex space-x-3 pt-4 border-t dark:border-gray-700">
-                                    <button onClick={() => setPublishModalOpen(false)} className="w-1/3 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl font-bold text-gray-700 dark:text-gray-300">Отмена</button>
-                                    <button onClick={handleExecutePublish} className="w-2/3 bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-md hover:bg-emerald-600">Опубликовать ({selectedToPublish.length})</button>
+                                    <button disabled={isProcessing} onClick={() => setPublishModalOpen(false)} className="w-1/3 bg-gray-100 dark:bg-gray-700 py-3 rounded-xl disabled:opacity-50 font-bold text-gray-700 dark:text-gray-300">Отмена</button>
+                                    <button disabled={isProcessing || selectedToPublish.length === 0} onClick={handleExecutePublish} className="w-2/3 bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-md hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center">
+                                        {isProcessing ? '⏳ Обработка...' : `Опубликовать (${selectedToPublish.length})`}
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -227,14 +255,22 @@ export default function Review() {
                 </div>
             )}
 
-            {/* МОДАЛЬНОЕ ОКНО ЗАЯВКИ */}
+            {/* МОДАЛЬНОЕ ОКНО ЗАЯВКИ (ИНДИВИДУАЛЬНОЕ) */}
             {selectedApp && (
                 <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                         <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden">
+
+                            {/* Индивидуальный экран загрузки */}
+                            {isProcessing && (
+                                <div className="absolute inset-0 bg-white/50 dark:bg-black/50 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
+                                    <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+                                </div>
+                            )}
+
                             <div className="flex justify-between items-center px-6 py-4 border-b dark:border-gray-700 bg-gray-50 dark:bg-gray-900/50">
                                 <h3 className="text-xl font-bold dark:text-white">Наряд №{selectedApp.id}</h3>
-                                <button onClick={() => setSelectedApp(null)} className="text-gray-400 hover:text-red-500 text-3xl leading-none transition">&times;</button>
+                                <button disabled={isProcessing} onClick={() => setSelectedApp(null)} className="text-gray-400 hover:text-red-500 text-3xl disabled:opacity-50 leading-none transition">&times;</button>
                             </div>
 
                             <div className="p-6 space-y-6 text-sm">
@@ -249,7 +285,7 @@ export default function Review() {
                                             <div>
                                                 <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wide">Прораб (Создатель заявки)</p>
                                                 {selectedApp.foreman_id ? (
-                                                    <button type="button" onClick={() => { setSelectedApp(null); openProfile(selectedApp.foreman_id); }} className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline text-left">
+                                                    <button type="button" disabled={isProcessing} onClick={() => { setSelectedApp(null); openProfile(selectedApp.foreman_id); }} className="text-sm font-bold text-blue-600 dark:text-blue-400 disabled:opacity-50 hover:underline text-left">
                                                         {selectedApp.foreman_name}
                                                     </button>
                                                 ) : (
@@ -275,8 +311,9 @@ export default function Review() {
                                                 <button
                                                     type="button"
                                                     key={m.id}
+                                                    disabled={isProcessing}
                                                     onClick={() => { setSelectedApp(null); openProfile(m.tg_user_id, 'member', m.id); }}
-                                                    className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-gray-200 dark:border-gray-600 rounded-lg text-sm transition flex items-center shadow-sm"
+                                                    className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 disabled:opacity-50 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-gray-200 dark:border-gray-600 rounded-lg text-sm transition flex items-center shadow-sm"
                                                 >
                                                     👤 {m.fio}
                                                 </button>
@@ -291,7 +328,7 @@ export default function Review() {
                                         <div className="space-y-2">
                                             {JSON.parse(selectedApp.equipment_data).map(eq => (
                                                 <div key={eq.id} className="flex justify-between items-center bg-gray-50 dark:bg-gray-700/50 p-3 rounded-xl border border-gray-200 dark:border-gray-600">
-                                                    <button type="button" onClick={() => { setSelectedApp(null); openProfile(0, 'equip', eq.id); }} className={`font-bold hover:underline ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                    <button type="button" disabled={isProcessing} onClick={() => { setSelectedApp(null); openProfile(0, 'equip', eq.id); }} className={`font-bold hover:underline disabled:opacity-50 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
                                                         🚜 {eq.name.split('(')[0].trim()} {eq.is_freed ? '✅' : ''}
                                                     </button>
                                                     <span className="text-xs font-bold text-gray-500 dark:text-gray-400 bg-white dark:bg-gray-800 px-2 py-1 rounded-md border dark:border-gray-600">⏰ {eq.time_start}:00 - {eq.time_end}:00</span>
@@ -306,15 +343,15 @@ export default function Review() {
                                 <div className="flex space-x-3 pt-4 border-t dark:border-gray-700">
                                     {selectedApp.status === 'waiting' && canModerate && (
                                         <>
-                                            <button onClick={() => handleReviewAction('rejected')} className="w-1/2 bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-200 transition">❌ Отклонить</button>
-                                            <button onClick={() => handleReviewAction('approved')} className="w-1/2 bg-emerald-500 text-white py-3 rounded-xl font-bold shadow-md hover:bg-emerald-600 transition">✅ Одобрить</button>
+                                            <button disabled={isProcessing} onClick={() => handleReviewAction('rejected')} className="w-1/2 bg-red-100 text-red-700 disabled:opacity-50 dark:bg-red-900/40 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-200 transition">❌ Отклонить</button>
+                                            <button disabled={isProcessing} onClick={() => handleReviewAction('approved')} className="w-1/2 bg-emerald-500 text-white disabled:opacity-50 py-3 rounded-xl font-bold shadow-md hover:bg-emerald-600 transition">✅ Одобрить</button>
                                         </>
                                     )}
                                     {selectedApp.status === 'approved' && canModerate && (
-                                        <button onClick={() => handleReviewAction('rejected')} className="w-full bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-200 transition">🔙 Отозвать заявку</button>
+                                        <button disabled={isProcessing} onClick={() => handleReviewAction('rejected')} className="w-full bg-red-100 text-red-700 disabled:opacity-50 dark:bg-red-900/40 dark:text-red-400 py-3 rounded-xl font-bold hover:bg-red-200 transition">🔙 Отозвать заявку</button>
                                     )}
                                     {selectedApp.status === 'published' && canModerate && (
-                                        <button onClick={() => handleReviewAction('completed')} className="w-full bg-gray-800 text-white dark:bg-gray-600 py-3 rounded-xl font-bold hover:bg-gray-900 transition shadow-md">🏁 Отменить / Завершить наряд</button>
+                                        <button disabled={isProcessing} onClick={() => handleReviewAction('completed')} className="w-full bg-gray-800 text-white disabled:opacity-50 dark:bg-gray-600 py-3 rounded-xl font-bold hover:bg-gray-900 transition shadow-md">🏁 Отменить / Завершить наряд</button>
                                     )}
                                 </div>
                             </div>
