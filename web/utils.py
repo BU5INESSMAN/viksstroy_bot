@@ -14,7 +14,8 @@ from PIL import Image, ImageDraw, ImageFont
 import io
 
 from maxapi import Bot
-from maxapi.types import InputMedia
+# Импортируем классы для кнопок
+from maxapi.types import InputMedia, ButtonsPayload, LinkButton
 
 from database_deps import db
 
@@ -292,7 +293,7 @@ async def get_max_dm_chat_id(max_user_id: str):
     return str(max_user_id)
 
 
-async def send_max_text(bot_token: str, chat_id: str, text: str):
+async def send_max_text(bot_token: str, chat_id: str, text: str, attachments: list = None):
     """Отправка текста в MAX."""
     if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
         return False
@@ -304,7 +305,10 @@ async def send_max_text(bot_token: str, chat_id: str, text: str):
 
     try:
         bot = get_max_bot(bot_token)
-        await bot.send_message(chat_id=int_chat_id, text=str(text))
+        if attachments:
+            await bot.send_message(chat_id=int_chat_id, text=str(text), attachments=attachments)
+        else:
+            await bot.send_message(chat_id=int_chat_id, text=str(text))
         return True
     except Exception as e:
         err_str = str(e)
@@ -315,7 +319,8 @@ async def send_max_text(bot_token: str, chat_id: str, text: str):
         return False
 
 
-async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: str = None, file_url: str = None):
+async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: str = None, file_url: str = None,
+                           attachments: list = None):
     """Отправка полного наряда (Фото + Текст) в MAX"""
     if not bot_token or not chat_id or str(chat_id).lower() in ["none", "null", ""]:
         return False
@@ -343,7 +348,10 @@ async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: st
         final_text += f"\n\n🖼 Наряд: {file_url}"
 
     try:
-        await bot.send_message(chat_id=int_chat_id, text=str(final_text))
+        if attachments:
+            await bot.send_message(chat_id=int_chat_id, text=str(final_text), attachments=attachments)
+        else:
+            await bot.send_message(chat_id=int_chat_id, text=str(final_text))
         return True
     except Exception as e:
         err_str = str(e)
@@ -396,7 +404,10 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     markup = {"inline_keyboard": [
         [{"text": "📱 Открыть платформу", "web_app": {"url": f"https://miniapp.viks22.ru/{url_path}"}}]]}
 
-    max_plain_text = f"{strip_html(text)}\n\n📱 Платформа: https://miniapp.viks22.ru/{url_path}"
+    # Подготавливаем текст и кнопку для MAX
+    max_plain_text = strip_html(text)
+    max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"https://miniapp.viks22.ru/{url_path}")]]
+    max_payload = ButtonsPayload(buttons=max_buttons).pack()
 
     # 3. Отправка ГРУППАМ (Только если есть роль report_group)
     if "report_group" in target_roles:
@@ -415,7 +426,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         for mid in final_max_ids:
             dm_chat_id = await get_max_dm_chat_id(str(mid))
             print(f"🔄 MAX ЛС: Отправка уведомления пользователю {mid} в диалог {dm_chat_id}")
-            await send_max_text(max_bot_token, dm_chat_id, max_plain_text)
+            await send_max_text(max_bot_token, dm_chat_id, max_plain_text, attachments=[max_payload])
 
     # 5. Отправка ЛС В TELEGRAM
     if target_platform in ["all", "tg"] and bot_token:
@@ -546,7 +557,18 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
         max_text = strip_html(max_caption)
-        published_max = await send_max_message(max_bot_token, max_group_id, max_text, filepath, file_url)
+        # Добавляем красивую кнопку под фото+текст в общей группе MAX
+        max_buttons = [[LinkButton(text="📱 Открыть платформу", url="https://miniapp.viks22.ru/dashboard")]]
+        max_payload = ButtonsPayload(buttons=max_buttons).pack()
+
+        published_max = await send_max_message(
+            max_bot_token,
+            max_group_id,
+            max_text,
+            filepath,
+            file_url,
+            attachments=[max_payload]
+        )
 
     if (published_tg or published_max) and target_platform == "all":
         try:

@@ -8,7 +8,8 @@ import re
 from dotenv import load_dotenv
 
 from maxapi import Bot, Dispatcher, F
-from maxapi.types import MessageCreated
+from maxapi.types import MessageCreated, LinkButton
+from maxapi.utils.inline_keyboard import InlineKeyboardBuilder
 
 # Подключаем папку web, чтобы Python увидел database_deps и другие модули бэкенда
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -32,7 +33,6 @@ bot = Bot(MAX_TOKEN)
 dp = Dispatcher()
 
 WEB_APP_URL = "https://miniapp.viks22.ru/"
-APP_LINK = f"📱 Платформа: {WEB_APP_URL}"
 
 USER_STATES = {}
 
@@ -45,10 +45,13 @@ async def resolve_id(raw_id: int):
     return raw_id
 
 
-async def send_max_msg(event: MessageCreated, text: str):
-    """Используем встроенный надежный метод для ответа"""
+async def send_max_msg(event: MessageCreated, text: str, reply_markup=None):
+    """Используем встроенный надежный метод для ответа с поддержкой кнопок"""
     try:
-        await event.message.answer(text)
+        if reply_markup:
+            await event.message.answer(text, attachments=[reply_markup])
+        else:
+            await event.message.answer(text)
     except Exception as e:
         logger.warning(f"Ошибка ответа MAX: {e}")
 
@@ -65,13 +68,11 @@ async def message_handler(event: MessageCreated):
         max_id = event.message.sender.user_id
     except:
         pass
-
     if not max_id:
         try:
             max_id = event.user_id
         except:
             pass
-
     if not max_id: return
     max_id_str = str(max_id).strip()
 
@@ -81,35 +82,29 @@ async def message_handler(event: MessageCreated):
         chat_id = event.message.chat.id
     except:
         pass
-
     if not chat_id:
         try:
             chat_id = event.message.chat.chatId
         except:
             pass
-
     if not chat_id:
         try:
             chat_id = event.chat_id
         except:
             pass
-
     if not chat_id:
-        # Если API спрятало ID, парсим его напрямую из строки события!
         match = re.search(r"chat_id[=: ]*['\"]?([-\w]+)", str(event))
         if match: chat_id = match.group(1)
 
     chat_str = str(chat_id).strip() if chat_id else "None"
     is_group = chat_str.startswith("-") or "@chat" in chat_str
 
-    # --- 3. ЗАПИСЬ ID ЧАТА В БАЗУ ДАННЫХ (ТО, ЧТО ТЫ ПРОСИЛ) ---
+    # --- 3. ЗАПИСЬ ID ЧАТА В БАЗУ ДАННЫХ ---
     if not is_group and chat_str != "None":
         try:
             await db.conn.execute("DELETE FROM settings WHERE key = ?", (f'max_dm_{max_id_str}',))
             await db.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f'max_dm_{max_id_str}', chat_str))
             await db.conn.commit()
-            logger.info(
-                f"💾 БАЗА ДАННЫХ: ID диалога ЛС успешно сохранен! (Пользователь {max_id_str} -> Диалог {chat_str})")
         except Exception as e:
             logger.error(f"❌ Ошибка БД при сохранении ЛС MAX: {e}")
 
@@ -125,7 +120,6 @@ async def message_handler(event: MessageCreated):
         if text.startswith("/setchat"):
             if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
                 return await send_max_msg(event, "❌ У вас нет прав для привязки системной группы.")
-
             try:
                 await db.conn.execute("DELETE FROM settings WHERE key = 'max_group_chat_id'")
                 await db.conn.execute("INSERT INTO settings (key, value) VALUES ('max_group_chat_id', ?)", (chat_str,))
@@ -137,7 +131,6 @@ async def message_handler(event: MessageCreated):
         return
 
     # --- ЛОГИКА ДЛЯ ЛИЧНЫХ СООБЩЕНИЙ ---
-
     if text.startswith("/web"):
         if not user:
             return await send_max_msg(event, "❌ Сначала зарегистрируйтесь (используйте /start или /join).")
@@ -177,7 +170,10 @@ async def message_handler(event: MessageCreated):
         if not target_url:
             return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
 
-        # Мгновенная регистрация по коду
+        builder = InlineKeyboardBuilder()
+        builder.row(LinkButton(text="📱 Открыть платформу", url=target_url))
+        markup = builder.as_markup()
+
         if not user:
             sender = getattr(event.message, "sender", None)
             first_name = getattr(sender, "first_name", getattr(sender, "firstName", ""))
@@ -190,14 +186,14 @@ async def message_handler(event: MessageCreated):
             try:
                 await db.add_user(pseudo_tg_id, fio, role_to_set)
                 await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался по коду (Роль: {role_to_set}, Платформа: MAX)")
-                msg = f"🎉 Регистрация успешно завершена!\n\n👤 Ваше имя: {fio}\n💼 Роль: {role_to_set}\n\nТеперь перейдите по ссылке для выбора бригады/техники:\n\n📱 {target_url}"
-                return await send_max_msg(event, msg)
+                msg = f"🎉 Регистрация успешно завершена!\n\n👤 Ваше имя: {fio}\n💼 Роль: {role_to_set}\n\nНажмите на кнопку ниже для выбора бригады/техники:"
+                return await send_max_msg(event, msg, reply_markup=markup)
             except Exception as e:
                 logger.error(f"Ошибка БД при регистрации через /join: {e}")
                 return await send_max_msg(event,
                                           "❌ Произошла ошибка при сохранении данных. Пожалуйста, попробуйте еще раз.")
         else:
-            return await send_max_msg(event, f"Для вступления/привязки перейдите по ссылке:\n\n📱 {target_url}")
+            return await send_max_msg(event, "Для вступления/привязки нажмите кнопку ниже:", reply_markup=markup)
 
     if text.startswith("/start"):
         if user:
@@ -205,8 +201,10 @@ async def message_handler(event: MessageCreated):
                 await send_max_msg(event, "❌ Ваш аккаунт заблокирован.")
             else:
                 USER_STATES.pop(max_id_str, None)
-                msg = f"С возвращением, {dict(user)['fio']}!\n\nНажмите на ссылку ниже для запуска:\n\n{APP_LINK}"
-                await send_max_msg(event, msg)
+                msg = f"С возвращением, {dict(user)['fio']}!\n\nНажмите на кнопку ниже для запуска:"
+                builder = InlineKeyboardBuilder()
+                builder.row(LinkButton(text="📱 Открыть платформу", url=WEB_APP_URL))
+                await send_max_msg(event, msg, reply_markup=builder.as_markup())
         else:
             USER_STATES[max_id_str] = {"state": "waiting_for_password"}
             msg = "🔐 Добро пожаловать в ВИКС Расписание!\n\nЕсли вы администратор или прораб, введите системный пароль.\nЕсли вы рабочий или водитель, используйте команду /join [код]"
@@ -224,7 +222,10 @@ async def message_handler(event: MessageCreated):
                 await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (text,))
                 await db.conn.commit()
                 USER_STATES.pop(max_id_str, None)
-                await send_max_msg(event, f"✅ Аккаунты успешно связаны!\n\n{APP_LINK}")
+
+                builder = InlineKeyboardBuilder()
+                builder.row(LinkButton(text="📱 Открыть платформу", url=WEB_APP_URL))
+                await send_max_msg(event, "✅ Аккаунты успешно связаны!", reply_markup=builder.as_markup())
                 return
             else:
                 await send_max_msg(event, "❌ Код недействителен или устарел. Введите пароль или новый код:")
@@ -255,15 +256,20 @@ async def message_handler(event: MessageCreated):
             await db.add_user(pseudo_tg_id, fio, role)
             await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался в боте MAX (Роль: {role})")
             USER_STATES.pop(max_id_str, None)
-            msg = f"🎉 Регистрация успешно завершена!\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇\n\n{APP_LINK}"
-            await send_max_msg(event, msg)
+
+            msg = f"🎉 Регистрация успешно завершена!\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇"
+            builder = InlineKeyboardBuilder()
+            builder.row(LinkButton(text="📱 Открыть платформу", url=WEB_APP_URL))
+            await send_max_msg(event, msg, reply_markup=builder.as_markup())
         except Exception as e:
             logger.error(f"Ошибка БД при регистрации ФИО: {e}")
             await send_max_msg(event, "❌ Произошла ошибка при сохранении данных.")
         return
 
     if user:
-        await send_max_msg(event, f"Все функции доступны внутри платформы 👇\n\n{APP_LINK}")
+        builder = InlineKeyboardBuilder()
+        builder.row(LinkButton(text="📱 Открыть платформу", url=WEB_APP_URL))
+        await send_max_msg(event, "Все функции доступны внутри платформы 👇", reply_markup=builder.as_markup())
     else:
         await send_max_msg(event, "Для начала работы введите команду /start или /join [код]")
 
@@ -281,7 +287,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (Жесткое извлечение ID диалогов) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Кнопки добавлены) <<<")
     await dp.start_polling(bot)
 
 
