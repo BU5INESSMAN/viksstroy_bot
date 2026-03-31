@@ -70,12 +70,25 @@ export default function Layout() {
                     role: res.data.profile.role,
                     team_id: res.data.profile.team_id || '',
                     position: res.data.profile.position || '',
-                    max_invite_link: res.data.profile.max_invite_link || ''
+                    max_invite_link: res.data.profile.max_invite_link || '',
+                    notify_tg: res.data.profile.notify_tg !== 0,
+                    notify_max: res.data.profile.notify_max !== 0,
                 });
             }
             setLinkCode('');
             setProfileModalOpen(true);
         } catch (err) { alert("Ошибка загрузки профиля"); }
+    };
+
+    const handleToggleNotify = (platform) => {
+        setEditProfile(prev => {
+            const newVal = !prev[platform];
+            if (!newVal && ((platform === 'notify_tg' && !prev.notify_max) || (platform === 'notify_max' && !prev.notify_tg))) {
+                alert("Хотя бы один мессенджер должен быть включен для получения системных уведомлений!");
+                return prev;
+            }
+            return { ...prev, [platform]: newVal };
+        });
     };
 
     const handleAvatarUpload = (e) => {
@@ -101,6 +114,8 @@ export default function Layout() {
             fd.append('team_id', editProfile.team_id);
             fd.append('position', editProfile.position);
             fd.append('max_invite_link', editProfile.max_invite_link || '');
+            fd.append('notify_tg', editProfile.notify_tg ? 1 : 0);
+            fd.append('notify_max', editProfile.notify_max ? 1 : 0);
 
             await axios.post(`/api/users/${profileData.user_id}/update_profile`, fd);
             alert("Успешно!"); setProfileModalOpen(false); window.location.reload();
@@ -204,7 +219,6 @@ export default function Layout() {
 
             <Outlet context={{ openProfile, isGlobalCreateAppOpen, setGlobalCreateAppOpen }} />
 
-            {/* НИЖНЕЕ МЕНЮ НАВИГАЦИИ */}
             <div className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-100 dark:border-gray-700 z-40 flex justify-around items-end pb-safe shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors h-[72px] px-2 sm:px-6">
                 <button onClick={() => navigate('/dashboard')} className={`flex flex-col items-center justify-end pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/dashboard' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
                     <Home className={`w-6 h-6 mb-1 ${location.pathname === '/dashboard' ? 'fill-current' : ''}`} strokeWidth={location.pathname === '/dashboard' ? 2.5 : 2} />
@@ -330,6 +344,32 @@ export default function Layout() {
                                                     <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-2 font-medium">* Добавьте сюда вашу прямую ссылку, чтобы коллеги могли написать вам в мессенджер MAX.</p>
                                                 </div>
                                             </div>
+                                        </div>
+                                    )}
+
+                                    {/* НАСТРОЙКИ УВЕДОМЛЕНИЙ */}
+                                    {isMyProfile && (
+                                        <div className="space-y-4 bg-gray-50/50 dark:bg-gray-700/20 p-5 rounded-2xl border border-gray-100 dark:border-gray-700/50 mt-4">
+                                            <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2 text-sm">
+                                                <span className="text-xl">🔔</span> Уведомления в ЛС
+                                            </h4>
+                                            <div className="flex flex-col gap-3">
+                                                <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                                                    <span className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Send className="w-4 h-4 text-blue-500" /> В Telegram</span>
+                                                    <label className="relative inline-flex items-center cursor-pointer">
+                                                        <input type="checkbox" checked={editProfile.notify_tg} onChange={() => handleToggleNotify('notify_tg')} className="sr-only peer" />
+                                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                                                    </label>
+                                                </div>
+                                                <div className="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                                                    <span className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Smartphone className="w-4 h-4 text-indigo-500" /> В MAX</span>
+                                                    <label className="relative inline-flex items-center cursor-pointer">
+                                                        <input type="checkbox" checked={editProfile.notify_max} onChange={() => handleToggleNotify('notify_max')} className="sr-only peer" />
+                                                        <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-indigo-600"></div>
+                                                    </label>
+                                                </div>
+                                            </div>
+                                            <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">* Выберите, куда бот будет присылать вам наряды в личные сообщения.</p>
                                         </div>
                                     )}
 

@@ -364,14 +364,13 @@ async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: st
 
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
                        target_platform: str = "all"):
-    """Универсальная рассылка уведомлений в Telegram и MAX"""
+    """Универсальная рассылка уведомлений в Telegram и MAX с учетом настроек пользователя"""
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
 
-    # 1. Собираем сырые ID пользователей (без привязки к платформе)
     raw_user_ids = set()
 
     roles_to_fetch = [r for r in target_roles if r != "report_group"]
@@ -389,27 +388,40 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         for tid in extra_tg_ids:
             if tid: raw_user_ids.add(int(tid))
 
-    # 2. Раскрываем каждый ID во все привязанные аккаунты
+    # --- ПРОВЕРЯЕМ НАСТРОЙКИ УВЕДОМЛЕНИЙ (Тумблеры) ---
     final_tg_ids = set()
     final_max_ids = set()
 
+    user_prefs = {}
+    if raw_user_ids:
+        pl_ids = ','.join(['?'] * len(raw_user_ids))
+        try:
+            # Получаем настройки для каждого пользователя
+            # Если колонок еще нет в базе, запрос упадет в except, и prefs останутся по умолчанию True
+            async with db.conn.execute(f"SELECT user_id, notify_tg, notify_max FROM users WHERE user_id IN ({pl_ids})",
+                                       list(raw_user_ids)) as cur:
+                for row in await cur.fetchall():
+                    user_prefs[row[0]] = {"tg": row[1] != 0, "max": row[2] != 0}
+        except:
+            pass
+
     for uid in raw_user_ids:
+        prefs = user_prefs.get(uid, {"tg": True, "max": True})
         linked_ids = await get_all_linked_ids(uid)
+
         for lid in linked_ids:
-            if lid > 0:
+            if lid > 0 and prefs["tg"]:
                 final_tg_ids.add(lid)
-            elif lid < 0:
+            elif lid < 0 and prefs["max"]:
                 final_max_ids.add(abs(lid))
 
     markup = {"inline_keyboard": [
         [{"text": "📱 Открыть платформу", "web_app": {"url": f"https://miniapp.viks22.ru/{url_path}"}}]]}
 
-    # Подготавливаем текст и кнопку для MAX
     max_plain_text = strip_html(text)
     max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"https://miniapp.viks22.ru/{url_path}")]]
     max_payload = ButtonsPayload(buttons=max_buttons).pack()
 
-    # 3. Отправка ГРУППАМ (Только если есть роль report_group)
     if "report_group" in target_roles:
         if group_id and target_platform in ["all", "tg"] and bot_token:
             try:
@@ -421,14 +433,12 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             except:
                 pass
 
-    # 4. Отправка ЛС В MAX
     if target_platform in ["all", "max"] and max_bot_token:
         for mid in final_max_ids:
             dm_chat_id = await get_max_dm_chat_id(str(mid))
             print(f"🔄 MAX ЛС: Отправка уведомления пользователю {mid} в диалог {dm_chat_id}")
             await send_max_text(max_bot_token, dm_chat_id, max_plain_text, attachments=[max_payload])
 
-    # 5. Отправка ЛС В TELEGRAM
     if target_platform in ["all", "tg"] and bot_token:
         try:
             async with aiohttp.ClientSession() as session:
@@ -557,7 +567,6 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
         max_text = strip_html(max_caption)
-        # Добавляем красивую кнопку под фото+текст в общей группе MAX
         max_buttons = [[LinkButton(text="📱 Открыть платформу", url="https://miniapp.viks22.ru/dashboard")]]
         max_payload = ButtonsPayload(buttons=max_buttons).pack()
 
@@ -583,7 +592,5 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
         except:
             await db.conn.rollback()
 
-        # Мы убрали дублирующую рассылку ЛС отсюда, так как она теперь происходит на этапе "Одобрено" в applications.py
-        # А уведомление о старте обрабатывается в scheduler.py
         return True
     return False
