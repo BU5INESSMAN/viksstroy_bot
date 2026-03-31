@@ -50,7 +50,7 @@ async def resolve_id(raw_id: int):
     return raw_id
 
 
-async def send_max_msg(event, text: str, target_url: str = None):
+async def send_max_msg(event, text: str, target_url: str = None, attachments: list = None):
     try:
         # Универсальная отправка для MessageCreated и MessageCallback
         if hasattr(event, "message") and hasattr(event.message, "answer"):
@@ -64,6 +64,9 @@ async def send_max_msg(event, text: str, target_url: str = None):
             buttons = [[LinkButton(text="📱 Открыть платформу", url=target_url)]]
             payload = ButtonsPayload(buttons=buttons).pack()
             await answer_method(text, attachments=[payload])
+        elif attachments:
+            # Если передали кастомные кнопки (Inline клавиатуру)
+            await answer_method(text, attachments=attachments)
         else:
             await answer_method(text)
     except Exception as e:
