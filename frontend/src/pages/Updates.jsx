@@ -1,4 +1,4 @@
-import { Rocket, Sparkles, MonitorSmartphone, Zap, Link, ShieldCheck, Paintbrush, BellRing, MessageSquare } from 'lucide-react';
+import { Rocket, Sparkles, MonitorSmartphone, Zap, Link, ShieldCheck, Paintbrush, BellRing, MessageSquare, Users } from 'lucide-react';
 
 export default function Updates() {
     return (
