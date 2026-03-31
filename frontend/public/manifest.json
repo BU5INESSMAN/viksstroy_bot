@@ -1,0 +1,17 @@
+{
+  "name": "ВИКС Расписание",
+  "short_name": "ВИКС",
+  "description": "Система управления нарядами и бригадами",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563EB",
+  "icons": [
+    {
+      "src": "/main.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
