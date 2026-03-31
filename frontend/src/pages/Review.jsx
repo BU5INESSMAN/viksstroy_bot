@@ -45,7 +45,6 @@ export default function Review() {
     const [publishDateFilter, setPublishDateFilter] = useState('');
     const [selectedToPublish, setSelectedToPublish] = useState([]);
 
-    // Единый стейт блокировки для модерации и массовой публикации
     const [isProcessing, setIsProcessing] = useState(false);
 
     const fetchData = () => {
@@ -65,7 +64,7 @@ export default function Review() {
             if (!window.confirm('Одобрить заявку?')) return;
         }
 
-        setIsProcessing(true); // Включаем блокировку
+        setIsProcessing(true);
         try {
             const fd = new FormData();
             fd.append('new_status', status);
@@ -78,7 +77,7 @@ export default function Review() {
         } catch (err) {
             alert("Ошибка при обновлении статуса");
         } finally {
-            setIsProcessing(false); // Снимаем блокировку
+            setIsProcessing(false);
         }
     };
 
@@ -96,7 +95,7 @@ export default function Review() {
     const handleExecutePublish = async () => {
         if(selectedToPublish.length === 0) return alert("Выберите хотя бы одну заявку!");
 
-        setIsProcessing(true); // Включаем блокировку (Глобальную для публикации)
+        setIsProcessing(true);
         try {
             const fd = new FormData();
             fd.append('app_ids', selectedToPublish.join(','));
@@ -108,16 +107,14 @@ export default function Review() {
         } catch(e) {
             alert("Ошибка публикации");
         } finally {
-            setIsProcessing(false); // Снимаем блокировку
+            setIsProcessing(false);
         }
     };
 
     const todayYYYYMMDD = getTodayStr();
 
     const waitingApps = reviewApps.filter(a => a.status === 'waiting');
-
     const approvedApps = reviewApps.filter(a => a.status === 'approved' || (a.status === 'published' && a.date_target > todayYYYYMMDD));
-
     const publishedApps = reviewApps.filter(a => (a.status === 'published' || a.status === 'in_progress') && a.date_target <= todayYYYYMMDD);
 
     const filteredForPublish = publishDateFilter
@@ -296,31 +293,49 @@ export default function Review() {
                                     </div>
                                 </div>
                                 <hr className="dark:border-gray-700" />
-                                <div className="space-y-3">
-                                    <div>
-                                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase">👥 Бригада</label>
-                                        <p className={`font-medium ${selectedApp.is_team_freed === 1 ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
-                                            {selectedApp.team_name || 'Только техника'}
-                                        </p>
-                                        {selectedApp.is_team_freed === 1 ? <p className="text-emerald-500 text-xs font-bold mt-1">Свободна ✅</p> : null}
-                                    </div>
 
-                                    {selectedApp.members_data && selectedApp.members_data.length > 0 && (
-                                        <div className="flex flex-wrap gap-2 mt-1">
-                                            {selectedApp.members_data.map(m => (
-                                                <button
-                                                    type="button"
-                                                    key={m.id}
-                                                    disabled={isProcessing}
-                                                    onClick={() => { setSelectedApp(null); openProfile(m.tg_user_id, 'member', m.id); }}
-                                                    className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 disabled:opacity-50 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-gray-200 dark:border-gray-600 rounded-lg text-sm transition flex items-center shadow-sm"
-                                                >
-                                                    👤 {m.fio}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    )}
+                                <div className="space-y-3">
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">👥 Состав бригад</label>
+
+                                    <div className="flex flex-col gap-3">
+                                        {selectedApp.team_id && selectedApp.team_id !== '0' ? (
+                                            selectedApp.team_id.toString().split(',').map(Number).map(teamId => {
+                                                const tMembers = selectedApp.members_data?.filter(m => m.team_id === teamId) || [];
+                                                const tName = tMembers.length > 0 ? tMembers[0].team_name : `Бригада`;
+                                                const isThisFreed = (selectedApp.freed_team_ids && selectedApp.freed_team_ids.includes(teamId.toString())) || selectedApp.is_team_freed === 1;
+
+                                                return (
+                                                    <div key={teamId} className="p-4 bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600 rounded-xl">
+                                                        <div className="flex justify-between items-center mb-3">
+                                                            <h4 className={`font-bold ${isThisFreed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
+                                                                🏗 {tName}
+                                                            </h4>
+                                                            {isThisFreed && <span className="text-emerald-500 text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/30 px-2 py-1 rounded">Свободна ✅</span>}
+                                                        </div>
+                                                        {tMembers.length > 0 ? (
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {tMembers.map(m => (
+                                                                    <button
+                                                                        type="button"
+                                                                        key={m.id}
+                                                                        disabled={isProcessing}
+                                                                        onClick={() => { setSelectedApp(null); openProfile(m.tg_user_id, 'member', m.id); }}
+                                                                        className="px-3 py-1.5 bg-white dark:bg-gray-800 disabled:opacity-50 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-gray-200 dark:border-gray-600 rounded-lg text-xs transition flex items-center shadow-sm"
+                                                                    >
+                                                                        👤 {m.fio}
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        ) : <p className="text-xs text-gray-500 italic">Нет рабочих</p>}
+                                                    </div>
+                                                )
+                                            })
+                                        ) : (
+                                            <p className="font-medium text-gray-800 dark:text-gray-100">Только техника</p>
+                                        )}
+                                    </div>
                                 </div>
+
                                 <hr className="dark:border-gray-700" />
                                 <div className="space-y-3">
                                     <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">🚜 Требуемая техника</label>
