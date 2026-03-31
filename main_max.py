@@ -271,52 +271,33 @@ async def message_handler(event: MessageCreated):
 # ОБРАБОТЧИК КЛИКОВ ПО КНОПКАМ
 # =====================================================================
 @dp.message_callback()
-async def message_callback(callback: MessageCallback):
+async def message_callback(event: MessageCallback):
     if db.conn is None: await db.init_db()
 
-    logger.info(f"RAW CALLBACK OBJECT: {callback}")  # Печатаем весь объект, чтобы видеть его структуру
-
-    # 1. Пытаемся достать PAYLOAD (перебираем все возможные варианты)
+    # 1. Достаем PAYLOAD (он спрятан внутри объекта callback)
     payload = None
-    for attr in ["payload", "data", "callback_data", "callbackData", "text"]:
-        if hasattr(callback, attr) and getattr(callback, attr):
-            payload = getattr(callback, attr)
-            break
+    if hasattr(event, "callback") and hasattr(event.callback, "payload"):
+        payload = event.callback.payload
+    elif hasattr(event, "payload"):
+        payload = event.payload
 
-    # Если payload лежит прямо внутри словаря (бывает в Pydantic моделях)
-    if not payload and hasattr(callback, "dict"):
-        d = callback.dict()
-        payload = d.get("payload") or d.get("data") or d.get("callbackData")
+    if not payload: return
 
-    logger.info(f"PAYLOAD Extracted: {payload}")
-    if not payload:
-        logger.warning("Отмена: Payload не найден")
-        return
-
-    # 2. Пытаемся достать ID пользователя
+    # 2. Достаем ID пользователя
     max_id = None
-    if hasattr(callback, "from_user") and hasattr(callback.from_user, "user_id"):
-        max_id = callback.from_user.user_id
-    elif hasattr(callback, "from_user") and hasattr(callback.from_user, "id"):
-        max_id = callback.from_user.id
-    elif hasattr(callback, "from_") and hasattr(callback.from_, "userId"):  # Нативный MyTeam API
-        max_id = callback.from_.userId
-    elif hasattr(callback, "user_id"):
-        max_id = callback.user_id
-    elif hasattr(callback, "message") and hasattr(callback.message, "chat"):
-        max_id = getattr(callback.message.chat, "id", None) or getattr(callback.message.chat, "chatId", None)
+    if hasattr(event, "from_user") and hasattr(event.from_user, "user_id"):
+        max_id = event.from_user.user_id
+    elif hasattr(event, "callback") and hasattr(event.callback, "user") and hasattr(event.callback.user, "user_id"):
+        max_id = event.callback.user.user_id
 
-    logger.info(f"MAX_ID Extracted: {max_id}")
-    if not max_id:
-        logger.warning("Отмена: MAX_ID не найден")
-        return
+    if not max_id: return
 
     pseudo_tg_id = -int(max_id)
     real_tg_id = await resolve_id(pseudo_tg_id)
 
     # ---------------- ОТМЕНА ----------------
     if payload == "join_cancel":
-        return await callback.message.answer("🛑 Действие отменено.")
+        return await event.message.answer("🛑 Действие отменено.")
 
     # ---------------- ВЫБОР РАБОЧЕГО (БРИГАДА) ----------------
     if payload.startswith("team_ask|"):
@@ -326,7 +307,7 @@ async def message_callback(callback: MessageCallback):
 
         async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
             w_row = await cur.fetchone()
-        if not w_row: return await callback.message.answer("❌ Профиль не найден.")
+        if not w_row: return await event.message.answer("❌ Профиль не найден.")
 
         fio = w_row[0]
         buttons = [
@@ -334,8 +315,7 @@ async def message_callback(callback: MessageCallback):
             [CallbackButton(text="❌ Отмена", payload="join_cancel")]
         ]
         btn_payload = ButtonsPayload(buttons=buttons).pack()
-        return await callback.message.answer(f"Привязать ваш мессенджер к профилю:\n👤 {fio}?",
-                                             attachments=[btn_payload])
+        return await event.message.answer(f"Привязать ваш мессенджер к профилю:\n👤 {fio}?", attachments=[btn_payload])
 
     # ---------------- ПОДТВЕРЖДЕНИЕ ПРИВЯЗКИ (БРИГАДА) ----------------
     if payload.startswith("team_yes|"):
@@ -349,7 +329,7 @@ async def message_callback(callback: MessageCallback):
         async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
             w_row = await cur.fetchone()
 
-        if not t_row or not w_row: return await callback.message.answer("❌ Ошибка: данные не найдены.")
+        if not t_row or not w_row: return await event.message.answer("❌ Ошибка: данные не найдены.")
 
         team_name, fio = t_row[0], w_row[0]
 
@@ -363,7 +343,7 @@ async def message_callback(callback: MessageCallback):
 
         await db.conn.commit()
 
-        await callback.message.answer(f"✅ Успешно!\nВы привязаны как {fio} в бригаде «{team_name}».")
+        await event.message.answer(f"✅ Успешно!\nВы привязаны как {fio} в бригаде «{team_name}».")
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
         await notify_users(["report_group", "boss", "superadmin"],
@@ -378,7 +358,7 @@ async def message_callback(callback: MessageCallback):
 
         async with db.conn.execute("SELECT name FROM equipment WHERE id = ?", (equip_id,)) as cur:
             e_row = await cur.fetchone()
-        if not e_row: return await callback.message.answer("❌ Техника не найдена.")
+        if not e_row: return await event.message.answer("❌ Техника не найдена.")
 
         equip_name = e_row[0]
 
@@ -394,7 +374,7 @@ async def message_callback(callback: MessageCallback):
 
         await db.conn.commit()
 
-        await callback.message.answer(f"✅ Успешно!\nВы привязаны как водитель для: {equip_name}.")
+        await event.message.answer(f"✅ Успешно!\nВы привязаны как водитель для: {equip_name}.")
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
         await notify_users(["report_group", "boss", "superadmin"],
