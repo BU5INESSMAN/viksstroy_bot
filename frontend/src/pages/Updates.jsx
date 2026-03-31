@@ -1,4 +1,4 @@
-import { Rocket, Sparkles, MonitorSmartphone, Zap, Link, ShieldCheck, Paintbrush,Users } from 'lucide-react';
+import { Rocket, Sparkles, MonitorSmartphone, Zap, Link, ShieldCheck, Paintbrush, BellRing, MessageSquare } from 'lucide-react';
 
 export default function Updates() {
     return (
@@ -14,37 +14,68 @@ export default function Updates() {
 
                 <div className="space-y-10 relative before:absolute before:inset-0 before:ml-[1.4rem] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 dark:before:via-gray-700 before:to-transparent">
 
-                    {/* ВЕРСИЯ 1.3.0 */}
+                    {/* ВЕРСИЯ 1.4.0 */}
                     <div className="relative flex items-start md:justify-between">
                         <div className="hidden md:block w-[45%] text-right pr-6">
                             <span className="text-gray-400 dark:text-gray-500 font-bold text-sm tracking-widest uppercase">Текущая версия</span>
                         </div>
-                        <div className="absolute left-[1.4rem] -translate-x-1/2 md:left-1/2 w-6 h-6 rounded-full bg-emerald-500 border-4 border-white dark:border-gray-800 shadow-md"></div>
+                        <div className="absolute left-[1.4rem] -translate-x-1/2 md:left-1/2 w-6 h-6 rounded-full bg-blue-500 border-4 border-white dark:border-gray-800 shadow-md"></div>
                         <div className="ml-12 md:ml-0 md:w-[45%] pl-0 md:pl-6">
-                            <h3 className="text-lg font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2 mb-2">
-                                <Sparkles className="w-5 h-5" /> Версия 1.3.0 (UI/UX Pro Max)
+                            <h3 className="text-lg font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2 mb-2">
+                                <BellRing className="w-5 h-5" /> Версия 1.4.0 (Умные уведомления)
                             </h3>
                             <p className="md:hidden text-xs text-gray-500 font-bold uppercase tracking-wider mb-4">Текущая версия</p>
 
                             <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
                                 <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600 shadow-sm hover:shadow-md transition-shadow">
                                     <b className="text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-                                        <Paintbrush className="w-4 h-4 text-pink-500" /> Глобальный визуальный рефакторинг:
+                                        <MessageSquare className="w-4 h-4 text-indigo-500" /> Нативная привязка MAX:
                                     </b>
-                                    <ul className="list-disc pl-5 space-y-1.5 marker:text-emerald-500">
-                                        <li>Системные Emoji заменены на элегантные векторные иконки <b>Lucide React</b>. Интерфейс стал чище и одинаково красиво выглядит на iOS, Android и ПК.</li>
-                                        <li>Увеличены области нажатия (Touch Targets) для всех кнопок и карточек, что делает работу с платформой на стройке (или в перчатках) гораздо удобнее.</li>
-                                        <li>Добавлены мягкие тени, плавные анимации наведения и эффекты "нажатия" кнопок.</li>
+                                    <ul className="list-disc pl-5 space-y-1.5 marker:text-blue-500">
+                                        <li>Полностью переработан механизм команды <code>/join</code> в мессенджере MAX.</li>
+                                        <li>Теперь при переходе по ссылке-инвайту бот выдает удобные <b>Inline-кнопки прямо в чате</b> (со списком рабочих вашей бригады).</li>
+                                        <li>Больше никаких перебросов в браузер — аккаунт привязывается в один клик.</li>
                                     </ul>
                                 </div>
                                 <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600 shadow-sm hover:shadow-md transition-shadow">
                                     <b className="text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-                                        <Users className="w-4 h-4 text-blue-500" /> Раздельные бригады в нарядах:
+                                        <BellRing className="w-4 h-4 text-orange-500" /> Умная система рассылки:
                                     </b>
+                                    <ul className="list-disc pl-5 space-y-1.5 marker:text-blue-500">
+                                        <li><b>Двухэтапные уведомления:</b> При модерации заявки рабочие получают PUSH-уведомление "Вас добавили в бронь". А при публикации наряда им приходит финальная карточка.</li>
+                                        <li><b>Анти-спам контроль:</b> В профиле появились тумблеры управления мессенджерами. Если вы привязали и MAX, и Telegram, вы можете отключить дублирование уведомлений в одном из них.</li>
+                                        <li>Встроенная защита: система не даст вам выключить оба мессенджера одновременно.</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* ВЕРСИЯ 1.3.0 */}
+                    <div className="relative flex items-start md:justify-between opacity-90">
+                        <div className="hidden md:block w-[45%] text-right pr-6">
+                            <span className="text-gray-400 dark:text-gray-500 font-bold text-sm tracking-widest uppercase">Ранее</span>
+                        </div>
+                        <div className="absolute left-[1.4rem] -translate-x-1/2 md:left-1/2 w-4 h-4 rounded-full bg-emerald-500 border-4 border-white dark:border-gray-800"></div>
+                        <div className="ml-12 md:ml-0 md:w-[45%] pl-0 md:pl-6">
+                            <h3 className="text-lg font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2 mb-2">
+                                <Sparkles className="w-5 h-5" /> Версия 1.3.0 (UI/UX Pro Max)
+                            </h3>
+                            <p className="md:hidden text-xs text-gray-500 font-bold uppercase tracking-wider mb-4">Ранее</p>
+
+                            <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
+                                <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600">
+                                    <b className="text-gray-900 dark:text-white mb-2 flex items-center gap-2"><Paintbrush className="w-4 h-4 text-pink-500" /> Визуальный рефакторинг:</b>
                                     <ul className="list-disc pl-5 space-y-1.5 marker:text-emerald-500">
-                                        <li>В Канбан-доске и при модерации бригады больше не сливаются в один текстовый блок.</li>
-                                        <li>Каждая бригада на объекте теперь отображается <b>с новой строки</b>.</li>
-                                        <li>Статус "Свободна" (зачеркивание и зеленая галочка) теперь работает индивидуально для каждой конкретной бригады в наряде.</li>
+                                        <li>Системные Emoji заменены на элегантные векторные иконки <b>Lucide React</b>.</li>
+                                        <li>Увеличены области нажатия (Touch Targets) для всех кнопок. Добавлены плавные анимации и эффекты нажатия.</li>
+                                    </ul>
+                                </div>
+                                <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600">
+                                    <b className="text-gray-900 dark:text-white mb-2 flex items-center gap-2"><Users className="w-4 h-4 text-emerald-500" /> Раздельные бригады:</b>
+                                    <ul className="list-disc pl-5 space-y-1.5 marker:text-emerald-500">
+                                        <li>Каждая бригада на объекте теперь отображается <b>с новой строки</b> в Канбане.</li>
+                                        <li>Статус "Свободна" (зачеркивание) работает индивидуально для каждой бригады.</li>
                                     </ul>
                                 </div>
                             </div>
@@ -52,56 +83,26 @@ export default function Updates() {
                     </div>
 
                     {/* ВЕРСИЯ 1.2.0 */}
-                    <div className="relative flex items-start md:justify-between opacity-90">
+                    <div className="relative flex items-start md:justify-between opacity-80">
                         <div className="hidden md:block w-[45%] text-right pr-6">
                             <span className="text-gray-400 dark:text-gray-500 font-bold text-sm tracking-widest uppercase">Ранее</span>
                         </div>
                         <div className="absolute left-[1.4rem] -translate-x-1/2 md:left-1/2 w-4 h-4 rounded-full bg-indigo-400 border-4 border-white dark:border-gray-800"></div>
                         <div className="ml-12 md:ml-0 md:w-[45%] pl-0 md:pl-6">
                             <h3 className="text-lg font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 mb-2">
-                                <ShieldCheck className="w-5 h-5" /> Версия 1.2.0 (Связанность и Контроль)
-                            </h3>
-                            <p className="md:hidden text-xs text-gray-500 font-bold uppercase tracking-wider mb-4">Ранее</p>
-
-                            <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600">
-                                    <b className="text-gray-900 dark:text-white mb-2 flex items-center gap-2"><Link className="w-4 h-4 text-indigo-500" /> Интерактивные профили:</b>
-                                    <ul className="list-disc pl-5 space-y-1.5 marker:text-indigo-400">
-                                        <li>Имена прорабов, рабочих и названия техники в карточках нарядов стали ссылками.</li>
-                                        <li>В профиле отображается статус привязки Telegram/MAX и прямая ссылка на диалог.</li>
-                                    </ul>
-                                </div>
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600">
-                                    <b className="text-gray-900 dark:text-white mb-2 flex items-center gap-2"><ShieldCheck className="w-4 h-4 text-indigo-500" /> Умный контроль:</b>
-                                    <ul className="list-disc pl-5 space-y-1.5 marker:text-indigo-400">
-                                        <li>Добавлена защита от случайных нажатий (ввод слова <code>СВОБОДЕН</code>).</li>
-                                        <li>Освободившаяся техника стала наглядно зачеркиваться на Канбан-доске.</li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ВЕРСИЯ 1.1.1 */}
-                    <div className="relative flex items-start md:justify-between opacity-80">
-                        <div className="hidden md:block w-[45%] text-right pr-6">
-                            <span className="text-gray-400 dark:text-gray-500 font-bold text-sm tracking-widest uppercase">Ранее</span>
-                        </div>
-                        <div className="absolute left-[1.4rem] -translate-x-1/2 md:left-1/2 w-4 h-4 rounded-full bg-blue-400 border-4 border-white dark:border-gray-800"></div>
-                        <div className="ml-12 md:ml-0 md:w-[45%] pl-0 md:pl-6">
-                            <h3 className="text-lg font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2 mb-2">
-                                <Zap className="w-5 h-5" /> Версия 1.1.1 (Стабильность)
+                                <ShieldCheck className="w-5 h-5" /> Версия 1.2.0 (Связанность)
                             </h3>
                             <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-300">
-                                <ul className="list-disc pl-5 space-y-1.5 marker:text-blue-400">
-                                    <li>Внедрена система точного авто-старта нарядов, авто-завершения и напоминаний прорабам (APScheduler).</li>
-                                    <li>Вход по коду приглашения без ввода ФИО (умная регистрация).</li>
+                                <ul className="list-disc pl-5 space-y-1.5 marker:text-indigo-400">
+                                    <li>Имена прорабов, рабочих и названия техники стали кликабельными ссылками на профили.</li>
+                                    <li>В профиле появилась прямая ссылка на диалог MAX.</li>
+                                    <li>Добавлена защита от случайных нажатий (ввод слова <code>СВОБОДЕН</code>).</li>
                                 </ul>
                             </div>
                         </div>
                     </div>
 
-                    {/* ВЕРСИЯ 1.1.0 */}
+                    {/* ВЕРСИЯ 1.1.1 */}
                     <div className="relative flex items-start md:justify-between opacity-70">
                         <div className="hidden md:block w-[45%] text-right pr-6">
                             <span className="text-gray-400 dark:text-gray-500 font-bold text-sm tracking-widest uppercase">Релиз</span>
@@ -109,13 +110,13 @@ export default function Updates() {
                         <div className="absolute left-[1.4rem] -translate-x-1/2 md:left-1/2 w-4 h-4 rounded-full bg-gray-400 border-4 border-white dark:border-gray-800"></div>
                         <div className="ml-12 md:ml-0 md:w-[45%] pl-0 md:pl-6">
                             <h3 className="text-lg font-bold text-gray-600 dark:text-gray-400 flex items-center gap-2 mb-2">
-                                <MonitorSmartphone className="w-5 h-5" /> Версия 1.1.0 (Омниканальность)
+                                <MonitorSmartphone className="w-5 h-5" /> Версия 1.1.0 (Старт)
                             </h3>
                             <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-300">
                                 <ul className="list-disc pl-5 space-y-1.5 marker:text-gray-400">
-                                    <li>Telegram Mini App & MAX WebApp.</li>
-                                    <li>Система связывания аккаунтов (команда <code>/web</code>).</li>
-                                    <li>Генерация картинок-нарядов.</li>
+                                    <li>Запуск Telegram Mini App & MAX WebApp.</li>
+                                    <li>Система планировщика APScheduler.</li>
+                                    <li>Автоматическая генерация графических нарядов.</li>
                                 </ul>
                             </div>
                         </div>
