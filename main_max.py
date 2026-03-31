@@ -5,17 +5,19 @@ import sys
 import random
 import time
 import re
+from datetime import datetime
 from dotenv import load_dotenv
 
 from maxapi import Bot, Dispatcher, F
-from maxapi.types import MessageCreated, ButtonsPayload, LinkButton
+from maxapi.types import MessageCreated, ButtonsPayload, LinkButton, CallbackButton
 
 # Подключаем папку web, чтобы Python увидел database_deps и другие модули бэкенда
 current_dir = os.path.dirname(os.path.abspath(__file__))
 web_dir = os.path.join(current_dir, "web")
 sys.path.append(web_dir)
 
-from database_deps import db
+from database_deps import db, TZ_BARNAUL
+from utils import notify_users
 
 load_dotenv()
 
@@ -161,48 +163,46 @@ async def message_handler(event: MessageCreated):
             return await send_max_msg(event, "❌ Укажите код приглашения. Пример: /join 123456")
 
         code = parts[1].strip()
-        target_url = None
-        role_to_set = "worker"
 
-        # ИСПРАВЛЕНИЕ: Ищем и по invite_code, и по join_password
-        async with db.conn.execute("SELECT invite_code FROM teams WHERE invite_code = ? OR join_password = ?",
+        # 1. Проверяем, код от бригады?
+        async with db.conn.execute("SELECT id, name FROM teams WHERE invite_code = ? OR join_password = ?",
                                    (code, code)) as cur:
             t_row = await cur.fetchone()
 
         if t_row:
-            target_url = f"{WEB_APP_URL}invite/{t_row[0]}"
-            role_to_set = "worker"
-        else:
-            async with db.conn.execute("SELECT invite_code FROM equipment WHERE invite_code = ?", (code,)) as cur:
-                e_row = await cur.fetchone()
-            if e_row:
-                target_url = f"{WEB_APP_URL}equip-invite/{e_row[0]}"
-                role_to_set = "driver"
+            team_id, team_name = t_row
+            unclaimed = await db.get_unclaimed_workers(team_id)
 
-        if not target_url:
-            return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
-
-        # Мгновенная регистрация по коду
-        if not user:
-            sender = getattr(event.message, "sender", None)
-            first_name = getattr(sender, "first_name", getattr(sender, "firstName", ""))
-            last_name = getattr(sender, "last_name", getattr(sender, "lastName", ""))
-            fio = f"{first_name} {last_name}".strip()
-
-            if not fio:
-                fio = getattr(sender, "nick", getattr(sender, "firstName", f"Сотрудник {max_id_str}"))
-
-            try:
-                await db.add_user(pseudo_tg_id, fio, role_to_set)
-                await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался по коду (Роль: {role_to_set}, Платформа: MAX)")
-                msg = f"🎉 Регистрация успешно завершена!\n\n👤 Ваше имя: {fio}\n💼 Роль: {role_to_set}\n\nНажмите кнопку ниже для выбора бригады/техники:"
-                return await send_max_msg(event, msg, target_url=target_url)
-            except Exception as e:
-                logger.error(f"Ошибка БД при регистрации через /join: {e}")
+            if not unclaimed:
                 return await send_max_msg(event,
-                                          "❌ Произошла ошибка при сохранении данных. Пожалуйста, попробуйте еще раз.")
-        else:
-            return await send_max_msg(event, f"Для вступления/привязки нажмите кнопку ниже:", target_url=target_url)
+                                          f"В бригаде «{team_name}» нет свободных мест или все участники уже привязали аккаунты.")
+
+            # Генерируем кнопки с участниками
+            buttons = []
+            for w in unclaimed:
+                buttons.append(
+                    [CallbackButton(text=f"👤 {w['fio']} ({w['position']})", payload=f"team_ask|{w['id']}|{code}")])
+
+            payload = ButtonsPayload(buttons=buttons).pack()
+            return await event.message.answer(f"👷‍♂️ Бригада: {team_name}\n\nВыберите ваш профиль из списка ниже:",
+                                              attachments=[payload])
+
+        # 2. Проверяем, код от техники?
+        async with db.conn.execute("SELECT id, name FROM equipment WHERE invite_code = ?", (code,)) as cur:
+            e_row = await cur.fetchone()
+
+        if e_row:
+            equip_id, equip_name = e_row
+            buttons = [
+                [CallbackButton(text="✅ Да, это я", payload=f"equip_yes|{equip_id}|{code}")],
+                [CallbackButton(text="❌ Отмена", payload="join_cancel")]
+            ]
+            payload = ButtonsPayload(buttons=buttons).pack()
+            return await event.message.answer(
+                f"🚜 Привязка техники\nМашина: {equip_name}\n\nПодтверждаете привязку вашего аккаунта?",
+                attachments=[payload])
+
+        return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
 
     if text.startswith("/start"):
         if user:
@@ -273,6 +273,108 @@ async def message_handler(event: MessageCreated):
         await send_max_msg(event, "Для начала работы введите команду /start или /join [код]")
 
 
+# --- ОБРАБОТЧИК НАЖАТИЯ INLINE-КНОПОК ---
+@dp.button_pressed()
+async def button_handler(event):
+    if db.conn is None: await db.init_db()
+
+    payload = event.button.payload
+    if not payload: return
+
+    # Достаем ID пользователя
+    max_id = event.user_id
+    if not max_id: return
+    pseudo_tg_id = -int(max_id)
+    real_tg_id = await resolve_id(pseudo_tg_id)
+
+    # ---------------- ОТМЕНА ----------------
+    if payload == "join_cancel":
+        return await event.message.answer("🛑 Действие отменено.")
+
+    # ---------------- ВЫБОР РАБОЧЕГО (БРИГАДА) ----------------
+    if payload.startswith("team_ask|"):
+        _, worker_id, code = payload.split("|")
+
+        async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
+            w_row = await cur.fetchone()
+        if not w_row: return await event.message.answer("❌ Профиль не найден.")
+
+        fio = w_row[0]
+        buttons = [
+            [CallbackButton(text="✅ Да, привязать", payload=f"team_yes|{worker_id}|{code}")],
+            [CallbackButton(text="❌ Отмена", payload="join_cancel")]
+        ]
+        btn_payload = ButtonsPayload(buttons=buttons).pack()
+        return await event.message.answer(f"Привязать ваш мессенджер к профилю:\n👤 {fio}?", attachments=[btn_payload])
+
+    # ---------------- ПОДТВЕРЖДЕНИЕ ПРИВЯЗКИ (БРИГАДА) ----------------
+    if payload.startswith("team_yes|"):
+        _, worker_id, code = payload.split("|")
+
+        # Получаем данные о команде и рабочем
+        async with db.conn.execute("SELECT name FROM teams WHERE invite_code = ? OR join_password = ?",
+                                   (code, code)) as cur:
+            t_row = await cur.fetchone()
+        async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
+            w_row = await cur.fetchone()
+
+        if not t_row or not w_row: return await event.message.answer("❌ Ошибка: данные не найдены.")
+
+        team_name, fio = t_row[0], w_row[0]
+
+        # Обновляем БД (привязываем)
+        await db.conn.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (real_tg_id, worker_id))
+
+        user = await db.get_user(real_tg_id)
+        if not user:
+            await db.add_user(real_tg_id, fio, "worker")
+        elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
+            await db.update_user_role(real_tg_id, "worker")
+
+        await db.conn.commit()
+
+        # Уведомление в ЛС
+        await event.message.answer(f"✅ Успешно!\nВы привязаны как {fio} в бригаде «{team_name}».")
+
+        # Уведомление руководству
+        now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+        await notify_users(["report_group", "boss", "superadmin"],
+                           f"🔗 <b>Привязка аккаунта (Бригада) MAX</b>\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team_name}»\n🕒 Время: {now}",
+                           "teams")
+
+    # ---------------- ПОДТВЕРЖДЕНИЕ ПРИВЯЗКИ (ТЕХНИКА) ----------------
+    if payload.startswith("equip_yes|"):
+        _, equip_id, code = payload.split("|")
+
+        async with db.conn.execute("SELECT name FROM equipment WHERE id = ?", (equip_id,)) as cur:
+            e_row = await cur.fetchone()
+        if not e_row: return await event.message.answer("❌ Техника не найдена.")
+
+        equip_name = e_row[0]
+
+        # Привязываем
+        await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (real_tg_id, equip_id))
+
+        user = await db.get_user(real_tg_id)
+        fio = dict(user).get('fio', f"Пользователь {real_tg_id}") if user else f"Пользователь {real_tg_id}"
+
+        if not user:
+            await db.add_user(real_tg_id, fio, "driver")
+        elif dict(user)['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
+            await db.update_user_role(real_tg_id, "driver")
+
+        await db.conn.commit()
+
+        # Уведомление в ЛС
+        await event.message.answer(f"✅ Успешно!\nВы привязаны как водитель для: {equip_name}.")
+
+        # Уведомление руководству
+        now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+        await notify_users(["report_group", "boss", "superadmin"],
+                           f"🔗 <b>Привязка аккаунта (Техника) MAX</b>\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{equip_name}»\n🕒 Время: {now}",
+                           "equipment")
+
+
 async def clear_webhook():
     try:
         import aiohttp
@@ -286,7 +388,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (Кнопки добавлены, /join исправлен) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Добавлены Inline-кнопки для /join) <<<")
     await dp.start_polling(bot)
 
 
