@@ -53,6 +53,10 @@ const KanbanCol = ({ title, icon: Icon, colorClass, apps, isOpen, toggleOpen, on
                         } catch(e) {}
                     }
 
+                    // Парсим ID бригад
+                    const teamIds = a.team_id && a.team_id !== '0' ? String(a.team_id).split(',').map(Number) : [];
+                    const freedTeamIds = a.freed_team_ids ? String(a.freed_team_ids).split(',').map(Number) : [];
+
                     return (
                         <div key={a.id} onClick={() => onAppClick(a)} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500 text-sm cursor-pointer transition-all duration-200 group active:scale-[0.98]">
                             <p className="font-bold text-gray-800 dark:text-gray-100 mb-1.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-start gap-1.5 leading-tight">
@@ -65,21 +69,38 @@ const KanbanCol = ({ title, icon: Icon, colorClass, apps, isOpen, toggleOpen, on
                                 <span>{a.foreman_name || 'Неизвестный прораб'}</span>
                             </p>
 
-                            <div className="flex items-center gap-3 mb-2">
+                            <div className="flex items-center gap-3 mb-3">
                                 <p className="text-xs text-gray-500 dark:text-gray-400 flex items-center gap-1.5 bg-gray-100 dark:bg-gray-700/50 px-2 py-1 rounded-md">
                                     <Calendar className="w-3.5 h-3.5" />
                                     {a.date_target}
                                 </p>
                             </div>
 
-                            <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1 flex items-center gap-1.5">
-                                <Users className="w-3.5 h-3.5 text-indigo-400" />
-                                <span className={a.is_team_freed === 1 ? 'line-through text-gray-400' : 'font-medium'}>{a.team_name || 'Без бригады'}</span>
-                                {a.is_team_freed === 1 && <span className="ml-1 text-[10px] text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded">Свободна</span>}
-                            </p>
+                            {/* РАЗДЕЛЬНОЕ ОТОБРАЖЕНИЕ БРИГАД В КАНБАНЕ */}
+                            <div className="space-y-1.5 mb-2">
+                                {teamIds.length > 0 ? (
+                                    teamIds.map(tId => {
+                                        const tMembers = a.members_data?.filter(m => m.team_id === tId) || [];
+                                        const tName = tMembers.length > 0 ? tMembers[0].team_name : `Бригада #${tId}`;
+                                        const isFreed = freedTeamIds.includes(tId) || a.is_team_freed === 1;
+
+                                        return (
+                                            <p key={tId} className={`text-xs flex items-center gap-1.5 ${isFreed ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300 font-medium'}`}>
+                                                <Users className={`w-3.5 h-3.5 flex-shrink-0 ${isFreed ? 'text-gray-400' : 'text-indigo-400'}`} />
+                                                <span className="truncate">{tName}</span>
+                                                {isFreed && <span className="ml-auto flex-shrink-0 text-[9px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded flex items-center gap-1"><CheckCircle className="w-2.5 h-2.5" /> Свободна</span>}
+                                            </p>
+                                        );
+                                    })
+                                ) : (
+                                    <p className="text-xs text-gray-500 italic flex items-center gap-1.5">
+                                        <Users className="w-3.5 h-3.5 flex-shrink-0" /> Без бригад
+                                    </p>
+                                )}
+                            </div>
 
                             {equipList.length > 0 && (
-                                <div className="mt-2 space-y-1">
+                                <div className="mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700 space-y-1">
                                     {equipList.map((eq, idx) => (
                                         <p key={idx} className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-indigo-600 dark:text-indigo-400'}`}>
                                             <Truck className="w-3.5 h-3.5" />
@@ -354,6 +375,9 @@ export default function Home() {
                                     let activeEquipList = [];
                                     if (a.equipment_data) { try { activeEquipList = JSON.parse(a.equipment_data) || []; } catch(e){} }
 
+                                    const teamIds = a.team_id && a.team_id !== '0' ? String(a.team_id).split(',').map(Number) : [];
+                                    const freedTeamIds = a.freed_team_ids ? String(a.freed_team_ids).split(',').map(Number) : [];
+
                                     return (
                                         <div key={a.id} className="p-5 bg-blue-50/50 dark:bg-blue-900/10 rounded-2xl border border-blue-100/50 dark:border-blue-800/30 text-sm space-y-3 text-gray-800 dark:text-gray-200 shadow-sm transition-all hover:shadow-md">
                                             <div className="flex items-center gap-2 font-medium">
@@ -382,13 +406,41 @@ export default function Home() {
                                                 </div>
                                             </div>
 
-                                            <div className="flex items-start gap-2 bg-white/60 dark:bg-gray-800/50 p-3 rounded-xl">
-                                                <Users className="w-4 h-4 text-indigo-400 mt-0.5" />
-                                                <span className={`font-medium ${a.is_team_freed === 1 ? 'line-through text-gray-400' : ''}`}>
-                                                    {a.team_name || 'Только техника'}
-                                                </span>
+                                            {/* БРИГАДЫ И КНОПКИ ОСВОБОЖДЕНИЯ ДЛЯ ПРОРАБА */}
+                                            <div className="flex flex-col gap-2 bg-white/60 dark:bg-gray-800/50 p-3 rounded-xl">
+                                                {teamIds.length > 0 ? (
+                                                    teamIds.map(tId => {
+                                                        const tMembers = a.members_data?.filter(m => m.team_id === tId) || [];
+                                                        const tName = tMembers.length > 0 ? tMembers[0].team_name : `Бригада #${tId}`;
+                                                        const isFreed = freedTeamIds.includes(tId) || a.is_team_freed === 1;
+
+                                                        return (
+                                                            <div key={tId} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 dark:border-gray-700/50 last:border-0 pb-2 last:pb-0">
+                                                                <div className="flex items-start gap-2">
+                                                                    <Users className={`w-4 h-4 mt-0.5 flex-shrink-0 ${isFreed ? 'text-gray-400' : 'text-indigo-400'}`} />
+                                                                    <span className={`font-medium ${isFreed ? 'line-through text-gray-400' : 'text-gray-800 dark:text-gray-200'}`}>
+                                                                        {tName}
+                                                                    </span>
+                                                                    {isFreed && <span className="ml-2 text-[10px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-900/30 px-2 py-0.5 rounded-md flex items-center gap-1"><CheckCircle className="w-3 h-3" /> Свободна</span>}
+                                                                </div>
+
+                                                                {!isFreed && ['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && (
+                                                                    <button onClick={() => openFreeModal('specific_team', { app: a, teamId: tId })} className="text-[10px] uppercase font-bold tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 px-3 py-1.5 rounded-lg transition-colors border border-emerald-200 dark:border-emerald-800/50 flex items-center justify-center gap-1 w-full sm:w-auto active:scale-95 shadow-sm">
+                                                                        <CheckCircle className="w-3 h-3" /> Освободить
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })
+                                                ) : (
+                                                    <div className="flex items-center gap-2 text-gray-500">
+                                                        <Users className="w-4 h-4" />
+                                                        <span className="font-medium italic">Только техника</span>
+                                                    </div>
+                                                )}
                                             </div>
 
+                                            {/* ГЛОБАЛЬНЫЕ КНОПКИ ДЛЯ ВОДИТЕЛЯ И ПРОРАБА */}
                                             {role === 'driver' && !a.my_equip_is_freed && (
                                                 <button onClick={() => openFreeModal('equipment', a)} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3.5 rounded-xl font-bold shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2">
                                                     <CheckCircle className="w-5 h-5" /> Свободен
@@ -400,12 +452,13 @@ export default function Home() {
                                                 </div>
                                             )}
 
-                                            {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed !== 1 && a.team_id && a.team_id !== '0' && (
+                                            {/* Если бригад несколько, и не все свободны, оставляем глобальную кнопку для удобства */}
+                                            {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed !== 1 && teamIds.length > 1 && (
                                                 <button onClick={() => openFreeModal('team', a)} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3.5 rounded-xl font-bold shadow-md hover:shadow-lg transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                                                    <CheckCircle className="w-5 h-5" /> Освободить все бригады
+                                                    <CheckCircle className="w-5 h-5" /> Освободить ВСЕ бригады
                                                 </button>
                                             )}
-                                            {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed === 1 && (
+                                            {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed === 1 && teamIds.length > 0 && (
                                                 <div className="mt-4 w-full flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 py-3.5 font-bold bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800/50">
                                                     <CheckCircle className="w-5 h-5" /> Все бригады свободны
                                                 </div>
@@ -505,6 +558,7 @@ export default function Home() {
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                         <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden">
 
+                            {/* Экран загрузки поверх модалки */}
                             {isSubmitting && (
                                 <div className="absolute inset-0 bg-white/50 dark:bg-black/50 z-50 flex flex-col items-center justify-center backdrop-blur-sm">
                                     <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-3"></div>
