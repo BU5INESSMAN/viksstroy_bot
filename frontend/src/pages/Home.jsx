@@ -93,7 +93,6 @@ export default function Home() {
     const [myTeam, setMyTeam] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    // Стейт для блокировки кнопок во время загрузки (защита от двойного клика)
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     const [teamMembers, setTeamMembers] = useState([]);
@@ -113,11 +112,12 @@ export default function Home() {
         isViewOnly: false,
         foreman_id: null,
         foreman_name: '',
-        is_team_freed: 0
+        is_team_freed: 0,
+        freed_team_ids: []
     });
 
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
-    const [freeModal, setFreeModal] = useState({ isOpen: false, type: '', app: null, inputValue: '' });
+    const [freeModal, setFreeModal] = useState({ isOpen: false, type: '', app: null, teamId: null, inputValue: '' });
 
     const fetchData = () => {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
@@ -136,10 +136,10 @@ export default function Home() {
 
     useEffect(() => {
         if (!isGlobalCreateAppOpen) {
-            setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0 });
+            setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
             setActiveEqCategory(null);
             setTeamMembers([]);
-            setIsSubmitting(false); // Сбрасываем блокировку при закрытии
+            setIsSubmitting(false);
         }
     }, [isGlobalCreateAppOpen]);
 
@@ -215,7 +215,7 @@ export default function Home() {
         if (appForm.team_ids.length === 0 && !window.confirm("Создать заявку ТОЛЬКО на технику (без людей)?")) return;
         if (appForm.team_ids.length > 0 && appForm.members.length === 0) return alert("Выберите хотя бы одного рабочего из бригады!");
 
-        setIsSubmitting(true); // Блокируем кнопку
+        setIsSubmitting(true);
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId); fd.append('date_target', appForm.date_target); fd.append('object_address', appForm.object_address);
@@ -235,7 +235,7 @@ export default function Home() {
         } catch (err) {
             alert(err.response?.data?.detail || "Ошибка сохранения");
         } finally {
-            setIsSubmitting(false); // Снимаем блокировку
+            setIsSubmitting(false);
         }
     };
 
@@ -271,13 +271,18 @@ export default function Home() {
             isViewOnly: true,
             foreman_id: app.foreman_id,
             foreman_name: app.foreman_name,
-            is_team_freed: app.is_team_freed
+            is_team_freed: app.is_team_freed,
+            freed_team_ids: app.freed_team_ids ? app.freed_team_ids.split(',').map(Number) : []
         });
         setGlobalCreateAppOpen(true);
     };
 
-    const openFreeModal = (type, app) => {
-        setFreeModal({ isOpen: true, type, app, inputValue: '' });
+    const openFreeModal = (type, dataPayload) => {
+        if (type === 'specific_team') {
+            setFreeModal({ isOpen: true, type, app: dataPayload.app, teamId: dataPayload.teamId, inputValue: '' });
+        } else {
+            setFreeModal({ isOpen: true, type, app: dataPayload, teamId: null, inputValue: '' });
+        }
     };
 
     const executeFree = async () => {
@@ -290,10 +295,15 @@ export default function Home() {
                 alert("Успешно! Вы переведены в статус 'Свободен'.");
             } else if (freeModal.type === 'team') {
                 await axios.post(`/api/applications/${freeModal.app.id}/free_team`, fd);
-                alert("Успешно! Бригада переведена в статус 'Свободна'.");
+                alert("Успешно! Все бригады переведены в статус 'Свободны'.");
+            } else if (freeModal.type === 'specific_team') {
+                fd.append('team_id', freeModal.teamId);
+                await axios.post(`/api/applications/${freeModal.app.id}/free_team`, fd);
+                alert("Успешно! Выбранная бригада переведена в статус 'Свободна'.");
             }
-            setFreeModal({ isOpen: false, type: '', app: null, inputValue: '' });
+            setFreeModal({ isOpen: false, type: '', app: null, teamId: null, inputValue: '' });
             fetchData();
+            if (isGlobalCreateAppOpen) setGlobalCreateAppOpen(false); // Закрываем модалку заявки, чтобы обновить данные
         } catch(e) {
             alert(e.response?.data?.detail || "Ошибка при освобождении.");
         } finally {
@@ -369,14 +379,14 @@ export default function Home() {
                                                 </p>
                                             )}
 
-                                            {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed !== 1 && (
+                                            {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed !== 1 && a.team_id && a.team_id !== '0' && (
                                                 <button onClick={() => openFreeModal('team', a)} className="mt-4 w-full bg-emerald-500 hover:bg-emerald-600 text-white py-2.5 rounded-lg font-bold shadow-md transition transform hover:scale-[1.01]">
-                                                    ✅ Свободен (Освободить бригаду)
+                                                    ✅ Свободен (Освободить все бригады)
                                                 </button>
                                             )}
                                             {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed === 1 && (
                                                 <p className="mt-4 w-full text-center text-emerald-600 dark:text-emerald-400 py-2.5 font-bold bg-emerald-50 dark:bg-emerald-900/10 rounded-lg border border-emerald-100 dark:border-emerald-800">
-                                                    Бригада свободна ✅
+                                                    Все бригады свободны ✅
                                                 </p>
                                             )}
                                         </div>
@@ -438,7 +448,7 @@ export default function Home() {
                             disabled={isSubmitting}
                         />
                         <div className="flex space-x-3">
-                            <button disabled={isSubmitting} onClick={() => setFreeModal({isOpen: false, type: '', app: null, inputValue: ''})} className="flex-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition-colors">Отмена</button>
+                            <button disabled={isSubmitting} onClick={() => setFreeModal({isOpen: false, type: '', app: null, teamId: null, inputValue: ''})} className="flex-1 bg-gray-100 hover:bg-gray-200 disabled:opacity-50 dark:bg-gray-700 dark:hover:bg-gray-600 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition-colors">Отмена</button>
                             <button
                                 onClick={executeFree}
                                 disabled={isSubmitting || freeModal.inputValue.trim().toLowerCase() !== 'свободен'}
@@ -506,31 +516,52 @@ export default function Home() {
 
                                 <div className="space-y-3">
                                     <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase">
-                                        {appForm.isViewOnly ? '👥 Бригада и состав' : '👥 Выбор Бригад'}
+                                        {appForm.isViewOnly ? '👥 Состав бригад' : '👥 Выбор Бригад'}
                                     </label>
 
                                     {appForm.isViewOnly ? (
                                         <div className="flex flex-col gap-3">
-                                            <div>
-                                                <p className={`font-medium ${appForm.is_team_freed === 1 ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
-                                                    {appForm.team_name || 'Только техника'}
-                                                </p>
-                                                {appForm.is_team_freed === 1 && <p className="text-emerald-500 text-xs font-bold mt-1">Бригада свободна ✅</p>}
-                                            </div>
+                                            {appForm.team_ids && appForm.team_ids.length > 0 ? (
+                                                appForm.team_ids.map(teamId => {
+                                                    const tMembers = appForm.members_data?.filter(m => m.team_id === teamId) || [];
+                                                    const tName = tMembers.length > 0 ? tMembers[0].team_name : (data.teams?.find(t => t.id === teamId)?.name || `Бригада`);
+                                                    const isThisFreed = appForm.freed_team_ids?.includes(teamId) || appForm.is_team_freed === 1;
 
-                                            {appForm.members_data && appForm.members_data.length > 0 && (
-                                                <div className="flex flex-wrap gap-2 mt-1">
-                                                    {appForm.members_data.map(m => (
-                                                        <button
-                                                            type="button"
-                                                            key={m.id}
-                                                            onClick={() => { setGlobalCreateAppOpen(false); openProfile(m.tg_user_id, 'member', m.id); }}
-                                                            className="px-3 py-1.5 bg-gray-100 dark:bg-gray-700 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-gray-200 dark:border-gray-600 rounded-lg text-sm transition flex items-center shadow-sm"
-                                                        >
-                                                            👤 {m.fio}
-                                                        </button>
-                                                    ))}
-                                                </div>
+                                                    return (
+                                                        <div key={teamId} className="p-4 bg-gray-50 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600 rounded-xl">
+                                                            <div className="flex justify-between items-center mb-3">
+                                                                <h4 className={`font-bold ${isThisFreed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
+                                                                    🏗 {tName}
+                                                                </h4>
+                                                                {isThisFreed && <span className="text-emerald-500 text-[10px] font-bold bg-emerald-100 dark:bg-emerald-900/30 px-2 py-1 rounded">Свободна ✅</span>}
+                                                            </div>
+
+                                                            {tMembers.length > 0 ? (
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {tMembers.map(m => (
+                                                                        <button
+                                                                            type="button"
+                                                                            key={m.id}
+                                                                            disabled={isSubmitting}
+                                                                            onClick={() => { setGlobalCreateAppOpen(false); openProfile(m.tg_user_id, 'member', m.id); }}
+                                                                            className="px-3 py-1.5 bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-gray-200 dark:border-gray-600 rounded-lg text-xs transition flex items-center shadow-sm"
+                                                                        >
+                                                                            👤 {m.fio}
+                                                                        </button>
+                                                                    ))}
+                                                                </div>
+                                                            ) : <p className="text-xs text-gray-500 italic">Нет выбранных рабочих</p>}
+
+                                                            {!isThisFreed && ['foreman', 'boss', 'superadmin', 'moderator'].includes(role) && (appForm.status === 'published' || appForm.status === 'in_progress') && (
+                                                                <button type="button" disabled={isSubmitting} onClick={() => openFreeModal('specific_team', { app: appForm, teamId })} className="mt-4 w-full sm:w-auto text-xs font-bold text-emerald-600 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 py-2.5 px-4 rounded-lg transition border border-emerald-200 dark:border-emerald-800 flex justify-center items-center shadow-sm">
+                                                                    ✅ Освободить эту бригаду
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })
+                                            ) : (
+                                                <p className="font-medium text-gray-800 dark:text-gray-100">Только техника</p>
                                             )}
                                         </div>
                                     ) : (

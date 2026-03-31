@@ -13,12 +13,16 @@ from utils import resolve_id, notify_users, execute_app_publish, fetch_teams_dic
 router = APIRouter(tags=["Applications"])
 
 
-async def ensure_is_team_freed():
+async def ensure_app_columns():
     try:
         await db.conn.execute("ALTER TABLE applications ADD COLUMN is_team_freed INTEGER DEFAULT 0")
-        await db.conn.commit()
     except:
         pass
+    try:
+        await db.conn.execute("ALTER TABLE applications ADD COLUMN freed_team_ids TEXT DEFAULT ''")
+    except:
+        pass
+    await db.conn.commit()
 
 
 async def enrich_app_with_members_data(app_dict):
@@ -28,10 +32,23 @@ async def enrich_app_with_members_data(app_dict):
         m_ids = [int(x) for x in selected_m.split(',') if x.strip().isdigit()]
         if m_ids:
             pl = ','.join(['?'] * len(m_ids))
-            async with db.conn.execute(f"SELECT id, fio, tg_user_id, position FROM team_members WHERE id IN ({pl})",
-                                       m_ids) as cur:
+            # Присоединяем таблицу teams, чтобы сразу получать названия бригад для каждого рабочего
+            query = f"""
+                SELECT tm.id, tm.fio, tm.tg_user_id, tm.position, tm.team_id, t.name 
+                FROM team_members tm
+                LEFT JOIN teams t ON tm.team_id = t.id
+                WHERE tm.id IN ({pl})
+            """
+            async with db.conn.execute(query, m_ids) as cur:
                 for r in await cur.fetchall():
-                    members_list.append({"id": r[0], "fio": r[1], "tg_user_id": r[2], "position": r[3]})
+                    members_list.append({
+                        "id": r[0],
+                        "fio": r[1],
+                        "tg_user_id": r[2],
+                        "position": r[3],
+                        "team_id": r[4],
+                        "team_name": r[5] or f"Бригада {r[4]}"
+                    })
     app_dict['members_data'] = members_list
 
 
@@ -39,12 +56,12 @@ async def enrich_app_with_members_data(app_dict):
 async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form("")):
-    await ensure_is_team_freed()
+    await ensure_app_columns()
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     fio = dict(user).get('fio', 'Web-Пользователь') if user else "Web-Пользователь"
     await db.conn.execute(
-        "INSERT INTO applications (foreman_id, foreman_name, team_id, equip_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed) VALUES (?, ?, ?, 0, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0)",
+        "INSERT INTO applications (foreman_id, foreman_name, team_id, equip_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed, freed_team_ids) VALUES (?, ?, ?, 0, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0, '')",
         (real_tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
 
@@ -127,7 +144,7 @@ async def delete_app(app_id: int, tg_id: int = Form(0)):
 
 @router.get("/api/applications/review")
 async def get_review_apps():
-    await ensure_is_team_freed()
+    await ensure_app_columns()
     teams_dict = await fetch_teams_dict()
     async with db.conn.execute(
             "SELECT * FROM applications WHERE status IN ('waiting', 'approved', 'published', 'in_progress') ORDER BY id DESC") as cursor:
@@ -231,7 +248,7 @@ async def publish_apps(app_ids: str = Form(...), tg_id: int = Form(0)):
 
 @router.get("/api/applications/active")
 async def get_active_app(tg_id: int):
-    await ensure_is_team_freed()
+    await ensure_app_columns()
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     if not user: return []
@@ -282,7 +299,7 @@ async def get_active_app(tg_id: int):
 
 @router.get("/api/applications/my")
 async def get_my_apps(tg_id: int):
-    await ensure_is_team_freed()
+    await ensure_app_columns()
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     if not user: return []
@@ -334,7 +351,7 @@ async def get_my_apps(tg_id: int):
 
 @router.post("/api/applications/{app_id}/free_equipment")
 async def free_app_equipment(app_id: int, tg_id: int = Form(...)):
-    await ensure_is_team_freed()
+    await ensure_app_columns()
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     if not user: raise HTTPException(403)
@@ -375,23 +392,60 @@ async def free_app_equipment(app_id: int, tg_id: int = Form(...)):
 
 
 @router.post("/api/applications/{app_id}/free_team")
-async def free_app_team(app_id: int, tg_id: int = Form(...)):
-    await ensure_is_team_freed()
+async def free_app_team(app_id: int, tg_id: int = Form(...), team_id: int = Form(0)):
+    await ensure_app_columns()
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
 
-    async with db.conn.execute("SELECT object_address FROM applications WHERE id = ?", (app_id,)) as cur:
+    async with db.conn.execute("SELECT object_address, team_id, freed_team_ids FROM applications WHERE id = ?",
+                               (app_id,)) as cur:
         app_row = await cur.fetchone()
-        obj_addr = app_row[0] if app_row else ""
+        if not app_row:
+            raise HTTPException(404, "Заявка не найдена")
+        obj_addr = app_row[0]
+        all_team_ids_str = str(app_row[1] or "")
+        freed_str = str(app_row[2] or "")
 
-    await db.conn.execute("UPDATE applications SET is_team_freed = 1 WHERE id = ?", (app_id,))
-    await db.conn.commit()
+    freed_list = [int(x) for x in freed_str.split(',') if x.strip().isdigit()]
+    all_t_ids = [int(x) for x in all_team_ids_str.split(',') if x.strip().isdigit()]
 
-    fio = dict(user).get('fio', '') if user else ''
-    await db.add_log(real_tg_id, fio, f"Освободил бригаду на объекте {obj_addr}")
+    # Если передан ID конкретной бригады
+    if team_id > 0:
+        if team_id not in freed_list:
+            freed_list.append(team_id)
+        new_freed_str = ",".join(map(str, freed_list))
+        await db.conn.execute("UPDATE applications SET freed_team_ids = ? WHERE id = ?", (new_freed_str, app_id))
 
-    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["report_group", "boss", "superadmin"],
-                       f"🟢 <b>Бригада свободна</b>\n👤 Ответственный: {fio}\n📍 Объект: {obj_addr}\n🕒 Время: {now}",
-                       "dashboard")
+        # Проверяем, если освободились вообще все бригады на объекте
+        if set(all_t_ids).issubset(set(freed_list)) and len(all_t_ids) > 0:
+            await db.conn.execute("UPDATE applications SET is_team_freed = 1 WHERE id = ?", (app_id,))
+
+        await db.conn.commit()
+
+        async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
+            t_row = await cur.fetchone()
+            t_name = t_row[0] if t_row else f"ID:{team_id}"
+
+        fio = dict(user).get('fio', '') if user else ''
+        await db.add_log(real_tg_id, fio, f"Освободил бригаду '{t_name}' на объекте {obj_addr}")
+
+        now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+        await notify_users(["report_group", "boss", "superadmin"],
+                           f"🟢 <b>Бригада свободна</b>\n🏗 {t_name}\n👤 Ответственный: {fio}\n📍 Объект: {obj_addr}\n🕒 Время: {now}",
+                           "dashboard")
+
+    # Резервный механизм (освободить всех сразу)
+    else:
+        await db.conn.execute("UPDATE applications SET is_team_freed = 1, freed_team_ids = ? WHERE id = ?",
+                              (all_team_ids_str, app_id))
+        await db.conn.commit()
+
+        fio = dict(user).get('fio', '') if user else ''
+        await db.add_log(real_tg_id, fio, f"Освободил все бригады на объекте {obj_addr}")
+
+        now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+        await notify_users(["report_group", "boss", "superadmin"],
+                           f"🟢 <b>Все бригады свободны</b>\n👤 Ответственный: {fio}\n📍 Объект: {obj_addr}\n🕒 Время: {now}",
+                           "dashboard")
+
     return {"status": "ok"}
