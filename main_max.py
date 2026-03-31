@@ -17,7 +17,6 @@ from maxapi.types import (
     CallbackButton
 )
 
-# Подключаем папку web, чтобы Python увидел database_deps и другие модули бэкенда
 current_dir = os.path.dirname(os.path.abspath(__file__))
 web_dir = os.path.join(current_dir, "web")
 sys.path.append(web_dir)
@@ -51,74 +50,92 @@ async def resolve_id(raw_id: int):
     return raw_id
 
 
-async def send_max_msg(event: MessageCreated, text: str, target_url: str = None):
+async def send_max_msg(event, text: str, target_url: str = None):
     try:
+        # Универсальная отправка для MessageCreated и MessageCallback
+        if hasattr(event, "message") and hasattr(event.message, "answer"):
+            answer_method = event.message.answer
+        elif hasattr(event, "answer"):
+            answer_method = event.answer
+        else:
+            return logger.error("Не найден метод answer у event")
+
         if target_url:
             buttons = [[LinkButton(text="📱 Открыть платформу", url=target_url)]]
             payload = ButtonsPayload(buttons=buttons).pack()
-            await event.message.answer(text, attachments=[payload])
+            await answer_method(text, attachments=[payload])
         else:
-            await event.message.answer(text)
+            await answer_method(text)
     except Exception as e:
         logger.warning(f"Ошибка ответа MAX: {e}")
 
 
-@dp.message_created(F.message.body.text)
-async def message_handler(event: MessageCreated):
-    if db.conn is None: await db.init_db()
-
-    text = event.message.body.text.strip()
-
-    # --- 1. ПУЛЕНЕПРОБИВАЕМЫЙ ПОИСК USER_ID ---
-    max_id = None
-    try:
-        max_id = event.message.sender.user_id
-    except:
-        pass
-    if not max_id:
-        try:
-            max_id = event.user_id
-        except:
-            pass
-
-    if not max_id: return
-    max_id_str = str(max_id).strip()
-
-    # --- 2. ПУЛЕНЕПРОБИВАЕМЫЙ ПОИСК CHAT_ID ---
+async def extract_and_save_ids(event):
+    """Универсальный и надежный извлекатель ID пользователя и чата."""
+    user_id = None
     chat_id = None
-    try:
-        chat_id = event.message.chat.id
-    except:
-        pass
-    if not chat_id:
-        try:
-            chat_id = event.message.chat.chatId
-        except:
-            pass
-    if not chat_id:
-        try:
-            chat_id = event.chat_id
-        except:
-            pass
+
+    # 1. Извлекаем User ID (Того, кто совершил действие)
+    if hasattr(event, "from_user") and getattr(event.from_user, "user_id", None):
+        user_id = event.from_user.user_id
+    elif hasattr(event, "callback") and hasattr(event.callback, "user") and getattr(event.callback.user, "user_id",
+                                                                                    None):
+        user_id = event.callback.user.user_id
+    elif hasattr(event, "message") and hasattr(event.message, "sender") and getattr(event.message.sender, "user_id",
+                                                                                    None):
+        user_id = event.message.sender.user_id
+
+    # 2. Извлекаем Chat ID (Диалог)
+    if hasattr(event, "message") and hasattr(event.message, "chat"):
+        chat_id = getattr(event.message.chat, "chat_id", None) or getattr(event.message.chat, "id", None)
+    elif hasattr(event, "chat"):
+        chat_id = getattr(event.chat, "chat_id", None) or getattr(event.chat, "id", None)
+
+    # 3. Если Pydantic не справился, парсим сырую строку объекта
+    event_str = str(event)
+
+    if not user_id:
+        m = re.search(r"user_id[=: ]*['\"]?(\d+)", event_str)
+        if m: user_id = m.group(1)
 
     if not chat_id:
-        match = re.search(r"chat_id[=: ]*['\"]?([-\w]+)", str(event))
-        if match: chat_id = match.group(1)
+        m = re.search(r"chat_id[=: ]*['\"]?([-\w]+)", event_str)
+        if m: chat_id = m.group(1)
 
-    chat_str = str(chat_id).strip() if chat_id else "None"
-    is_group = chat_str.startswith("-") or "@chat" in chat_str
+    user_str = str(user_id).strip() if user_id else None
+    chat_str = str(chat_id).strip() if chat_id else None
 
-    if not is_group and chat_str != "None":
+    if not user_str:
+        return None, None, None
+
+    # 4. ОБНОВЛЕНИЕ БАЗЫ ДАННЫХ
+    is_group = chat_str and (chat_str.startswith("-") or "@chat" in chat_str)
+    if chat_str and chat_str != "None" and not is_group:
+        if db.conn is None: await db.init_db()
         try:
-            await db.conn.execute("DELETE FROM settings WHERE key = ?", (f'max_dm_{max_id_str}',))
-            await db.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f'max_dm_{max_id_str}', chat_str))
+            # Очищаем старые кривые записи и записываем верный chat_id
+            await db.conn.execute("DELETE FROM settings WHERE key = ?", (f'max_dm_{user_str}',))
+            await db.conn.execute("INSERT INTO settings (key, value) VALUES (?, ?)", (f'max_dm_{user_str}', chat_str))
             await db.conn.commit()
         except Exception as e:
             logger.error(f"❌ Ошибка БД при сохранении ЛС MAX: {e}")
 
-    pseudo_tg_id = -int(max_id)
+    pseudo_tg_id = -int(user_str)
     real_tg_id = await resolve_id(pseudo_tg_id)
+
+    return user_str, chat_str, real_tg_id
+
+
+@dp.message_created(F.message.body.text)
+async def message_handler(event: MessageCreated):
+    max_id_str, chat_str, real_tg_id = await extract_and_save_ids(event)
+    if not max_id_str: return
+
+    if db.conn is None: await db.init_db()
     user = await db.get_user(real_tg_id)
+
+    text = event.message.body.text.strip()
+    is_group = chat_str and (chat_str.startswith("-") or "@chat" in chat_str)
 
     state_data = USER_STATES.get(max_id_str, {})
     current_state = state_data.get("state")
@@ -171,15 +188,14 @@ async def message_handler(event: MessageCreated):
                 return await send_max_msg(event,
                                           f"В бригаде «{team_name}» нет свободных мест или все участники уже привязали аккаунты.")
 
-            # Генерируем Callback-кнопки с участниками
             buttons = []
             for w in unclaimed:
                 buttons.append(
                     [CallbackButton(text=f"👤 {w['fio']} ({w['position']})", payload=f"team_ask|{w['id']}|{code}")])
 
             payload = ButtonsPayload(buttons=buttons).pack()
-            return await event.message.answer(f"👷‍♂️ Бригада: {team_name}\n\nВыберите ваш профиль из списка ниже:",
-                                              attachments=[payload])
+            return await send_max_msg(event, f"👷‍♂️ Бригада: {team_name}\n\nВыберите ваш профиль из списка ниже:",
+                                      attachments=[payload])
 
         # 2. Проверяем, код от техники?
         async with db.conn.execute("SELECT id, name FROM equipment WHERE invite_code = ?", (code,)) as cur:
@@ -192,9 +208,9 @@ async def message_handler(event: MessageCreated):
                 [CallbackButton(text="❌ Отмена", payload="join_cancel")]
             ]
             payload = ButtonsPayload(buttons=buttons).pack()
-            return await event.message.answer(
-                f"🚜 Привязка техники\nМашина: {equip_name}\n\nПодтверждаете привязку вашего аккаунта?",
-                attachments=[payload])
+            return await send_max_msg(event,
+                                      f"🚜 Привязка техники\nМашина: {equip_name}\n\nПодтверждаете привязку вашего аккаунта?",
+                                      attachments=[payload])
 
         return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
 
@@ -267,37 +283,30 @@ async def message_handler(event: MessageCreated):
         await send_max_msg(event, "Для начала работы введите команду /start или /join [код]")
 
 
-# =====================================================================
-# ОБРАБОТЧИК КЛИКОВ ПО КНОПКАМ
-# =====================================================================
 @dp.message_callback()
 async def message_callback(event: MessageCallback):
-    if db.conn is None: await db.init_db()
-
-    # 1. Достаем PAYLOAD (он спрятан внутри объекта callback)
+    # 1. Извлекаем payload
     payload = None
     if hasattr(event, "callback") and hasattr(event.callback, "payload"):
         payload = event.callback.payload
     elif hasattr(event, "payload"):
         payload = event.payload
 
+    if not payload and hasattr(event, "model_dump"):
+        d = event.model_dump()
+        payload = d.get("payload") or d.get("callback_data") or (d.get("callback", {})).get("payload")
+
     if not payload: return
 
-    # 2. Достаем ID пользователя
-    max_id = None
-    if hasattr(event, "from_user") and hasattr(event.from_user, "user_id"):
-        max_id = event.from_user.user_id
-    elif hasattr(event, "callback") and hasattr(event.callback, "user") and hasattr(event.callback.user, "user_id"):
-        max_id = event.callback.user.user_id
+    # 2. Извлекаем и сохраняем ID пользователя и чата, исправляя ошибку БД
+    max_id_str, chat_str, real_tg_id = await extract_and_save_ids(event)
+    if not max_id_str: return
 
-    if not max_id: return
-
-    pseudo_tg_id = -int(max_id)
-    real_tg_id = await resolve_id(pseudo_tg_id)
+    if db.conn is None: await db.init_db()
 
     # ---------------- ОТМЕНА ----------------
     if payload == "join_cancel":
-        return await event.message.answer("🛑 Действие отменено.")
+        return await send_max_msg(event, "🛑 Действие отменено.")
 
     # ---------------- ВЫБОР РАБОЧЕГО (БРИГАДА) ----------------
     if payload.startswith("team_ask|"):
@@ -307,7 +316,7 @@ async def message_callback(event: MessageCallback):
 
         async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
             w_row = await cur.fetchone()
-        if not w_row: return await event.message.answer("❌ Профиль не найден.")
+        if not w_row: return await send_max_msg(event, "❌ Профиль не найден.")
 
         fio = w_row[0]
         buttons = [
@@ -315,7 +324,12 @@ async def message_callback(event: MessageCallback):
             [CallbackButton(text="❌ Отмена", payload="join_cancel")]
         ]
         btn_payload = ButtonsPayload(buttons=buttons).pack()
-        return await event.message.answer(f"Привязать ваш мессенджер к профилю:\n👤 {fio}?", attachments=[btn_payload])
+
+        answer_method = getattr(event.message, "answer", None) if hasattr(event, "message") else getattr(event,
+                                                                                                         "answer", None)
+        if answer_method:
+            return await answer_method(f"Привязать ваш мессенджер к профилю:\n👤 {fio}?", attachments=[btn_payload])
+        return
 
     # ---------------- ПОДТВЕРЖДЕНИЕ ПРИВЯЗКИ (БРИГАДА) ----------------
     if payload.startswith("team_yes|"):
@@ -329,7 +343,7 @@ async def message_callback(event: MessageCallback):
         async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
             w_row = await cur.fetchone()
 
-        if not t_row or not w_row: return await event.message.answer("❌ Ошибка: данные не найдены.")
+        if not t_row or not w_row: return await send_max_msg(event, "❌ Ошибка: данные не найдены.")
 
         team_name, fio = t_row[0], w_row[0]
 
@@ -343,7 +357,7 @@ async def message_callback(event: MessageCallback):
 
         await db.conn.commit()
 
-        await event.message.answer(f"✅ Успешно!\nВы привязаны как {fio} в бригаде «{team_name}».")
+        await send_max_msg(event, f"✅ Успешно!\nВы привязаны как {fio} в бригаде «{team_name}».")
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
         await notify_users(["report_group", "boss", "superadmin"],
@@ -358,7 +372,7 @@ async def message_callback(event: MessageCallback):
 
         async with db.conn.execute("SELECT name FROM equipment WHERE id = ?", (equip_id,)) as cur:
             e_row = await cur.fetchone()
-        if not e_row: return await event.message.answer("❌ Техника не найдена.")
+        if not e_row: return await send_max_msg(event, "❌ Техника не найдена.")
 
         equip_name = e_row[0]
 
@@ -374,7 +388,7 @@ async def message_callback(event: MessageCallback):
 
         await db.conn.commit()
 
-        await event.message.answer(f"✅ Успешно!\nВы привязаны как водитель для: {equip_name}.")
+        await send_max_msg(event, f"✅ Успешно!\nВы привязаны как водитель для: {equip_name}.")
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
         await notify_users(["report_group", "boss", "superadmin"],
@@ -395,7 +409,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
-    logger.info(">>> Бот MAX успешно запущен (Добавлена обработка кнопок) <<<")
+    logger.info(">>> Бот MAX успешно запущен (Исправлен баг с Chat ID) <<<")
     await dp.start_polling(bot)
 
 
