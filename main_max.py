@@ -268,35 +268,48 @@ async def message_handler(event: MessageCreated):
 
 
 # =====================================================================
-# НОВЫЙ ОБРАБОТЧИК КЛИКОВ ПО КНОПКАМ СОГЛАСНО ДОКУМЕНТАЦИИ MAXAPI
+# ОБРАБОТЧИК КЛИКОВ ПО КНОПКАМ
 # =====================================================================
 @dp.message_callback()
 async def message_callback(callback: MessageCallback):
     if db.conn is None: await db.init_db()
 
-    # Пытаемся достать payload (в разных версиях API он может лежать в разных полях)
-    payload = getattr(callback, "payload", None) or getattr(callback, "callback_data", None) or getattr(callback,
-                                                                                                        "text", None)
-    if not payload: return
+    logger.info(f"RAW CALLBACK OBJECT: {callback}")  # Печатаем весь объект, чтобы видеть его структуру
 
-    # Пытаемся достать ID пользователя (надежный парсинг)
+    # 1. Пытаемся достать PAYLOAD (перебираем все возможные варианты)
+    payload = None
+    for attr in ["payload", "data", "callback_data", "callbackData", "text"]:
+        if hasattr(callback, attr) and getattr(callback, attr):
+            payload = getattr(callback, attr)
+            break
+
+    # Если payload лежит прямо внутри словаря (бывает в Pydantic моделях)
+    if not payload and hasattr(callback, "dict"):
+        d = callback.dict()
+        payload = d.get("payload") or d.get("data") or d.get("callbackData")
+
+    logger.info(f"PAYLOAD Extracted: {payload}")
+    if not payload:
+        logger.warning("Отмена: Payload не найден")
+        return
+
+    # 2. Пытаемся достать ID пользователя
     max_id = None
-    try:
-        max_id = callback.from_user.user_id if hasattr(callback, "from_user") else None
-    except:
-        pass
-    if not max_id:
-        try:
-            max_id = callback.message.sender.user_id if hasattr(callback.message, "sender") else None
-        except:
-            pass
-    if not max_id:
-        try:
-            max_id = callback.user_id
-        except:
-            pass
+    if hasattr(callback, "from_user") and hasattr(callback.from_user, "user_id"):
+        max_id = callback.from_user.user_id
+    elif hasattr(callback, "from_user") and hasattr(callback.from_user, "id"):
+        max_id = callback.from_user.id
+    elif hasattr(callback, "from_") and hasattr(callback.from_, "userId"):  # Нативный MyTeam API
+        max_id = callback.from_.userId
+    elif hasattr(callback, "user_id"):
+        max_id = callback.user_id
+    elif hasattr(callback, "message") and hasattr(callback.message, "chat"):
+        max_id = getattr(callback.message.chat, "id", None) or getattr(callback.message.chat, "chatId", None)
 
-    if not max_id: return
+    logger.info(f"MAX_ID Extracted: {max_id}")
+    if not max_id:
+        logger.warning("Отмена: MAX_ID не найден")
+        return
 
     pseudo_tg_id = -int(max_id)
     real_tg_id = await resolve_id(pseudo_tg_id)
