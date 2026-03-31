@@ -85,6 +85,18 @@ export default function Equipment() {
         } catch (e) { alert("Ошибка изменения статуса"); }
     };
 
+    const handleUnlinkEquipment = async (equipId) => {
+        if (!window.confirm("Отвязать Telegram/MAX аккаунт водителя от этой техники?")) return;
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            await axios.post(`/api/equipment/${equipId}/unlink`, fd);
+            fetchData();
+        } catch (e) {
+            alert("Ошибка при отвязке аккаунта");
+        }
+    };
+
     const generateInvite = async (eq) => {
         try {
             const res = await axios.post(`/api/equipment/${eq.id}/generate_invite`);
@@ -147,7 +159,17 @@ export default function Equipment() {
                                 <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700 flex flex-col space-y-2">
                                     <div className="flex space-x-2">
                                         <button onClick={() => openProfile(eq.tg_id, 'equip', eq.id)} className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 dark:text-blue-400 py-2 rounded-lg text-xs font-bold transition text-center whitespace-nowrap">👤 Профиль</button>
-                                        <button onClick={() => generateInvite(eq)} className="flex-[2] bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 dark:text-indigo-400 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap">🔗 Дать доступ водителю</button>
+
+                                        {/* Условный рендеринг: Отвязать или Дать доступ */}
+                                        {eq.tg_id ? (
+                                            <button onClick={() => handleUnlinkEquipment(eq.id)} className="flex-[2] bg-orange-50 hover:bg-orange-100 text-orange-600 dark:bg-orange-900/20 dark:hover:bg-orange-900/40 dark:text-orange-400 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap">
+                                                🔌 Отвязать водителя
+                                            </button>
+                                        ) : (
+                                            <button onClick={() => generateInvite(eq)} className="flex-[2] bg-indigo-50 hover:bg-indigo-100 text-indigo-600 dark:bg-indigo-900/20 dark:hover:bg-indigo-900/40 dark:text-indigo-400 py-2 rounded-lg text-xs font-bold transition whitespace-nowrap">
+                                                🔗 Дать доступ водителю
+                                            </button>
+                                        )}
                                     </div>
                                     <div className="flex space-x-2">
                                         <button onClick={() => handleEquipStatusChange(eq.id, eq.status === 'repair' ? 'free' : 'repair')} className={`flex-1 py-2 rounded-lg text-xs font-bold transition ${eq.status === 'repair' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-400 hover:bg-emerald-200' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-400 hover:bg-red-200'}`}>
