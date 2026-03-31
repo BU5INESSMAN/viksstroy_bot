@@ -172,6 +172,9 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
 
 @router.post("/api/equipment/{equip_id}/unlink")
 async def unlink_equipment(equip_id: int, tg_id: int = Form(0)):
+    user = await db.get_user(tg_id)
+    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
+        raise HTTPException(status_code=403, detail="Нет прав")
     try:
         await db.conn.execute("UPDATE equipment SET tg_id = NULL WHERE id = ?", (equip_id,))
         await db.conn.commit()

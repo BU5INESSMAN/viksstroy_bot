@@ -74,6 +74,16 @@ export default function Teams() {
         } catch (e) { alert("Ошибка обновления роли"); }
     };
 
+    const handleUnlinkMember = async (memberId) => {
+        if (!window.confirm("Отвязать Telegram/MAX аккаунт от этого рабочего?")) return;
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            await axios.post(`/api/teams/members/${memberId}/unlink`, fd);
+            openManageModal(manageTeamData.id);
+        } catch (e) { alert("Ошибка при отвязке аккаунта"); }
+    };
+
     const deleteMember = async (memberId) => {
         if (!window.confirm("Удалить участника из бригады?")) return;
         try {
@@ -199,6 +209,14 @@ export default function Teams() {
                                                             <button type="button" onClick={() => { setManageModalOpen(false); openProfile(m.tg_user_id, 'member', m.id); }} className="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-400 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-blue-200 transition whitespace-nowrap">
                                                                 👤 Профиль
                                                             </button>
+
+                                                            {/* Кнопка Отвязки аккаунта */}
+                                                            {m.is_linked && (
+                                                                <button onClick={() => handleUnlinkMember(m.id)} className="bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 border border-gray-200 dark:border-gray-600 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-gray-200 dark:hover:bg-gray-700 transition whitespace-nowrap">
+                                                                    🔌 Отвязать
+                                                                </button>
+                                                            )}
+
                                                             <button onClick={() => toggleForeman(m.id, m.is_foreman ? 0 : 1)} className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/40 dark:text-yellow-400 px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-yellow-200 transition whitespace-nowrap">
                                                                 {m.is_foreman ? 'Снять ⭐' : 'Сделать бригадиром'}
                                                             </button>

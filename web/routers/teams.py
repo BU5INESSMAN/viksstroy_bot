@@ -93,6 +93,20 @@ async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int
     return {"status": "ok"}
 
 
+@router.post("/api/teams/members/{member_id}/unlink")
+async def unlink_team_member(member_id: int, tg_id: int = Form(0)):
+    user = await db.get_user(tg_id)
+    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
+        raise HTTPException(status_code=403, detail="Нет прав")
+    try:
+        await db.conn.execute("UPDATE team_members SET tg_user_id = NULL WHERE id = ?", (member_id,))
+        await db.conn.commit()
+    except Exception as e:
+        await db.conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+    return {"status": "ok"}
+
+
 @router.post("/api/teams/members/{member_id}/delete")
 async def delete_team_member(member_id: int, tg_id: int = Form(0)):
     await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
