@@ -60,13 +60,17 @@ async def startup():
             "CREATE TABLE IF NOT EXISTS account_links (primary_id INTEGER, secondary_id INTEGER UNIQUE)")
         await db.conn.execute("CREATE TABLE IF NOT EXISTS link_codes (code TEXT UNIQUE, user_id INTEGER, expires REAL)")
 
-        # --- НОВЫЕ ПОЛЯ ДЛЯ УВЕДОМЛЕНИЙ ---
+        # --- АВТОМАТИЧЕСКОЕ СОЗДАНИЕ НОВЫХ КОЛОНОК ---
         try:
             await db.conn.execute("ALTER TABLE users ADD COLUMN notify_tg INTEGER DEFAULT 1")
         except:
             pass
         try:
             await db.conn.execute("ALTER TABLE users ADD COLUMN notify_max INTEGER DEFAULT 1")
+        except:
+            pass
+        try:
+            await db.conn.execute("ALTER TABLE team_members ADD COLUMN max_invite_link TEXT DEFAULT ''")
         except:
             pass
 
