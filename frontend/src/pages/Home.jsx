@@ -53,10 +53,25 @@ const KanbanCol = ({ title, icon, colorClass, apps, isOpen, toggleOpen, onAppCli
 
                             <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">📅 {a.date_target}</p>
 
-                            <p className="text-xs text-gray-600 dark:text-gray-300 truncate mb-1">
-                                👥 <span className={a.is_team_freed === 1 ? 'line-through text-gray-400' : 'font-medium'}>{a.team_name || 'Без бригады'}</span>
-                                {a.is_team_freed === 1 ? <span className="ml-1 text-[10px] text-emerald-500 font-bold">Свободна</span> : null}
-                            </p>
+                            <div className="text-xs text-gray-600 dark:text-gray-300 mb-1 space-y-0.5">
+                                {(() => {
+                                    if (!a.team_id || a.team_id === '0') return <p>👥 <span className="font-medium">Без бригады</span></p>;
+                                    const teamIds = a.team_id.toString().split(',').map(Number);
+                                    const freedIds = a.freed_team_ids ? a.freed_team_ids.toString().split(',').map(Number) : [];
+                                    const isAllFreed = a.is_team_freed === 1;
+                                    return teamIds.map(tId => {
+                                        const tMembers = a.members_data?.filter(m => m.team_id === tId) || [];
+                                        const tName = tMembers.length > 0 ? tMembers[0].team_name : `Бригада #${tId}`;
+                                        const isFreed = isAllFreed || freedIds.includes(tId);
+                                        return (
+                                            <p key={tId} className="truncate">
+                                                👥 <span className={isFreed ? 'line-through text-gray-400' : 'font-medium'}>{tName}</span>
+                                                {isFreed && <span className="ml-1 text-[10px] text-emerald-500 font-bold">Свободна ✅</span>}
+                                            </p>
+                                        );
+                                    });
+                                })()}
+                            </div>
 
                             {equipList.length > 0 && (
                                 <div className="mt-1.5 space-y-0.5">
