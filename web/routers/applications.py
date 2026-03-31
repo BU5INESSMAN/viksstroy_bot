@@ -65,7 +65,6 @@ async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_targ
         (real_tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
 
-    # Добавляем время и уведомляем Модераторов, Боссов и Суперадминов
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"📝 <b>Новая заявка на выезд</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}\n🕒 Время: {now}",
@@ -218,6 +217,36 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
         msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
         if reason: msg_foreman += f"\n💬 Причина: {reason}"
         await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']])
+
+        # --- НОВАЯ ЛОГИКА: УВЕДОМЛЕНИЯ ПРИ ОДОБРЕНИИ (Добавление в наряд) ---
+        if new_status == 'approved':
+            workers_ids = []
+            selected_members = app_dict.get('selected_members', '')
+            if selected_members:
+                m_ids = [int(x.strip()) for x in selected_members.split(',') if x.strip().isdigit()]
+                if m_ids:
+                    pl = ','.join(['?'] * len(m_ids))
+                    async with db.conn.execute(f"SELECT tg_user_id FROM team_members WHERE id IN ({pl})", m_ids) as c:
+                        for r in await c.fetchall():
+                            if r[0]: workers_ids.append(r[0])
+
+            drivers_ids = []
+            eq_data_str = app_dict.get('equipment_data', '')
+            if eq_data_str:
+                try:
+                    eq_list = json.loads(eq_data_str)
+                    for e in eq_list:
+                        async with db.conn.execute("SELECT tg_id FROM equipment WHERE id = ?", (e['id'],)) as c:
+                            eq_row = await c.fetchone()
+                            if eq_row and eq_row[0]: drivers_ids.append(eq_row[0])
+                except:
+                    pass
+
+            all_involved = list(set(workers_ids + drivers_ids))
+            if all_involved:
+                msg_inv = f"👷‍♂️ <b>Вас добавили в наряд! (Предварительная бронь)</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}\n\nОжидайте публикации наряда."
+                await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved)
+
     return {"status": "ok"}
 
 
@@ -409,14 +438,12 @@ async def free_app_team(app_id: int, tg_id: int = Form(...), team_id: int = Form
     freed_list = [int(x) for x in freed_str.split(',') if x.strip().isdigit()]
     all_t_ids = [int(x) for x in all_team_ids_str.split(',') if x.strip().isdigit()]
 
-    # Если передан ID конкретной бригады
     if team_id > 0:
         if team_id not in freed_list:
             freed_list.append(team_id)
         new_freed_str = ",".join(map(str, freed_list))
         await db.conn.execute("UPDATE applications SET freed_team_ids = ? WHERE id = ?", (new_freed_str, app_id))
 
-        # Проверяем, если освободились вообще все бригады на объекте
         if set(all_t_ids).issubset(set(freed_list)) and len(all_t_ids) > 0:
             await db.conn.execute("UPDATE applications SET is_team_freed = 1 WHERE id = ?", (app_id,))
 
@@ -434,7 +461,6 @@ async def free_app_team(app_id: int, tg_id: int = Form(...), team_id: int = Form
                            f"🟢 <b>Бригада свободна</b>\n🏗 {t_name}\n👤 Ответственный: {fio}\n📍 Объект: {obj_addr}\n🕒 Время: {now}",
                            "dashboard")
 
-    # Резервный механизм (освободить всех сразу)
     else:
         await db.conn.execute("UPDATE applications SET is_team_freed = 1, freed_team_ids = ? WHERE id = ?",
                               (all_team_ids_str, app_id))

@@ -583,13 +583,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
         except:
             await db.conn.rollback()
 
-        all_involved = list(set(workers_ids + drivers_ids))
-        if app_dict.get('foreman_id'):
-            all_involved.append(app_dict['foreman_id'])
-
-        if all_involved:
-            # Отправка ЛС водителю (и всем остальным участникам)
-            msg_inv = f"👷‍♂️ <b>Вас добавили в наряд!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
-            await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved)
+        # Мы убрали дублирующую рассылку ЛС отсюда, так как она теперь происходит на этапе "Одобрено" в applications.py
+        # А уведомление о старте обрабатывается в scheduler.py
         return True
     return False
