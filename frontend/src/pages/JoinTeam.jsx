@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { HardHat, User, CheckCircle, XCircle } from 'lucide-react';
 
 export default function JoinTeam() {
   const { code } = useParams();
@@ -13,7 +14,6 @@ export default function JoinTeam() {
 
   const [selectedWorker, setSelectedWorker] = useState(null);
   const [isConfirmModalOpen, setConfirmModalOpen] = useState(false);
-  const [joinPassword, setJoinPassword] = useState('');
 
   useEffect(() => {
     axios.get(`/api/invite/${code}`)
@@ -22,7 +22,6 @@ export default function JoinTeam() {
   }, [code]);
 
   useEffect(() => {
-    // УНИВЕРСАЛЬНЫЙ ПАРСЕР ДЛЯ TELEGRAM И MAX
     const getParam = (key) => {
         const searchParams = new URLSearchParams(location.search);
         const hashParams = new URLSearchParams(location.hash.replace('#', '?'));
@@ -30,13 +29,8 @@ export default function JoinTeam() {
     };
 
     let detectedUserId = tgId;
+    if (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) { detectedUserId = window.Telegram.WebApp.initDataUnsafe.user.id; }
 
-    // 1. Проверяем Telegram WebApp JS Bridge
-    if (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) {
-        detectedUserId = window.Telegram.WebApp.initDataUnsafe.user.id;
-    }
-
-    // 2. Проверяем параметры в URL (MAX WebAppData или Telegram params)
     const webAppDataStr = getParam('WebAppData') || getParam('tgWebAppData');
     if (webAppDataStr) {
         try {
@@ -49,7 +43,6 @@ export default function JoinTeam() {
         } catch(e) {}
     }
 
-    // 3. Прямые параметры MAX
     if (!detectedUserId) {
         const maxId = getParam('user_id') || getParam('max_id');
         if (maxId) detectedUserId = maxId;
@@ -72,15 +65,9 @@ export default function JoinTeam() {
         await axios.post('/api/invite/join', fd);
 
         alert("Успешно привязано!");
-
-        // Редирект в зависимости от среды
-        if (window.location.search.includes('WebAppData') || window.location.pathname.includes('/max')) {
-             navigate('/max');
-        } else if (window.Telegram?.WebApp?.initData) {
-             navigate('/tma');
-        } else {
-             navigate('/');
-        }
+        if (window.location.search.includes('WebAppData') || window.location.pathname.includes('/max')) { navigate('/max'); }
+        else if (window.Telegram?.WebApp?.initData) { navigate('/tma'); }
+        else { navigate('/'); }
     } catch (e) {
         alert(e.response?.data?.detail || "Ошибка привязки");
     }
@@ -89,10 +76,10 @@ export default function JoinTeam() {
   if (error) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-        <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-xl max-w-sm w-full border-t-4 border-red-500">
-            <span className="text-6xl block mb-4">❌</span>
+        <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-[2rem] shadow-xl max-w-sm w-full border-t-4 border-red-500">
+            <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
             <h2 className="text-xl font-bold mb-2 dark:text-white">Ошибка</h2>
-            <p className="text-gray-600 dark:text-gray-400 text-sm">{error}</p>
+            <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">{error}</p>
         </div>
       </div>
     );
@@ -102,27 +89,34 @@ export default function JoinTeam() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 transition-colors">
       <div className="w-full max-w-md">
         {!teamData ? (
-          <div className="flex justify-center p-10"><div className="animate-spin h-10 w-10 border-b-2 border-blue-600 rounded-full"></div></div>
+          <div className="flex justify-center p-10"><div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div></div>
         ) : (
-          <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl shadow-xl">
+          <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-[2rem] shadow-xl border border-gray-100 dark:border-gray-700">
             <div className="text-center mb-8">
-                <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded-full flex items-center justify-center mx-auto mb-4 text-4xl shadow-inner">👷‍♂️</div>
-                <h2 className="text-2xl font-bold dark:text-white mb-2">Приглашение</h2>
-                <p className="text-gray-600 dark:text-gray-300">Бригада: <b className="text-gray-900 dark:text-white">{teamData.team_name}</b></p>
+                <div className="w-20 h-20 bg-indigo-50 dark:bg-indigo-900/30 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                    <HardHat className="w-10 h-10 text-indigo-500" />
+                </div>
+                <h2 className="text-2xl font-bold dark:text-white mb-2 tracking-tight">Приглашение</h2>
+                <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Бригада: <b className="text-indigo-600 dark:text-indigo-400 text-base ml-1">{teamData.team_name}</b></p>
             </div>
 
-            <p className="text-sm font-bold text-gray-500 dark:text-gray-400 mb-3 uppercase tracking-wider text-center">Выберите ваш профиль из списка:</p>
+            <p className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-3 uppercase tracking-wider text-center">Выберите ваш профиль из списка:</p>
 
             {teamData.unclaimed_workers.length === 0 ? (
-                <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-100 dark:border-gray-600">
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Свободных мест нет или все участники уже привязали свои аккаунты.</p>
+                <div className="text-center p-5 bg-gray-50 dark:bg-gray-700/50 rounded-2xl border border-dashed border-gray-200 dark:border-gray-600">
+                    <p className="text-sm text-gray-500 dark:text-gray-400 font-medium">Свободных мест нет или все участники уже привязали свои аккаунты.</p>
                 </div>
             ) : (
-                <div className="space-y-3 max-h-60 overflow-y-auto pr-1 custom-scrollbar">
+                <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar">
                   {teamData.unclaimed_workers.map(w => (
-                    <button key={w.id} onClick={() => { setSelectedWorker(w); setConfirmModalOpen(true); }} className="w-full text-left p-4 bg-gray-50 dark:bg-gray-750 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-gray-200 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-500 rounded-2xl transition-all group active:scale-[0.98]">
-                      <p className="font-bold text-gray-800 dark:text-gray-200 group-hover:text-blue-700 dark:group-hover:text-blue-400 text-lg">{w.fio}</p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mt-1">{w.position}</p>
+                    <button key={w.id} onClick={() => { setSelectedWorker(w); setConfirmModalOpen(true); }} className="w-full flex items-center gap-3 p-4 bg-white dark:bg-gray-800 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 border border-gray-200 dark:border-gray-600 hover:border-indigo-300 dark:hover:border-indigo-500 rounded-2xl transition-all group active:scale-[0.98] shadow-sm">
+                      <div className="bg-gray-100 dark:bg-gray-700 p-2.5 rounded-full group-hover:bg-indigo-100 dark:group-hover:bg-indigo-800/50 transition-colors">
+                          <User className="w-5 h-5 text-gray-500 group-hover:text-indigo-600 dark:group-hover:text-indigo-400" />
+                      </div>
+                      <div className="text-left">
+                          <p className="font-bold text-gray-800 dark:text-gray-200 group-hover:text-indigo-700 dark:group-hover:text-indigo-300 text-base leading-tight">{w.fio}</p>
+                          <p className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold tracking-wider mt-1">{w.position}</p>
+                      </div>
                     </button>
                   ))}
                 </div>
@@ -133,14 +127,15 @@ export default function JoinTeam() {
 
       {isConfirmModalOpen && selectedWorker && (
         <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-800 p-6 sm:p-8 rounded-3xl w-full max-w-sm text-center shadow-2xl">
+            <div className="bg-white dark:bg-gray-800 p-8 rounded-[2rem] w-full max-w-sm text-center shadow-2xl border border-gray-100 dark:border-gray-700">
                 <h3 className="text-2xl font-bold mb-2 dark:text-white">Подтверждение</h3>
-                <p className="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">Привязать ваш мессенджер к профилю: <br/><b className="text-xl text-gray-900 dark:text-white mt-1 block">{selectedWorker.fio}</b></p>
+                <p className="text-gray-500 dark:text-gray-400 mb-8 text-sm font-medium leading-relaxed">Привязать ваш мессенджер к профилю: <br/><b className="text-xl text-gray-900 dark:text-white mt-2 block">{selectedWorker.fio}</b></p>
 
-                {/* Пароль мы больше не требуем, так как ссылка уже безопасная */}
-                <div className="flex space-x-3">
-                    <button onClick={() => setConfirmModalOpen(false)} className="w-1/2 bg-gray-100 dark:bg-gray-700 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition">Отмена</button>
-                    <button onClick={handleJoin} className="w-1/2 bg-blue-600 py-3.5 rounded-xl font-bold text-white shadow-lg hover:bg-blue-700 transition active:scale-95">Привязать</button>
+                <div className="flex gap-3">
+                    <button onClick={() => setConfirmModalOpen(false)} className="flex-1 bg-gray-100 dark:bg-gray-700 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors active:scale-95">Отмена</button>
+                    <button onClick={handleJoin} className="flex-1 bg-indigo-600 py-3.5 rounded-xl font-bold text-white shadow-md hover:bg-indigo-700 transition-all active:scale-95 flex items-center justify-center gap-2">
+                        <CheckCircle className="w-4 h-4" /> Привязать
+                    </button>
                 </div>
             </div>
         </div>
