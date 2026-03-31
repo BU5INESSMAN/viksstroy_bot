@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import { KeyRound, XCircle } from 'lucide-react';
 
 export default function MAXAuth() {
   const [error, setError] = useState('');
@@ -12,7 +13,6 @@ export default function MAXAuth() {
   const location = useLocation();
 
   useEffect(() => {
-    // Универсальный парсер: ищет данные в URL (search/hash)
     const getParam = (key) => {
         const searchParams = new URLSearchParams(location.search);
         const hashParams = new URLSearchParams(location.hash.replace('#', '?'));
@@ -23,26 +23,20 @@ export default function MAXAuth() {
     let firstName = getParam('first_name') || '';
     let lastName = getParam('last_name') || '';
 
-    // MAX передает данные в ключе WebAppData (формат идентичен tgWebAppData)
     const webAppDataStr = getParam('WebAppData') || getParam('maxWebAppData') || getParam('tgWebAppData');
     if (webAppDataStr) {
         try {
-            // URLSearchParams автоматически декодирует строку внутри (например, %7B -> { )
             const params = new URLSearchParams(webAppDataStr);
             const userParam = params.get('user');
-
             if (userParam) {
                 const u = JSON.parse(userParam);
                 userId = u.id || u.user_id || userId;
                 firstName = u.first_name || firstName;
                 lastName = u.last_name || lastName;
             }
-        } catch(e) {
-            console.error("Parse error WebAppData:", e);
-        }
+        } catch(e) {}
     }
 
-    // Резервный парсер, если данные переданы просто как JSON-строка
     const userStr = getParam('user');
     if (userStr && !webAppDataStr) {
         try {
@@ -53,7 +47,6 @@ export default function MAXAuth() {
         } catch(e) {}
     }
 
-    // Поддержка встроенного JS bridge (если MAX инжектит данные)
     if (window.max?.initDataUnsafe?.user) {
         const u = window.max.initDataUnsafe.user;
         userId = u.id || userId;
@@ -62,13 +55,11 @@ export default function MAXAuth() {
     }
 
     if (!userId) {
-      console.error("Auth params missing. Current URL:", window.location.href);
       setError("Доступ запрещен. Пожалуйста, откройте это приложение через системную кнопку внутри мессенджера MAX.");
       return;
     }
 
     const returnUrl = getParam('return_to') || '/dashboard';
-
     const formData = new FormData();
     formData.append('max_id', userId);
     formData.append('first_name', firstName);
@@ -85,9 +76,7 @@ export default function MAXAuth() {
           setNeedsPassword(true);
         }
       })
-      .catch(err => {
-        setError(err.response?.data?.detail || 'Ошибка авторизации');
-      });
+      .catch(err => setError(err.response?.data?.detail || 'Ошибка авторизации'));
   }, [navigate, location]);
 
   const handleRegister = async (e) => {
@@ -115,40 +104,31 @@ export default function MAXAuth() {
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 transition-colors">
       {!error && !needsPassword ? (
         <div className="flex flex-col items-center justify-center space-y-4">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
-            <p className="text-gray-500 dark:text-gray-400 font-medium tracking-wide animate-pulse">Авторизация...</p>
+            <div className="animate-spin rounded-full h-14 w-14 border-4 border-blue-200 border-t-blue-600 dark:border-blue-900 dark:border-t-blue-500 mx-auto mb-1"></div>
+            <p className="text-gray-500 dark:text-gray-400 font-bold tracking-wide animate-pulse">Авторизация...</p>
         </div>
       ) : needsPassword ? (
-        <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-3xl shadow-xl max-w-sm w-full border-t-4 border-blue-500">
+        <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-[2rem] shadow-xl max-w-sm w-full border-t-4 border-blue-500">
           <div className="flex justify-center mb-6">
-            <div className="w-20 h-20 bg-blue-100 dark:bg-blue-900/30 rounded-2xl flex items-center justify-center shadow-inner transform rotate-3">
-                <span className="text-4xl text-blue-600 dark:text-blue-400 font-black">M</span>
+            <div className="w-16 h-16 bg-blue-100 dark:bg-blue-900/30 rounded-2xl flex items-center justify-center shadow-inner transform rotate-3">
+                <span className="text-3xl text-blue-600 dark:text-blue-400 font-black">M</span>
             </div>
           </div>
           <h2 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-100">
             Привет, {maxUser?.first_name || 'Пользователь'}!
           </h2>
-          <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed mb-6">
+          <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-6 font-medium">
             Вы у нас впервые. Введите системный пароль для завершения регистрации.
           </p>
           <form onSubmit={handleRegister} className="space-y-4">
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                placeholder="Системный пароль..."
-                className="w-full px-4 py-3 border dark:border-gray-600 bg-white dark:bg-gray-700 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <button type="submit" className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-lg hover:bg-blue-700 transition-all active:scale-95">
-              Привязать аккаунт
-            </button>
-            {error && <p className="text-red-500 text-sm text-center font-medium mt-2">{error}</p>}
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} required placeholder="Системный пароль..." className="w-full px-4 py-3.5 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 text-gray-900 dark:text-white rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-inner transition-colors text-center font-bold tracking-widest" />
+              <button type="submit" className="w-full bg-blue-600 text-white py-3.5 rounded-xl font-bold shadow-md hover:bg-blue-700 transition-all active:scale-95">Привязать аккаунт</button>
+            {error && <p className="text-red-500 text-sm font-medium mt-2">{error}</p>}
           </form>
         </div>
       ) : (
-        <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-3xl shadow-xl max-w-sm w-full border-t-4 border-red-500">
-          <span className="text-6xl block mb-4">❌</span>
+        <div className="text-center p-8 bg-white dark:bg-gray-800 rounded-[2rem] shadow-xl max-w-sm w-full border-t-4 border-red-500">
+          <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
           <h2 className="text-xl font-bold mb-2 text-gray-800 dark:text-gray-100">Доступ запрещен</h2>
           <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed mb-6">{error}</p>
         </div>

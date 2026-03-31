@@ -1,6 +1,11 @@
 import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
+import {
+    Lock, Settings, Save, Mail, Rocket,
+    Shield, Users, FileText, ChevronUp, ChevronDown,
+    ToggleLeft, Clock, CalendarDays
+} from 'lucide-react';
 
 export default function System() {
     const { openProfile } = useOutletContext();
@@ -89,7 +94,7 @@ export default function System() {
             safeTimestamp = timestamp.replace(' ', 'T') + 'Z';
         }
         try {
-            return new Date(safeTimestamp).toLocaleString('ru-RU', { timeZone: 'Asia/Barnaul' });
+            return new Date(safeTimestamp).toLocaleString('ru-RU', { timeZone: 'Asia/Barnaul', hour: '2-digit', minute:'2-digit', day:'2-digit', month:'2-digit', year:'2-digit' });
         } catch (e) {
             return new Date(timestamp).toLocaleString('ru-RU');
         }
@@ -97,8 +102,12 @@ export default function System() {
 
     if (!['superadmin', 'boss', 'moderator'].includes(role)) {
         return (
-            <div className="flex flex-col items-center justify-center h-full text-gray-500 dark:text-gray-400">
-                <span className="text-4xl mb-4">🔒</span><p>У вас нет доступа к этому разделу.</p>
+            <div className="flex flex-col items-center justify-center min-h-[60vh] text-gray-400 dark:text-gray-500">
+                <div className="bg-gray-100 dark:bg-gray-800 p-6 rounded-full mb-6 shadow-inner">
+                    <Lock className="w-16 h-16 text-gray-300 dark:text-gray-600" />
+                </div>
+                <p className="text-xl font-bold">Доступ закрыт</p>
+                <p className="text-sm mt-2">У вас нет прав для просмотра этого раздела.</p>
             </div>
         );
     }
@@ -106,133 +115,154 @@ export default function System() {
     const displayedLogs = logsExpanded ? logs : logs.slice(0, 10);
 
     return (
-        <div className="max-w-4xl mx-auto space-y-6 pb-20">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 space-y-6 pb-24">
             {/* БЛОК АВТОМАТИЗАЦИИ */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
-                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
-                    <span className="text-2xl mr-2">⚙️</span> Настройки автоматизации
+            <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 sm:p-8 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
+                <h2 className="text-xl font-bold mb-6 flex items-center text-gray-800 dark:text-gray-100">
+                    <Settings className="w-6 h-6 text-blue-500 mr-2.5" /> Настройки автоматизации
                 </h2>
                 <div className="space-y-6">
 
-                    {/* ВОЗВРАЩЕННОЕ БАЗОВОЕ ВРЕМЯ + ЧЕКБОКС АВТОПУБЛИКАЦИИ */}
                     <div className="space-y-4">
-                        <div>
-                            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Авто-старт нарядов (Базовое время)</h3>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Укажите стандартное время начала работ для заявок без техники (например, 08:00).</p>
+                        <div className="bg-gray-50 dark:bg-gray-700/30 p-5 rounded-2xl border border-gray-100 dark:border-gray-600 shadow-sm">
+                            <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1.5 flex items-center gap-1.5">
+                                <Clock className="w-4 h-4 text-blue-500" /> Авто-старт нарядов (Базовое время)
+                            </h3>
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-medium leading-relaxed">Укажите стандартное время начала работ для заявок без техники (например, 08:00).</p>
                             <input
                                 type="time"
                                 name="auto_publish_time"
                                 value={settings.auto_publish_time}
                                 onChange={handleSettingChange}
-                                className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-blue-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none transition-colors"
                             />
                         </div>
 
-                        <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl border border-gray-200 dark:border-gray-600">
-                            <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Авто-публикация заявок</h3>
-                            <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                Если включено, одобренные заявки на текущий день будут автоматически опубликованы в беседу ровно в то время, которое указано как начало их работы (по технике или базовое время выше).
-                            </p>
-                            <div className="flex items-center">
-                                <input
-                                    type="checkbox"
-                                    name="auto_publish_enabled"
-                                    checked={settings.auto_publish_enabled}
-                                    onChange={handleSettingChange}
-                                    className="w-5 h-5 text-blue-600 bg-white border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-800 dark:border-gray-500"
-                                />
-                                <label className="ml-3 text-sm font-bold text-gray-900 dark:text-gray-200">Включить автоматическую публикацию</label>
+                        <div className={`p-5 rounded-2xl border shadow-sm transition-colors ${settings.auto_publish_enabled ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800/50' : 'bg-gray-50 dark:bg-gray-700/30 border-gray-100 dark:border-gray-600'}`}>
+                            <div className="flex items-start justify-between gap-4">
+                                <div>
+                                    <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1.5 flex items-center gap-1.5">
+                                        <Rocket className={`w-4 h-4 ${settings.auto_publish_enabled ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'}`} /> Авто-публикация заявок
+                                    </h3>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium leading-relaxed">
+                                        Одобренные заявки на текущий день будут автоматически опубликованы в беседу ровно в то время, которое указано как начало их работы.
+                                    </p>
+                                </div>
+                                <label className="relative inline-flex items-center cursor-pointer flex-shrink-0 mt-1">
+                                    <input type="checkbox" name="auto_publish_enabled" checked={settings.auto_publish_enabled} onChange={handleSettingChange} className="sr-only peer" />
+                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                                </label>
                             </div>
                         </div>
                     </div>
 
-                    <hr className="border-gray-200 dark:border-gray-700" />
-
-                    <div>
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Авто-завершение нарядов</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Система переведет активные наряды в статус "Ожидает отчета" и запросит табель у прораба.</p>
-                        <input type="time" name="auto_complete_time" value={settings.auto_complete_time} onChange={handleSettingChange} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                    <div className="bg-gray-50 dark:bg-gray-700/30 p-5 rounded-2xl border border-gray-100 dark:border-gray-600 shadow-sm">
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1.5 flex items-center gap-1.5">
+                            <CheckCircle className="w-4 h-4 text-emerald-500" /> Авто-завершение нарядов
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-medium leading-relaxed">Система переведет активные наряды в статус "Ожидает отчета" и запросит табель у прораба.</p>
+                        <input type="time" name="auto_complete_time" value={settings.auto_complete_time} onChange={handleSettingChange} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-blue-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none transition-colors" />
                     </div>
 
-                    <hr className="border-gray-200 dark:border-gray-700" />
-
-                    <div>
-                        <h3 className="text-sm font-semibold text-gray-900 dark:text-white mb-2">Напоминание прорабам</h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Бот напомнит прорабам заполнить заявки на следующий день.</p>
-                        <input type="time" name="foreman_reminder_time" value={settings.foreman_reminder_time} onChange={handleSettingChange} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white" />
+                    <div className="bg-gray-50 dark:bg-gray-700/30 p-5 rounded-2xl border border-gray-100 dark:border-gray-600 shadow-sm">
+                        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4 mb-4">
+                            <div>
+                                <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1.5 flex items-center gap-1.5">
+                                    <Mail className="w-4 h-4 text-orange-500" /> Напоминание прорабам
+                                </h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium leading-relaxed">Бот напомнит прорабам заполнить заявки на следующий день.</p>
+                            </div>
+                            <label className="relative inline-flex items-center cursor-pointer flex-shrink-0">
+                                <span className="mr-3 text-xs font-bold text-gray-700 dark:text-gray-300">По выходным</span>
+                                <input type="checkbox" name="foreman_reminder_weekends" checked={settings.foreman_reminder_weekends} onChange={handleSettingChange} className="sr-only peer" />
+                                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all dark:border-gray-600 peer-checked:bg-orange-500"></div>
+                            </label>
+                        </div>
+                        <input type="time" name="foreman_reminder_time" value={settings.foreman_reminder_time} onChange={handleSettingChange} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-blue-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none transition-colors" />
                     </div>
 
-                    <div className="flex items-center">
-                        <input type="checkbox" name="foreman_reminder_weekends" checked={settings.foreman_reminder_weekends} onChange={handleSettingChange} className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:bg-gray-700 dark:border-gray-600" />
-                        <label className="ml-2 text-sm font-medium text-gray-900 dark:text-gray-300">Включить напоминания по выходным</label>
-                    </div>
-
-                    <button onClick={saveSettings} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm px-5 py-3 focus:ring-4 focus:ring-blue-300 dark:focus:ring-blue-800 transition-colors flex items-center justify-center gap-2 shadow-sm">
-                        <span>💾</span> Сохранить настройки автоматизации
+                    <button onClick={saveSettings} className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm py-4 transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-md hover:shadow-lg">
+                        <Save className="w-4 h-4" /> Сохранить настройки
                     </button>
                 </div>
             </div>
 
-            {/* БЛОК ТЕСТИРОВАНИЯ УВЕДОМЛЕНИЙ */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
-                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
-                    <span className="text-2xl mr-2">📩</span> Отладка уведомлений
-                </h2>
-                <div className="space-y-4">
-                    <div>
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Платформа для отправки тестов</label>
-                        <select value={testPlatform} onChange={(e) => setTestPlatform(e.target.value)} className="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:text-white">
-                            <option value="all">Все платформы (MAX + Telegram)</option>
-                            <option value="max">Только MAX</option>
-                            <option value="telegram">Только Telegram</option>
-                        </select>
-                    </div>
-                    <button onClick={testNotification} className="w-full bg-gray-100 hover:bg-gray-200 text-gray-800 font-medium rounded-lg text-sm px-5 py-3 border border-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600 dark:hover:bg-gray-600 transition-colors flex items-center justify-center gap-2">
-                        <span>🚀</span> Запустить тест (сгенерировать анкету)
-                    </button>
-                </div>
-            </div>
-
-            {/* БЛОК СИМУЛЯЦИИ РОЛЕЙ */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
-                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
-                    <span className="text-2xl mr-2">🎭</span> Тестирование ролей (Симуляция)
-                </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
-                    Временно переключите свой аккаунт на другую роль, чтобы проверить интерфейс. Вернуться обратно в админку можно будет через меню профиля.
-                </p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    {Object.entries(roleNames).map(([rKey, rName]) => (
-                        <button
-                            key={rKey}
-                            onClick={() => handleRoleSimulation(rKey)}
-                            className={`py-2 px-3 rounded-lg text-sm font-medium transition-colors shadow-sm border ${
-                                role === rKey 
-                                ? 'bg-blue-600 text-white border-blue-600 dark:border-blue-500 ring-2 ring-blue-300 dark:ring-blue-800' 
-                                : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-600'
-                            }`}
-                        >
-                            {rName}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* БЛОК ТЕСТИРОВАНИЯ УВЕДОМЛЕНИЙ */}
+                <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 sm:p-8 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
+                    <h2 className="text-lg font-bold mb-5 flex items-center text-gray-800 dark:text-gray-100">
+                        <Mail className="w-6 h-6 text-indigo-500 mr-2.5" /> Отладка уведомлений
+                    </h2>
+                    <div className="space-y-5">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Платформа</label>
+                            <select value={testPlatform} onChange={(e) => setTestPlatform(e.target.value)} className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 block p-3.5 dark:bg-gray-700/50 dark:border-gray-600 dark:text-white outline-none shadow-inner transition-colors">
+                                <option value="all">Все (MAX + Telegram)</option>
+                                <option value="max">Только MAX</option>
+                                <option value="telegram">Только Telegram</option>
+                            </select>
+                        </div>
+                        <button onClick={testNotification} className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400 dark:hover:bg-indigo-900/40 font-bold rounded-xl text-sm py-4 border border-indigo-200 dark:border-indigo-800 transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-sm">
+                            <Rocket className="w-4 h-4" /> Запустить тест
                         </button>
-                    ))}
+                    </div>
+                </div>
+
+                {/* БЛОК СИМУЛЯЦИИ РОЛЕЙ */}
+                <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 sm:p-8 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
+                    <h2 className="text-lg font-bold mb-3 flex items-center text-gray-800 dark:text-gray-100">
+                        <Shield className="w-6 h-6 text-purple-500 mr-2.5" /> Симуляция ролей
+                    </h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-5 font-medium leading-relaxed">
+                        Временно переключите свой аккаунт на другую роль. Вернуться обратно можно через профиль.
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                        {Object.entries(roleNames).map(([rKey, rName]) => (
+                            <button
+                                key={rKey}
+                                onClick={() => handleRoleSimulation(rKey)}
+                                className={`py-2.5 px-3 rounded-xl text-xs font-bold transition-all shadow-sm border active:scale-95 flex items-center justify-center gap-1.5 ${
+                                    role === rKey 
+                                    ? 'bg-purple-600 text-white border-purple-600 shadow-md ring-2 ring-purple-200 dark:ring-purple-900' 
+                                    : 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600'
+                                }`}
+                            >
+                                {role === rKey && <ToggleLeft className="w-3.5 h-3.5" />} {rName}
+                            </button>
+                        ))}
+                    </div>
                 </div>
             </div>
 
             {/* ТАБЛИЦА ПОЛЬЗОВАТЕЛЕЙ */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
-                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100">
-                    <span className="text-2xl mr-2">👥</span> Пользователи системы
+            <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 sm:p-8 border border-gray-100 dark:border-gray-700 transition-colors duration-200 overflow-hidden">
+                <h2 className="text-xl font-bold mb-2 flex items-center text-gray-800 dark:text-gray-100">
+                    <Users className="w-6 h-6 text-emerald-500 mr-2.5" /> Пользователи
                 </h2>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">Нажмите на пользователя, чтобы изменить его роль или заблокировать.</p>
-                <div className="overflow-x-auto">
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-6 font-medium">Нажмите на пользователя, чтобы изменить его роль или заблокировать.</p>
+                <div className="-mx-6 sm:mx-0 overflow-x-auto custom-scrollbar">
                     <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-                        <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700"><tr><th className="px-6 py-3">ФИО</th><th className="px-6 py-3">Роль</th><th className="px-6 py-3">Платформа</th></tr></thead>
-                        <tbody>
+                        <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase bg-gray-50 dark:bg-gray-700/50 border-y border-gray-100 dark:border-gray-700">
+                            <tr>
+                                <th className="px-6 py-4 font-bold tracking-wider">ФИО</th>
+                                <th className="px-6 py-4 font-bold tracking-wider">Роль</th>
+                                <th className="px-6 py-4 font-bold tracking-wider">Платформа</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
                             {users.map((u) => (
-                                <tr key={u.user_id} onClick={() => openProfile(u.user_id)} className="cursor-pointer bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                    <td className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{u.fio}</td>
-                                    <td className="px-6 py-4"><span className="bg-blue-100 text-blue-800 text-xs font-medium mr-2 px-2.5 py-0.5 rounded dark:bg-blue-900 dark:text-blue-300">{roleNames[u.role] || u.role}</span></td>
-                                    <td className="px-6 py-4">{u.user_id > 0 ? 'Telegram' : 'MAX'}</td>
+                                <tr key={u.user_id} onClick={() => openProfile(u.user_id)} className="cursor-pointer bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900/10 transition-colors group">
+                                    <td className="px-6 py-4 font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap group-hover:text-blue-600 dark:group-hover:text-blue-400">{u.fio}</td>
+                                    <td className="px-6 py-4">
+                                        <span className="bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400 text-[10px] font-extrabold uppercase tracking-wider px-2.5 py-1 rounded-md border border-emerald-100 dark:border-emerald-800/50">
+                                            {roleNames[u.role] || u.role}
+                                        </span>
+                                    </td>
+                                    <td className="px-6 py-4">
+                                        <span className="text-xs font-bold text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-700/50 px-2.5 py-1 rounded-md border border-gray-100 dark:border-gray-600/50">
+                                            {u.user_id > 0 ? 'Telegram' : 'MAX'}
+                                        </span>
+                                    </td>
                                 </tr>
                             ))}
                         </tbody>
@@ -241,29 +271,37 @@ export default function System() {
             </div>
 
             {/* ЖУРНАЛ ДЕЙСТВИЙ */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-sm p-6 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
-                <h2 className="text-lg font-bold mb-4 flex items-center text-gray-800 dark:text-gray-100"><span className="text-2xl mr-2">📜</span> Журнал действий системы</h2>
-                <div className="overflow-x-auto">
+            <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 sm:p-8 border border-gray-100 dark:border-gray-700 transition-colors duration-200 overflow-hidden">
+                <h2 className="text-xl font-bold mb-6 flex items-center text-gray-800 dark:text-gray-100">
+                    <FileText className="w-6 h-6 text-orange-500 mr-2.5" /> Журнал действий
+                </h2>
+                <div className="-mx-6 sm:mx-0 overflow-x-auto custom-scrollbar">
                     <table className="w-full text-sm text-left text-gray-500 dark:text-gray-400">
-                        <thead className="text-xs text-gray-700 dark:text-gray-300 uppercase bg-gray-50 dark:bg-gray-700"><tr><th className="px-6 py-3">Время</th><th className="px-6 py-3">Пользователь</th><th className="px-6 py-3">Действие</th></tr></thead>
-                        <tbody>
+                        <thead className="text-xs text-gray-500 dark:text-gray-400 uppercase bg-gray-50 dark:bg-gray-700/50 border-y border-gray-100 dark:border-gray-700">
+                            <tr>
+                                <th className="px-6 py-4 font-bold tracking-wider w-32">Время</th>
+                                <th className="px-6 py-4 font-bold tracking-wider w-48">Пользователь</th>
+                                <th className="px-6 py-4 font-bold tracking-wider">Действие</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100 dark:divide-gray-700/50">
                             {displayedLogs.map((log) => (
-                                <tr key={log.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors">
-                                    <td className="px-6 py-4 whitespace-nowrap">{formatLogTime(log.timestamp)}</td>
-                                    <td className="px-6 py-4 font-medium text-gray-900 dark:text-white whitespace-nowrap">{log.fio || 'Неизвестно'}</td>
-                                    <td className="px-6 py-4">{log.action}</td>
+                                <tr key={log.id} className="bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors">
+                                    <td className="px-6 py-4 whitespace-nowrap text-xs font-mono text-gray-400">{formatLogTime(log.timestamp)}</td>
+                                    <td className="px-6 py-4 font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap">{log.fio || 'Неизвестно'}</td>
+                                    <td className="px-6 py-4 text-sm font-medium text-gray-600 dark:text-gray-400">{log.action}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
                 {logs.length > 10 && (
-                    <div className="mt-5 text-center">
+                    <div className="mt-6 text-center">
                         <button
                             onClick={() => setLogsExpanded(!logsExpanded)}
-                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-semibold text-sm transition-colors py-2 px-4 rounded-lg bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40"
+                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-bold text-sm transition-all active:scale-95 py-3 px-6 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 flex items-center justify-center gap-2 mx-auto"
                         >
-                            {logsExpanded ? 'Свернуть журнал 🔼' : `Показать все записи (${logs.length}) 🔽`}
+                            {logsExpanded ? <><ChevronUp className="w-4 h-4" /> Свернуть журнал</> : <><ChevronDown className="w-4 h-4" /> Показать все записи ({logs.length})</>}
                         </button>
                     </div>
                 )}
