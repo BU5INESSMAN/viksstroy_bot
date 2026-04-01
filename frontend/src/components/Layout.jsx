@@ -4,27 +4,35 @@ import axios from 'axios';
 import {
     Home, ClipboardList, Truck, Users, Settings as SettingsIcon, User,
     Plus, Sun, Moon, Monitor, BookOpen, Rocket, MessageCircle,
-    Send, Smartphone, X, Camera, Trash2, Unplug, ShieldCheck
+    Send, Smartphone, X, Camera, Trash2, Unplug, ShieldCheck, AlertCircle, RefreshCw
 } from 'lucide-react';
 
 export default function Layout() {
     const navigate = useNavigate();
     const location = useLocation();
     const role = localStorage.getItem('user_role') || 'Гость';
-    const tgId = localStorage.getItem('tg_id') || '0';
+    const tgId = localStorage.getItem('tg_id');
     const realRole = localStorage.getItem('real_role');
 
     const [theme, setTheme] = useState(localStorage.getItem('theme') || 'system');
     const [isProfileModalOpen, setProfileModalOpen] = useState(false);
+    const [isSessionModalOpen, setSessionModalOpen] = useState(false);
     const [profileData, setProfileData] = useState(null);
     const [editProfile, setEditProfile] = useState({});
 
     const [linkCode, setLinkCode] = useState('');
-
     const [isTMA, setIsTMA] = useState(false);
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
-
     const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+    useEffect(() => {
+        const publicPaths = ['/login', '/invite', '/equip-invite'];
+        const isPublic = publicPaths.some(path => location.pathname.startsWith(path));
+
+        if (!tgId && !isPublic && location.pathname !== '/') {
+            setSessionModalOpen(true);
+        }
+    }, [location.pathname, tgId]);
 
     useEffect(() => {
         const root = window.document.documentElement; root.classList.remove('light', 'dark');
@@ -38,21 +46,22 @@ export default function Layout() {
         if (tg && tg.initData) {
             setIsTMA(true);
             tg.expand();
-            if (tg.disableVerticalSwipes) {
-                tg.disableVerticalSwipes();
-            }
+            if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
         }
-        if (window.location.pathname.includes('/max') || window.location.search.includes('WebAppData') || window.location.hash.includes('WebAppData')) {
+        if (window.location.pathname.includes('/max') || window.location.search.includes('WebAppData')) {
             setIsTMA(true);
         }
-
         document.body.style.overscrollBehaviorY = 'none';
     }, []);
 
     const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light');
     const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Monitor;
 
-    const endRoleTest = () => { localStorage.setItem('user_role', realRole); localStorage.removeItem('real_role'); window.location.reload(); };
+    const endRoleTest = () => {
+        localStorage.setItem('user_role', realRole);
+        localStorage.removeItem('real_role');
+        window.location.reload();
+    };
 
     const openProfile = async (targetId, entityType = 'tg', entityId = 0) => {
         try {
@@ -77,14 +86,20 @@ export default function Layout() {
             }
             setLinkCode('');
             setProfileModalOpen(true);
-        } catch (err) { alert("Ошибка загрузки профиля"); }
+        } catch (err) {
+            if (err.response?.status === 401 || err.response?.status === 403) {
+                setSessionModalOpen(true);
+            } else {
+                alert("Ошибка загрузки профиля");
+            }
+        }
     };
 
     const handleToggleNotify = (platform) => {
         setEditProfile(prev => {
             const newVal = !prev[platform];
             if (!newVal && ((platform === 'notify_tg' && !prev.notify_max) || (platform === 'notify_max' && !prev.notify_tg))) {
-                alert("Хотя бы один мессенджер должен быть включен для получения системных уведомлений!");
+                alert("Хотя бы один мессенджер должен быть включен!");
                 return prev;
             }
             return { ...prev, [platform]: newVal };
@@ -168,7 +183,6 @@ export default function Layout() {
     };
 
     const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
-
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
     const canCreateApp = ['foreman', 'boss', 'superadmin'].includes(role);
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
@@ -176,12 +190,13 @@ export default function Layout() {
     const isMyProfile = profileData && profileData.user_id === Number(tgId);
 
     return (
-        <div className="bg-gray-50/50 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200 selection:bg-blue-200 dark:selection:bg-blue-900/50">
+        <div className="bg-gray-50/50 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
+            {/* ШАПКА САЙТА */}
             <header className={`bg-white dark:bg-gray-800 shadow-sm border-b border-gray-100 dark:border-gray-700/80 mb-6 ${isTMA ? 'pt-16' : 'pt-4'}`}>
                 {realRole && (
                     <div className="bg-purple-600 text-white text-center py-2.5 font-bold flex justify-center items-center space-x-4 relative z-50 shadow-sm text-sm">
                         <span className="flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Тест роли: {roleNames[role]}</span>
-                        <button onClick={endRoleTest} className="bg-white/20 hover:bg-white/30 px-4 py-1.5 rounded-lg text-xs transition-colors active:scale-95">Вернуться</button>
+                        <button onClick={endRoleTest} className="bg-white/20 px-4 py-1.5 rounded-lg text-xs transition-colors active:scale-95">Вернуться</button>
                     </div>
                 )}
                 <nav className="px-4 sm:px-6 py-3 sm:py-4 flex justify-between items-center relative max-w-7xl mx-auto">
@@ -203,12 +218,12 @@ export default function Layout() {
                             <>
                                 <div className="fixed inset-0 z-[90]" onClick={() => setIsMenuOpen(false)}></div>
                                 <div className="absolute top-full right-0 mt-3 w-56 bg-white dark:bg-gray-800 rounded-2xl shadow-xl border border-gray-100 dark:border-gray-700 z-[100] overflow-hidden transition-all origin-top-right">
-                                    <div className="flex flex-col py-2">
+                                    <div className="flex flex-col py-2 text-left">
                                         <button onClick={() => { setIsMenuOpen(false); navigate('/guide'); }} className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><BookOpen className="w-5 h-5 text-indigo-500" /> Инструкция</button>
                                         <button onClick={() => { setIsMenuOpen(false); navigate('/updates'); }} className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><Rocket className="w-5 h-5 text-emerald-500" /> Обновления</button>
                                         <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" onClick={() => setIsMenuOpen(false)} className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><MessageCircle className="w-5 h-5 text-blue-500" /> Техподдержка</a>
                                         <div className="h-px bg-gray-100 dark:bg-gray-700 my-2 mx-4"></div>
-                                        <button onClick={() => { toggleTheme(); setIsMenuOpen(false); }} className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><ThemeIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" /> {theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches) ? 'Светлая тема' : 'Темная тема'}</button>
+                                        <button onClick={() => { toggleTheme(); setIsMenuOpen(false); }} className="flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors text-left text-sm font-bold text-gray-700 dark:text-gray-200 w-full"><ThemeIcon className="w-5 h-5 text-gray-500 dark:text-gray-400" /> Тема</button>
                                     </div>
                                 </div>
                             </>
@@ -221,17 +236,18 @@ export default function Layout() {
 
             {/* НИЖНЕЕ МЕНЮ НАВИГАЦИИ */}
             <div className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-100 dark:border-gray-700 z-40 flex justify-around items-end pb-safe shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors h-[60px] sm:h-[72px] px-2 sm:px-6">
+
+                {/* 1. Главная */}
                 <button onClick={() => navigate('/dashboard')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/dashboard' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
-                    <Home className={`w-6 h-6 sm:mb-1 ${location.pathname === '/dashboard' ? 'fill-current' : ''}`} strokeWidth={location.pathname === '/dashboard' ? 2.5 : 2} />
+                    <Home className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
                     <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Главная</span>
                 </button>
 
-                {isWorkerOrDriver && <button onClick={() => navigate('/my-apps')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/my-apps' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><ClipboardList className="w-6 h-6 sm:mb-1" strokeWidth={location.pathname === '/my-apps' ? 2.5 : 2} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Заявки</span></button>}
+                {/* 2. Заявки (Для рабочих/водителей) ИЛИ Бригады (Для Офиса/Прораба) */}
+                {isWorkerOrDriver && <button onClick={() => navigate('/my-apps')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/my-apps' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><ClipboardList className="w-6 h-6 sm:mb-1" strokeWidth={2.5} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Заявки</span></button>}
+                {!isWorkerOrDriver && <button onClick={() => navigate('/teams')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><Users className="w-6 h-6 sm:mb-1" strokeWidth={2.5} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Бригады</span></button>}
 
-                {isModOrBoss && <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><Truck className="w-6 h-6 sm:mb-1" strokeWidth={location.pathname === '/equipment' ? 2.5 : 2} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Автопарк</span></button>}
-
-                {!isWorkerOrDriver && <button onClick={() => navigate('/teams')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><Users className="w-6 h-6 sm:mb-1" strokeWidth={location.pathname === '/teams' ? 2.5 : 2} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Бригады</span></button>}
-
+                {/* 3. Центральная кнопка СОЗДАТЬ */}
                 {canCreateApp && (
                     <div className="relative w-full flex flex-col justify-center items-center sm:justify-end sm:pb-2.5 h-full">
                         <button onClick={() => {navigate('/dashboard'); setGlobalCreateAppOpen(true);}} className="absolute -top-4 sm:-top-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] border-4 border-white dark:border-gray-800 transition-all active:scale-95 z-50">
@@ -241,15 +257,47 @@ export default function Layout() {
                     </div>
                 )}
 
-                {isModOrBoss && <button onClick={() => navigate('/review')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 relative ${location.pathname === '/review' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><ClipboardList className="w-6 h-6 sm:mb-1" strokeWidth={location.pathname === '/review' ? 2.5 : 2} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Заявки</span></button>}
+                {/* 4. Автопарк (Справа от создания - Доступно Прорабу и выше) */}
+                {['foreman', 'moderator', 'boss', 'superadmin'].includes(role) && (
+                    <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                        <Truck className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
+                        <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Автопарк</span>
+                    </button>
+                )}
 
-                {isModOrBoss && <button onClick={() => navigate('/system')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/system' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><SettingsIcon className="w-6 h-6 sm:mb-1" strokeWidth={location.pathname === '/system' ? 2.5 : 2} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Система</span></button>}
+                {/* 5. Заявки (Модерация) и Система (Только для Офиса) */}
+                {isModOrBoss && <button onClick={() => navigate('/review')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 relative ${location.pathname === '/review' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><ClipboardList className="w-6 h-6 sm:mb-1" strokeWidth={2.5} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Заявки</span></button>}
+                {isModOrBoss && <button onClick={() => navigate('/system')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/system' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><SettingsIcon className="w-6 h-6 sm:mb-1" strokeWidth={2.5} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Система</span></button>}
 
+                {/* 6. Профиль */}
                 <button onClick={() => openProfile(tgId)} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${isProfileModalOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
-                    <User className="w-6 h-6 sm:mb-1" strokeWidth={isProfileModalOpen ? 2.5 : 2} />
+                    <User className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
                     <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Профиль</span>
                 </button>
             </div>
+
+            {/* --- МОДАЛЬНОЕ ОКНО ИСТЕКШЕЙ СЕССИИ --- */}
+            {isSessionModalOpen && (
+                <div className="fixed inset-0 z-[200] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
+                    <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] w-full max-w-sm overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700">
+                        <div className="p-8 text-center">
+                            <div className="w-20 h-20 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-6 text-orange-600 dark:text-orange-400">
+                                <AlertCircle className="w-10 h-10" />
+                            </div>
+                            <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">Сессия истекла</h2>
+                            <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-8">
+                                Данные авторизации были удалены браузером для экономии памяти. Пожалуйста, войдите снова через мессенджер.
+                            </p>
+                            <button
+                                onClick={() => window.location.href = '/'}
+                                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
+                            >
+                                <RefreshCw className="w-5 h-5" /> Авторизоваться
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* МОДАЛЬНОЕ ОКНО ПРОФИЛЯ */}
             {isProfileModalOpen && profileData && (

@@ -27,7 +27,9 @@ export default function Equipment() {
     const [inviteInfo, setInviteInfo] = useState(null);
     const [copiedLink, setCopiedLink] = useState('');
 
-    const canEditEquipment = ['moderator', 'boss', 'superadmin'].includes(role);
+    // Разделяем права: foreman может управлять, но удалять может только руководство
+    const canManageEquipment = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canDeleteEquipment = ['moderator', 'boss', 'superadmin'].includes(role);
 
     const fetchData = async () => {
         try {
@@ -137,7 +139,7 @@ export default function Equipment() {
                 <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100">
                     <Truck className="w-7 h-7 text-blue-500 mr-2.5" /> Автопарк
                 </h2>
-                {canEditEquipment && (
+                {canManageEquipment && (
                     <div className="flex flex-wrap gap-2.5">
                         <button onClick={() => setActiveTab('new')} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
                             <Plus className="w-4 h-4" /> Добавить
@@ -175,7 +177,7 @@ export default function Equipment() {
                                 </div>
                             </div>
 
-                            {canEditEquipment && (
+                            {canManageEquipment && (
                                 <div className="mt-5 pt-4 border-t border-gray-100 dark:border-gray-700 flex flex-col space-y-2.5">
                                     <div className="flex space-x-2">
                                         <button onClick={() => openProfile(eq.tg_id, 'equip', eq.id)} className="flex-1 bg-blue-50 hover:bg-blue-100 text-blue-600 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 dark:text-blue-400 py-2.5 rounded-xl text-xs font-bold transition-colors text-center flex items-center justify-center gap-1.5 active:scale-95">
@@ -196,9 +198,13 @@ export default function Equipment() {
                                         <button onClick={() => handleEquipStatusChange(eq.id, eq.status === 'repair' ? 'free' : 'repair')} className={`flex-1 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 active:scale-95 ${eq.status === 'repair' ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400 hover:bg-emerald-100' : 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 hover:bg-red-100'}`}>
                                             {eq.status === 'repair' ? <><CheckCircle className="w-3.5 h-3.5" /> В строй</> : <><Wrench className="w-3.5 h-3.5" /> В ремонт</>}
                                         </button>
-                                        <button onClick={() => handleDeleteEquip(eq.id)} className="bg-gray-50 hover:bg-red-50 text-gray-500 hover:text-red-600 dark:bg-gray-700/50 dark:text-gray-400 dark:hover:bg-red-900/30 dark:hover:text-red-400 py-2.5 px-4 rounded-xl text-xs font-bold transition-colors active:scale-95 flex items-center justify-center">
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
+
+                                        {/* Корзина только для руководства! */}
+                                        {canDeleteEquipment && (
+                                            <button onClick={() => handleDeleteEquip(eq.id)} className="bg-gray-50 hover:bg-red-50 text-gray-500 hover:text-red-600 dark:bg-gray-700/50 dark:text-gray-400 dark:hover:bg-red-900/30 dark:hover:text-red-400 py-2.5 px-4 rounded-xl text-xs font-bold transition-colors active:scale-95 flex items-center justify-center">
+                                                <Trash2 className="w-4 h-4" />
+                                            </button>
+                                        )}
                                     </div>
                                 </div>
                             )}
@@ -213,7 +219,7 @@ export default function Equipment() {
                 </div>
             )}
 
-            {activeTab === 'new' && canEditEquipment && (
+            {activeTab === 'new' && canManageEquipment && (
                 <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 max-w-lg mx-auto">
                     <h3 className="text-xl font-bold mb-6 flex items-center gap-2 dark:text-white">
                         <Plus className="w-5 h-5 text-blue-500" /> Добавить машину
@@ -243,7 +249,7 @@ export default function Equipment() {
                 </div>
             )}
 
-            {activeTab === 'bulk' && canEditEquipment && (
+            {activeTab === 'bulk' && canManageEquipment && (
                 <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 max-w-2xl mx-auto">
                     <h3 className="text-xl font-bold mb-2 flex items-center gap-2 dark:text-white">
                         <Upload className="w-5 h-5 text-gray-700 dark:text-gray-300" /> Массовая загрузка
