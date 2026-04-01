@@ -247,7 +247,15 @@ export default function Layout() {
                 {isWorkerOrDriver && <button onClick={() => navigate('/my-apps')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/my-apps' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><ClipboardList className="w-6 h-6 sm:mb-1" strokeWidth={2.5} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Заявки</span></button>}
                 {!isWorkerOrDriver && <button onClick={() => navigate('/teams')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><Users className="w-6 h-6 sm:mb-1" strokeWidth={2.5} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Бригады</span></button>}
 
-                {/* 3. Центральная кнопка СОЗДАТЬ */}
+                {/* 3. Автопарк СЛЕВА от центральной кнопки (Только для Офиса: Модератор, Босс, Суперадмин) */}
+                {['moderator', 'boss', 'superadmin'].includes(role) && (
+                    <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                        <Truck className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
+                        <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Автопарк</span>
+                    </button>
+                )}
+
+                {/* 4. Центральная кнопка СОЗДАТЬ */}
                 {canCreateApp && (
                     <div className="relative w-full flex flex-col justify-center items-center sm:justify-end sm:pb-2.5 h-full">
                         <button onClick={() => {navigate('/dashboard'); setGlobalCreateAppOpen(true);}} className="absolute -top-4 sm:-top-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] border-4 border-white dark:border-gray-800 transition-all active:scale-95 z-50">
@@ -257,19 +265,19 @@ export default function Layout() {
                     </div>
                 )}
 
-                {/* 4. Автопарк (Справа от создания - Доступно Прорабу и выше) */}
-                {['foreman', 'moderator', 'boss', 'superadmin'].includes(role) && (
+                {/* 5. Автопарк СПРАВА от центральной кнопки (Только для Прораба) */}
+                {role === 'foreman' && (
                     <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
                         <Truck className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
                         <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Автопарк</span>
                     </button>
                 )}
 
-                {/* 5. Заявки (Модерация) и Система (Только для Офиса) */}
+                {/* 6. Заявки (Модерация) и Система (Только для Офиса) */}
                 {isModOrBoss && <button onClick={() => navigate('/review')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 relative ${location.pathname === '/review' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><ClipboardList className="w-6 h-6 sm:mb-1" strokeWidth={2.5} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Заявки</span></button>}
                 {isModOrBoss && <button onClick={() => navigate('/system')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/system' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><SettingsIcon className="w-6 h-6 sm:mb-1" strokeWidth={2.5} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Система</span></button>}
 
-                {/* 6. Профиль */}
+                {/* 7. Профиль */}
                 <button onClick={() => openProfile(tgId)} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${isProfileModalOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
                     <User className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
                     <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Профиль</span>
