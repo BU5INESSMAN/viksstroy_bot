@@ -170,6 +170,22 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
     return {"status": "ok"}
 
 
+@router.post("/api/equipment/{equip_id}/status")
+async def change_equip_status(equip_id: int, status: str = Form(...), tg_id: int = Form(0)):
+    # Проверяем права (менять статус могут только прорабы и офис)
+    user = await db.get_user(tg_id)
+    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator', 'foreman']:
+        raise HTTPException(status_code=403, detail="Нет прав")
+
+    try:
+        # Обновляем статус в базе данных ('free', 'repair', 'work')
+        await db.conn.execute("UPDATE equipment SET status = ? WHERE id = ?", (status, equip_id))
+        await db.conn.commit()
+    except Exception as e:
+        await db.conn.rollback()
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
+
+    return {"status": "ok"}
 @router.post("/api/equipment/{equip_id}/unlink")
 async def unlink_equipment(equip_id: int, tg_id: int = Form(0)):
     user = await db.get_user(tg_id)
