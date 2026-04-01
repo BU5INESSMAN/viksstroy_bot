@@ -120,7 +120,9 @@ export default function Teams() {
         alert('Полное сообщение скопировано в буфер обмена!');
     };
 
-    const canEdit = ['moderator', 'boss', 'superadmin'].includes(role);
+    // РАЗДЕЛЕНИЕ ПРАВ ДОСТУПА
+    const canManage = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canDeleteTeam = ['moderator', 'boss', 'superadmin'].includes(role);
 
     return (
         <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
@@ -128,7 +130,7 @@ export default function Teams() {
                 <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100">
                     <Users className="w-7 h-7 text-indigo-500 mr-2.5" /> Бригады
                 </h2>
-                {canEdit && (
+                {canManage && (
                     <button onClick={() => setTeamModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
                         <Plus className="w-4 h-4" /> Создать
                     </button>
@@ -150,7 +152,7 @@ export default function Teams() {
                             <button onClick={() => openManageModal(t.id)} className="flex-1 bg-gray-50 hover:bg-indigo-50 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-indigo-900/30 text-gray-700 dark:text-gray-300 hover:text-indigo-700 dark:hover:text-indigo-400 py-3 rounded-xl text-sm font-bold transition-colors shadow-sm flex items-center justify-center gap-1.5 active:scale-95">
                                 <Settings className="w-4 h-4" /> Управление
                             </button>
-                            {canEdit && (
+                            {canDeleteTeam && (
                                 <button onClick={() => handleDeleteTeam(t.id)} className="bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/20 dark:hover:bg-red-900/40 dark:text-red-400 py-3 px-4 rounded-xl text-sm font-bold transition-colors shadow-sm flex items-center justify-center active:scale-95">
                                     <Trash2 className="w-4 h-4" />
                                 </button>
@@ -200,7 +202,7 @@ export default function Teams() {
 
                             <div className="p-6 space-y-6">
                                 {/* ИНВАЙТ */}
-                                {canEdit && (
+                                {canManage && (
                                     <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/10 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/30 shadow-inner">
                                         <h4 className="font-bold text-indigo-800 dark:text-indigo-300 mb-2 flex items-center gap-2">
                                             <Link className="w-5 h-5" /> Пригласить рабочих
@@ -213,7 +215,7 @@ export default function Teams() {
                                 )}
 
                                 {/* ДОБАВИТЬ ВРУЧНУЮ */}
-                                {canEdit && (
+                                {canManage && (
                                     <div className="bg-gray-50 dark:bg-gray-700/30 p-5 rounded-2xl border border-gray-200 dark:border-gray-600 shadow-inner">
                                         <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
                                             <UserPlus className="w-4 h-4 text-gray-400" /> Добавить вручную
@@ -249,7 +251,7 @@ export default function Teams() {
                                                         </div>
                                                     </div>
 
-                                                    {canEdit && (
+                                                    {canManage && (
                                                         <div className="flex flex-wrap gap-2">
                                                             <button type="button" onClick={() => { setManageModalOpen(false); openProfile(m.tg_user_id, 'member', m.id); }} className="bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 px-3.5 py-2 rounded-xl text-xs font-bold hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors flex items-center gap-1.5 shadow-sm active:scale-95">
                                                                 <User className="w-3.5 h-3.5" /> Профиль

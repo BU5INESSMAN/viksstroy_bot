@@ -96,7 +96,8 @@ async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int
 @router.post("/api/teams/members/{member_id}/unlink")
 async def unlink_team_member(member_id: int, tg_id: int = Form(0)):
     user = await db.get_user(tg_id)
-    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
+    # Добавил 'foreman' в проверку прав
+    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator', 'foreman']:
         raise HTTPException(status_code=403, detail="Нет прав")
     try:
         await db.conn.execute("UPDATE team_members SET tg_user_id = NULL WHERE id = ?", (member_id,))
@@ -117,6 +118,7 @@ async def delete_team_member(member_id: int, tg_id: int = Form(0)):
 @router.post("/api/teams/{team_id}/delete")
 async def delete_entire_team(team_id: int, tg_id: int = Form(0)):
     user = await db.get_user(tg_id)
+    # Удаление всей бригады по-прежнему доступно только руководству!
     if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(
         status_code=403, detail="Нет прав")
     async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
