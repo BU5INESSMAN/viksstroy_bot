@@ -15,7 +15,7 @@ from datetime import datetime
 # Теперь импорты сработают
 from database_deps import db, TZ_BARNAUL
 from utils import notify_users, execute_app_publish
-from routers import auth, dashboard, users, teams, equipment, applications
+from routers import auth, dashboard, users, teams, equipment, applications, objects
 
 # Импортируем наш новый планировщик
 from scheduler import start_scheduler
@@ -35,15 +35,14 @@ app.include_router(users.router)
 app.include_router(teams.router)
 app.include_router(equipment.router)
 app.include_router(applications.router)
+app.include_router(objects.router) # <-- Подключен роутер Объектов
 
 
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     try:
-        async with db.conn.execute("SELECT fio, action FROM logs ORDER BY id DESC LIMIT 1") as cur:
-            row = await cur.fetchone()
-            last_user = row[0] if row else "Неизвестно"
-            last_action = row[1] if row else "Нет данных"
+        last_action = str(request.url)
+        last_user = "Неизвестно"
         err_msg = f"🚨 <b>ОШИБКА СИСТЕМЫ (500)</b>\n\n👤 <b>Юзер:</b> {last_user}\n👣 <b>Действие:</b> {last_action}\n❌ <b>Ошибка:</b> {str(exc)}"
         await notify_users(["report_group"], err_msg, "system")
     except:
@@ -70,16 +69,15 @@ async def startup():
         except:
             pass
         try:
-            await db.conn.execute("ALTER TABLE team_members ADD COLUMN max_invite_link TEXT DEFAULT ''")
+            await db.conn.execute("ALTER TABLE team_members ADD COLUMN is_foreman INTEGER DEFAULT 0")
         except:
             pass
-
         await db.conn.commit()
-    except:
-        pass
+    except Exception as e:
+        print("Ошибка создания таблиц:", e)
 
-    # Запускаем профессиональный планировщик
-    start_scheduler()
+    # Запуск фоновых задач
+    asyncio.create_task(start_scheduler())
 
 
 @app.on_event("shutdown")

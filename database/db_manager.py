@@ -9,9 +9,10 @@ from database.teams_repo import TeamsRepoMixin
 from database.equipment_repo import EquipmentRepoMixin
 from database.apps_repo import AppsRepoMixin
 from database.logs_repo import LogsRepoMixin
+from database.objects_repo import ObjectsRepoMixin  # <-- ПОДКЛЮЧЕН НОВЫЙ МИКСИН
 
 
-class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin):
+class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin, ObjectsRepoMixin):
     def __init__(self, db_path: str):
         self.db_path = db_path
         self.conn = None

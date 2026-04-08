@@ -12,6 +12,10 @@ import MyApps from './pages/MyApps';
 import Review from './pages/Review';
 import Resources from './pages/Resources';
 
+// Новые маршруты
+import Objects from './pages/Objects';
+import KP from './pages/KP';
+
 // Подключаем страницы инвайтов
 import JoinTeam from './pages/JoinTeam';
 import JoinEquipment from './pages/JoinEquipment';
@@ -67,6 +71,10 @@ export default function App() {
           <Route path="/my-apps" element={<MyApps />} />
           <Route path="/review" element={<Review />} />
           <Route path="/resources" element={<Resources />} />
+
+          {/* Этап 2: Новые страницы */}
+          <Route path="/objects" element={<Objects />} />
+          <Route path="/kp" element={<KP />} />
         </Route>
       </Routes>
     </BrowserRouter>
