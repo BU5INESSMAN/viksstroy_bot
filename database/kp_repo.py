@@ -1,6 +1,10 @@
 import json
 import pandas as pd
 from io import BytesIO
+import os
+import glob
+from datetime import datetime
+import logging
 
 
 class KpRepoMixin:
@@ -29,22 +33,17 @@ class KpRepoMixin:
             is_my_foreman = app['foreman_id'] == tg_id
             is_office = role in ['moderator', 'boss', 'superadmin']
 
-            # 1. Вкладка "К заполнению" (Бригадир/Рабочий своей бригады, или Прораб своей заявки)
             if kp_status in ['none', 'rejected'] and (is_my_team or is_my_foreman):
                 result["to_fill"].append(app)
-
-            # 2. Вкладка "На проверку" (Прораб проверяет своих, Офис видит всё)
             if kp_status == 'submitted' and (is_my_foreman or is_office):
                 result["pending_review"].append(app)
-
-            # 3. Вкладка "Одобренные" (Офис для экспорта, Прораб для просмотра своих)
             if kp_status == 'approved' and (is_office or is_my_foreman):
                 result["approved"].append(app)
 
         return result
 
     async def get_app_kp_items(self, app_id: int):
-        """Получает план КП объекта и подклеивает уже введенные объемы (если есть)"""
+        """Получает план КП объекта и подклеивает уже введенные объемы"""
         async with self.conn.execute("SELECT object_id FROM applications WHERE id = ?", (app_id,)) as cur:
             row = await cur.fetchone()
             if not row or not row[0]: return []
@@ -70,9 +69,7 @@ class KpRepoMixin:
             return [dict(row) for row in await cur.fetchall()]
 
     async def submit_kp_report(self, app_id: int, items: list, role: str):
-        """Сохраняет объемы. Если заполняет офис или прораб - сразу одобрено"""
         await self.conn.execute("DELETE FROM application_kp WHERE application_id = ?", (app_id,))
-
         for item in items:
             if float(item['volume']) > 0:
                 await self.conn.execute("""
@@ -85,13 +82,11 @@ class KpRepoMixin:
         await self.conn.commit()
 
     async def review_kp_report(self, app_id: int, action: str):
-        """Прораб одобряет или отклоняет отчет"""
         new_status = 'approved' if action == 'approve' else 'rejected'
         await self.conn.execute("UPDATE applications SET kp_status = ? WHERE id = ?", (new_status, app_id))
         await self.conn.commit()
 
     async def update_kp_volumes_only(self, app_id: int, items: list):
-        """Офис редактирует цифры в уже одобренном отчете"""
         for item in items:
             await self.conn.execute("""
                                     UPDATE application_kp
@@ -101,82 +96,114 @@ class KpRepoMixin:
                                     """, (item['volume'], app_id, item['kp_id']))
         await self.conn.commit()
 
+    # ==========================================
+    # ИМПОРТ И ЭКСПОРТ EXCEL ПРАЙС-ЛИСТА
+    # ==========================================
+
+    def get_latest_catalog_path(self):
+        """Находит последний загруженный файл в папке catalogs"""
+        dir_path = "data/kp_catalogs"
+        if not os.path.exists(dir_path):
+            os.makedirs(dir_path, exist_ok=True)
+            return None
+
+        files = glob.glob(os.path.join(dir_path, "KP_catalog_*.xlsx"))
+        if not files:
+            return "КП.xlsx - СМР.csv" if os.path.exists("КП.xlsx - СМР.csv") else None
+
+        return max(files, key=os.path.getctime)
+
+    async def save_catalog_file(self, content: bytes):
+        """Сохраняет загруженный Excel с меткой времени"""
+        dir_path = "data/kp_catalogs"
+        os.makedirs(dir_path, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M")
+        new_path = os.path.join(dir_path, f"KP_catalog_{timestamp}.xlsx")
+
+        with open(new_path, "wb") as f:
+            f.write(content)
+        return new_path
+
+    async def import_kp_from_excel(self, file_path: str):
+        """Универсальный парсер Excel/CSV для обновления базы КП"""
+        try:
+            if file_path.endswith('.csv'):
+                df = pd.read_csv(file_path, header=None, dtype=str).fillna("")
+            else:
+                df = pd.read_excel(file_path, header=None, dtype=str).fillna("")
+
+            await self.conn.execute("DELETE FROM kp_catalog")
+
+            current_category = "Без категории"
+            for index, row in df.iterrows():
+                if index < 2: continue
+
+                col_name = str(row[3]).strip()
+                col_unit = str(row[5]).strip()
+                col_zp = str(row[7]).strip()
+                col_coef = str(row[2]).strip()
+                col_old = str(row[4]).strip()
+
+                if col_name and not col_zp and not col_unit:
+                    current_category = col_name
+                    continue
+
+                if col_name and col_zp and col_zp.replace('.', '', 1).isdigit():
+                    salary = float(col_zp)
+                    price = salary * 4
+                    coef = float(col_coef) if col_coef.replace('.', '', 1).isdigit() else 0.0
+                    old_salary = float(col_old) if col_old.replace('.', '', 1).isdigit() else salary
+
+                    await self.conn.execute("""
+                                            INSERT INTO kp_catalog (category, name, unit, coefficient, salary, price, old_salary)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                                            """,
+                                            (current_category, col_name, col_unit, coef, salary, price, old_salary))
+
+            await self.conn.commit()
+            logging.info(f"Справочник КП обновлен из файла: {file_path}")
+            return True
+        except Exception as e:
+            logging.error(f"Ошибка парсинга каталога: {e}")
+            return False
+
     async def generate_mass_excel(self, app_ids: list):
-        """Генерирует Excel файл с разделением по заявкам"""
+        """Генерирует сводный Excel отчет по заявкам"""
         if not app_ids: return None
-
         pl = ','.join(['?'] * len(app_ids))
-
-        # Получаем данные заявок
-        apps_query = f"""
-            SELECT a.id, a.date_target, o.name as obj_name, a.team_id
-            FROM applications a
-            LEFT JOIN objects o ON a.object_id = o.id
-            WHERE a.id IN ({pl})
-            ORDER BY a.date_target ASC
-        """
-        async with self.conn.execute(apps_query, app_ids) as cur:
+        async with self.conn.execute(
+                f"SELECT a.id, a.date_target, o.name as obj_name, a.team_id FROM applications a LEFT JOIN objects o ON a.object_id = o.id WHERE a.id IN ({pl}) ORDER BY a.date_target ASC",
+                app_ids) as cur:
             apps_data = [dict(row) for row in await cur.fetchall()]
-
-        # Получаем названия бригад для расшифровки
         async with self.conn.execute("SELECT id, name FROM teams") as cur:
             teams_map = {row[0]: row[1] for row in await cur.fetchall()}
-
-        # Получаем сами работы
-        kp_query = f"""
-            SELECT akp.application_id, k.category, k.name as job_name, k.unit, 
-                   akp.volume, akp.current_salary as salary, akp.current_price as price
-            FROM application_kp akp
-            JOIN kp_catalog k ON akp.kp_id = k.id
-            WHERE akp.application_id IN ({pl}) AND akp.volume > 0
-            ORDER BY akp.application_id, k.category, k.name
-        """
-        async with self.conn.execute(kp_query, app_ids) as cur:
+        async with self.conn.execute(
+                f"SELECT akp.application_id, k.category, k.name as job_name, k.unit, akp.volume, akp.current_salary as salary, akp.current_price as price FROM application_kp akp JOIN kp_catalog k ON akp.kp_id = k.id WHERE akp.application_id IN ({pl}) AND akp.volume > 0 ORDER BY akp.application_id, k.category, k.name",
+                app_ids) as cur:
             kp_data = [dict(row) for row in await cur.fetchall()]
 
-        # Формируем структуру для Pandas
         rows = []
         for app in apps_data:
-            # Расшифровываем бригады
             t_ids = [int(x) for x in str(app['team_id']).split(',')] if app['team_id'] and str(
                 app['team_id']) != '0' else []
             t_names = ", ".join([teams_map.get(tid, f"Бригада {tid}") for tid in t_ids])
-
-            # Заголовок заявки
             rows.append(["", "", "", "", "", "", ""])
             rows.append([f"ЗАЯВКА №{app['id']}", f"Дата: {app['date_target']}", f"Объект: {app['obj_name']}",
                          f"Бригады: {t_names}", "", "", ""])
             rows.append(["Категория", "Работа", "Ед. изм.", "Объем", "ЗП (ед)", "Сумма ЗП", "Сумма Цена"])
-
             app_total_salary = 0
             app_total_price = 0
-
-            # Данные работ по заявке
-            app_kps = [k for k in kp_data if k['application_id'] == app['id']]
-            for kp in app_kps:
+            for kp in [k for k in kp_data if k['application_id'] == app['id']]:
                 sum_sal = float(kp['volume']) * float(kp['salary'])
                 sum_pr = float(kp['volume']) * float(kp['price'])
                 app_total_salary += sum_sal
                 app_total_price += sum_pr
                 rows.append([kp['category'], kp['job_name'], kp['unit'], kp['volume'], kp['salary'], sum_sal, sum_pr])
-
-            # Итого по заявке
             rows.append(["", "", "", "", "ИТОГО ПО ЗАЯВКЕ:", app_total_salary, app_total_price])
 
         df = pd.DataFrame(rows)
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
             df.to_excel(writer, index=False, header=False, sheet_name='Отчет КП')
-
-            # Автоширина колонок
-            worksheet = writer.sheets['Отчет КП']
-            worksheet.column_dimensions['A'].width = 25
-            worksheet.column_dimensions['B'].width = 40
-            worksheet.column_dimensions['C'].width = 15
-            worksheet.column_dimensions['D'].width = 15
-            worksheet.column_dimensions['E'].width = 15
-            worksheet.column_dimensions['F'].width = 15
-            worksheet.column_dimensions['G'].width = 15
-
         output.seek(0)
         return output

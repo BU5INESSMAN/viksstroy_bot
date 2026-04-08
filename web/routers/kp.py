@@ -3,8 +3,8 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Request, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Request, HTTPException, UploadFile, File
+from fastapi.responses import StreamingResponse, FileResponse
 from database_deps import db
 from utils import resolve_id
 from urllib.parse import quote
@@ -18,16 +18,11 @@ async def get_kp_dashboard(tg_id: int):
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     if not user: raise HTTPException(403)
-
     role = dict(user).get('role', 'worker')
-
-    # Получаем бригады пользователя
     teams = []
     if role in ['worker', 'foreman']:
         async with db.conn.execute("SELECT team_id FROM team_members WHERE tg_user_id = ?", (real_tg_id,)) as cur:
-            rows = await cur.fetchall()
-            teams = [r[0] for r in rows if r[0]]
-
+            teams = [r[0] for r in await cur.fetchall() if r[0]]
     return await db.get_kp_dashboard_apps(real_tg_id, role, teams)
 
 
@@ -41,14 +36,7 @@ async def get_app_kp_items(app_id: int):
 async def submit_app_kp(app_id: int, request: Request):
     if db.conn is None: await db.init_db()
     data = await request.json()
-    items = data.get('items', [])
-    tg_id = data.get('tg_id', 0)
-
-    real_tg_id = await resolve_id(tg_id)
-    user = await db.get_user(real_tg_id)
-    role = dict(user).get('role', 'worker') if user else 'worker'
-
-    await db.submit_kp_report(app_id, items, role)
+    await db.submit_kp_report(app_id, data.get('items', []), data.get('role', 'worker'))
     return {"status": "ok"}
 
 
@@ -56,8 +44,7 @@ async def submit_app_kp(app_id: int, request: Request):
 async def review_app_kp(app_id: int, request: Request):
     if db.conn is None: await db.init_db()
     data = await request.json()
-    action = data.get('action')  # 'approve' or 'reject'
-    await db.review_kp_report(app_id, action)
+    await db.review_kp_report(app_id, data.get('action'))
     return {"status": "ok"}
 
 
@@ -65,8 +52,7 @@ async def review_app_kp(app_id: int, request: Request):
 async def update_kp_volumes(app_id: int, request: Request):
     if db.conn is None: await db.init_db()
     data = await request.json()
-    items = data.get('items', [])
-    await db.update_kp_volumes_only(app_id, items)
+    await db.update_kp_volumes_only(app_id, data.get('items', []))
     return {"status": "ok"}
 
 
@@ -74,24 +60,42 @@ async def update_kp_volumes(app_id: int, request: Request):
 async def export_kp_mass(request: Request):
     if db.conn is None: await db.init_db()
     data = await request.json()
-    app_ids = data.get('app_ids', [])
+    excel_io = await db.generate_mass_excel(data.get('app_ids', []))
+    if not excel_io: raise HTTPException(404, "Данные не найдены")
+    return StreamingResponse(excel_io, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                             headers={
+                                 'Content-Disposition': f'attachment; filename*=UTF-8\'\'{quote("экспорт_выполненные_работы.xlsx")}'})
 
-    if not app_ids:
-        raise HTTPException(400, "Нет выбранных заявок")
 
-    excel_io = await db.generate_mass_excel(app_ids)
-    if not excel_io:
-        raise HTTPException(404, "Данные не найдены")
+# ==========================================
+# НОВЫЕ ЭНДПОИНТЫ ДЛЯ ФАЙЛА СПРАВОЧНИКА
+# ==========================================
 
-    filename = f"kp_export_{len(app_ids)}_apps.xlsx"
-    encoded_filename = quote(filename)
+@router.get("/api/kp/catalog/download")
+async def download_kp_catalog():
+    """Отдает последний загруженный файл прайса"""
+    if db.conn is None: await db.init_db()
+    path = db.get_latest_catalog_path()
+    if not path or not os.path.exists(path):
+        raise HTTPException(404, "Справочник еще не загружен на сервер")
 
-    headers = {
-        'Content-Disposition': f'attachment; filename*=UTF-8\'\'{encoded_filename}'
-    }
+    filename = os.path.basename(path)
+    return FileResponse(path, filename=filename)
 
-    return StreamingResponse(
-        excel_io,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers=headers
-    )
+
+@router.post("/api/kp/catalog/upload")
+async def upload_kp_catalog(file: UploadFile = File(...)):
+    """Принимает новый файл, сохраняет и обновляет базу"""
+    if db.conn is None: await db.init_db()
+
+    if not file.filename.endswith(('.xlsx', '.csv')):
+        raise HTTPException(400, "Допустимы только файлы .xlsx или .csv")
+
+    content = await file.read()
+    new_path = await db.save_catalog_file(content)
+
+    success = await db.import_kp_from_excel(new_path)
+    if not success:
+        raise HTTPException(500, "Ошибка при разборе файла. Проверьте структуру колонок.")
+
+    return {"status": "ok", "file": os.path.basename(new_path)}
