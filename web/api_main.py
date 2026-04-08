@@ -76,8 +76,11 @@ async def startup():
     except Exception as e:
         print("Ошибка создания таблиц:", e)
 
-    # Запуск фоновых задач
-    asyncio.create_task(start_scheduler())
+    # Запуск фоновых задач (исправлен вызов синхронной функции)
+    try:
+        start_scheduler()
+    except Exception as e:
+        print(f"Ошибка при запуске планировщика: {e}")
 
 
 @app.on_event("shutdown")
