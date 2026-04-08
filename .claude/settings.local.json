@@ -3,7 +3,11 @@
     "allow": [
       "Bash(find /c/Users/Admin/PycharmProjects/viksstroy_bot/frontend/src -type f \\\\\\(-name *.jsx -o -name *.js \\\\\\))",
       "Bash(find /c/Users/Admin/PycharmProjects/viksstroy_bot -type f -name *.py ! -path */node_modules/* ! -path */__pycache__/*)",
-      "Bash(find /c/Users/Admin/PycharmProjects/viksstroy_bot -type f \\\\\\(-name *.json -o -name *.jsx -o -name *.py \\\\\\) ! -path */node_modules/* ! -path */__pycache__/* ! -path */dist/*)"
+      "Bash(find /c/Users/Admin/PycharmProjects/viksstroy_bot -type f \\\\\\(-name *.json -o -name *.jsx -o -name *.py \\\\\\) ! -path */node_modules/* ! -path */__pycache__/* ! -path */dist/*)",
+      "Bash(npx vite:*)",
+      "Bash(python -c \"from database.users_repo import UsersRepoMixin; from database.teams_repo import TeamsRepoMixin; from database.equipment_repo import EquipmentRepoMixin; from database.apps_repo import AppsRepoMixin; from database.logs_repo import LogsRepoMixin; from database.db_manager import DatabaseManager; print\\(''All imports OK''\\); print\\(''MRO:'', [c.__name__ for c in DatabaseManager.__mro__]\\)\")",
+      "Bash(python -c \":*)",
+      "Bash(python -c \"from database.db_manager import DatabaseManager; dm = DatabaseManager\\(''test.db''\\); print\\(''Methods:'', len\\([m for m in dir\\(dm\\) if not m.startswith\\(''_''\\)]\\)\\)\")"
     ]
   }
 }

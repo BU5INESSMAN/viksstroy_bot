@@ -88,7 +88,7 @@ export default function Guide() {
                         <>
                             <p>Вы можете открывать приложение из любого мессенджера.</p>
                             <ol className="list-decimal pl-5 space-y-2 mt-3 text-sm text-gray-600 dark:text-gray-300">
-                                <li>Перейдите в <b>«Профиль»</b> -> блок <b className="text-gray-800 dark:text-gray-200">«Привязка мессенджеров»</b>.</li>
+                                <li>Перейдите в <b>«Профиль»</b> → блок <b className="text-gray-800 dark:text-gray-200">«Привязка мессенджеров»</b>.</li>
                                 <li>Зайдите в <i>новый</i> мессенджер и отправьте боту команду <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600">/web</code>.</li>
                                 <li>Впишите код в поле профиля и нажмите <b>«Привязать»</b>.</li>
                             </ol>
