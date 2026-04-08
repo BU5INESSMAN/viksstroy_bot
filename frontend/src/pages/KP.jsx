@@ -59,7 +59,7 @@ export default function KP() {
             }));
             setKpItems(items);
         } catch (e) {
-            alert("Ошибка загрузки плана КП");
+            alert("Ошибка загрузки плана работ");
             setModalApp(null);
         }
     };
@@ -113,7 +113,7 @@ export default function KP() {
             const url = window.URL.createObjectURL(new Blob([res.data]));
             const link = document.createElement('a');
             link.href = url;
-            link.setAttribute('download', `Экспорт_КП_${new Date().toLocaleDateString()}.xlsx`);
+            link.setAttribute('download', `Экспорт_Выполненные_Работы_${new Date().toLocaleDateString()}.xlsx`);
             document.body.appendChild(link);
             link.click();
             link.parentNode.removeChild(link);
@@ -136,13 +136,13 @@ export default function KP() {
 
     const getListByTab = () => data[activeTab] || [];
 
-    if (loading) return <div className="mt-32 text-center text-gray-400 font-bold animate-pulse">Загрузка данных КП...</div>;
+    if (loading) return <div className="mt-32 text-center text-gray-400 font-bold animate-pulse">Загрузка данных...</div>;
 
     return (
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 border border-gray-100 dark:border-gray-700 gap-4">
                 <h2 className="text-2xl font-bold flex items-center text-gray-800 dark:text-gray-100">
-                    <FileText className="w-8 h-8 text-emerald-500 mr-3" /> Коммерческие предложения
+                    <FileText className="w-8 h-8 text-emerald-500 mr-3" /> Выполненные работы
                 </h2>
                 {isOffice && activeTab === 'approved' && data.approved.length > 0 && (
                     <button disabled={selectedForExport.length === 0 || isSubmitting} onClick={() => handleExport(selectedForExport)} className="bg-emerald-600 disabled:opacity-50 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-emerald-700 transition-all flex items-center justify-center gap-2 active:scale-95">
@@ -213,7 +213,7 @@ export default function KP() {
                         <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
                             <div>
                                 <h3 className="text-xl font-bold dark:text-white flex items-center gap-2">
-                                    <FileText className="w-6 h-6 text-blue-500" /> Отчет КП
+                                    <FileText className="w-6 h-6 text-blue-500" /> Отчет о выполненных работах
                                 </h3>
                                 <p className="text-sm text-gray-500 font-medium mt-1">{modalApp.obj_name} ({modalApp.date_target})</p>
                             </div>
@@ -271,7 +271,7 @@ export default function KP() {
                                 <div className="text-center py-8 text-gray-500 flex flex-col items-center">
                                     <AlertTriangle className="w-12 h-12 text-yellow-400 mb-3 opacity-50" />
                                     <p>В этой заявке нет запланированных работ.</p>
-                                    <p className="text-sm mt-1">Офис должен назначить План КП для объекта.</p>
+                                    <p className="text-sm mt-1">Офис должен назначить План работ для этого объекта.</p>
                                 </div>
                             )}
                         </div>
