@@ -14,6 +14,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
     const canSeeObjectsKP = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canSeeKP = ['brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
 
     return (
         <>
@@ -52,7 +53,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                 />
 
                 {/* 6. КП (Прайс и выполнение) */}
-                {canSeeObjectsKP && (
+                {canSeeKP && (
                     <NavBtn icon={FileText} label="КП" path="/kp" current={location.pathname} onClick={() => navigate('/kp')} />
                 )}
 
