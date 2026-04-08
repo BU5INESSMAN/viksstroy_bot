@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import {
     KeyRound, UserCircle, ClipboardEdit, Truck,
     Settings as SettingsIcon, Smartphone, CheckCircle,
-    Send, MessageCircle, Search, BellRing, Link
+    Send, MessageCircle, Search, BellRing, Link,
+    MapPin, FileText, Download, Upload, Briefcase
 } from 'lucide-react';
 
 export default function Guide() {
@@ -29,264 +30,284 @@ export default function Guide() {
                         <>
                             <p>Руководитель должен прислать вам <b>ссылку-приглашение</b> (или код).</p>
                             <ol className="list-decimal pl-5 space-y-2 mt-3 text-gray-600 dark:text-gray-400">
-                                <li>Перейдите по ссылке или отправьте команду <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">/join [код]</code> в бот:
-                                    <ul className="list-disc pl-5 mt-2 space-y-1.5 font-medium">
-                                        <li className="flex items-center gap-1.5"><Send className="w-3.5 h-3.5 text-blue-500" /> Telegram: <a href="https://t.me/viksstroy_bot" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">@viksstroy_bot</a></li>
-                                        <li className="flex items-center gap-1.5"><MessageCircle className="w-3.5 h-3.5 text-indigo-500" /> MAX: <a href="https://max.ru/id222264297116_bot" target="_blank" rel="noopener noreferrer" className="text-blue-600 dark:text-blue-400 hover:underline">Бот Расписания MAX</a></li>
-                                    </ul>
-                                </li>
-                                <li className="text-indigo-700 dark:text-indigo-400 font-medium"><b>В мессенджере MAX:</b> Бот прямо в чате выдаст кнопки со списком профилей. Нажмите <b>«✅ Да, привязать»</b> под своим именем.</li>
-                                <li className="text-blue-700 dark:text-blue-400 font-medium"><b>В Telegram:</b> Бот откроет мини-приложение для подтверждения.</li>
+                                <li>Перейдите по ссылке (откроется Telegram бот).</li>
+                                <li>Нажмите <b>"Запустить"</b> внизу экрана.</li>
+                                <li>Бот попросит <b>Поделиться контактом</b> — нажмите соответствующую кнопку, чтобы система подтвердила ваш номер.</li>
+                                <li>После этого в боте появится кнопка <b>Открыть расписание</b> (Web App). Нажмите её.</li>
                             </ol>
+                            <div className="mt-3 bg-blue-50 dark:bg-blue-900/30 p-3 rounded-xl border border-blue-100 dark:border-blue-800 text-sm">
+                                <span className="font-bold text-blue-700 dark:text-blue-400 flex items-center gap-1.5"><Smartphone className="w-4 h-4"/> Важно:</span>
+                                Приложение работает прямо внутри Telegram! Вы также можете открыть его через корпоративное приложение MAX.
+                            </div>
                         </>
                     )
                 },
                 {
-                    title: "Как войти на сайт с компьютера? (Код авторизации)",
+                    title: "Для руководства и офиса",
                     highlight: false,
-                    searchText: "как войти на сайт с компьютера код авторизации web браузер",
+                    searchText: "руководство офис админ босс вход регистрация",
                     content: (
-                        <>
-                            <p>В целях безопасности вход через браузер на ПК осуществляется по одноразовому коду.</p>
-                            <ol className="list-decimal pl-5 space-y-2 mt-3 font-medium text-gray-600 dark:text-gray-300">
-                                <li>Откройте бота в MAX или Telegram на телефоне.</li>
-                                <li>Отправьте боту команду <code className="bg-gray-100 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 px-2 py-1 rounded-md text-gray-800 dark:text-gray-200 shadow-sm font-mono text-sm">/web</code></li>
-                                <li>Бот пришлет вам <b>6-значный код</b>.</li>
-                                <li>Введите этот код на сайте. Готово!</li>
-                            </ol>
-                        </>
+                        <ul className="list-disc pl-5 space-y-2 text-gray-600 dark:text-gray-400">
+                            <li>Офисным сотрудникам учетные записи создает <b>Суперадмин</b>.</li>
+                            <li>Вам придет специальный одноразовый код (или ссылка) для привязки Telegram-аккаунта.</li>
+                        </ul>
                     )
                 }
             ]
         },
         {
-            title: "Профиль и Уведомления",
-            icon: UserCircle,
-            minLevel: 1,
-            blocks: [
-                {
-                    title: "Настройка уведомлений (Контроль спама)",
-                    highlight: true,
-                    searchText: "настройка уведомлений контроль спама тумблер выключить лс сообщения telegram max",
-                    content: (
-                        <>
-                            <p>Если вы привязали к платформе сразу два мессенджера (MAX и Telegram), наряды будут приходить в оба. Вы можете <b>отключить</b> дублирование:</p>
-                            <ul className="list-disc pl-5 space-y-2 mt-3 text-sm text-gray-600 dark:text-gray-300">
-                                <li>Зайдите в раздел <b>«Профиль»</b> (нижнее меню).</li>
-                                <li>Найдите блок <b className="text-gray-800 dark:text-gray-200 flex items-center gap-1 inline-flex"><BellRing className="w-4 h-4"/> Уведомления в ЛС</b>.</li>
-                                <li>Используйте тумблеры, чтобы оставить уведомления только там, где вам удобно.</li>
-                                <li className="text-orange-600 dark:text-orange-400 font-medium">Система не позволит вам выключить оба тумблера одновременно, чтобы вы не пропустили вызов на работу!</li>
-                            </ul>
-                        </>
-                    )
-                },
-                {
-                    title: "Как привязать второй мессенджер?",
-                    highlight: false,
-                    searchText: "привязать второй мессенджер связать аккаунты telegram max",
-                    content: (
-                        <>
-                            <p>Вы можете открывать приложение из любого мессенджера.</p>
-                            <ol className="list-decimal pl-5 space-y-2 mt-3 text-sm text-gray-600 dark:text-gray-300">
-                                <li>Перейдите в <b>«Профиль»</b> → блок <b className="text-gray-800 dark:text-gray-200">«Привязка мессенджеров»</b>.</li>
-                                <li>Зайдите в <i>новый</i> мессенджер и отправьте боту команду <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded border border-gray-200 dark:border-gray-600">/web</code>.</li>
-                                <li>Впишите код в поле профиля и нажмите <b>«Привязать»</b>.</li>
-                            </ol>
-                        </>
-                    )
-                }
-            ]
-        },
-        {
-            title: "Работа с заявками (Для прорабов)",
+            title: "Оформление нарядов",
             icon: ClipboardEdit,
-            minLevel: 2,
+            minLevel: 2, // foreman, moderator, boss, superadmin
             blocks: [
                 {
-                    title: "Создание новой заявки",
+                    title: "Как создать заявку на выезд?",
+                    highlight: false,
+                    searchText: "создать заявку наряд выезд объект бригаду технику время",
+                    content: (
+                        <ol className="list-decimal pl-5 space-y-2 text-gray-600 dark:text-gray-400">
+                            <li>Нажмите на большую центральную кнопку <b>"+" (СОЗДАТЬ)</b> в нижнем меню.</li>
+                            <li>Выберите <b>Дату выезда</b> (по умолчанию стоит "Завтра").</li>
+                            <li>Выберите <b>Объект</b> из выпадающего списка. Можно нажать "Ресурсы по умолчанию", чтобы система сама подставила нужные бригады и машины.</li>
+                            <li>В разделе "Бригады" выберите одну или несколько бригад, а затем конкретных рабочих, которые поедут на объект.</li>
+                            <li>В разделе "Техника" выберите нужные машины и <b>обязательно укажите время работы</b> (с ХХ:00 до ХХ:00) для каждой единицы.</li>
+                            <li>Добавьте текстовый комментарий (если нужно) и нажмите <b>Отправить наряд</b>.</li>
+                        </ol>
+                    )
+                },
+                {
+                    title: "Модерация заявок",
                     highlight: true,
-                    searchText: "создание новой заявки прораб наряд люди техника",
+                    searchText: "модерация проверка одобрить отклонить заявку офис статус",
                     content: (
                         <>
-                            <p>Нажмите круглую синюю кнопку <b>«+» (Создать)</b> в нижнем меню.</p>
-                            <ol className="list-decimal pl-5 space-y-3 mt-3 text-sm text-gray-700 dark:text-gray-300">
-                                <li>Укажите дату работ и адрес (бот предложит последние 5 адресов).</li>
-                                <li>Выберите бригаду и <i>отметьте галочками</i> тех, кто реально выйдет на объект.</li>
-                                <li>В категории техники выберите машины и <b>укажите время работы</b> (с 08:00 до 17:00).</li>
-                                <li>Нажмите <b className="text-blue-600 dark:text-blue-400">«Отправить»</b>.</li>
+                            <p>Все созданные заявки попадают в статус "Ожидание". Офис (или руководство) должен проверить их.</p>
+                            <ul className="list-disc pl-5 space-y-2 mt-2 text-gray-600 dark:text-gray-400">
+                                <li>Перейдите в раздел <b>Заявки</b>.</li>
+                                <li>Откройте карточку заявки. Вы можете:
+                                    <br/>— Нажать <b>Одобрить</b> (заявка перейдет в статус "Готово к публикации").
+                                    <br/>— Нажать <b>Отклонить</b> (указав причину, например: "Нет свободной техники").
+                                </li>
+                                <li>Одобренные заявки собираются в специальной колонке, откуда Босс может опубликовать их все разом в общую группу Telegram.</li>
+                            </ul>
+                        </>
+                    )
+                }
+            ]
+        },
+        {
+            title: "Управление Объектами",
+            icon: MapPin,
+            minLevel: 2, // foreman, moderator, boss, superadmin
+            blocks: [
+                {
+                    title: "Создание и настройка ресурсов",
+                    highlight: false,
+                    searchText: "объекты создать настройка ресурсы по умолчанию",
+                    content: (
+                        <>
+                            <p>Раздел <b>Объекты</b> позволяет управлять списком рабочих площадок.</p>
+                            <ul className="list-disc pl-5 space-y-1 mt-2 text-gray-600 dark:text-gray-400">
+                                <li>При создании укажите название и точный адрес.</li>
+                                <li>В режиме редактирования можно задать <b>Бригады и Технику по умолчанию</b>. Они будут автоматически предлагаться при создании наряда на этот объект.</li>
+                                <li>Неактуальные или завершенные объекты можно отправить в архив, чтобы они не мешались в выпадающих списках.</li>
+                            </ul>
+                        </>
+                    )
+                },
+                {
+                    title: "Назначение Плана работ (КП)",
+                    highlight: true,
+                    searchText: "план кп прайс цены работы справочник",
+                    content: (
+                        <>
+                            <p>Для каждого объекта необходимо задать План работ, чтобы бригадиры могли отчитываться о выполнении:</p>
+                            <ol className="list-decimal pl-5 space-y-1 mt-2 text-gray-600 dark:text-gray-400">
+                                <li>В настройках объекта перейдите во вкладку <b>План КП</b>.</li>
+                                <li>Используя поиск, выберите нужные виды работ из глобального справочника (поставьте галочки).</li>
+                                <li>Нажмите "Сохранить план". Теперь именно эти работы появятся у бригадира в отчете по данному объекту.</li>
+                            </ol>
+                        </>
+                    )
+                }
+            ]
+        },
+        {
+            title: "Выполненные работы (Отчеты КП)",
+            icon: FileText,
+            minLevel: 1, // worker, driver, foreman, moderator, boss, superadmin
+            blocks: [
+                {
+                    title: "Заполнение объемов (Бригадиры и Прорабы)",
+                    highlight: true,
+                    searchText: "кп объемы заполнить отчет выполненные работы",
+                    content: (
+                        <>
+                            <p>После завершения наряда необходимо заполнить фактические объемы выполненных работ:</p>
+                            <ol className="list-decimal pl-5 space-y-1 mt-2 text-gray-600 dark:text-gray-400">
+                                <li>Перейдите в раздел <b>КП</b> (Выполненные работы), вкладка <b>К заполнению</b>.</li>
+                                <li>Откройте нужный наряд и введите фактические объемы по каждой позиции (метры, штуки, часы и т.д.).</li>
+                                <li>Нажмите <b>Отправить отчет</b>. Важно: текущие расценки (ЗП и Цена из справочника) будут намертво зафиксированы для этого отчета.</li>
                             </ol>
                         </>
                     )
                 },
                 {
-                    title: "Освобождение бригады (Статус «Свободен»)",
+                    title: "Проверка, Модерация и Экспорт (Офис)",
                     highlight: false,
-                    searchText: "освобождение бригады статус свободен закончили работу",
+                    searchText: "экспорт excel скачать проверить модерация",
                     content: (
                         <>
-                            <p>Когда работы завершены, прораб <b>обязан</b> освободить бригаду.</p>
-                            <ul className="list-none space-y-3 mt-3 text-sm bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border-l-4 border-emerald-500">
-                                <li className="flex items-start gap-2"><CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" /> На главной странице в блоке «Текущие наряды» нажмите <b>«Освободить»</b> под нужной бригадой.</li>
-                                <li className="flex items-start gap-2"><CheckCircle className="w-4 h-4 text-emerald-500 mt-0.5 flex-shrink-0" /> Введите слово <code className="font-bold text-gray-900 dark:text-white uppercase bg-gray-200 dark:bg-gray-600 px-1.5 py-0.5 rounded">свободен</code>.</li>
+                            <p>Офисные сотрудники проверяют и выгружают заполненные отчеты:</p>
+                            <ul className="list-disc pl-5 space-y-1 mt-2 text-gray-600 dark:text-gray-400">
+                                <li><b>На проверку:</b> Отчет можно Одобрить или Вернуть на доработку (если есть ошибка в цифрах).</li>
+                                <li><b>Готовые:</b> Офис может вручную подкорректировать объемы в уже одобренном отчете и нажать "Сохранить изменения цифр".</li>
+                                <li><b>Экспорт в Excel:</b> Во вкладке "Готовые" отметьте нужные наряды галочками и нажмите <b>Скачать выбранные</b>. Будет сгенерирован сводный Excel-файл со всеми суммами.</li>
                             </ul>
+                        </>
+                    )
+                },
+                {
+                    title: "Импорт глобального справочника (Офис)",
+                    highlight: false,
+                    searchText: "справочник импорт excel прайс",
+                    content: (
+                        <>
+                            <p>Управление глобальными расценками осуществляется <b>только через Excel-файл</b> (Single Source of Truth):</p>
+                            <ol className="list-decimal pl-5 space-y-1 mt-2 text-gray-600 dark:text-gray-400">
+                                <li>Нажмите <b>Экспорт</b> в шапке раздела "Выполненные работы", чтобы скачать актуальный справочник из базы.</li>
+                                <li>Внесите изменения в цены или добавьте новые работы прямо в Excel на вашем компьютере.</li>
+                                <li>Нажмите <b>Импорт</b> и загрузите сохраненный файл обратно. Все новые отчеты будут использовать новые расценки (старые, уже заполненные отчеты не изменятся).</li>
+                            </ol>
                         </>
                     )
                 }
             ]
         },
         {
-            title: "Автопарк (Для водителей)",
-            icon: Truck,
-            minLevel: 3, // Для водителей и выше
+            title: "Ресурсы (Люди и Техника)",
+            icon: Briefcase,
+            minLevel: 3, // moderator, boss, superadmin
             blocks: [
                 {
-                    title: "Как работает статус «Свободен»?",
+                    title: "Управление бригадами",
                     highlight: false,
-                    searchText: "автопарк водитель статус свободен техника машина",
+                    searchText: "бригада рабочие добавить удалить инвайт ссылка",
                     content: (
-                        <>
-                            <p>Как только вы выполнили работу на объекте, отчитайтесь диспетчеру:</p>
-                            <ul className="list-disc pl-5 space-y-2 mt-3 text-sm text-gray-600 dark:text-gray-300">
-                                <li>Найдите карточку объекта на Главной странице.</li>
-                                <li>Нажмите зеленую кнопку <b className="text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded">✅ Свободен</b>.</li>
-                                <li>Система попросит ввести проверочное слово <code>свободен</code>. Машина в наряде зачеркнется.</li>
-                            </ul>
-                        </>
+                        <ul className="list-disc pl-5 space-y-2 text-gray-600 dark:text-gray-400">
+                            <li>Перейдите в раздел <b>Ресурсы</b> вкладка <b>Бригады</b>.</li>
+                            <li>Вы можете создавать новые бригады и назначать им названия.</li>
+                            <li>Чтобы добавить рабочего, нажмите "Управление" на карточке бригады, сгенерируйте <b>Пригласительную ссылку</b> и отправьте её рабочему. Перейдя по ней, он автоматически зачислится в эту бригаду.</li>
+                            <li>Здесь же можно назначать статус <b>"Бригадир"</b> конкретным рабочим.</li>
+                        </ul>
                     )
-                }
-            ]
-        },
-        {
-            title: "Офис и Модерация",
-            icon: SettingsIcon,
-            minLevel: 3,
-            blocks: [
+                },
                 {
-                    title: "Управление заявками и Уведомления",
-                    highlight: true,
-                    searchText: "модерация офис управление заявками публикация уведомления",
+                    title: "Управление техникой",
+                    highlight: false,
+                    searchText: "техника машины трактор водитель инвайт ссылка",
                     content: (
-                        <>
-                            <p>Вкладка <b>«Заявки»</b> — это ваш пульт управления. Уведомления участникам рассылаются в 2 этапа:</p>
-                            <ul className="list-disc pl-5 space-y-3 mt-3 text-sm text-gray-700 dark:text-gray-300">
-                                <li><b className="text-gray-900 dark:text-gray-100">1. Одобрение (Бронь):</b> При нажатии «Одобрить» всем рабочим и водителям приходит PUSH-сообщение <i>«Вас добавили в наряд. Ожидайте публикации»</i>.</li>
-                                <li><b className="text-gray-900 dark:text-gray-100">2. Публикация (Старт):</b> Выделите нужные наряды и нажмите «Опубликовать». Система сгенерирует картинку-наряд и разошлет её участникам (в зависимости от их настроек тумблеров).</li>
-                            </ul>
-                        </>
+                        <ul className="list-disc pl-5 space-y-2 text-gray-600 dark:text-gray-400">
+                            <li>Перейдите в раздел <b>Ресурсы</b> вкладка <b>Автопарк</b>.</li>
+                            <li>Добавляйте новые машины (указав марку и категорию).</li>
+                            <li>Чтобы привязать водителя к машине, нажмите "Управление", сгенерируйте ссылку и отправьте водителю. После перехода по ссылке водитель сможет отмечаться "Свободным".</li>
+                        </ul>
                     )
                 }
             ]
         },
         {
-            title: "Установка на телефон (Приложение)",
-            icon: Smartphone,
+            title: "Статусы и Уведомления",
+            icon: BellRing,
             minLevel: 1,
             blocks: [
                 {
-                    title: "Как установить PWA на экран",
-                    highlight: false,
-                    searchText: "установка на телефон приложение pwa ios android iphone скачать",
+                    title: "Кнопка «Свободен»",
+                    highlight: true,
+                    searchText: "свободен освободить техника статус завершить",
                     content: (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5 mt-3">
-                            <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
-                                <h4 className="font-bold text-gray-900 dark:text-white mb-2">🍎 Apple (iPhone)</h4>
-                                <ol className="list-decimal pl-4 space-y-1.5 text-xs text-gray-600 dark:text-gray-300">
-                                    <li>Откройте сайт в <b>Safari</b>.</li>
-                                    <li>Нажмите <b>«Поделиться»</b>.</li>
-                                    <li>Выберите <b>«На экран "Домой"»</b>.</li>
-                                </ol>
-                            </div>
-                            <div className="bg-gray-50 dark:bg-gray-800/50 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
-                                <h4 className="font-bold text-gray-900 dark:text-white mb-2">🤖 Android</h4>
-                                <ol className="list-decimal pl-4 space-y-1.5 text-xs text-gray-600 dark:text-gray-300">
-                                    <li>Откройте сайт в <b>Chrome</b>.</li>
-                                    <li>Нажмите на <b>Три точки (⋮)</b>.</li>
-                                    <li>Выберите <b>«Добавить на гл. экран»</b>.</li>
-                                </ol>
-                            </div>
-                        </div>
+                        <>
+                            <p>Система жестко контролирует занятость. Машину или бригаду нельзя назначить на новый объект в тот же день, если они числятся занятыми на другом.</p>
+                            <ol className="list-decimal pl-5 space-y-2 mt-2 text-gray-600 dark:text-gray-400">
+                                <li>Как только работа на объекте завершена, Водитель заходит на <b>Главную страницу</b>.</li>
+                                <li>В карточке текущего наряда он нажимает зеленую кнопку <b>«Свободен»</b>.</li>
+                                <li>Система попросит ввести слово "СВОБОДЕН" для подтверждения.</li>
+                                <li>После этого машина становится доступной для других нарядов, а в общую группу Telegram прилетает уведомление 🟢.</li>
+                            </ol>
+                            <p className="mt-2 text-sm text-gray-500">Прораб также имеет кнопку для массового освобождения всех своих бригад на объекте.</p>
+                        </>
                     )
                 }
             ]
         }
     ];
 
-    // Функция фильтрации
-    const query = searchTerm.toLowerCase().trim();
-    const filteredData = guideData.map(section => {
-        // Проверяем уровень доступа
-        if (level < section.minLevel && !(role === 'driver' && section.icon === Truck)) return null;
+    // Функция поиска
+    const handleSearch = (e) => setSearchTerm(e.target.value.toLowerCase());
 
-        // Фильтруем блоки внутри секции
-        const matchedBlocks = section.blocks.filter(block =>
-            block.title.toLowerCase().includes(query) ||
-            block.searchText.toLowerCase().includes(query)
-        );
+    const filteredData = guideData
+        .filter(section => level >= section.minLevel)
+        .map(section => {
+            const filteredBlocks = section.blocks.filter(block =>
+                block.title.toLowerCase().includes(searchTerm) ||
+                block.searchText.toLowerCase().includes(searchTerm)
+            );
+            return { ...section, blocks: filteredBlocks };
+        })
+        .filter(section => section.blocks.length > 0);
 
-        if (matchedBlocks.length === 0) return null;
-        return { ...section, blocks: matchedBlocks };
-    }).filter(Boolean); // Убираем null
 
     return (
         <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
+            <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 sm:p-8 border border-gray-100 dark:border-gray-700 transition-colors">
 
-            {/* ВВОДНАЯ ЧАСТЬ И ПОИСК */}
-            <div className="bg-gradient-to-br from-blue-600 to-indigo-800 rounded-3xl shadow-xl p-8 md:p-10 text-white relative overflow-hidden">
-                <div className="absolute -right-20 -top-20 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl"></div>
-                <div className="absolute left-10 -bottom-20 w-40 h-40 bg-indigo-400 opacity-20 rounded-full blur-2xl"></div>
-                <div className="relative z-10">
-                    <h1 className="text-3xl md:text-4xl font-extrabold mb-4 tracking-tight">База знаний</h1>
-                    <p className="text-blue-100 text-sm md:text-base font-medium mb-8 leading-relaxed">
-                        Подробное руководство по платформе «ВИКС Расписание». Найдите ответы на любые вопросы.
-                    </p>
-
-                    <div className="relative max-w-xl">
-                        <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-                            <Search className="w-5 h-5 text-blue-300" />
-                        </div>
-                        <input
-                            type="text"
-                            placeholder="Поиск инструкций (например: пароль, заявка, уведомления)..."
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            className="w-full pl-12 pr-4 py-4 bg-white/10 backdrop-blur-md border border-white/20 rounded-2xl text-white placeholder-blue-200 focus:outline-none focus:ring-2 focus:ring-white/50 focus:bg-white/20 transition-all font-medium shadow-inner"
-                        />
-                        {searchTerm && (
-                            <button onClick={() => setSearchTerm('')} className="absolute inset-y-0 right-0 pr-4 flex items-center text-blue-200 hover:text-white transition-colors">
-                                Сбросить
-                            </button>
-                        )}
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-4">
+                    <div>
+                        <h1 className="text-2xl sm:text-3xl font-bold text-gray-900 dark:text-white tracking-tight flex items-center gap-3">
+                            <Link className="w-8 h-8 text-blue-500" /> Справочник
+                        </h1>
+                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mt-2">Инструкции по работе с системой для вашей роли: <b className="text-blue-600 dark:text-blue-400">{role}</b></p>
                     </div>
                 </div>
-            </div>
 
-            {/* РЕНДЕР ОТФИЛЬТРОВАННЫХ ИНСТРУКЦИЙ */}
-            {filteredData.length === 0 ? (
-                <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm">
-                    <Search className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
-                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-2">Ничего не найдено</h3>
-                    <p className="text-gray-500 dark:text-gray-400">Попробуйте изменить поисковый запрос.</p>
+                {/* Строка поиска */}
+                <div className="relative mb-10">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 w-5 h-5" />
+                    <input
+                        type="text"
+                        placeholder="Найти инструкцию (например: как создать заявку, модерация, статус)..."
+                        value={searchTerm}
+                        onChange={handleSearch}
+                        className="w-full pl-12 pr-4 py-4 bg-gray-50 dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 text-gray-800 dark:text-white transition-all shadow-sm"
+                    />
                 </div>
-            ) : (
-                filteredData.map((section, idx) => (
-                    <div key={idx} className="mb-10">
-                        <h2 className="text-xl md:text-2xl font-bold text-gray-800 dark:text-white flex items-center mb-5 border-b border-gray-200 dark:border-gray-700 pb-3">
-                            <section.icon className="w-6 h-6 md:w-8 md:h-8 mr-3 text-blue-500" /> {section.title}
-                        </h2>
-                        <div className="space-y-5">
-                            {section.blocks.map((block, bIdx) => (
-                                <div key={bIdx} className={`bg-white dark:bg-gray-800 p-6 rounded-2xl border shadow-sm transition-all hover:shadow-md ${block.highlight ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/10' : 'border-gray-100 dark:border-gray-700'}`}>
-                                    <h3 className="text-lg font-bold text-blue-700 dark:text-blue-400 mb-4">{block.title}</h3>
-                                    <div className="text-gray-700 dark:text-gray-300 text-sm md:text-base leading-relaxed">
-                                        {block.content}
+
+                {filteredData.length === 0 ? (
+                    <div className="text-center py-12">
+                        <Search className="w-12 h-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                        <h3 className="text-lg font-bold text-gray-500 dark:text-gray-400">По вашему запросу ничего не найдено</h3>
+                        <p className="text-sm text-gray-400 dark:text-gray-400">Попробуйте изменить поисковый запрос.</p>
+                    </div>
+                ) : (
+                    filteredData.map((section, idx) => (
+                        <div key={idx} className="mb-10">
+                            <h2 className="text-xl md:text-2xl font-bold text-gray-800 dark:text-white flex items-center mb-5 border-b border-gray-200 dark:border-gray-700 pb-3">
+                                <section.icon className="w-6 h-6 md:w-8 md:h-8 mr-3 text-blue-500" /> {section.title}
+                            </h2>
+                            <div className="space-y-5">
+                                {section.blocks.map((block, bIdx) => (
+                                    <div key={bIdx} className={`bg-white dark:bg-gray-800 p-6 rounded-2xl border shadow-sm transition-all hover:shadow-md ${block.highlight ? 'border-blue-300 dark:border-blue-700 bg-blue-50/50 dark:bg-blue-900/10' : 'border-gray-100 dark:border-gray-700'}`}>
+                                        <h3 className="text-lg font-bold text-blue-700 dark:text-blue-400 mb-4">{block.title}</h3>
+                                        <div className="text-gray-700 dark:text-gray-300 text-sm md:text-base leading-relaxed">
+                                            {block.content}
+                                        </div>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                ))
-            )}
-
+                    ))
+                )}
+            </div>
         </main>
     );
 }
