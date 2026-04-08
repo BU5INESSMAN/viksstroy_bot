@@ -7,3 +7,5 @@ uvicorn
 python-multipart
 Pillow
 maxapi
+pandas
+openpyxl

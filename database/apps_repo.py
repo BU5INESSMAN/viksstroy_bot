@@ -127,3 +127,51 @@ class AppsRepoMixin:
     async def mark_app_as_published(self, app_id: int):
         await self.conn.execute("UPDATE applications SET is_published = 1 WHERE id = ?", (app_id,))
         await self.conn.commit()
+
+    async def check_resource_availability(self, date_target: str, object_id: int, team_ids: str, equip_data: str):
+        """Строгая проверка занятости бригад и техники в других заявках"""
+        import json
+        occupied_resources = []
+
+        async with self.conn.execute("""
+                                     SELECT a.team_id, a.equipment_data, o.name as obj_name, a.object_address
+                                     FROM applications a
+                                              LEFT JOIN objects o ON a.object_id = o.id
+                                     WHERE a.date_target = ?
+                                       AND a.status NOT IN ('rejected', 'completed', 'cancelled')
+                                       AND (a.object_id != ? OR a.object_id IS NULL)
+                                       AND a.is_team_freed = 0
+                                     """, (date_target, object_id)) as cur:
+            active_apps = await cur.fetchall()
+
+        target_teams = [t.strip() for t in str(team_ids).split(',')] if team_ids and str(team_ids) != '0' else []
+
+        target_equips = []
+        if equip_data:
+            try:
+                parsed = json.loads(equip_data)
+                target_equips = [str(e['id']) for e in parsed]
+            except:
+                pass
+
+        for app in active_apps:
+            app_team = str(app[0]) if app[0] is not None else ""
+            app_equip_data = str(app[1]) if app[1] is not None else ""
+            obj_name = app[2] or app[3] or "Неизвестный объект"
+
+            app_team_list = [t.strip() for t in app_team.split(',')]
+            for t in target_teams:
+                if t in app_team_list and t != '0':
+                    occupied_resources.append(f"❌ Бригада (ID: {t}) уже занята на объекте «{obj_name}»")
+
+            if target_equips and app_equip_data:
+                try:
+                    app_eq_parsed = json.loads(app_equip_data)
+                    app_eq_ids = [str(e['id']) for e in app_eq_parsed if not e.get('is_freed')]
+                    for eq in target_equips:
+                        if eq in app_eq_ids:
+                            occupied_resources.append(f"❌ Техника (ID: {eq}) уже занята на объекте «{obj_name}»")
+                except:
+                    pass
+
+        return occupied_resources

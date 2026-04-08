@@ -2,6 +2,7 @@ import aiosqlite
 import os
 import logging
 from datetime import datetime
+import pandas as pd
 
 from database.users_repo import UsersRepoMixin
 from database.teams_repo import TeamsRepoMixin
@@ -53,6 +54,10 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             await self.conn.execute("ALTER TABLE applications ADD COLUMN is_published INTEGER DEFAULT 0")
         except Exception:
             pass
+        try:
+            await self.conn.execute("ALTER TABLE applications ADD COLUMN object_id INTEGER")
+        except Exception:
+            pass
 
         try:
             await self.conn.execute("UPDATE users SET role = 'superadmin' WHERE role = 'admin'")
@@ -66,6 +71,9 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_logs()
         await self.upgrade_db_for_profiles()
         await self.upgrade_db_for_foreman()
+
+        # --- ИМПОРТ КП ИЗ CSV ---
+        await self.import_kp_from_csv("КП.xlsx - СМР.csv")
 
         logging.info("База данных успешно инициализирована.")
 
@@ -189,3 +197,48 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         except Exception:
             pass  # Колонка уже существует
         await self.conn.commit()
+
+    async def import_kp_from_csv(self, file_path: str):
+        """Парсит CSV файл с прайсом, если таблица kp_catalog пуста"""
+        if not os.path.exists(file_path):
+            return
+
+        async with self.conn.execute("SELECT COUNT(*) FROM kp_catalog") as cur:
+            count = (await cur.fetchone())[0]
+            if count > 0:
+                return  # База уже заполнена
+
+        try:
+            df = pd.read_csv(file_path, header=None, dtype=str).fillna("")
+            current_category = "Без категории"
+
+            for index, row in df.iterrows():
+                if index < 2:
+                    continue
+
+                col_coef = str(row[2]).strip()
+                col_name = str(row[3]).strip()
+                col_old = str(row[4]).strip()
+                col_unit = str(row[5]).strip()
+                col_zp = str(row[7]).strip()
+
+                if col_name and not col_zp and not col_unit:
+                    current_category = col_name
+                    continue
+
+                if col_name and col_zp and col_zp.replace('.', '', 1).isdigit():
+                    salary = float(col_zp)
+                    price = salary * 4  # Жестко по формуле (ЗП * 4)
+                    coef = float(col_coef) if col_coef.replace('.', '', 1).isdigit() else 0.0
+                    old_salary = float(col_old) if col_old.replace('.', '', 1).isdigit() else salary
+
+                    await self.conn.execute("""
+                                            INSERT INTO kp_catalog (category, name, unit, coefficient, salary, price, old_salary)
+                                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                                            """,
+                                            (current_category, col_name, col_unit, coef, salary, price, old_salary))
+
+            await self.conn.commit()
+            logging.info("Справочник КП успешно импортирован из CSV!")
+        except Exception as e:
+            logging.error(f"Ошибка парсинга CSV: {e}")

@@ -17,6 +17,7 @@ export default function Home() {
 
     const [data, setData] = useState({ stats: {}, teams: [], equipment: [], equip_categories: [], kanban_apps: [], recent_addresses: [] });
     const [activeApps, setActiveApps] = useState([]);
+    const [objectsList, setObjectsList] = useState([]);
     const [myTeam, setMyTeam] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -24,7 +25,7 @@ export default function Home() {
     const [activeEqCategory, setActiveEqCategory] = useState(null);
 
     const [appForm, setAppForm] = useState({
-        id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: []
+        id: null, status: '', date_target: smartDates[0].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: []
     });
 
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
@@ -46,8 +47,9 @@ export default function Home() {
     useEffect(() => { fetchData(); }, [tgId, role]);
 
     useEffect(() => {
-        if (!isGlobalCreateAppOpen) {
-            setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
+        if (isGlobalCreateAppOpen) {
+            axios.get('/api/objects/active').then(res => setObjectsList(res.data)).catch(()=>{});
+            setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
             setActiveEqCategory(null);
             setTeamMembers([]);
             setIsSubmitting(false);
@@ -71,6 +73,50 @@ export default function Home() {
     }, [appForm.team_ids.join(',')]);
 
     const handleFormChange = (field, value) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, [field]: value })); };
+
+    const handleApplyDefaults = async (type) => {
+        const selectedObj = objectsList.find(o => o.id === parseInt(appForm.object_id));
+        if (!selectedObj) return;
+
+        const targetTeams = type === 'teams' ? selectedObj.default_team_ids : "";
+        const targetEquips = type === 'equip' ? selectedObj.default_equip_ids : "";
+
+        if (!targetTeams && !targetEquips) {
+            alert("Для этого объекта не назначены ресурсы по умолчанию.");
+            return;
+        }
+
+        try {
+            const fd = new FormData();
+            fd.append('date_target', appForm.date_target);
+            fd.append('object_id', selectedObj.id);
+            fd.append('team_ids', type === 'teams' ? targetTeams : appForm.team_ids.join(','));
+
+            const equipDataForCheck = type === 'equip'
+                ? JSON.stringify(targetEquips.split(',').map(id => ({id: parseInt(id)})))
+                : JSON.stringify(appForm.equipment);
+            fd.append('equip_data', equipDataForCheck);
+
+            const res = await axios.post('/api/applications/check_availability', fd);
+
+            if (res.data.status === 'occupied') {
+                alert(`❌ ОШИБКА ЗАНЯТОСТИ:\n\n${res.data.message}\n\nДобавление заблокировано.`);
+            } else {
+                if (type === 'teams') {
+                    const ids = targetTeams.split(',').map(Number);
+                    setAppForm(prev => ({...prev, team_ids: ids}));
+                }
+                if (type === 'equip') {
+                    const ids = targetEquips.split(',').map(Number);
+                    const newEq = data.equipment.filter(e => ids.includes(e.id)).map(e => ({ id: e.id, name: e.driver ? `${e.name} (${e.driver})` : e.name, time_start: '08', time_end: '17' }));
+                    setAppForm(prev => ({...prev, equipment: newEq}));
+                }
+                alert("✅ Ресурсы успешно подставлены!");
+            }
+        } catch (e) {
+            alert("Ошибка связи с сервером при проверке занятости.");
+        }
+    };
 
     const toggleTeamSelection = (id) => {
         if(appForm.isViewOnly) return;
@@ -121,6 +167,7 @@ export default function Home() {
     const handleCreateApp = async (e) => {
         e.preventDefault();
         if(appForm.isViewOnly) { setGlobalCreateAppOpen(false); return; }
+        if (!appForm.object_id) return alert("Выберите объект!");
         if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) return alert("Выберите бригаду или технику!");
         if (appForm.team_ids.length === 0 && !window.confirm("Создать заявку ТОЛЬКО на технику (без людей)?")) return;
         if (appForm.team_ids.length > 0 && appForm.members.length === 0) return alert("Выберите хотя бы одного рабочего из бригады!");
@@ -128,9 +175,13 @@ export default function Home() {
         setIsSubmitting(true);
         try {
             const fd = new FormData();
-            fd.append('tg_id', tgId); fd.append('date_target', appForm.date_target); fd.append('object_address', appForm.object_address);
+            fd.append('tg_id', tgId);
+            fd.append('date_target', appForm.date_target);
+            fd.append('object_id', appForm.object_id);
+            fd.append('object_address', appForm.object_address);
             fd.append('team_id', appForm.team_ids.join(',') || '0');
-            fd.append('comment', appForm.comment); fd.append('selected_members', appForm.members.join(','));
+            fd.append('comment', appForm.comment);
+            fd.append('selected_members', appForm.members.join(','));
             fd.append('equipment_data', JSON.stringify(appForm.equipment));
 
             if (appForm.id) {
@@ -166,8 +217,10 @@ export default function Home() {
     };
 
     const openAppModalFromKanban = (app) => {
+        axios.get('/api/objects/active').then(res => setObjectsList(res.data)).catch(()=>{});
         setAppForm({
-            id: app.id, status: app.status, date_target: app.date_target, object_address: app.object_address,
+            id: app.id, status: app.status, date_target: app.date_target,
+            object_id: app.object_id || '', object_address: app.object_address || '',
             team_ids: app.team_id ? String(app.team_id).split(',').map(Number) : [],
             team_name: app.team_name || '',
             members: app.selected_members ? app.selected_members.split(',').map(Number) : [],
@@ -474,16 +527,38 @@ export default function Home() {
                                     </div>
                                     <div>
                                         <label className="flex items-center gap-1.5 text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
-                                            <MapPin className="w-4 h-4" /> Адрес объекта
+                                            <MapPin className="w-4 h-4 text-red-500" /> Объект
                                         </label>
-                                        <input type="text" disabled={appForm.isViewOnly || isSubmitting} required value={appForm.object_address} onChange={e => handleFormChange('object_address', e.target.value)} placeholder="г. Москва, ул. Ленина, 10" className="w-full border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-3.5 rounded-xl outline-none font-medium dark:text-white shadow-inner focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-80 transition-colors" />
-                                        {!appForm.isViewOnly && data.recent_addresses && data.recent_addresses.length > 0 && (
-                                            <div className="flex flex-wrap gap-2 mt-3">
-                                                {data.recent_addresses.map((addr, idx) => (
-                                                    <button key={idx} type="button" disabled={isSubmitting} onClick={() => handleFormChange('object_address', addr)} className="bg-white disabled:opacity-50 dark:bg-gray-800 text-gray-600 dark:text-gray-300 px-3.5 py-2 rounded-xl text-xs font-medium hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm border border-gray-200 dark:border-gray-700 truncate max-w-full active:scale-95">
-                                                        {addr}
-                                                    </button>
+                                        {appForm.isViewOnly ? (
+                                            <div className="w-full p-4 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 rounded-xl font-bold text-gray-900 dark:text-white">
+                                                {appForm.object_address || 'Объект не выбран'}
+                                            </div>
+                                        ) : (
+                                            <select
+                                                required
+                                                disabled={appForm.isViewOnly || isSubmitting}
+                                                value={appForm.object_id || ""}
+                                                onChange={e => {
+                                                    const selObj = objectsList.find(o => o.id === parseInt(e.target.value));
+                                                    setAppForm({...appForm, object_id: e.target.value, object_address: selObj ? `${selObj.name} (${selObj.address})` : ''});
+                                                }}
+                                                className="w-full border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-3.5 rounded-xl outline-none font-bold text-gray-800 dark:text-gray-100 shadow-inner focus:ring-2 focus:ring-blue-500 focus:border-transparent disabled:opacity-80 transition-colors"
+                                            >
+                                                <option value="" disabled>-- Выберите объект из списка --</option>
+                                                {objectsList.map(obj => (
+                                                    <option key={obj.id} value={obj.id}>{obj.name} {obj.address ? `(${obj.address})` : ''}</option>
                                                 ))}
+                                            </select>
+                                        )}
+
+                                        {!appForm.isViewOnly && appForm.object_id && (
+                                            <div className="flex gap-2 mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-xl border border-blue-100 dark:border-blue-800/50">
+                                                <button type="button" onClick={() => handleApplyDefaults('teams')} className="flex-1 text-xs font-bold text-blue-600 dark:text-blue-400 bg-white dark:bg-gray-800 border border-blue-200 dark:border-blue-700/50 py-2 rounded-lg hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors shadow-sm flex items-center justify-center gap-1.5">
+                                                    <Users className="w-3.5 h-3.5" /> Бригады по умолчанию
+                                                </button>
+                                                <button type="button" onClick={() => handleApplyDefaults('equip')} className="flex-1 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-white dark:bg-gray-800 border border-indigo-200 dark:border-indigo-700/50 py-2 rounded-lg hover:bg-indigo-100 dark:hover:bg-indigo-900/50 transition-colors shadow-sm flex items-center justify-center gap-1.5">
+                                                    <Truck className="w-3.5 h-3.5" /> Техника по умолчанию
+                                                </button>
                                             </div>
                                         )}
 

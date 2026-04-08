@@ -52,17 +52,56 @@ async def enrich_app_with_members_data(app_dict):
     app_dict['members_data'] = members_list
 
 
+# ==========================================
+# НОВЫЕ ЭНДПОИНТЫ ОБЪЕКТОВ И ПРОВЕРОК
+# ==========================================
+@router.get("/api/objects/active")
+async def get_active_objects():
+    """Отдает список активных объектов для выпадающего списка"""
+    if db.conn is None: await db.init_db()
+    async with db.conn.execute(
+            "SELECT id, name, address, default_team_ids, default_equip_ids FROM objects WHERE is_archived = 0 ORDER BY name") as cur:
+        rows = await cur.fetchall()
+        return [{"id": r[0], "name": r[1], "address": r[2], "default_team_ids": r[3], "default_equip_ids": r[4]} for r
+                in rows]
+
+
+@router.post("/api/applications/check_availability")
+async def check_availability(
+        date_target: str = Form(...),
+        object_id: int = Form(0),
+        team_ids: str = Form(""),
+        equip_data: str = Form("")
+):
+    """Проверяет занятость ресурсов перед подстановкой"""
+    if db.conn is None: await db.init_db()
+    occupied = await db.check_resource_availability(date_target, object_id, team_ids, equip_data)
+
+    if occupied:
+        return {"status": "occupied", "message": "Выбранные ресурсы недоступны:\n\n" + "\n".join(occupied)}
+    return {"status": "free"}
+
+
+# ==========================================
+# ОСНОВНЫЕ ЭНДПОИНТЫ ЗАЯВОК
+# ==========================================
 @router.post("/api/applications/create")
 async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
-                     equipment_data: str = Form("")):
+                     equipment_data: str = Form(""), object_id: int = Form(0)):
     await ensure_app_columns()
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     fio = dict(user).get('fio', 'Web-Пользователь') if user else "Web-Пользователь"
+
+    # Строгая серверная проверка занятости перед сохранением
+    occupied = await db.check_resource_availability(date_target, object_id, team_id, equipment_data)
+    if occupied:
+        raise HTTPException(400, "Ошибка создания наряда:\n" + "\n".join(occupied))
+
     await db.conn.execute(
-        "INSERT INTO applications (foreman_id, foreman_name, team_id, equip_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed, freed_team_ids) VALUES (?, ?, ?, 0, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0, '')",
-        (real_tg_id, fio, team_id, date_target, object_address, comment, selected_members, equipment_data))
+        "INSERT INTO applications (foreman_id, foreman_name, team_id, object_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed, freed_team_ids) VALUES (?, ?, ?, ?, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0, '')",
+        (real_tg_id, fio, team_id, object_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
 
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
@@ -75,17 +114,23 @@ async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_targ
 @router.post("/api/applications/{app_id}/update")
 async def update_app(app_id: int, tg_id: int = Form(...), team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
-                     equipment_data: str = Form("")):
+                     equipment_data: str = Form(""), object_id: int = Form(0)):
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     if not user: raise HTTPException(403)
     async with db.conn.execute("SELECT status FROM applications WHERE id = ?", (app_id,)) as cur:
         row = await cur.fetchone()
         if not row or row[0] != 'waiting': raise HTTPException(400, "Заявка уже в работе или проверена")
+
+    # Строгая серверная проверка занятости перед сохранением
+    occupied = await db.check_resource_availability(date_target, object_id, team_id, equipment_data)
+    if occupied:
+        raise HTTPException(400, "Ошибка обновления наряда:\n" + "\n".join(occupied))
+
     try:
         await db.conn.execute(
-            "UPDATE applications SET team_id=?, date_target=?, object_address=?, comment=?, selected_members=?, equipment_data=? WHERE id = ?",
-            (team_id, date_target, object_address, comment, selected_members, equipment_data, app_id))
+            "UPDATE applications SET team_id=?, date_target=?, object_address=?, object_id=?, comment=?, selected_members=?, equipment_data=? WHERE id = ?",
+            (team_id, date_target, object_address, object_id, comment, selected_members, equipment_data, app_id))
         await db.conn.commit()
     except:
         await db.conn.rollback()
@@ -218,7 +263,6 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
         if reason: msg_foreman += f"\n💬 Причина: {reason}"
         await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']])
 
-        # --- НОВАЯ ЛОГИКА: УВЕДОМЛЕНИЯ ПРИ ОДОБРЕНИИ (Добавление в наряд) ---
         if new_status == 'approved':
             workers_ids = []
             selected_members = app_dict.get('selected_members', '')
