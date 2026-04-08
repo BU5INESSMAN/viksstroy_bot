@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/Users/Admin/PycharmProjects/viksstroy_bot/frontend/src -type f \\\\\\(-name *.jsx -o -name *.js \\\\\\))",
+      "Bash(find /c/Users/Admin/PycharmProjects/viksstroy_bot -type f -name *.py ! -path */node_modules/* ! -path */__pycache__/*)",
+      "Bash(find /c/Users/Admin/PycharmProjects/viksstroy_bot -type f \\\\\\(-name *.json -o -name *.jsx -o -name *.py \\\\\\) ! -path */node_modules/* ! -path */__pycache__/* ! -path */dist/*)"
+    ]
+  }
+}
