@@ -36,7 +36,22 @@ async def get_app_kp_items(app_id: int):
 async def submit_app_kp(app_id: int, request: Request):
     if db.conn is None: await db.init_db()
     data = await request.json()
-    await db.submit_kp_report(app_id, data.get('items', []), data.get('role', 'worker'))
+
+    # Жесткая серверная проверка доступа к заполнению КП
+    tg_id = data.get('tg_id')
+    req_role = data.get('role', 'worker')
+    if tg_id:
+        real_tg_id = await resolve_id(int(tg_id))
+        user = await db.get_user(real_tg_id)
+        if user:
+            base_role = dict(user).get('role', 'worker')
+            if base_role in ['worker', 'driver', 'guest']:
+                async with db.conn.execute("SELECT 1 FROM team_members WHERE tg_user_id = ? AND is_foreman = 1 LIMIT 1",
+                                           (real_tg_id,)) as cur:
+                    if not await cur.fetchone():
+                        raise HTTPException(403, "Нет прав для заполнения КП")
+
+    await db.submit_kp_report(app_id, data.get('items', []), req_role)
     return {"status": "ok"}
 
 

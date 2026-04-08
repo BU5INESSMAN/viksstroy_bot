@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import {
     FileText, CheckCircle, Clock, Search, X, MapPin,
-    Download, Save, AlertTriangle, Edit3, Upload
+    Download, Save, AlertTriangle, Edit3, Upload, Lock
 } from 'lucide-react';
 
 export default function KP() {
@@ -10,7 +10,7 @@ export default function KP() {
     const tgId = localStorage.getItem('tg_id') || '0';
 
     const isOffice = ['moderator', 'boss', 'superadmin'].includes(role);
-    const isForeman = role === 'foreman';
+    const isForemanOrBrigadier = ['foreman', 'brigadier'].includes(role);
 
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState({ to_fill: [], pending_review: [], approved: [] });
@@ -111,6 +111,18 @@ export default function KP() {
     const totalSalary = kpItems.reduce((acc, curr) => acc + (parseFloat(curr.volume || 0) * parseFloat(curr.current_salary || 0)), 0);
     const totalPrice = kpItems.reduce((acc, curr) => acc + (parseFloat(curr.volume || 0) * parseFloat(curr.current_price || 0)), 0);
 
+    if (!['superadmin', 'boss', 'moderator', 'foreman', 'brigadier'].includes(role)) {
+        return (
+            <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24 flex flex-col items-center justify-center min-h-[60vh] text-gray-400 dark:text-gray-500">
+                <div className="bg-gray-100 dark:bg-gray-800 p-6 rounded-full mb-6 shadow-inner">
+                    <Lock className="w-16 h-16 text-gray-300 dark:text-gray-600" />
+                </div>
+                <p className="text-xl font-bold">Доступ закрыт</p>
+                <p className="text-sm mt-2 text-center max-w-sm">Заполнение сметных расчетов (КП) доступно только бригадирам и руководству.</p>
+            </main>
+        );
+    }
+
     if (loading) return <div className="mt-32 text-center text-gray-400 font-bold animate-pulse">Загрузка...</div>;
 
     return (
@@ -135,8 +147,8 @@ export default function KP() {
 
             <div className="flex bg-gray-100 dark:bg-gray-800 rounded-2xl p-1.5 overflow-x-auto custom-scrollbar">
                 <button onClick={() => setActiveTab('to_fill')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'to_fill' ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>К заполнению ({data.to_fill.length})</button>
-                {(isForeman || isOffice) && <button onClick={() => setActiveTab('pending_review')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'pending_review' ? 'bg-white dark:bg-gray-700 text-yellow-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>На проверку ({data.pending_review.length})</button>}
-                {(isForeman || isOffice) && <button onClick={() => setActiveTab('approved')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'approved' ? 'bg-white dark:bg-gray-700 text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Готовые ({data.approved.length})</button>}
+                {(isForemanOrBrigadier || isOffice) && <button onClick={() => setActiveTab('pending_review')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'pending_review' ? 'bg-white dark:bg-gray-700 text-yellow-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>На проверку ({data.pending_review.length})</button>}
+                {(isForemanOrBrigadier || isOffice) && <button onClick={() => setActiveTab('approved')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'approved' ? 'bg-white dark:bg-gray-700 text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Готовые ({data.approved.length})</button>}
             </div>
 
             {activeTab === 'approved' && isOffice && data.approved.length > 0 && (

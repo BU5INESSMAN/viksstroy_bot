@@ -25,7 +25,7 @@ export default function System() {
     const [testPlatform, setTestPlatform] = useState('all');
     const [logsExpanded, setLogsExpanded] = useState(false);
 
-    const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
+    const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'brigadier': 'Бригадир', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
 
     useEffect(() => {
         axios.get('/api/users').then(res => setUsers(res.data || [])).catch(() => {});
