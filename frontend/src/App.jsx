@@ -5,13 +5,12 @@ import Login from './pages/Login';
 import TMAAuth from './pages/TMAAuth';
 import MAXAuth from './pages/MAXAuth';
 import Home from './pages/Home';
-import Teams from './pages/Teams';
 import Guide from './pages/Guide';
 import Updates from './pages/Updates';
 import System from './pages/System';
 import MyApps from './pages/MyApps';
 import Review from './pages/Review';
-import Equipment from './pages/Equipment';
+import Resources from './pages/Resources';
 
 // Подключаем страницы инвайтов
 import JoinTeam from './pages/JoinTeam';
@@ -62,13 +61,12 @@ export default function App() {
 
         <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
           <Route path="/dashboard" element={<Home />} />
-          <Route path="/teams" element={<Teams />} />
           <Route path="/guide" element={<Guide />} />
           <Route path="/updates" element={<Updates />} />
           <Route path="/system" element={<System />} />
           <Route path="/my-apps" element={<MyApps />} />
           <Route path="/review" element={<Review />} />
-          <Route path="/equipment" element={<Equipment />} />
+          <Route path="/resources" element={<Resources />} />
         </Route>
       </Routes>
     </BrowserRouter>

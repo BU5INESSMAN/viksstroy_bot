@@ -13,7 +13,6 @@ export default function Teams() {
     const { openProfile } = useOutletContext();
 
     const [teams, setTeams] = useState([]);
-
     const [isTeamModalOpen, setTeamModalOpen] = useState(false);
     const [newTeamName, setNewTeamName] = useState('');
     const [isManageModalOpen, setManageModalOpen] = useState(false);
@@ -120,22 +119,20 @@ export default function Teams() {
         alert('Полное сообщение скопировано в буфер обмена!');
     };
 
-    // РАЗДЕЛЕНИЕ ПРАВ ДОСТУПА
     const canManage = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canDeleteTeam = ['moderator', 'boss', 'superadmin'].includes(role);
 
     return (
-        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
-            <div className="flex justify-between items-center bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-5 border border-gray-100 dark:border-gray-700">
-                <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100">
-                    <Users className="w-7 h-7 text-indigo-500 mr-2.5" /> Бригады
-                </h2>
-                {canManage && (
+        <div className="space-y-6">
+
+            {/* Кнопка создания теперь выровнена по правому краю */}
+            {canManage && (
+                <div className="flex justify-end mb-2">
                     <button onClick={() => setTeamModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
-                        <Plus className="w-4 h-4" /> Создать
+                        <Plus className="w-4 h-4" /> Создать бригаду
                     </button>
-                )}
-            </div>
+                </div>
+            )}
 
             <div className="grid gap-5 sm:grid-cols-2">
                 {teams.map(t => (
@@ -165,7 +162,7 @@ export default function Teams() {
                 )}
             </div>
 
-            {/* МОДАЛКА СОЗДАНИЯ БРИГАДЫ */}
+            {/* МОДАЛКИ ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ */}
             {isTeamModalOpen && (
                 <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
                     <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl relative border border-gray-100 dark:border-gray-700">
@@ -186,7 +183,6 @@ export default function Teams() {
                 </div>
             )}
 
-            {/* МОДАЛКА УПРАВЛЕНИЯ */}
             {isManageModalOpen && manageTeamData && (
                 <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
@@ -201,7 +197,6 @@ export default function Teams() {
                             </div>
 
                             <div className="p-6 space-y-6">
-                                {/* ИНВАЙТ */}
                                 {canManage && (
                                     <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/10 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/30 shadow-inner">
                                         <h4 className="font-bold text-indigo-800 dark:text-indigo-300 mb-2 flex items-center gap-2">
@@ -214,7 +209,6 @@ export default function Teams() {
                                     </div>
                                 )}
 
-                                {/* ДОБАВИТЬ ВРУЧНУЮ */}
                                 {canManage && (
                                     <div className="bg-gray-50 dark:bg-gray-700/30 p-5 rounded-2xl border border-gray-200 dark:border-gray-600 shadow-inner">
                                         <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
@@ -228,7 +222,6 @@ export default function Teams() {
                                     </div>
                                 )}
 
-                                {/* СПИСОК */}
                                 <div>
                                     <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
                                         <Users className="w-5 h-5 text-gray-400" /> Состав ({manageTeamData.members.length})
@@ -282,7 +275,6 @@ export default function Teams() {
                 </div>
             )}
 
-            {/* ОКНО СО ССЫЛКАМИ */}
             {inviteInfo && (
                 <div className="fixed inset-0 z-[130] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
                     <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl relative border border-gray-100 dark:border-gray-700">
@@ -335,6 +327,6 @@ export default function Teams() {
                     </div>
                 </div>
             )}
-        </main>
+        </div>
     );
 }

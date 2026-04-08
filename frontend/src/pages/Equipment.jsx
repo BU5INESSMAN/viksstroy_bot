@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useOutletContext } from 'react-router-dom';
+import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import {
     Truck, Plus, Upload, User, Unplug, Link,
@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 
 export default function Equipment() {
-    const navigate = useNavigate();
     const role = localStorage.getItem('user_role') || 'Гость';
     const tgId = localStorage.getItem('tg_id') || '0';
     const { openProfile } = useOutletContext();
@@ -23,11 +22,9 @@ export default function Equipment() {
     const [customCategory, setCustomCategory] = useState('');
     const [bulkText, setBulkText] = useState('');
 
-    const [selectedEquip, setSelectedEquip] = useState(null);
     const [inviteInfo, setInviteInfo] = useState(null);
     const [copiedLink, setCopiedLink] = useState('');
 
-    // Разделяем права: foreman может управлять, но удалять может только руководство
     const canManageEquipment = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canDeleteEquipment = ['moderator', 'boss', 'superadmin'].includes(role);
 
@@ -37,7 +34,7 @@ export default function Equipment() {
             setEquipment(equipRes.data || []);
             const cats = dashRes.data?.equip_categories || [];
             setCategories(cats);
-            if (cats.length > 0 && !cats.includes(activeTab) && activeTab !== 'list') {
+            if (cats.length > 0 && !cats.includes(activeTab) && activeTab !== 'list' && activeTab !== 'new' && activeTab !== 'bulk') {
                 setActiveTab(cats[0]);
             }
             setLoading(false);
@@ -57,6 +54,7 @@ export default function Equipment() {
             await axios.post('/api/equipment/create', fd);
             setNewEquip({ name: '', driver: '', category: '' });
             setCustomCategory('');
+            setActiveTab('list');
             fetchData();
             alert("Техника добавлена!");
         } catch (e) { alert("Ошибка добавления"); }
@@ -70,6 +68,7 @@ export default function Equipment() {
             fd.append('tg_id', tgId);
             const res = await axios.post('/api/equipment/bulk_upload', fd);
             setBulkText('');
+            setActiveTab('list');
             fetchData();
             alert(`Успешно загружено единиц: ${res.data.added}`);
         } catch (e) { alert("Ошибка массовой загрузки"); }
@@ -134,27 +133,24 @@ export default function Equipment() {
     );
 
     return (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-5 border border-gray-100 dark:border-gray-700 gap-4">
-                <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100">
-                    <Truck className="w-7 h-7 text-blue-500 mr-2.5" /> Автопарк
-                </h2>
-                {canManageEquipment && (
-                    <div className="flex flex-wrap gap-2.5">
-                        <button onClick={() => setActiveTab('new')} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
-                            <Plus className="w-4 h-4" /> Добавить
-                        </button>
-                        <button onClick={() => setActiveTab('bulk')} className="bg-gray-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-gray-900 transition-all active:scale-95 flex items-center gap-2 dark:bg-gray-700 dark:hover:bg-gray-600">
-                            <Upload className="w-4 h-4" /> Массовая загрузка
-                        </button>
-                    </div>
-                )}
-            </div>
+        <div className="space-y-6">
+
+            {/* Кнопки управления теперь выровнены по правому краю */}
+            {canManageEquipment && (
+                <div className="flex justify-end gap-2.5 mb-2">
+                    <button onClick={() => setActiveTab('new')} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
+                        <Plus className="w-4 h-4" /> Добавить
+                    </button>
+                    <button onClick={() => setActiveTab('bulk')} className="bg-gray-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-gray-900 transition-all active:scale-95 flex items-center gap-2 dark:bg-gray-700 dark:hover:bg-gray-600">
+                        <Upload className="w-4 h-4" /> Загрузка
+                    </button>
+                </div>
+            )}
 
             <div className="flex overflow-x-auto space-x-2.5 pb-2 custom-scrollbar">
-                <button onClick={() => setActiveTab('list')} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'list' ? 'bg-blue-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50'}`}>Все машины</button>
+                <button onClick={() => setActiveTab('list')} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'list' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>Все машины</button>
                 {categories.map(c => (
-                    <button key={c} onClick={() => setActiveTab(c)} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === c ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50'}`}>{c}</button>
+                    <button key={c} onClick={() => setActiveTab(c)} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === c ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>{c}</button>
                 ))}
             </div>
 
@@ -199,7 +195,6 @@ export default function Equipment() {
                                             {eq.status === 'repair' ? <><CheckCircle className="w-3.5 h-3.5" /> В строй</> : <><Wrench className="w-3.5 h-3.5" /> В ремонт</>}
                                         </button>
 
-                                        {/* Корзина только для руководства! */}
                                         {canDeleteEquipment && (
                                             <button onClick={() => handleDeleteEquip(eq.id)} className="bg-gray-50 hover:bg-red-50 text-gray-500 hover:text-red-600 dark:bg-gray-700/50 dark:text-gray-400 dark:hover:bg-red-900/30 dark:hover:text-red-400 py-2.5 px-4 rounded-xl text-xs font-bold transition-colors active:scale-95 flex items-center justify-center">
                                                 <Trash2 className="w-4 h-4" />
@@ -219,8 +214,9 @@ export default function Equipment() {
                 </div>
             )}
 
+            {/* ВКЛАДКА ДОБАВЛЕНИЯ ТЕХНИКИ */}
             {activeTab === 'new' && canManageEquipment && (
-                <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 max-w-lg mx-auto">
+                <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 max-w-lg mx-auto animate-in fade-in slide-in-from-bottom-4">
                     <h3 className="text-xl font-bold mb-6 flex items-center gap-2 dark:text-white">
                         <Plus className="w-5 h-5 text-blue-500" /> Добавить машину
                     </h3>
@@ -249,8 +245,9 @@ export default function Equipment() {
                 </div>
             )}
 
+            {/* ВКЛАДКА МАССОВОЙ ЗАГРУЗКИ */}
             {activeTab === 'bulk' && canManageEquipment && (
-                <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 max-w-2xl mx-auto">
+                <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 max-w-2xl mx-auto animate-in fade-in slide-in-from-bottom-4">
                     <h3 className="text-xl font-bold mb-2 flex items-center gap-2 dark:text-white">
                         <Upload className="w-5 h-5 text-gray-700 dark:text-gray-300" /> Массовая загрузка
                     </h3>
@@ -326,6 +323,6 @@ export default function Equipment() {
                     </div>
                 </div>
             )}
-        </main>
+        </div>
     );
 }

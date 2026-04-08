@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useLocation, Outlet } from 'react-router-dom';
 import axios from 'axios';
 import {
-    Home, ClipboardList, Truck, Users, Settings as SettingsIcon, User,
+    Home, ClipboardList, Briefcase, Settings as SettingsIcon, User,
     Plus, Sun, Moon, Monitor, BookOpen, Rocket, MessageCircle,
     Send, Smartphone, X, Camera, Trash2, Unplug, ShieldCheck, AlertCircle, RefreshCw
 } from 'lucide-react';
@@ -183,7 +183,6 @@ export default function Layout() {
     };
 
     const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
-    const isWorkerOrDriver = ['worker', 'driver'].includes(role);
     const canCreateApp = ['foreman', 'boss', 'superadmin'].includes(role);
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
     const canEditUsers = ['boss', 'superadmin', 'moderator'].includes(role);
@@ -243,15 +242,19 @@ export default function Layout() {
                     <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Главная</span>
                 </button>
 
-                {/* 2. Заявки (Для рабочих/водителей) ИЛИ Бригады (Для Офиса/Прораба) */}
-                {isWorkerOrDriver && <button onClick={() => navigate('/my-apps')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/my-apps' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><ClipboardList className="w-6 h-6 sm:mb-1" strokeWidth={2.5} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Заявки</span></button>}
-                {!isWorkerOrDriver && <button onClick={() => navigate('/teams')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/teams' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}><Users className="w-6 h-6 sm:mb-1" strokeWidth={2.5} /><span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Бригады</span></button>}
+                {/* 2. Заявки (MyApps) - Видят только Рабочие, Водители и Прорабы */}
+                {['worker', 'driver', 'foreman'].includes(role) && (
+                    <button onClick={() => navigate('/my-apps')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/my-apps' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                        <ClipboardList className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
+                        <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Заявки</span>
+                    </button>
+                )}
 
-                {/* 3. Автопарк СЛЕВА от центральной кнопки (Только для Офиса: Модератор, Босс, Суперадмин) */}
+                {/* 3. РЕСУРСЫ СЛЕВА от центральной кнопки (Только для Офиса) */}
                 {['moderator', 'boss', 'superadmin'].includes(role) && (
-                    <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
-                        <Truck className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
-                        <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Автопарк</span>
+                    <button onClick={() => navigate('/resources')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/resources' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                        <Briefcase className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
+                        <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Ресурсы</span>
                     </button>
                 )}
 
@@ -265,11 +268,11 @@ export default function Layout() {
                     </div>
                 )}
 
-                {/* 5. Автопарк СПРАВА от центральной кнопки (Только для Прораба) */}
+                {/* 5. РЕСУРСЫ СПРАВА от центральной кнопки (Только для Прораба) */}
                 {role === 'foreman' && (
-                    <button onClick={() => navigate('/equipment')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/equipment' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
-                        <Truck className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
-                        <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Автопарк</span>
+                    <button onClick={() => navigate('/resources')} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${location.pathname === '/resources' ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                        <Briefcase className="w-6 h-6 sm:mb-1" strokeWidth={2.5} />
+                        <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Ресурсы</span>
                     </button>
                 )}
 
