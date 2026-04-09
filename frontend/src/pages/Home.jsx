@@ -59,7 +59,7 @@ export default function Home() {
             } else if (role === 'worker') {
                 setActiveApps(active.filter(a => {
                     if (!a.workers) return false;
-                    const wList = a.workers.split(',').map(Number);
+                    const wList = String(a.workers).split(',').map(Number);
                     if (myTeam) {
                         const myMemberId = myTeam.members.find(m => m.tg_user_id === Number(tgId))?.id;
                         return wList.includes(myMemberId);
@@ -234,29 +234,29 @@ export default function Home() {
         setIsSubmitting(false);
     };
 
-    const handleKanbanAppClick = async (app) => {
-        setIsSubmitting(true);
-        try {
-            const res = await axios.get(`/api/applications/${app.id}`);
-            const fullApp = res.data;
-            setAppForm({
-                id: fullApp.id,
-                date_target: fullApp.date_target,
-                object_id: fullApp.object_id,
-                foreman_id: fullApp.foreman_id,
-                workers: fullApp.workers ? fullApp.workers.split(',').map(Number) : [],
-                equipment: fullApp.equipment_data ? JSON.parse(fullApp.equipment_data) : [],
-                status: fullApp.status,
-                isViewOnly: true,
-                isKanbanView: true, // ФЛАГ ДЛЯ БЛОКИРОВКИ РЕДАКТИРОВАНИЯ И ПУБЛИКАЦИИ
-                plan_text: fullApp.plan_text || ''
-            });
-            setGlobalCreateAppOpen(true);
-        } catch (error) {
-            console.error("Ошибка при загрузке заявки:", error);
-            alert("Ошибка загрузки данных заявки.");
+    const handleKanbanAppClick = (app) => {
+        let parsedEquipment = [];
+        if (app.equipment_data) {
+            try {
+                parsedEquipment = typeof app.equipment_data === 'string' ? JSON.parse(app.equipment_data) : app.equipment_data;
+            } catch (e) {
+                console.error("Ошибка парсинга техники", e);
+            }
         }
-        setIsSubmitting(false);
+
+        setAppForm({
+            id: app.id,
+            date_target: app.date_target,
+            object_id: app.object_id,
+            foreman_id: app.foreman_id,
+            workers: app.workers ? String(app.workers).split(',').map(Number) : [],
+            equipment: parsedEquipment,
+            status: app.status,
+            isViewOnly: true,
+            isKanbanView: true,
+            plan_text: app.plan_text || ''
+        });
+        setGlobalCreateAppOpen(true);
     };
 
     const openFreeModal = (type, app, teamId = null) => {
