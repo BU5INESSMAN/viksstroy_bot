@@ -21,3 +21,4 @@ data/bot_database.db
 *.njsproj
 *.sln
 *.sw?
+dist/

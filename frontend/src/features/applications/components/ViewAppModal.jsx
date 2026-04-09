@@ -2,7 +2,7 @@ import { useState } from 'react';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle, HardHat, Flag,
-    X, User, ChevronLeft, ChevronRight, Image
+    X, User, ChevronLeft, ChevronRight, Image, Crown
 } from 'lucide-react';
 
 /* ─── Photo Slider ─── */
@@ -67,17 +67,26 @@ function PhotoSlider({ photos }) {
 }
 
 /* ─── Helpers ─── */
-function parseObjectName(raw) {
-    if (!raw) return { name: null, address: null };
-    const match = raw.match(/^(.+?)\s*\((.+)\)\s*$/);
-    if (match) return { name: match[1].trim(), address: match[2].trim() };
-    return { name: raw.trim(), address: null };
+function buildObjectDisplay(objName, objAddress) {
+    const name = objName?.trim() || null;
+    const addr = objAddress?.trim() || null;
+
+    if (name && addr && name !== addr) return `${name} (${addr})`;
+    if (name) return name;
+    if (addr) return addr;
+    return 'Объект не указан';
 }
 
 function formatTime(start, end) {
     const s = start ?? '08';
     const e = end ?? '17';
     return `${String(s).padStart(2, '0')}:00 – ${String(e).padStart(2, '0')}:00`;
+}
+
+function isForeman(member) {
+    if (member.is_foreman) return true;
+    const pos = (member.position || '').toLowerCase();
+    return pos.includes('бригадир') || pos.includes('прораб');
 }
 
 /* ─── InfoCell ─── */
@@ -106,14 +115,8 @@ export default function ViewAppModal({ app, onClose, data }) {
     const st = statusConfig[app.status] || statusConfig.waiting;
     const StIcon = st.icon;
 
-    // ── Parse object name / address ──
-    const parsed = parseObjectName(app.obj_name);
-    const objectName = parsed.name || app.object_address || 'Объект не указан';
-    const objectAddress = parsed.address || app.object_address || null;
-    // If regex extracted an address AND object_address exists and differs, prefer object_address
-    const displayAddress = app.object_address && app.object_address !== parsed.name
-        ? app.object_address
-        : parsed.address || null;
+    // ── Object display: "Name (Address)" ──
+    const objectDisplay = buildObjectDisplay(app.obj_name, app.object_address);
 
     // ── Equipment ──
     let eqList = [];
@@ -124,24 +127,46 @@ export default function ViewAppModal({ app, onClose, data }) {
     }
 
     // ── Workers: prefer enriched members_data, fall back to selected_members IDs ──
-    let resolvedWorkers = [];
+    let workersList = [];
     if (app.members_data && app.members_data.length > 0) {
-        resolvedWorkers = app.members_data.map(m => ({
+        workersList = app.members_data.map(m => ({
             id: m.id,
             fio: m.fio || `Сотрудник #${m.id}`,
-            team: m.team_name || null,
+            team_id: m.team_id,
+            team_name: m.team_name || null,
+            position: m.position || '',
+            is_foreman: m.is_foreman || false,
+            tg_user_id: m.tg_user_id,
         }));
     } else {
         const rawIds = app.selected_members || app.workers || '';
         const ids = rawIds ? String(rawIds).split(',').map(Number).filter(Boolean) : [];
-        const allMembers = data?.teams?.flatMap(t => (t.members || []).map(m => ({ ...m, team_name: t.name }))) || [];
-        resolvedWorkers = ids.map(id => {
+        const allMembers = data?.teams?.flatMap(t =>
+            (t.members || []).map(m => ({ ...m, team_name: t.name, team_id: t.id }))
+        ) || [];
+        workersList = ids.map(id => {
             const found = allMembers.find(m => m.id === id);
             return found
-                ? { id, fio: found.fio, team: found.team_name || null }
-                : { id, fio: `Сотрудник #${id}`, team: null };
+                ? { id, fio: found.fio, team_id: found.team_id, team_name: found.team_name, position: found.position || '', is_foreman: found.is_foreman || false, tg_user_id: found.tg_user_id }
+                : { id, fio: `Сотрудник #${id}`, team_id: null, team_name: null, position: '', is_foreman: false, tg_user_id: null };
         });
     }
+
+    // ── Group workers by team ──
+    const teamGroups = {};
+    for (const w of workersList) {
+        const key = w.team_id ?? 0;
+        if (!teamGroups[key]) {
+            teamGroups[key] = { name: w.team_name || 'Без бригады', members: [] };
+        }
+        teamGroups[key].members.push(w);
+    }
+    // Sort: foremen first inside each group
+    for (const g of Object.values(teamGroups)) {
+        g.members.sort((a, b) => (isForeman(b) ? 1 : 0) - (isForeman(a) ? 1 : 0));
+    }
+
+    const totalWorkers = workersList.length;
 
     // ── Photos: collect from equipment photo_url or app.photos ──
     const photos = [
@@ -179,7 +204,7 @@ export default function ViewAppModal({ app, onClose, data }) {
                 {/* ── Body ── */}
                 <div className="p-6 space-y-5 max-h-[75vh] overflow-y-auto">
 
-                    {/* Info grid */}
+                    {/* Info grid: Date, Foreman, Object (combined) */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <InfoCell label="Дата работ" icon={Calendar} iconColor="text-blue-500">
                             {app.date_target}
@@ -188,52 +213,85 @@ export default function ViewAppModal({ app, onClose, data }) {
                             {app.foreman_name || 'Не назначен'}
                         </InfoCell>
                         <InfoCell label="Объект" icon={MapPin} iconColor="text-red-500">
-                            {objectName}
+                            {objectDisplay}
                         </InfoCell>
                     </div>
-
-                    {/* Address (separate row) */}
-                    {displayAddress && (
-                        <div className="bg-blue-50/60 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100/80 dark:border-blue-800/30">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 block">Адрес</span>
-                            <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm leading-relaxed flex items-start gap-2">
-                                <MapPin className="w-4 h-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                                {displayAddress}
-                            </p>
-                        </div>
-                    )}
 
                     {/* Photo Slider */}
                     <PhotoSlider photos={photos} />
 
-                    {/* Workers */}
+                    {/* Workers — grouped by team */}
                     <div className="border border-indigo-100 dark:border-indigo-900/30 rounded-2xl overflow-hidden">
                         <div className="px-5 pt-4 pb-3 bg-indigo-50/40 dark:bg-indigo-900/10">
                             <h4 className="text-sm font-bold text-indigo-900 dark:text-indigo-300 flex items-center gap-2">
                                 <Users className="w-5 h-5 text-indigo-500" />
                                 Состав рабочих
                                 <span className="ml-auto text-xs font-bold bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 px-2 py-0.5 rounded-md">
-                                    {resolvedWorkers.length}
+                                    {totalWorkers}
                                 </span>
                             </h4>
                         </div>
                         <div className="p-4 bg-indigo-50/20 dark:bg-indigo-900/5">
-                            {resolvedWorkers.length > 0 ? (
-                                <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                                    {resolvedWorkers.map((w, i) => (
-                                        <li key={w.id ?? i} className="flex items-center gap-3 bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-100 dark:border-gray-700">
-                                            <div className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center flex-shrink-0">
-                                                <User className="w-4 h-4 text-indigo-500" />
+                            {totalWorkers > 0 ? (
+                                <div className="space-y-4">
+                                    {Object.entries(teamGroups).map(([teamId, group]) => (
+                                        <div key={teamId}>
+                                            {/* Team header */}
+                                            <div className="flex items-center gap-2 mb-2.5">
+                                                <div className="w-1.5 h-1.5 rounded-full bg-indigo-400"></div>
+                                                <span className="text-xs font-bold text-indigo-700 dark:text-indigo-300 uppercase tracking-wider">
+                                                    {group.name}
+                                                </span>
+                                                <span className="text-[10px] text-gray-400 font-medium">
+                                                    ({group.members.length})
+                                                </span>
+                                                <div className="flex-1 border-t border-indigo-100 dark:border-indigo-900/30 ml-2"></div>
                                             </div>
-                                            <div className="min-w-0">
-                                                <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">{w.fio}</p>
-                                                {w.team && (
-                                                    <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">{w.team}</p>
-                                                )}
-                                            </div>
-                                        </li>
+                                            {/* Members list */}
+                                            <ul className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                                {group.members.map((w, i) => {
+                                                    const isBrig = isForeman(w);
+                                                    return (
+                                                        <li
+                                                            key={w.id ?? i}
+                                                            className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+                                                                isBrig
+                                                                    ? 'bg-amber-50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/40'
+                                                                    : 'bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700'
+                                                            }`}
+                                                        >
+                                                            <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
+                                                                isBrig
+                                                                    ? 'bg-amber-100 dark:bg-amber-900/30'
+                                                                    : 'bg-indigo-100 dark:bg-indigo-900/30'
+                                                            }`}>
+                                                                {isBrig
+                                                                    ? <Crown className="w-4 h-4 text-amber-500" />
+                                                                    : <User className="w-4 h-4 text-indigo-500" />
+                                                                }
+                                                            </div>
+                                                            <div className="min-w-0 flex-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <p className="text-sm font-semibold text-gray-800 dark:text-gray-200 truncate">
+                                                                        {w.fio}
+                                                                    </p>
+                                                                    {isBrig && (
+                                                                        <span className="flex-shrink-0 text-[9px] uppercase tracking-wider font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded-md">
+                                                                            Бригадир
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                {w.position && !isBrig && (
+                                                                    <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">{w.position}</p>
+                                                                )}
+                                                            </div>
+                                                        </li>
+                                                    );
+                                                })}
+                                            </ul>
+                                        </div>
                                     ))}
-                                </ul>
+                                </div>
                             ) : (
                                 <p className="text-sm text-gray-400 italic text-center py-2">Рабочие не назначены</p>
                             )}
