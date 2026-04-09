@@ -38,21 +38,21 @@ export default function ViewAppModal({ app, onClose, data }) {
 
     return (
         <div className="fixed inset-0 z-[120] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity flex items-center justify-center p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl relative transition-colors overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+            <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-3xl shadow-2xl relative transition-colors overflow-hidden animate-in fade-in zoom-in-95 duration-200">
 
                 {/* Шапка */}
-                <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
-                    <div>
-                        <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-white mb-1.5">
-                            <ClipboardList className="w-6 h-6 text-blue-500 mr-2.5" />
-                            Просмотр наряда
+                <div className="flex justify-between items-start p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
+                    <div className="space-y-2">
+                        <h2 className="text-lg font-bold flex items-center text-gray-800 dark:text-white">
+                            <ClipboardList className="w-5 h-5 text-blue-500 mr-2" />
+                            Просмотр наряда <span className="text-gray-400 font-normal ml-2">#{app.id}</span>
                         </h2>
-                        <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[10px] font-extrabold uppercase tracking-wider ${currentStatus.color}`}>
+                        <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider ${currentStatus.color}`}>
                             <StatusIcon className="w-3.5 h-3.5" />
                             {currentStatus.label}
                         </span>
                     </div>
-                    <button onClick={onClose} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-2 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-100 dark:border-gray-700 transition-colors active:scale-95 shadow-sm">
+                    <button onClick={onClose} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-2 hover:bg-gray-100 dark:hover:bg-gray-700 border border-gray-100 dark:border-gray-700 transition-colors active:scale-95 shadow-sm flex-shrink-0 ml-4">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -61,30 +61,36 @@ export default function ViewAppModal({ app, onClose, data }) {
                 <div className="p-6 space-y-6 max-h-[75vh] overflow-y-auto custom-scrollbar">
 
                     {/* Базовая информация */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                         <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-2xl border border-gray-100 dark:border-gray-700">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Дата работ</span>
-                            <div className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                                <Calendar className="w-4 h-4 text-blue-500" />
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 block">Дата работ</span>
+                            <div className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2 text-sm">
+                                <Calendar className="w-4 h-4 text-blue-500 flex-shrink-0" />
                                 {app.date_target}
                             </div>
                         </div>
                         <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-2xl border border-gray-100 dark:border-gray-700">
-                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Объект</span>
-                            <div className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                                <MapPin className="w-4 h-4 text-red-500" />
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 block">Прораб</span>
+                            <div className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2 text-sm">
+                                <User className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                                {app.foreman_name || 'Не назначен'}
+                            </div>
+                        </div>
+                        <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-2xl border border-gray-100 dark:border-gray-700">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 block">Объект</span>
+                            <div className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2 text-sm">
+                                <MapPin className="w-4 h-4 text-red-500 flex-shrink-0" />
                                 {app.obj_name || 'Неизвестный объект'}
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-gray-50 dark:bg-gray-700/30 p-4 rounded-2xl border border-gray-100 dark:border-gray-700">
-                        <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1 block">Прораб</span>
-                        <div className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2">
-                            <User className="w-4 h-4 text-yellow-500" />
-                            {app.foreman_name || 'Не назначен'}
+                    {app.object_address && (
+                        <div className="bg-blue-50/50 dark:bg-blue-900/10 p-4 rounded-2xl border border-blue-100 dark:border-blue-800/30">
+                            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1.5 block">Адрес</span>
+                            <p className="font-semibold text-gray-800 dark:text-gray-200 text-sm leading-relaxed">{app.object_address}</p>
                         </div>
-                    </div>
+                    )}
 
                     {/* Рабочие */}
                     <div className="border border-indigo-100 dark:border-indigo-900/30 rounded-2xl p-5 bg-indigo-50/30 dark:bg-indigo-900/10">
@@ -145,8 +151,8 @@ export default function ViewAppModal({ app, onClose, data }) {
                 </div>
 
                 {/* Подвал */}
-                <div className="p-6 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
-                    <button type="button" onClick={onClose} className="w-full bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-white py-4 px-6 rounded-xl font-bold shadow-sm hover:bg-gray-300 dark:hover:bg-gray-600 transition-all active:scale-[0.98]">
+                <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
+                    <button type="button" onClick={onClose} className="w-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 px-6 rounded-xl font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition-all active:scale-[0.98]">
                         Закрыть
                     </button>
                 </div>

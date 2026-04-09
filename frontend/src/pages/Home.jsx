@@ -8,6 +8,7 @@ import ActiveApplicationsCard from '../features/applications/components/ActiveAp
 import MyTeamCard from '../features/applications/components/MyTeamCard';
 import CreateAppModal from '../features/applications/components/CreateAppModal';
 import ConfirmFreeModal from '../features/applications/components/ConfirmFreeModal';
+import ViewAppModal from '../features/applications/components/ViewAppModal';
 
 export default function Home() {
     const smartDates = getSmartDates();
@@ -30,6 +31,7 @@ export default function Home() {
 
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
     const [freeModal, setFreeModal] = useState({ isOpen: false, type: '', app: null, teamId: null, inputValue: '' });
+    const [viewApp, setViewApp] = useState(null);
 
     const fetchData = () => {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
@@ -217,20 +219,7 @@ export default function Home() {
     };
 
     const openAppModalFromKanban = (app) => {
-        axios.get('/api/objects/active').then(res => setObjectsList(res.data)).catch(()=>{});
-        setAppForm({
-            id: app.id, status: app.status, date_target: app.date_target,
-            object_id: app.object_id || '', object_address: app.object_address || '',
-            team_ids: app.team_id ? String(app.team_id).split(',').map(Number) : [],
-            team_name: app.team_name || '',
-            members: app.selected_members ? app.selected_members.split(',').map(Number) : [],
-            members_data: app.members_data || [],
-            equipment: app.equipment_data ? JSON.parse(app.equipment_data) : [],
-            comment: app.comment || '', isViewOnly: true, foreman_id: app.foreman_id, foreman_name: app.foreman_name,
-            is_team_freed: app.is_team_freed,
-            freed_team_ids: app.freed_team_ids ? String(app.freed_team_ids).split(',').map(Number) : []
-        });
-        setGlobalCreateAppOpen(true);
+        setViewApp(app);
     };
 
     const openFreeModal = (type, dataPayload) => {
@@ -282,6 +271,9 @@ export default function Home() {
         });
     }
 
+    const todayApps = activeApps.filter(a => a.date_target <= todayYYYYMMDD);
+    const upcomingApps = activeApps.filter(a => a.date_target > todayYYYYMMDD);
+
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
 
     if (loading) return (
@@ -294,10 +286,11 @@ export default function Home() {
     return (
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 pb-24">
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-6">
                 {['worker', 'driver', 'foreman', 'boss', 'superadmin'].includes(role) && (
                     <ActiveApplicationsCard
-                        activeApps={activeApps}
+                        todayApps={todayApps}
+                        upcomingApps={upcomingApps}
                         role={role}
                         tgId={tgId}
                         openProfile={openProfile}
@@ -316,7 +309,7 @@ export default function Home() {
                         </h2>
                     </div>
 
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                         <KanbanCol title="На модерации" icon={Clock} colorClass="bg-yellow-50/80 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 border-yellow-100 dark:border-yellow-900/50" apps={appsMap.waiting} isOpen={openKanban.waiting} toggleOpen={() => setOpenKanban({...openKanban, waiting: !openKanban.waiting})} onAppClick={openAppModalFromKanban} />
                         <KanbanCol title="Одобрены" icon={CheckCircle} colorClass="bg-emerald-50/80 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50" apps={appsMap.approved} isOpen={openKanban.approved} toggleOpen={() => setOpenKanban({...openKanban, approved: !openKanban.approved})} onAppClick={openAppModalFromKanban} />
                         <KanbanCol title="В работе" icon={HardHat} colorClass="bg-blue-50/80 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 border-blue-100 dark:border-blue-900/50" apps={appsMap.published} isOpen={openKanban.published} toggleOpen={() => setOpenKanban({...openKanban, published: !openKanban.published})} onAppClick={openAppModalFromKanban} />
@@ -332,6 +325,10 @@ export default function Home() {
                     isSubmitting={isSubmitting}
                     executeFree={executeFree}
                 />
+            )}
+
+            {viewApp && (
+                <ViewAppModal app={viewApp} onClose={() => setViewApp(null)} data={data} />
             )}
 
             {isGlobalCreateAppOpen && (
