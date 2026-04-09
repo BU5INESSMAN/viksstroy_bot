@@ -2,7 +2,7 @@ import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import {
     FileText, CheckCircle, Clock, Search, X, MapPin,
-    Download, Save, AlertTriangle, Edit3, Upload, Lock
+    Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings
 } from 'lucide-react';
 
 export default function KP() {
@@ -20,6 +20,8 @@ export default function KP() {
     const [kpItems, setKpItems] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [selectedForExport, setSelectedForExport] = useState([]);
+    const [showSettings, setShowSettings] = useState(false);
+    const [isEditing, setIsEditing] = useState(false);
 
     const fileInputRef = useRef(null);
 
@@ -41,8 +43,9 @@ export default function KP() {
 
     const openModal = async (app) => {
         setModalApp(app);
+        setIsEditing(false);
         try {
-            const res = await axios.get(`/api/kp/apps/${app.id}/items`);
+            const res = await axios.get(`/api/kp/apps/${app.id}/items?tg_id=${tgId}`);
             setKpItems(res.data.map(i => ({
                 ...i,
                 volume: i.volume || '',
@@ -133,15 +136,12 @@ export default function KP() {
                 </h2>
 
                 {isOffice && (
-                    <div className="flex flex-wrap gap-2">
+                    <>
                         <input type="file" className="hidden" ref={fileInputRef} onChange={handleUploadCatalog} accept=".xlsx,.csv" />
-                        <button onClick={() => fileInputRef.current.click()} className="flex-1 md:flex-none bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 transition-all flex items-center justify-center gap-2 hover:bg-gray-100">
-                            <Upload className="w-4 h-4" /> Импорт
+                        <button onClick={() => setShowSettings(true)} className="bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 transition-all flex items-center gap-2 hover:bg-gray-100">
+                            <Settings className="w-4 h-4" /> Настройка КП
                         </button>
-                        <button onClick={handleDownloadCatalog} className="flex-1 md:flex-none bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 transition-all flex items-center justify-center gap-2 hover:bg-gray-100">
-                            <Download className="w-4 h-4" /> Экспорт
-                        </button>
-                    </div>
+                    </>
                 )}
             </div>
 
@@ -191,9 +191,9 @@ export default function KP() {
                                             <div className="divide-y divide-gray-50 dark:divide-gray-700">
                                                 {items.map(item => (
                                                     <div key={item.kp_id} className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-                                                        <div className="flex-1"><p className="font-bold text-sm text-gray-800 dark:text-gray-100">{item.name}</p><p className="text-[10px] text-gray-400 mt-1">ЗП: {item.current_salary}₽ / {item.unit}</p></div>
+                                                        <div className="flex-1"><p className="font-bold text-sm text-gray-800 dark:text-gray-100">{item.name}</p>{isOffice ? <p className="text-[10px] text-gray-400 mt-1">ЗП: {item.current_salary}₽ · Цена: {item.current_price}₽ / {item.unit}</p> : <p className="text-[10px] text-gray-400 mt-1">{item.unit}</p>}</div>
                                                         <div className="flex items-center gap-2">
-                                                            <input type="number" min="0" step="0.1" disabled={activeTab !== 'to_fill' && !(activeTab === 'approved' && isOffice)} value={item.volume} onChange={(e) => handleVolumeChange(item.kp_id, e.target.value)} className="w-20 p-2 text-center font-bold border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-white" />
+                                                            <input type="number" min="0" step="0.1" disabled={activeTab !== 'to_fill' && !(activeTab === 'approved' && isOffice) && !(activeTab === 'pending_review' && isEditing)} value={item.volume} onChange={(e) => handleVolumeChange(item.kp_id, e.target.value)} className="w-20 p-2 text-center font-bold border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-white" />
                                                             <span className="text-[10px] font-bold text-gray-400">{item.unit}</span>
                                                         </div>
                                                     </div>
@@ -206,16 +206,57 @@ export default function KP() {
                         </div>
                         {kpItems.length > 0 && (
                             <div className="p-6 border-t bg-gray-50/50 dark:bg-gray-900/50">
-                                <div className="flex justify-between items-center mb-6 bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
-                                    <span className="text-xs font-bold text-gray-400 uppercase">Сумма ЗП:</span>
-                                    <span className="text-xl font-black text-gray-800 dark:text-white">{totalSalary.toLocaleString()} ₽</span>
-                                </div>
+                                {isOffice && (
+                                    <div className="space-y-2 mb-6">
+                                        <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                                            <span className="text-xs font-bold text-gray-400 uppercase">Сумма ЗП:</span>
+                                            <span className="text-xl font-black text-gray-800 dark:text-white">{totalSalary.toLocaleString()} ₽</span>
+                                        </div>
+                                        <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                                            <span className="text-xs font-bold text-gray-400 uppercase">Сумма Цена:</span>
+                                            <span className="text-xl font-black text-gray-800 dark:text-white">{totalPrice.toLocaleString()} ₽</span>
+                                        </div>
+                                    </div>
+                                )}
                                 <div className="flex gap-3">
-                                    {activeTab === 'to_fill' && <button onClick={submitVolumes} className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-xl">Отправить отчет</button>}
-                                    {activeTab === 'pending_review' && <button onClick={() => axios.post(`/api/kp/apps/${modalApp.id}/review`, {action: 'approve'}).then(() => fetchApps())} className="flex-1 bg-emerald-500 text-white font-bold py-4 rounded-xl">Одобрить</button>}
+                                    {activeTab === 'to_fill' && <button onClick={submitVolumes} disabled={isSubmitting} className="flex-1 bg-blue-600 text-white font-bold py-4 rounded-xl disabled:opacity-50">Отправить отчет</button>}
+                                    {activeTab === 'pending_review' && (role === 'foreman' || isOffice) && (
+                                        <>
+                                            <button onClick={() => setIsEditing(e => !e)} className={`flex items-center justify-center gap-2 px-5 py-4 rounded-xl font-bold transition-colors ${isEditing ? 'bg-yellow-500 text-white' : 'bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200'}`}>
+                                                <Edit3 className="w-4 h-4" /> {isEditing ? 'Отмена' : 'Редактировать'}
+                                            </button>
+                                            <button onClick={async () => {
+                                                const payload = { action: 'approve' };
+                                                if (isEditing) payload.items = kpItems.map(i => ({ kp_id: i.kp_id, volume: i.volume || 0 }));
+                                                await axios.post(`/api/kp/apps/${modalApp.id}/review`, payload);
+                                                setModalApp(null); fetchApps();
+                                            }} className="flex-1 bg-emerald-500 text-white font-bold py-4 rounded-xl">Одобрить</button>
+                                        </>
+                                    )}
                                 </div>
                             </div>
                         )}
+                    </div>
+                </div>
+            )}
+            {showSettings && (
+                <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
+                        <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700">
+                            <h3 className="text-lg font-bold dark:text-white flex items-center gap-2"><Settings className="w-5 h-5 text-blue-500" /> Настройка КП</h3>
+                            <button onClick={() => setShowSettings(false)} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-2 border border-gray-100 dark:border-gray-700"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-6 space-y-4">
+                            <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">Импорт обновляет справочник цен из Excel-файла. Экспорт выгружает актуальный справочник для просмотра и редактирования.</p>
+                            <div className="grid grid-cols-2 gap-3">
+                                <button onClick={() => { fileInputRef.current.click(); setShowSettings(false); }} className="bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 p-4 rounded-2xl text-sm font-bold border border-blue-100 dark:border-blue-800/30 flex flex-col items-center gap-2 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors">
+                                    <Upload className="w-6 h-6" /> Импорт
+                                </button>
+                                <button onClick={() => { handleDownloadCatalog(); setShowSettings(false); }} className="bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 p-4 rounded-2xl text-sm font-bold border border-emerald-100 dark:border-emerald-800/30 flex flex-col items-center gap-2 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 transition-colors">
+                                    <Download className="w-6 h-6" /> Экспорт
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}

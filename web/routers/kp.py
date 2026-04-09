@@ -27,9 +27,21 @@ async def get_kp_dashboard(tg_id: int):
 
 
 @router.get("/api/kp/apps/{app_id}/items")
-async def get_app_kp_items(app_id: int):
+async def get_app_kp_items(app_id: int, tg_id: int = 0):
     if db.conn is None: await db.init_db()
-    return await db.get_app_kp_items(app_id)
+    items = await db.get_app_kp_items(app_id)
+    # Strip financial data for non-office roles (privacy)
+    if tg_id:
+        real_tg_id = await resolve_id(tg_id)
+        user = await db.get_user(real_tg_id)
+        role = dict(user).get('role', 'worker') if user else 'worker'
+        if role not in ('moderator', 'boss', 'superadmin'):
+            for item in items:
+                item.pop('salary', None)
+                item.pop('price', None)
+                item.pop('saved_salary', None)
+                item.pop('saved_price', None)
+    return items
 
 
 @router.post("/api/kp/apps/{app_id}/submit")
@@ -59,6 +71,10 @@ async def submit_app_kp(app_id: int, request: Request):
 async def review_app_kp(app_id: int, request: Request):
     if db.conn is None: await db.init_db()
     data = await request.json()
+    # If foreman edited volumes before approving, save them first
+    items = data.get('items')
+    if items and data.get('action') == 'approve':
+        await db.update_kp_volumes_only(app_id, items)
     await db.review_kp_report(app_id, data.get('action'))
     return {"status": "ok"}
 
