@@ -70,6 +70,11 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         except Exception:
             pass
 
+        try:
+            await self.conn.execute("ALTER TABLE object_kp_plan ADD COLUMN target_volume REAL DEFAULT 0")
+        except Exception:
+            pass
+
         await self.conn.commit()
 
         await self.upgrade_db_for_invites()

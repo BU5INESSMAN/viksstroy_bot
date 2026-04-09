@@ -20,6 +20,7 @@ origins = ["*"]
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 os.makedirs("data/uploads", exist_ok=True)
+os.makedirs("data/uploads/objects", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 
 app.include_router(auth.router)

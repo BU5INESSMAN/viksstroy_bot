@@ -2,13 +2,15 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import {
     MapPin, Plus, Settings, Archive, CheckCircle,
-    X, Search, Users, Truck, FileText, Check
+    X, Search, Users, Truck, FileText, Check,
+    Upload, Trash2, BarChart3, Calendar, ChevronDown, ChevronUp
 } from 'lucide-react';
 
 export default function Objects() {
     const role = localStorage.getItem('user_role') || 'Гость';
     const canManage = ['moderator', 'boss', 'superadmin', 'foreman'].includes(role);
     const canCreate = ['moderator', 'boss', 'superadmin'].includes(role);
+    const canViewStats = ['moderator', 'boss', 'superadmin'].includes(role);
 
     const [objects, setObjects] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -21,7 +23,7 @@ export default function Objects() {
     // Модалка редактирования
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [editObj, setEditObj] = useState(null);
-    const [activeTab, setActiveTab] = useState('info'); // info | resources | kp
+    const [activeTab, setActiveTab] = useState('info'); // info | resources | kp | files
 
     // Списки для модалки редактирования
     const [allTeams, setAllTeams] = useState([]);
@@ -30,7 +32,19 @@ export default function Objects() {
     // Списки для КП
     const [kpCatalog, setKpCatalog] = useState([]);
     const [objectKpPlan, setObjectKpPlan] = useState([]);
+    const [targetVolumes, setTargetVolumes] = useState({});
     const [kpSearch, setKpSearch] = useState('');
+
+    // Файлы объекта
+    const [objectFiles, setObjectFiles] = useState([]);
+    const [uploading, setUploading] = useState(false);
+
+    // Статистика
+    const [isStatsModalOpen, setStatsModalOpen] = useState(false);
+    const [statsObj, setStatsObj] = useState(null);
+    const [statsData, setStatsData] = useState(null);
+    const [statsLoading, setStatsLoading] = useState(false);
+    const [expandedDates, setExpandedDates] = useState({});
 
     const fetchObjects = async () => {
         setLoading(true);
@@ -77,15 +91,20 @@ export default function Objects() {
         setEditModalOpen(true);
 
         try {
-            const [dashRes, kpCatRes, objKpRes] = await Promise.all([
+            const [dashRes, kpCatRes, objKpRes, filesRes] = await Promise.all([
                 axios.get('/api/dashboard'),
                 axios.get('/api/kp/catalog'),
-                axios.get(`/api/objects/${obj.id}/kp`)
+                axios.get(`/api/objects/${obj.id}/kp`),
+                axios.get(`/api/objects/${obj.id}/files`)
             ]);
             setAllTeams(dashRes.data.teams || []);
             setAllEquips(dashRes.data.equipment || []);
             setKpCatalog(kpCatRes.data || []);
             setObjectKpPlan(objKpRes.data.map(k => k.id) || []);
+            const tvMap = {};
+            objKpRes.data.forEach(k => { tvMap[k.id] = k.target_volume || 0; });
+            setTargetVolumes(tvMap);
+            setObjectFiles(filesRes.data || []);
         } catch (e) {}
     };
 
@@ -105,9 +124,44 @@ export default function Objects() {
 
     const handleSaveKPPlan = async () => {
         try {
-            await axios.post(`/api/objects/${editObj.id}/kp/update`, { kp_ids: objectKpPlan });
+            await axios.post(`/api/objects/${editObj.id}/kp/update`, { kp_ids: objectKpPlan, target_volumes: targetVolumes });
             alert("План КП успешно обновлен!");
         } catch (e) { alert("Ошибка сохранения плана КП"); }
+    };
+
+    const handleFileUpload = async (e) => {
+        const files = e.target.files;
+        if (!files.length) return;
+        setUploading(true);
+        const fd = new FormData();
+        for (let f of files) fd.append('files', f);
+        try {
+            await axios.post(`/api/objects/${editObj.id}/files/upload`, fd);
+            const res = await axios.get(`/api/objects/${editObj.id}/files`);
+            setObjectFiles(res.data || []);
+        } catch (err) { alert("Ошибка загрузки файлов"); }
+        setUploading(false);
+        e.target.value = '';
+    };
+
+    const handleDeleteFile = async (fileId) => {
+        if (!window.confirm("Удалить файл?")) return;
+        try {
+            await axios.delete(`/api/objects/files/${fileId}`);
+            setObjectFiles(prev => prev.filter(f => f.id !== fileId));
+        } catch (e) { alert("Ошибка удаления"); }
+    };
+
+    const openStatsModal = async (obj) => {
+        setStatsObj(obj);
+        setStatsModalOpen(true);
+        setStatsLoading(true);
+        setExpandedDates({});
+        try {
+            const res = await axios.get(`/api/objects/${obj.id}/stats`);
+            setStatsData(res.data);
+        } catch (e) { alert("Ошибка загрузки статистики"); }
+        setStatsLoading(false);
     };
 
     const toggleResource = (type, id) => {
@@ -171,6 +225,11 @@ export default function Objects() {
                                 <button onClick={() => openEditModal(obj)} className="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 py-2.5 rounded-xl text-sm font-bold transition-colors flex justify-center items-center gap-1.5">
                                     <Settings className="w-4 h-4" /> Редактировать
                                 </button>
+                                {canViewStats && (
+                                    <button onClick={() => openStatsModal(obj)} className="flex-none px-4 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 py-2.5 rounded-xl font-bold transition-colors flex justify-center items-center" title="Статистика">
+                                        <BarChart3 className="w-4 h-4" />
+                                    </button>
+                                )}
                                 <button onClick={() => handleArchiveToggle(obj.id, obj.is_archived === 1)} className="flex-none px-4 bg-gray-50 text-gray-500 hover:bg-gray-200 dark:bg-gray-700 py-2.5 rounded-xl font-bold transition-colors flex justify-center items-center">
                                     <Archive className="w-4 h-4" />
                                 </button>
@@ -213,8 +272,9 @@ export default function Objects() {
 
                         <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
                             <button onClick={() => setActiveTab('info')} className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'info' ? 'text-blue-600 border-b-2 border-blue-600 bg-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>Инфо</button>
-                            <button onClick={() => setActiveTab('resources')} className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'resources' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>Ресурсы по ум.</button>
+                            <button onClick={() => setActiveTab('resources')} className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'resources' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>Ресурсы</button>
                             <button onClick={() => setActiveTab('kp')} className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'kp' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>План КП</button>
+                            <button onClick={() => setActiveTab('files')} className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'files' ? 'text-orange-600 border-b-2 border-orange-600 bg-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>Файлы</button>
                         </div>
 
                         <div className="p-6">
@@ -269,6 +329,7 @@ export default function Objects() {
                                             Сохранить план
                                         </button>
                                     </div>
+                                    <p className="text-xs text-gray-400 italic">Для выбранных работ можно задать плановый объем (поле справа).</p>
 
                                     <div className="relative">
                                         <Search className="w-5 h-5 absolute left-3.5 top-3.5 text-gray-400" />
@@ -283,14 +344,26 @@ export default function Objects() {
                                                     {kpByCategory[category].map(k => {
                                                         const isSelected = objectKpPlan.includes(k.id);
                                                         return (
-                                                            <div key={k.id} onClick={() => toggleKp(k.id)} className={`p-4 flex items-center gap-3 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50 ${isSelected ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : ''}`}>
-                                                                <div className={`w-5 h-5 flex-shrink-0 rounded border flex items-center justify-center ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300 dark:border-gray-600'}`}>
+                                                            <div key={k.id} className={`p-4 flex items-center gap-3 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700/50 ${isSelected ? 'bg-emerald-50/50 dark:bg-emerald-900/10' : ''}`}>
+                                                                <div onClick={() => toggleKp(k.id)} className={`w-5 h-5 flex-shrink-0 rounded border flex items-center justify-center cursor-pointer ${isSelected ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300 dark:border-gray-600'}`}>
                                                                     {isSelected && <Check className="w-3.5 h-3.5" />}
                                                                 </div>
-                                                                <div className="flex-1">
+                                                                <div className="flex-1 cursor-pointer" onClick={() => toggleKp(k.id)}>
                                                                     <p className={`text-sm font-bold leading-tight ${isSelected ? 'text-emerald-900 dark:text-emerald-300' : 'text-gray-800 dark:text-gray-200'}`}>{k.name}</p>
                                                                     <p className="text-xs text-gray-500 font-medium mt-1">ЗП: {k.salary} руб / {k.unit}</p>
                                                                 </div>
+                                                                {isSelected && (
+                                                                    <input
+                                                                        type="number"
+                                                                        min="0"
+                                                                        step="0.1"
+                                                                        placeholder="План. объем"
+                                                                        value={targetVolumes[k.id] || ''}
+                                                                        onClick={e => e.stopPropagation()}
+                                                                        onChange={e => setTargetVolumes(prev => ({ ...prev, [k.id]: parseFloat(e.target.value) || 0 }))}
+                                                                        className="w-24 px-2 py-1.5 text-xs border border-emerald-200 dark:border-emerald-700 bg-white dark:bg-gray-700 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white text-right"
+                                                                    />
+                                                                )}
                                                             </div>
                                                         )
                                                     })}
@@ -301,6 +374,132 @@ export default function Objects() {
                                     </div>
                                 </div>
                             )}
+
+                            {/* ТАБ 4: ФАЙЛЫ */}
+                            {activeTab === 'files' && (
+                                <div className="space-y-4">
+                                    <div className="p-4 bg-orange-50/50 dark:bg-orange-900/10 rounded-2xl border border-orange-100 dark:border-orange-800/30">
+                                        <label className="flex items-center gap-2 text-xs font-bold text-orange-800 dark:text-orange-300 mb-3 uppercase tracking-wider"><Upload className="w-4 h-4" /> Загрузить PDF файлы</label>
+                                        <label className={`block w-full text-center py-4 border-2 border-dashed border-orange-200 dark:border-orange-700 rounded-xl cursor-pointer hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-colors ${uploading ? 'opacity-50 pointer-events-none' : ''}`}>
+                                            <input type="file" accept=".pdf" multiple onChange={handleFileUpload} className="hidden" />
+                                            <span className="text-sm font-bold text-orange-600 dark:text-orange-400">{uploading ? 'Загрузка...' : 'Нажмите для выбора файлов (.pdf)'}</span>
+                                        </label>
+                                    </div>
+
+                                    {objectFiles.length > 0 ? (
+                                        <div className="space-y-2">
+                                            {objectFiles.map(f => (
+                                                <div key={f.id} className="flex items-center gap-3 p-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl">
+                                                    <FileText className="w-5 h-5 text-red-500 flex-shrink-0" />
+                                                    <a href={f.file_path} target="_blank" rel="noreferrer" className="flex-1 text-sm font-medium text-blue-600 dark:text-blue-400 hover:underline truncate">
+                                                        {f.file_path.split('/').pop()}
+                                                    </a>
+                                                    <span className="text-xs text-gray-400">{f.uploaded_at?.slice(0, 10)}</span>
+                                                    <button onClick={() => handleDeleteFile(f.id)} className="text-gray-400 hover:text-red-500 transition-colors p-1"><Trash2 className="w-4 h-4" /></button>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <p className="text-center text-gray-400 italic py-6">Нет загруженных файлов</p>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* МОДАЛКА СТАТИСТИКИ */}
+            {isStatsModalOpen && statsObj && (
+                <div className="fixed inset-0 z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden">
+                        <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
+                            <h3 className="text-xl font-bold dark:text-white flex items-center gap-2"><BarChart3 className="w-5 h-5 text-amber-500" /> Статистика: {statsObj.name}</h3>
+                            <button onClick={() => setStatsModalOpen(false)} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-1.5 border border-gray-100 dark:border-gray-700"><X className="w-5 h-5" /></button>
+                        </div>
+
+                        <div className="p-6 space-y-6">
+                            {statsLoading ? (
+                                <div className="text-center py-12 text-gray-400 animate-pulse font-bold">Загрузка...</div>
+                            ) : statsData ? (
+                                <>
+                                    {/* Дата создания */}
+                                    <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-900/30 p-3 rounded-xl">
+                                        <Calendar className="w-4 h-4" />
+                                        <span>Дата создания объекта: <span className="font-bold text-gray-700 dark:text-gray-200">{statsData.created_at?.slice(0, 10) || '—'}</span></span>
+                                    </div>
+
+                                    {/* Прогресс: План vs Факт */}
+                                    <div>
+                                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Общий прогресс</h4>
+                                        {statsData.progress?.length > 0 ? (
+                                            <div className="border border-gray-100 dark:border-gray-700 rounded-2xl overflow-hidden">
+                                                <div className="grid grid-cols-[1fr_80px_80px_60px] gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-900/50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                                                    <span>Работа</span>
+                                                    <span className="text-right">Факт</span>
+                                                    <span className="text-right">План</span>
+                                                    <span className="text-right">%</span>
+                                                </div>
+                                                <div className="divide-y divide-gray-50 dark:divide-gray-700">
+                                                    {statsData.progress.map((p, i) => {
+                                                        const pct = p.target_volume > 0 ? Math.round((p.completed_volume / p.target_volume) * 100) : (p.completed_volume > 0 ? 100 : 0);
+                                                        return (
+                                                            <div key={i} className="grid grid-cols-[1fr_80px_80px_60px] gap-2 px-4 py-3 items-center">
+                                                                <div>
+                                                                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-tight">{p.name}</p>
+                                                                    <p className="text-[10px] text-gray-400 mt-0.5">{p.category} / {p.unit}</p>
+                                                                </div>
+                                                                <span className="text-sm font-bold text-right text-gray-800 dark:text-gray-200">{p.completed_volume}</span>
+                                                                <span className="text-sm text-right text-gray-500">{p.target_volume || '—'}</span>
+                                                                <span className={`text-sm font-bold text-right ${pct >= 100 ? 'text-emerald-600' : pct > 50 ? 'text-amber-600' : 'text-gray-400'}`}>{p.target_volume > 0 ? `${pct}%` : '—'}</span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <p className="text-center text-gray-400 italic py-4">Нет данных по плану КП</p>
+                                        )}
+                                    </div>
+
+                                    {/* Хронология */}
+                                    <div>
+                                        <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">Хронология выполнения</h4>
+                                        {statsData.history?.length > 0 ? (() => {
+                                            const byDate = {};
+                                            statsData.history.forEach(h => {
+                                                const key = `${h.date_target} — Заявка #${h.app_id}`;
+                                                if (!byDate[key]) byDate[key] = [];
+                                                byDate[key].push(h);
+                                            });
+                                            return (
+                                                <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-2">
+                                                    {Object.entries(byDate).map(([dateKey, items]) => (
+                                                        <div key={dateKey} className="border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden">
+                                                            <button onClick={() => setExpandedDates(prev => ({ ...prev, [dateKey]: !prev[dateKey] }))} className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900/70 transition-colors">
+                                                                <span className="text-sm font-bold text-gray-700 dark:text-gray-300">{dateKey}</span>
+                                                                {expandedDates[dateKey] ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+                                                            </button>
+                                                            {expandedDates[dateKey] && (
+                                                                <div className="divide-y divide-gray-50 dark:divide-gray-700">
+                                                                    {items.map((h, i) => (
+                                                                        <div key={i} className="flex justify-between px-4 py-2 text-sm">
+                                                                            <span className="text-gray-700 dark:text-gray-300">{h.name} <span className="text-gray-400 text-xs">({h.unit})</span></span>
+                                                                            <span className="font-bold text-gray-800 dark:text-gray-200">{h.volume}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            );
+                                        })() : (
+                                            <p className="text-center text-gray-400 italic py-4">Нет выполненных работ</p>
+                                        )}
+                                    </div>
+                                </>
+                            ) : null}
                         </div>
                     </div>
                 </div>

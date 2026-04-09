@@ -41,7 +41,7 @@ class ObjectsRepoMixin:
     async def get_object_kp_plan(self, object_id: int):
         """Возвращает назначенные КП для конкретного объекта"""
         async with self.conn.execute("""
-            SELECT k.*, okp.id as plan_id
+            SELECT k.*, okp.id as plan_id, okp.target_volume
             FROM object_kp_plan okp
             JOIN kp_catalog k ON okp.kp_id = k.id
             WHERE okp.object_id = ?
@@ -49,9 +49,78 @@ class ObjectsRepoMixin:
         """, (object_id,)) as cur:
             return [dict(row) for row in await cur.fetchall()]
 
-    async def add_kp_to_object(self, object_id: int, kp_ids: list):
-        """Полностью перезаписывает план КП для объекта"""
+    async def add_kp_to_object(self, object_id: int, kp_ids: list, target_volumes: dict = None):
+        """Полностью перезаписывает план КП для объекта с плановыми объемами"""
+        if target_volumes is None:
+            target_volumes = {}
         await self.conn.execute("DELETE FROM object_kp_plan WHERE object_id = ?", (object_id,))
         for kp_id in kp_ids:
-            await self.conn.execute("INSERT INTO object_kp_plan (object_id, kp_id) VALUES (?, ?)", (object_id, kp_id))
+            tv = target_volumes.get(str(kp_id), 0)
+            await self.conn.execute(
+                "INSERT INTO object_kp_plan (object_id, kp_id, target_volume) VALUES (?, ?, ?)",
+                (object_id, kp_id, tv)
+            )
         await self.conn.commit()
+
+    # ==========================================
+    # ФАЙЛЫ ОБЪЕКТА (PDF)
+    # ==========================================
+
+    async def get_object_files(self, object_id: int):
+        async with self.conn.execute(
+            "SELECT * FROM object_files WHERE object_id = ? ORDER BY uploaded_at DESC", (object_id,)
+        ) as cur:
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def add_object_file(self, object_id: int, file_path: str):
+        await self.conn.execute(
+            "INSERT INTO object_files (object_id, file_path) VALUES (?, ?)", (object_id, file_path)
+        )
+        await self.conn.commit()
+
+    async def delete_object_file(self, file_id: int):
+        async with self.conn.execute("SELECT file_path FROM object_files WHERE id = ?", (file_id,)) as cur:
+            row = await cur.fetchone()
+        if row:
+            await self.conn.execute("DELETE FROM object_files WHERE id = ?", (file_id,))
+            await self.conn.commit()
+            return dict(row).get('file_path')
+        return None
+
+    # ==========================================
+    # СТАТИСТИКА ОБЪЕКТА
+    # ==========================================
+
+    async def get_object_stats(self, object_id: int):
+        """Возвращает сводную статистику: план vs факт по каждому виду работ"""
+        query = """
+            SELECT k.id as kp_id, k.category, k.name, k.unit,
+                   okp.target_volume,
+                   COALESCE(SUM(akp.volume), 0) as completed_volume
+            FROM object_kp_plan okp
+            JOIN kp_catalog k ON okp.kp_id = k.id
+            LEFT JOIN application_kp akp ON akp.kp_id = k.id
+                AND akp.application_id IN (
+                    SELECT a.id FROM applications a
+                    WHERE a.object_id = ? AND a.kp_status = 'approved'
+                )
+            WHERE okp.object_id = ?
+            GROUP BY k.id
+            ORDER BY k.category, k.id
+        """
+        async with self.conn.execute(query, (object_id, object_id)) as cur:
+            return [dict(row) for row in await cur.fetchall()]
+
+    async def get_object_history(self, object_id: int):
+        """Хронологическая история выполненных объемов по датам/заявкам"""
+        query = """
+            SELECT a.id as app_id, a.date_target, k.category, k.name, k.unit,
+                   akp.volume
+            FROM application_kp akp
+            JOIN applications a ON akp.application_id = a.id
+            JOIN kp_catalog k ON akp.kp_id = k.id
+            WHERE a.object_id = ? AND a.kp_status = 'approved' AND akp.volume > 0
+            ORDER BY a.date_target DESC, k.category, k.id
+        """
+        async with self.conn.execute(query, (object_id,)) as cur:
+            return [dict(row) for row in await cur.fetchall()]

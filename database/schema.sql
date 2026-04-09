@@ -135,6 +135,15 @@ CREATE TABLE IF NOT EXISTS object_kp_plan (
     FOREIGN KEY (kp_id) REFERENCES kp_catalog(id)
 );
 
+-- Файлы объектов (PDF)
+CREATE TABLE IF NOT EXISTS object_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    object_id INTEGER,
+    file_path TEXT,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (object_id) REFERENCES objects(id)
+);
+
 -- Выполненные КП внутри заявки (наряда)
 CREATE TABLE IF NOT EXISTS application_kp (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
