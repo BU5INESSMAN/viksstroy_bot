@@ -38,12 +38,17 @@ function AppCard({ a, role, tgId, openProfile, openFreeModal }) {
                 <div className="flex items-center gap-1.5 text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-1">
                     <Truck className="w-3.5 h-3.5" /> Техника
                 </div>
-                {activeEquipList.length > 0 ? activeEquipList.map((e, idx) => (
-                    <div key={idx} className={`flex items-center justify-between text-xs ${e.is_freed ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300 font-medium'}`}>
-                        <span>{e.name}</span>
-                        <span className="text-gray-400 text-[11px]">{e.time_start}:00–{e.time_end}:00</span>
-                    </div>
-                )) : <span className="text-xs text-gray-400 italic">Не требуется</span>}
+                {activeEquipList.length > 0 ? activeEquipList.map((e, idx) => {
+                    const eqName = e.name ? e.name.split('(')[0].trim() : `Техника #${e.id}`;
+                    const s = String(e.time_start ?? '08').padStart(2, '0');
+                    const end = String(e.time_end ?? '17').padStart(2, '0');
+                    return (
+                        <div key={idx} className={`flex items-center justify-between text-xs ${e.is_freed ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300 font-medium'}`}>
+                            <span className="truncate mr-2">{eqName}</span>
+                            <span className="text-gray-400 text-[11px] flex-shrink-0">{s}:00 – {end}:00</span>
+                        </div>
+                    );
+                }) : <span className="text-xs text-gray-400 italic">Не требуется</span>}
             </div>
 
             {/* Teams */}
