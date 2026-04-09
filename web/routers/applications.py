@@ -6,9 +6,10 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Form, HTTPException
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from database_deps import db, TZ_BARNAUL
-from utils import resolve_id, notify_users, execute_app_publish, fetch_teams_dict, enrich_app_with_team_name
+from utils import resolve_id, notify_users, notify_group_chat, execute_app_publish, fetch_teams_dict, enrich_app_with_team_name
+from schedule_generator import generate_schedule_image, publish_schedule_to_group
 
 router = APIRouter(tags=["Applications"])
 
@@ -107,7 +108,7 @@ async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_targ
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"📝 <b>Новая заявка на выезд</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}\n🕒 Время: {now}",
-                       "review")
+                       "review", category="orders")
     return {"status": "ok"}
 
 
@@ -140,7 +141,7 @@ async def update_app(app_id: int, tg_id: int = Form(...), team_id: str = Form("0
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "boss", "superadmin"],
                        f"✏️ <b>Заявка №{app_id} изменена</b>\n👤 Кто: {fio}\n📍 Объект: {object_address}\n🕒 Время: {now}",
-                       "review")
+                       "review", category="orders")
     return {"status": "ok"}
 
 
@@ -178,7 +179,7 @@ async def delete_app(app_id: int, tg_id: int = Form(0)):
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
         await notify_users(["report_group", "boss", "superadmin"],
                            f"🗑 <b>Заявка №{app_id} удалена</b>\n👤 Кто: {fio}\n📍 Объект: {app_dict.get('object_address')}\n🕒 Время: {now}",
-                           "review")
+                           "review", category="orders")
     except Exception as e:
         await db.conn.rollback()
         raise HTTPException(500, f"Ошибка удаления: {e}")
@@ -256,12 +257,12 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
 
     msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Проверил: {mod_fio}\n📍 Объект: {app_dict['object_address']}\n🕒 Время: {now}"
     if reason: msg_group += f"\n💬 Причина: {reason}"
-    await notify_users(["report_group", "boss", "superadmin"], msg_group, "review")
+    await notify_users(["report_group", "boss", "superadmin"], msg_group, "review", category="orders")
 
     if new_status in ['approved', 'rejected']:
         msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
         if reason: msg_foreman += f"\n💬 Причина: {reason}"
-        await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']])
+        await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']], category="orders")
 
         if new_status == 'approved':
             workers_ids = []
@@ -289,7 +290,7 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
             all_involved = list(set(workers_ids + drivers_ids))
             if all_involved:
                 msg_inv = f"👷‍♂️ <b>Вас добавили в наряд! (Предварительная бронь)</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}\n\nОжидайте публикации наряда."
-                await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved)
+                await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved, category="orders")
 
     return {"status": "ok"}
 
@@ -314,7 +315,7 @@ async def publish_apps(app_ids: str = Form(...), tg_id: int = Form(0)):
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["boss", "superadmin"],
                        f"📤 <b>Публикация нарядов</b>\n👤 Кто: {fio}\n✅ Опубликовано: {count} шт.\n🕒 Время: {now}",
-                       "dashboard")
+                       "dashboard", category="orders")
 
     return {"status": "ok", "published": count}
 
@@ -455,12 +456,19 @@ async def free_app_equipment(app_id: int, tg_id: int = Form(...)):
 
     await db.conn.commit()
     fio = dict(user).get('fio', '')
+    user_role = dict(user).get('role', 'Водитель')
     await db.add_log(real_tg_id, fio, f"Освободил технику на объекте {obj_addr}")
 
-    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["report_group", "boss", "superadmin"],
-                       f"🟢 <b>Техника свободна</b>\n👤 Водитель: {fio}\n📍 Объект: {obj_addr}\n🕒 Время: {now}",
-                       "equipment")
+    # Получаем название техники
+    async with db.conn.execute("SELECT name FROM equipment WHERE id = ?", (my_eq_id,)) as cur:
+        eq_name_row = await cur.fetchone()
+    eq_name = eq_name_row[0] if eq_name_row else "Техника"
+
+    role_names = {'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель'}
+    role_label = role_names.get(user_role, user_role)
+
+    # Отправляем только в групповой чат
+    await notify_group_chat(f"{eq_name} освобожден(а) {fio} ({role_label})", "equipment")
     return {"status": "ok"}
 
 
@@ -498,12 +506,14 @@ async def free_app_team(app_id: int, tg_id: int = Form(...), team_id: int = Form
             t_name = t_row[0] if t_row else f"ID:{team_id}"
 
         fio = dict(user).get('fio', '') if user else ''
+        user_role = dict(user).get('role', '') if user else ''
         await db.add_log(real_tg_id, fio, f"Освободил бригаду '{t_name}' на объекте {obj_addr}")
 
-        now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-        await notify_users(["report_group", "boss", "superadmin"],
-                           f"🟢 <b>Бригада свободна</b>\n🏗 {t_name}\n👤 Ответственный: {fio}\n📍 Объект: {obj_addr}\n🕒 Время: {now}",
-                           "dashboard")
+        role_names = {'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель'}
+        role_label = role_names.get(user_role, user_role)
+
+        # Отправляем только в групповой чат
+        await notify_group_chat(f"Бригада «{t_name}» освобожден(а) {fio} ({role_label})", "dashboard")
 
     else:
         await db.conn.execute("UPDATE applications SET is_team_freed = 1, freed_team_ids = ? WHERE id = ?",
@@ -511,11 +521,37 @@ async def free_app_team(app_id: int, tg_id: int = Form(...), team_id: int = Form
         await db.conn.commit()
 
         fio = dict(user).get('fio', '') if user else ''
+        user_role = dict(user).get('role', '') if user else ''
         await db.add_log(real_tg_id, fio, f"Освободил все бригады на объекте {obj_addr}")
 
-        now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-        await notify_users(["report_group", "boss", "superadmin"],
-                           f"🟢 <b>Все бригады свободны</b>\n👤 Ответственный: {fio}\n📍 Объект: {obj_addr}\n🕒 Время: {now}",
-                           "dashboard")
+        role_names = {'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель'}
+        role_label = role_names.get(user_role, user_role)
+
+        # Отправляем только в групповой чат
+        await notify_group_chat(f"Все бригады освобожден(а) {fio} ({role_label})", "dashboard")
 
     return {"status": "ok"}
+
+
+# ==========================================
+# РАССТАНОВКА (SCHEDULE IMAGE)
+# ==========================================
+@router.post("/api/applications/publish_schedule")
+async def publish_schedule(tg_id: int = Form(0), target_date: str = Form("")):
+    """Ручная публикация расстановки в групповой чат (для модераторов+)."""
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+    if not user or dict(user).get('role') not in ['moderator', 'boss', 'superadmin']:
+        raise HTTPException(403, "Нет прав для публикации расстановки")
+
+    if not target_date:
+        tomorrow = datetime.now(TZ_BARNAUL) + timedelta(days=1)
+        target_date = tomorrow.strftime("%Y-%m-%d")
+
+    result = await publish_schedule_to_group(target_date)
+    if not result:
+        raise HTTPException(500, "Не удалось опубликовать расстановку")
+
+    fio = dict(user).get('fio', 'Модератор')
+    await db.add_log(real_tg_id, fio, f"Опубликовал расстановку на {target_date}")
+    return {"status": "ok", "date": target_date}

@@ -4,7 +4,7 @@ import axios from 'axios';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle, HardHat, Flag,
-    XCircle, Search, Undo, Send, ChevronDown, ChevronUp, User, X, Check
+    XCircle, Search, Undo, Send, ChevronDown, ChevronUp, User, X, Check, LayoutGrid
 } from 'lucide-react';
 
 const getTodayStr = () => {
@@ -111,6 +111,23 @@ export default function Review() {
             fetchData();
         } catch(e) {
             alert("Ошибка публикации");
+        } finally {
+            setIsProcessing(false);
+        }
+    };
+
+    const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
+
+    const handlePublishSchedule = async () => {
+        if (!window.confirm('Опубликовать расстановку на завтра в групповой чат?')) return;
+        setIsProcessing(true);
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            await axios.post('/api/applications/publish_schedule', fd);
+            alert('Расстановка успешно опубликована!');
+        } catch (e) {
+            alert(e.response?.data?.detail || 'Ошибка публикации расстановки');
         } finally {
             setIsProcessing(false);
         }
@@ -228,11 +245,18 @@ export default function Review() {
                 <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100">
                     <ClipboardList className="w-7 h-7 text-blue-500 mr-2.5" /> Управление заявками
                 </h2>
-                {filteredForPublish.length > 0 && (
-                    <button onClick={openPublishModal} disabled={isProcessing} className="w-full sm:w-auto bg-emerald-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                        <Send className="w-4 h-4" /> Опубликовать ({filteredForPublish.length})
-                    </button>
-                )}
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
+                    {isModOrBoss && (
+                        <button onClick={handlePublishSchedule} disabled={isProcessing} className="w-full sm:w-auto bg-violet-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                            <LayoutGrid className="w-4 h-4" /> Расстановка
+                        </button>
+                    )}
+                    {filteredForPublish.length > 0 && (
+                        <button onClick={openPublishModal} disabled={isProcessing} className="w-full sm:w-auto bg-emerald-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                            <Send className="w-4 h-4" /> Опубликовать ({filteredForPublish.length})
+                        </button>
+                    )}
+                </div>
             </div>
 
             <ReviewSection title="Требуют проверки" icon={Clock} colorClass="border-yellow-200 dark:border-yellow-900/30" titleColorClass="text-yellow-700 dark:text-yellow-500" apps={waitingApps} statusType="waiting" renderAppCard={renderAppCard} />

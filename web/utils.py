@@ -362,9 +362,49 @@ async def send_max_message(bot_token: str, chat_id: str, text: str, filepath: st
         return False
 
 
+async def notify_group_chat(text: str, url_path: str = "dashboard", target_platform: str = "all"):
+    """Отправляет уведомление только в групповой чат (TG + MAX)"""
+    if db.conn is None: await db.init_db()
+
+    bot_token = os.getenv("BOT_TOKEN")
+    group_id = os.getenv("GROUP_CHAT_ID")
+    max_bot_token = os.getenv("MAX_BOT_TOKEN")
+    max_group_id = await get_max_group_id()
+
+    markup = {"inline_keyboard": [
+        [{"text": "📱 Открыть платформу", "web_app": {"url": f"https://miniapp.viks22.ru/{url_path}"}}]]}
+
+    if target_platform in ["all", "tg"] and bot_token and group_id:
+        try:
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={"chat_id": str(group_id), "text": text, "parse_mode": "HTML", "reply_markup": markup}
+                )
+        except:
+            pass
+
+    if target_platform in ["all", "max"] and max_bot_token and max_group_id:
+        max_plain_text = strip_html(text)
+        max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"https://miniapp.viks22.ru/{url_path}")]]
+        max_payload = ButtonsPayload(buttons=max_buttons).pack()
+        await send_max_text(max_bot_token, max_group_id, max_plain_text, attachments=[max_payload])
+
+
+# Маппинг категорий уведомлений на колонки в БД
+NOTIFY_CATEGORY_COLUMNS = {
+    "new_users": "notify_new_users",
+    "orders": "notify_orders",
+    "reports": "notify_reports",
+    "errors": "notify_errors",
+}
+
+
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
-                       target_platform: str = "all"):
-    """Универсальная рассылка уведомлений в Telegram и MAX с учетом настроек пользователя"""
+                       target_platform: str = "all", category: str = None):
+    """Универсальная рассылка уведомлений в личные DM (Telegram и MAX) с учетом настроек пользователя.
+    category: 'new_users' | 'orders' | 'reports' | 'errors' | None (None = всегда отправлять)
+    """
     if db.conn is None: await db.init_db()
 
     bot_token = os.getenv("BOT_TOKEN")
@@ -392,21 +432,25 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     final_tg_ids = set()
     final_max_ids = set()
 
+    cat_col = NOTIFY_CATEGORY_COLUMNS.get(category) if category else None
+
     user_prefs = {}
     if raw_user_ids:
         pl_ids = ','.join(['?'] * len(raw_user_ids))
         try:
-            # Получаем настройки для каждого пользователя
-            # Если колонок еще нет в базе, запрос упадет в except, и prefs останутся по умолчанию True
-            async with db.conn.execute(f"SELECT user_id, notify_tg, notify_max FROM users WHERE user_id IN ({pl_ids})",
+            cat_select = f", {cat_col}" if cat_col else ""
+            async with db.conn.execute(f"SELECT user_id, notify_tg, notify_max{cat_select} FROM users WHERE user_id IN ({pl_ids})",
                                        list(raw_user_ids)) as cur:
                 for row in await cur.fetchall():
-                    user_prefs[row[0]] = {"tg": row[1] != 0, "max": row[2] != 0}
+                    cat_enabled = row[3] != 0 if cat_col else True
+                    user_prefs[row[0]] = {"tg": row[1] != 0, "max": row[2] != 0, "cat": cat_enabled}
         except:
             pass
 
     for uid in raw_user_ids:
-        prefs = user_prefs.get(uid, {"tg": True, "max": True})
+        prefs = user_prefs.get(uid, {"tg": True, "max": True, "cat": True})
+        if not prefs["cat"]:
+            continue  # Пользователь отключил эту категорию — пропускаем
         linked_ids = await get_all_linked_ids(uid)
 
         for lid in linked_ids:
@@ -422,6 +466,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"https://miniapp.viks22.ru/{url_path}")]]
     max_payload = ButtonsPayload(buttons=max_buttons).pack()
 
+    # Групповой чат — только если явно указан "report_group"
     if "report_group" in target_roles:
         if group_id and target_platform in ["all", "tg"] and bot_token:
             try:
@@ -433,6 +478,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             except:
                 pass
 
+    # Личные сообщения — DM
     if target_platform in ["all", "max"] and max_bot_token:
         for mid in final_max_ids:
             dm_chat_id = await get_max_dm_chat_id(str(mid))

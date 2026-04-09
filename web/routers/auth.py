@@ -122,7 +122,7 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
     fio = f"{last_name} {first_name}".strip() or f"Пользователь MAX {max_id}"
     await db.add_user(pseudo_tg_id, fio, role)
     await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался через MAX (Роль: {role})")
-    await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация (MAX)</b>\n👤 {fio}\n💼 {role}", "system")
+    await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация (MAX)</b>\n👤 {fio}\n💼 {role}", "system", category="new_users")
     return {"status": "ok", "role": role, "tg_id": pseudo_tg_id}
 
 
@@ -185,5 +185,5 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
     await db.add_user(tg_id, fio, role)
     if photo_url: await db.update_user_avatar(tg_id, photo_url)
     await db.add_log(tg_id, fio, f"Зарегистрировался (Роль: {role})")
-    await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация</b>\n👤 {fio}\n💼 {role}", "system")
+    await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация</b>\n👤 {fio}\n💼 {role}", "system", category="new_users")
     return {"status": "ok", "role": role, "tg_id": tg_id}

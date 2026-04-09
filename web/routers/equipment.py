@@ -29,7 +29,7 @@ async def set_equipment_free(tg_id: int = Form(...)):
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
         await notify_users(["report_group", "boss", "superadmin"],
-                           f"🟢 <b>Техника освобождена</b>\n👤 Водитель: {fio}\n🕒 Время: {now}", "equipment")
+                           f"🟢 <b>Техника освобождена</b>\n👤 Водитель: {fio}\n🕒 Время: {now}", "equipment", category="orders")
     return {"status": "ok"}
 
 
@@ -52,7 +52,7 @@ async def add_equipment(name: str = Form(...), category: str = Form(...), driver
     fio = dict(admin).get('fio', 'Админ') if admin else 'Админ'
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "boss", "superadmin"],
-                       f"🚜 <b>Новая техника</b>\n👤 Добавил: {fio}\n🚜 Название: {name}\n🕒 Время: {now}", "equipment")
+                       f"🚜 <b>Новая техника</b>\n👤 Добавил: {fio}\n🚜 Название: {name}\n🕒 Время: {now}", "equipment", category="orders")
     return {"status": "ok"}
 
 
@@ -76,7 +76,7 @@ async def bulk_add_equipment(request: Request):
 
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "boss", "superadmin"],
-                       f"🚜 <b>Массовая загрузка техники</b>\n✅ Загружено единиц: {count}\n🕒 Время: {now}", "equipment")
+                       f"🚜 <b>Массовая загрузка техники</b>\n✅ Загружено единиц: {count}\n🕒 Время: {now}", "equipment", category="orders")
     return {"status": "ok", "added": count}
 
 
@@ -166,7 +166,7 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "boss", "superadmin"],
                        f"🔗 <b>Привязка аккаунта (Техника)</b>\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{eq_row[1]}»\n🕒 Время: {now}",
-                       "equipment")
+                       "equipment", category="new_users")
     return {"status": "ok"}
 
 

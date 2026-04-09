@@ -2,13 +2,14 @@ import sys
 import os
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from database_deps import db, TZ_BARNAUL
 from utils import notify_users, execute_app_publish
+from schedule_generator import check_all_foremen_approved, publish_schedule_to_group
 
 # Настраиваем логгер для планировщика
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
@@ -89,7 +90,7 @@ async def check_and_run_tasks():
 
                 if all_involved:
                     msg = f"🚀 <b>Наряд начался!</b>\n📍 Объект: {app_dict['object_address']}\nУдачной смены и безопасной работы!"
-                    await notify_users([], msg, "my-apps", extra_tg_ids=all_involved)
+                    await notify_users([], msg, "my-apps", extra_tg_ids=all_involved, category="orders")
 
             await db.conn.commit()
 
@@ -111,7 +112,7 @@ async def check_and_run_tasks():
 
                 if foreman_id:
                     msg = f"📋 <b>Смена окончена!</b>\n📍 Объект: {address}\n\nПожалуйста, заполните табель/отчет по этому наряду."
-                    await notify_users([], msg, "dashboard", extra_tg_ids=[foreman_id])
+                    await notify_users([], msg, "dashboard", extra_tg_ids=[foreman_id], category="orders")
 
             await db.conn.commit()
 
@@ -122,7 +123,36 @@ async def check_and_run_tasks():
             if not is_weekend or remind_on_weekends:
                 logger.info(f"🔔 {current_time_str} - Отправка напоминаний прорабам...")
                 msg = "🔔 <b>Напоминание!</b>\nПожалуйста, не забудьте заполнить и отправить заявки на следующий день!"
-                await notify_users(["foreman"], msg, "dashboard")
+                await notify_users(["foreman"], msg, "dashboard", category="orders")
+
+        # =========================================================================
+        # ТРИГГЕР 4: АВТО-ПУБЛИКАЦИЯ РАССТАНОВКИ (когда все прорабы утвердили)
+        # =========================================================================
+        # Проверяем каждую минуту с 12:00 до 22:00, опубликована ли уже расстановка на завтра
+        if 12 <= now.hour <= 22:
+            tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+            schedule_flag_key = f"schedule_published_{tomorrow_str}"
+            already_published = False
+            try:
+                async with db.conn.execute("SELECT value FROM settings WHERE key = ?", (schedule_flag_key,)) as cur:
+                    flag_row = await cur.fetchone()
+                    if flag_row and flag_row[0] == '1':
+                        already_published = True
+            except:
+                pass
+
+            if not already_published and await check_all_foremen_approved(tomorrow_str):
+                logger.info(f"📋 Все прорабы утвердили заявки на {tomorrow_str}! Публикуем расстановку...")
+                if await publish_schedule_to_group(tomorrow_str):
+                    try:
+                        await db.conn.execute(
+                            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
+                            (schedule_flag_key,),
+                        )
+                        await db.conn.commit()
+                    except:
+                        pass
+                    await db.add_log(0, "Система", f"Авто-публикация расстановки на {tomorrow_str}")
 
     except Exception as e:
         logger.error(f"Ошибка в планировщике: {e}")

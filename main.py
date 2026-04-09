@@ -5,7 +5,7 @@ import shutil
 import aiohttp
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
@@ -111,6 +111,47 @@ async def cmd_web(message: types.Message):
     await message.answer(
         f"Ваш код для привязки аккаунта: <code>{code}</code>\nДействителен 15 минут. Введите его в другом мессенджере или в профиле платформы.",
         parse_mode="html")
+
+
+@dp.message(Command("schedule"))
+async def cmd_schedule(message: types.Message, command: CommandObject):
+    raw_id = message.from_user.id
+    tg_id = await resolve_id(raw_id)
+    user = await db.get_user(tg_id)
+    if not user:
+        return await message.answer("❌ Сначала зарегистрируйтесь (команда /start).")
+
+    user_role = dict(user).get('role', '')
+    if user_role not in ['moderator', 'boss', 'superadmin']:
+        return await message.answer("❌ Эта команда доступна только модераторам и руководству.")
+
+    # Определяем дату: аргумент "today" или по умолчанию "tomorrow"
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("Asia/Barnaul")
+    args = command.args
+    if args and args.strip().lower() in ['today', 'сегодня']:
+        target_date = datetime.now(tz).strftime("%Y-%m-%d")
+        label = "сегодня"
+    else:
+        target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%Y-%m-%d")
+        label = "завтра"
+
+    await message.answer(f"⏳ Генерирую расстановку на {label} ({target_date})...")
+
+    try:
+        # Импортируем генератор через API-вызов
+        async with aiohttp.ClientSession() as session:
+            fd = aiohttp.FormData()
+            fd.add_field('tg_id', str(tg_id))
+            fd.add_field('target_date', target_date)
+            async with session.post("http://127.0.0.1:8000/api/applications/publish_schedule", data=fd) as resp:
+                if resp.status == 200:
+                    await message.answer(f"✅ Расстановка на {target_date} опубликована в групповой чат!")
+                else:
+                    error = await resp.json()
+                    await message.answer(f"❌ Ошибка: {error.get('detail', 'Неизвестная ошибка')}")
+    except Exception as e:
+        await message.answer(f"❌ Ошибка: {str(e)}")
 
 
 @dp.message(RegState.waiting_for_password)

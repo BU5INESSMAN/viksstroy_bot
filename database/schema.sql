@@ -8,6 +8,10 @@ CREATE TABLE IF NOT EXISTS users (
     failed_attempts INTEGER DEFAULT 0,
     notify_tg INTEGER DEFAULT 1,
     notify_max INTEGER DEFAULT 1,
+    notify_new_users INTEGER DEFAULT 1,
+    notify_orders INTEGER DEFAULT 1,
+    notify_reports INTEGER DEFAULT 1,
+    notify_errors INTEGER DEFAULT 1,
     avatar_url TEXT
 );
 
@@ -98,6 +102,7 @@ CREATE TABLE IF NOT EXISTS logs (
 CREATE TABLE IF NOT EXISTS web_codes (code TEXT, max_id INTEGER, expires REAL);
 CREATE TABLE IF NOT EXISTS account_links (primary_id INTEGER, secondary_id INTEGER UNIQUE);
 CREATE TABLE IF NOT EXISTS link_codes (code TEXT UNIQUE, user_id INTEGER, expires REAL);
+CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT);
 
 -- ==========================================
 -- НОВЫЕ ТАБЛИЦЫ: ЭТАП 1 (ОБЪЕКТЫ И КП)

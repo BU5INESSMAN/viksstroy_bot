@@ -50,7 +50,7 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "boss", "superadmin"],
                        f"🔗 <b>Привязка аккаунта (Бригада)</b>\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team['name']}»\n🕒 Время: {now}",
-                       "teams")
+                       "teams", category="new_users")
     return {"status": "ok"}
 
 
@@ -61,7 +61,7 @@ async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Fo
 
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "boss", "superadmin"],
-                       f"🏗 <b>Новая бригада</b>\n👤 Создал: {fio}\n📍 Название: «{name}»\n🕒 Время: {now}", "teams")
+                       f"🏗 <b>Новая бригада</b>\n👤 Создал: {fio}\n📍 Название: «{name}»\n🕒 Время: {now}", "teams", category="orders")
     return {"status": "ok"}
 
 

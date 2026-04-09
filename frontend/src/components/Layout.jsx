@@ -72,6 +72,10 @@ export default function Layout() {
                     max_invite_link: res.data.profile.max_invite_link || '',
                     notify_tg: res.data.profile.notify_tg !== 0,
                     notify_max: res.data.profile.notify_max !== 0,
+                    notify_new_users: res.data.profile.notify_new_users !== 0,
+                    notify_orders: res.data.profile.notify_orders !== 0,
+                    notify_reports: res.data.profile.notify_reports !== 0,
+                    notify_errors: res.data.profile.notify_errors !== 0,
                 });
             }
             setProfileModalOpen(true);

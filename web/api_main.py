@@ -39,7 +39,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         last_action = str(request.url)
         last_user = "Неизвестно"
         err_msg = f"🚨 <b>ОШИБКА СИСТЕМЫ (500)</b>\n\n👤 <b>Юзер:</b> {last_user}\n👣 <b>Действие:</b> {last_action}\n❌ <b>Ошибка:</b> {str(exc)}"
-        await notify_users(["report_group"], err_msg, "system")
+        await notify_users(["report_group", "superadmin"], err_msg, "system", category="errors")
     except: pass
     return JSONResponse(status_code=500, content={"detail": f"Внутренняя ошибка сервера"})
 
@@ -53,6 +53,14 @@ async def startup():
         try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_tg INTEGER DEFAULT 1")
         except: pass
         try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_max INTEGER DEFAULT 1")
+        except: pass
+        try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_new_users INTEGER DEFAULT 1")
+        except: pass
+        try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_orders INTEGER DEFAULT 1")
+        except: pass
+        try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_reports INTEGER DEFAULT 1")
+        except: pass
+        try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_errors INTEGER DEFAULT 1")
         except: pass
         try: await db.conn.execute("ALTER TABLE team_members ADD COLUMN is_foreman INTEGER DEFAULT 0")
         except: pass

@@ -8,7 +8,14 @@
       "Bash(python -c \"from database.users_repo import UsersRepoMixin; from database.teams_repo import TeamsRepoMixin; from database.equipment_repo import EquipmentRepoMixin; from database.apps_repo import AppsRepoMixin; from database.logs_repo import LogsRepoMixin; from database.db_manager import DatabaseManager; print\\(''All imports OK''\\); print\\(''MRO:'', [c.__name__ for c in DatabaseManager.__mro__]\\)\")",
       "Bash(python -c \":*)",
       "Bash(python -c \"from database.db_manager import DatabaseManager; dm = DatabaseManager\\(''test.db''\\); print\\(''Methods:'', len\\([m for m in dir\\(dm\\) if not m.startswith\\(''_''\\)]\\)\\)\")",
-      "Bash(xargs grep:*)"
+      "Bash(xargs grep:*)",
+      "Bash(grep -E \"\\\\.\\(js|jsx|ts|tsx\\)$\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('web/utils.py', doraise=True\\); print\\('utils.py OK'\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('web/schedule_generator.py', doraise=True\\); print\\('schedule_generator.py OK'\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('web/scheduler.py', doraise=True\\); print\\('scheduler.py OK'\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('web/routers/applications.py', doraise=True\\); print\\('applications.py OK'\\)\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('web/routers/users.py', doraise=True\\); print\\('users.py OK'\\)\")",
+      "Bash(grep -n \"await notify_users\\(\" web/routers/*.py web/scheduler.py web/api_main.py)"
     ]
   }
 }

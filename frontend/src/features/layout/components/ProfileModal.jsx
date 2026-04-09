@@ -2,7 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import {
     User, X, Camera, Trash2, Unplug, ShieldCheck,
-    Send, Smartphone, MessageCircle
+    Send, Smartphone, MessageCircle, Bell, UserPlus, ClipboardList, FileText, AlertTriangle
 } from 'lucide-react';
 
 const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
@@ -47,6 +47,10 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
             fd.append('max_invite_link', editProfile.max_invite_link || '');
             fd.append('notify_tg', editProfile.notify_tg ? 1 : 0);
             fd.append('notify_max', editProfile.notify_max ? 1 : 0);
+            fd.append('notify_new_users', editProfile.notify_new_users ? 1 : 0);
+            fd.append('notify_orders', editProfile.notify_orders ? 1 : 0);
+            fd.append('notify_reports', editProfile.notify_reports ? 1 : 0);
+            fd.append('notify_errors', editProfile.notify_errors ? 1 : 0);
 
             await axios.post(`/api/users/${profileData.user_id}/update_profile`, fd);
             alert("Успешно!"); setProfileModalOpen(false); window.location.reload();
@@ -217,6 +221,27 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                         </div>
                                     </div>
                                     <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">* Выберите, куда бот будет присылать вам наряды в личные сообщения.</p>
+
+                                    <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2 text-sm mt-5 pt-4 border-t border-gray-200 dark:border-gray-600">
+                                        <Bell className="w-4 h-4 text-gray-400" /> Категории уведомлений
+                                    </h4>
+                                    <div className="flex flex-col gap-3">
+                                        {[
+                                            { key: 'notify_new_users', label: 'Новые пользователи', icon: UserPlus, color: 'text-emerald-500' },
+                                            { key: 'notify_orders', label: 'Наряды', icon: ClipboardList, color: 'text-blue-500' },
+                                            { key: 'notify_reports', label: 'Отчеты КП', icon: FileText, color: 'text-violet-500' },
+                                            { key: 'notify_errors', label: 'Системные ошибки', icon: AlertTriangle, color: 'text-red-500' },
+                                        ].map(({ key, label, icon: Ico, color }) => (
+                                            <div key={key} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                                                <span className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Ico className={`w-4 h-4 ${color}`} /> {label}</span>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input type="checkbox" checked={editProfile[key]} onChange={() => setEditProfile(prev => ({ ...prev, [key]: !prev[key] }))} className="sr-only peer" />
+                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                                                </label>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">* Отключите категории, уведомления по которым вам не нужны.</p>
                                 </div>
                             )}
 
