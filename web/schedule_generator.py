@@ -1,7 +1,7 @@
 """
 Генератор изображения ежедневной расстановки (расписание).
 Собирает утвержденные/опубликованные заявки на указанную дату и генерирует
-визуальную таблицу (PNG) для публикации в групповой чат.
+визуальную таблицу (PNG) в стиле Excel для публикации в групповой чат.
 """
 import sys
 import os
@@ -13,221 +13,235 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from PIL import Image, ImageDraw, ImageFont
 from database_deps import db, TZ_BARNAUL
-from utils import (
-    get_fonts, clean_text, strip_html,
-    send_max_text, send_max_message, get_max_group_id,
-    notify_group_chat,
-)
+from utils import send_max_message, get_max_group_id
 import aiohttp
-from maxapi.types import InputMedia
 
 
 # ─────────────────────────────────────────────
-# Утилиты рисования
+# Шрифты
 # ─────────────────────────────────────────────
-def _load_fonts():
-    """Возвращает набор шрифтов для расстановки."""
-    font_dir = "data/fonts"
-    reg_path = os.path.join(font_dir, "Roboto-Regular.ttf")
-    bold_path = os.path.join(font_dir, "Roboto-Bold.ttf")
-    try:
-        title_font = ImageFont.truetype(bold_path, 32)
-        header_font = ImageFont.truetype(bold_path, 22)
-        cell_font = ImageFont.truetype(reg_path, 20)
-        cell_bold = ImageFont.truetype(bold_path, 20)
-        small_font = ImageFont.truetype(reg_path, 16)
-    except Exception:
-        title_font = header_font = cell_font = cell_bold = small_font = ImageFont.load_default()
-    return title_font, header_font, cell_font, cell_bold, small_font
+def _load_font(size: int, bold: bool = False):
+    """Calibri → Arial → Roboto → default."""
+    candidates = [
+        "C:/Windows/Fonts/calibrib.ttf" if bold else "C:/Windows/Fonts/calibri.ttf",
+        "C:/Windows/Fonts/arialbd.ttf" if bold else "C:/Windows/Fonts/arial.ttf",
+        "data/fonts/Roboto-Bold.ttf" if bold else "data/fonts/Roboto-Regular.ttf",
+    ]
+    for path in candidates:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    return ImageFont.load_default()
 
 
 # ─────────────────────────────────────────────
-# Сбор данных из БД
+# Сбор данных из БД (посекционно)
 # ─────────────────────────────────────────────
-async def _fetch_schedule_data(target_date: str):
-    """Получает данные расстановки на конкретную дату."""
+async def _fetch_schedule_sections(target_date: str) -> list:
+    """Возвращает список секций [{title, rows: [{name, role, status, object}]}]."""
     if db.conn is None:
         await db.init_db()
 
+    # Все заявки на дату
     async with db.conn.execute(
-        "SELECT * FROM applications WHERE date_target = ? AND status IN ('approved', 'published', 'in_progress') ORDER BY id",
+        "SELECT * FROM applications WHERE date_target = ? "
+        "AND status IN ('approved','published','in_progress') ORDER BY id",
         (target_date,),
     ) as cur:
         cols = [c[0] for c in cur.description]
         apps = [dict(zip(cols, row)) for row in await cur.fetchall()]
 
-    # Подтягиваем данные бригад, членов, техники
-    teams_cache = {}
-    async with db.conn.execute("SELECT id, name FROM teams") as cur:
-        for r in await cur.fetchall():
-            teams_cache[r[0]] = r[1]
+    # Обратные индексы: кто на каком объекте
+    member_objs: dict[int, list[str]] = {}
+    equip_objs: dict[int, list[str]] = {}
+    foreman_objs: dict[int, list[str]] = {}
 
-    rows = []
     for app in apps:
-        foreman_name = app.get("foreman_name", "—")
-        obj_addr = app.get("object_address", "—")
+        obj = app.get("object_address", "") or ""
 
-        # Бригады
-        team_ids_str = str(app.get("team_id", "0"))
-        t_ids = [int(x) for x in team_ids_str.split(",") if x.strip().isdigit()]
-        team_names = [teams_cache.get(tid, f"Бригада {tid}") for tid in t_ids] or ["—"]
+        fid = app.get("foreman_id")
+        if fid:
+            foreman_objs.setdefault(fid, []).append(obj)
 
-        # Участники
-        members_text = []
-        selected = app.get("selected_members", "")
-        if selected:
-            m_ids = [int(x) for x in selected.split(",") if x.strip().isdigit()]
-            if m_ids:
-                pl = ",".join(["?"] * len(m_ids))
-                async with db.conn.execute(
-                    f"SELECT fio, position FROM team_members WHERE id IN ({pl})", m_ids
-                ) as cur:
-                    for r in await cur.fetchall():
-                        members_text.append(f"{r[0]} ({r[1]})" if r[1] else r[0])
+        sel = app.get("selected_members", "") or ""
+        for s in sel.split(","):
+            s = s.strip()
+            if s.isdigit():
+                member_objs.setdefault(int(s), []).append(obj)
 
-        # Техника
-        equip_text = []
-        eq_data_str = app.get("equipment_data", "")
-        if eq_data_str:
+        eq_str = app.get("equipment_data", "") or ""
+        if eq_str:
             try:
-                eq_list = json.loads(eq_data_str)
-                for eq in eq_list:
-                    freed = eq.get("is_freed", False)
-                    status_label = "свободна" if freed else "в работе"
-                    equip_text.append(f"{eq['name']} ({status_label})")
+                for eq in json.loads(eq_str):
+                    eid = eq.get("id")
+                    if eid:
+                        equip_objs.setdefault(eid, []).append(obj)
             except Exception:
                 pass
 
-        rows.append({
-            "foreman": foreman_name,
-            "object": obj_addr,
-            "teams": ", ".join(team_names),
-            "members": "\n".join(members_text) if members_text else "—",
-            "equipment": "\n".join(equip_text) if equip_text else "—",
+    sections = []
+
+    # ── ПРОРАБЫ ──────────────────────────────
+    ROLE_MAP = {
+        "foreman": "прораб",
+        "admin": "начальник участка",
+        "master": "мастер",
+        "viewer": "руководитель строит. уч.",
+    }
+    async with db.conn.execute(
+        "SELECT user_id, fio, role FROM users "
+        "WHERE role IN ('foreman','admin','master','viewer') "
+        "AND is_blacklisted = 0 AND is_active = 1 ORDER BY fio"
+    ) as cur:
+        foremen_rows = await cur.fetchall()
+
+    if foremen_rows:
+        rows = []
+        for uid, fio, role in foremen_rows:
+            objs = foreman_objs.get(uid, [])
+            rows.append({
+                "name": fio or "—",
+                "role": ROLE_MAP.get(role, role or "—"),
+                "status": 1 if objs else 0,
+                "object": ", ".join(dict.fromkeys(objs)) if objs else "",
+            })
+        sections.append({"title": "ПРОРАБЫ", "rows": rows})
+
+    # ── Бригады (машины) ─────────────────────
+    async with db.conn.execute("SELECT id, name FROM teams ORDER BY name") as cur:
+        teams = await cur.fetchall()
+
+    for tid, tname in teams:
+        async with db.conn.execute(
+            "SELECT id, fio, position FROM team_members "
+            "WHERE team_id = ? ORDER BY is_leader DESC, is_foreman DESC, fio",
+            (tid,),
+        ) as cur:
+            members = await cur.fetchall()
+        if not members:
+            continue
+        rows = []
+        for mid, fio, pos in members:
+            objs = member_objs.get(mid, [])
+            rows.append({
+                "name": fio or "—",
+                "role": pos or "—",
+                "status": 1 if objs else 0,
+                "object": ", ".join(dict.fromkeys(objs)) if objs else "",
+            })
+        sections.append({"title": tname, "rows": rows})
+
+    # ── Техника (по категориям) ───────────────
+    async with db.conn.execute(
+        "SELECT id, name, category, driver_fio FROM equipment "
+        "WHERE is_active = 1 ORDER BY category, driver_fio"
+    ) as cur:
+        equip_rows = await cur.fetchall()
+
+    eq_cats: dict[str, list] = {}
+    for eid, ename, cat, driver in equip_rows:
+        cat = cat or "Прочая техника"
+        objs = equip_objs.get(eid, [])
+        eq_cats.setdefault(cat, []).append({
+            "name": driver or "—",
+            "role": ename or "—",
+            "status": 1 if objs else 0,
+            "object": ", ".join(dict.fromkeys(objs)) if objs else "",
         })
 
-    return rows
+    for cat, rows in eq_cats.items():
+        sections.append({"title": cat, "rows": rows})
+
+    return sections
 
 
 # ─────────────────────────────────────────────
-# Отрисовка изображения-таблицы
+# Отрисовка таблицы (стиль Excel)
 # ─────────────────────────────────────────────
-def _render_schedule_image(date_str: str, rows: list) -> io.BytesIO:
-    """Рисует таблицу расстановки и возвращает PNG-буфер."""
-    title_font, header_font, cell_font, cell_bold, small_font = _load_fonts()
+def _clip_text(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> str:
+    """Обрезает текст до max_w пикселей, добавляя '…'."""
+    if not text:
+        return ""
+    bb = draw.textbbox((0, 0), text, font=font)
+    if (bb[2] - bb[0]) <= max_w:
+        return text
+    while text:
+        trial = text + "…"
+        bb = draw.textbbox((0, 0), trial, font=font)
+        if (bb[2] - bb[0]) <= max_w:
+            return trial
+        text = text[:-1]
+    return "…"
 
-    # Параметры таблицы
-    col_widths = [180, 220, 160, 260, 220]  # Прораб | Объект | Бригада | Состав | Техника
-    headers = ["Прораб", "Объект", "Бригада", "Состав", "Техника"]
-    table_w = sum(col_widths)
-    pad = 40
-    img_w = table_w + pad * 2
 
-    # Предварительный расчёт высоты каждой строки
-    dummy_img = Image.new("RGB", (1, 1))
-    dummy_draw = ImageDraw.Draw(dummy_img)
+def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
+    """Рисует таблицу-расстановку в стиле Excel и возвращает PNG-буфер."""
+    font = _load_font(14, bold=False)
+    font_bold = _load_font(14, bold=True)
 
-    def text_height(text, font, max_w):
-        lines = []
-        for paragraph in text.split("\n"):
-            words = paragraph.split(" ")
-            if not words or not words[0]:
-                lines.append("")
-                continue
-            current = words[0]
-            for w in words[1:]:
-                bbox = dummy_draw.textbbox((0, 0), current + " " + w, font=font)
-                if bbox[2] - bbox[0] <= max_w:
-                    current += " " + w
-                else:
-                    lines.append(current)
-                    current = w
-            lines.append(current)
-        bbox_line = dummy_draw.textbbox((0, 0), "Ay", font=font)
-        line_h = (bbox_line[3] - bbox_line[1]) + 8
-        return max(len(lines), 1) * line_h, lines
+    # Ширины колонок: ФИО | Должность | Явка | Объект
+    COL_W = [200, 280, 40, 240]
+    TABLE_W = sum(COL_W)
+    ROW_H = 20
+    PX = 4   # padding-x
+    PY = 2   # padding-y
 
-    row_heights = []
-    row_cells = []  # list of list of (wrapped_lines, line_h)
-    for r in rows:
-        vals = [r["foreman"], r["object"], r["teams"], r["members"], r["equipment"]]
-        max_h = 0
-        cells = []
-        for i, v in enumerate(vals):
-            h, wrapped = text_height(v, cell_font, col_widths[i] - 16)
-            bbox_line = dummy_draw.textbbox((0, 0), "Ay", font=cell_font)
-            line_h = (bbox_line[3] - bbox_line[1]) + 8
-            cells.append((wrapped, line_h))
-            if h > max_h:
-                max_h = h
-        row_heights.append(max(max_h + 20, 50))
-        row_cells.append(cells)
+    YELLOW = (255, 242, 204)   # #FFF2CC
+    BLACK = (0, 0, 0)
+    WHITE = (255, 255, 255)
 
-    # Расчёт общей высоты
-    title_block_h = 100
-    header_h = 50
-    total_rows_h = sum(row_heights) if row_heights else 60
-    footer_h = 50
-    img_h = title_block_h + header_h + total_rows_h + footer_h + pad
+    # Дата для отображения
+    try:
+        dt = datetime.strptime(date_str, "%Y-%m-%d")
+        display_date = dt.strftime("%d.%m.%Y")
+    except ValueError:
+        display_date = date_str
 
-    img = Image.new("RGB", (img_w, img_h), color=(243, 244, 246))
+    # Считаем строки: 1 (дата) + для каждой секции (1 заголовок + N строк)
+    total_rows = 1
+    for s in sections:
+        total_rows += 1 + len(s["rows"])
+
+    img_h = total_rows * ROW_H + 1
+    img = Image.new("RGB", (TABLE_W + 1, img_h), WHITE)
     draw = ImageDraw.Draw(img)
 
-    # --- Заголовок ---
-    draw.rounded_rectangle([pad, 20, img_w - pad, 20 + 70], radius=16, fill=(37, 99, 235))
-    title_text = f"РАССТАНОВКА НА {date_str}"
-    bbox_t = draw.textbbox((0, 0), title_text, font=title_font)
-    tx = (img_w - (bbox_t[2] - bbox_t[0])) // 2
-    draw.text((tx, 32), title_text, fill=(255, 255, 255), font=title_font)
+    y = 0
 
-    y = title_block_h
+    # ── Строка с датой ──
+    draw.rectangle([0, y, TABLE_W, y + ROW_H], fill=WHITE, outline=BLACK)
+    bb = draw.textbbox((0, 0), display_date, font=font_bold)
+    tx = (TABLE_W - (bb[2] - bb[0])) // 2
+    draw.text((tx, y + PY), display_date, fill=BLACK, font=font_bold)
+    y += ROW_H
 
-    # --- Шапка таблицы ---
-    x = pad
-    draw.rectangle([pad, y, pad + table_w, y + header_h], fill=(55, 65, 81))
-    for i, hdr in enumerate(headers):
-        bbox_h = draw.textbbox((0, 0), hdr, font=header_font)
-        hx = x + (col_widths[i] - (bbox_h[2] - bbox_h[0])) // 2
-        draw.text((hx, y + 12), hdr, fill=(255, 255, 255), font=header_font)
-        x += col_widths[i]
+    for section in sections:
+        # ── Заголовок секции (жёлтый фон) ──
+        x = 0
+        for cw in COL_W:
+            draw.rectangle([x, y, x + cw, y + ROW_H], fill=YELLOW, outline=BLACK)
+            x += cw
+        draw.text((PX, y + PY), section["title"], fill=BLACK, font=font_bold)
+        y += ROW_H
 
-    y += header_h
+        # ── Строки данных ──
+        for row in section["rows"]:
+            x = 0
+            vals = [row["name"], row["role"], str(row["status"]), row["object"]]
+            for ci, val in enumerate(vals):
+                draw.rectangle([x, y, x + COL_W[ci], y + ROW_H], fill=WHITE, outline=BLACK)
+                clipped = _clip_text(draw, val, font, COL_W[ci] - PX * 2)
+                if ci == 2:  # Статус — по центру
+                    bb = draw.textbbox((0, 0), clipped, font=font)
+                    cx = x + (COL_W[ci] - (bb[2] - bb[0])) // 2
+                    draw.text((cx, y + PY), clipped, fill=BLACK, font=font)
+                else:
+                    draw.text((x + PX, y + PY), clipped, fill=BLACK, font=font)
+                x += COL_W[ci]
+            y += ROW_H
 
-    # --- Строки ---
-    if not rows:
-        draw.rectangle([pad, y, pad + table_w, y + 60], fill=(255, 255, 255), outline=(209, 213, 219))
-        no_data = "Нет утверждённых нарядов"
-        bbox_nd = draw.textbbox((0, 0), no_data, font=cell_font)
-        ndx = (img_w - (bbox_nd[2] - bbox_nd[0])) // 2
-        draw.text((ndx, y + 18), no_data, fill=(107, 114, 128), font=cell_font)
-        y += 60
-    else:
-        for ri, (rh, cells) in enumerate(zip(row_heights, row_cells)):
-            bg = (255, 255, 255) if ri % 2 == 0 else (249, 250, 251)
-            draw.rectangle([pad, y, pad + table_w, y + rh], fill=bg, outline=(229, 231, 235))
-
-            x = pad
-            for ci, (wrapped, line_h) in enumerate(cells):
-                # Вертикальные разделители
-                if ci > 0:
-                    draw.line([x, y, x, y + rh], fill=(229, 231, 235), width=1)
-
-                ty = y + 10
-                for line in wrapped:
-                    draw.text((x + 8, ty), line.strip(), fill=(31, 41, 55), font=cell_font)
-                    ty += line_h
-                x += col_widths[ci]
-
-            y += rh
-
-    # --- Футер ---
-    now_str = datetime.now(TZ_BARNAUL).strftime("%d.%m.%Y %H:%M")
-    footer = f"Сгенерировано: {now_str}"
-    bbox_f = draw.textbbox((0, 0), footer, font=small_font)
-    draw.text((img_w - pad - (bbox_f[2] - bbox_f[0]), y + 15), footer, fill=(156, 163, 175), font=small_font)
-
-    # Обрезаем до фактической высоты
-    img = img.crop((0, 0, img_w, y + footer_h))
+    img = img.crop((0, 0, TABLE_W + 1, y + 1))
 
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -244,8 +258,8 @@ async def generate_schedule_image(target_date: str = None) -> io.BytesIO:
         tomorrow = datetime.now(TZ_BARNAUL) + timedelta(days=1)
         target_date = tomorrow.strftime("%Y-%m-%d")
 
-    rows = await _fetch_schedule_data(target_date)
-    return _render_schedule_image(target_date, rows)
+    sections = await _fetch_schedule_sections(target_date)
+    return _render_schedule_image(target_date, sections)
 
 
 async def publish_schedule_to_group(target_date: str = None) -> bool:
@@ -311,7 +325,6 @@ async def check_all_foremen_approved(target_date: str = None) -> bool:
         tomorrow = datetime.now(TZ_BARNAUL) + timedelta(days=1)
         target_date = tomorrow.strftime("%Y-%m-%d")
 
-    # Все активные прорабы
     async with db.conn.execute(
         "SELECT user_id FROM users WHERE role = 'foreman' AND is_blacklisted = 0"
     ) as cur:
@@ -320,9 +333,9 @@ async def check_all_foremen_approved(target_date: str = None) -> bool:
     if not all_foremen:
         return False
 
-    # Прорабы, у которых есть утверждённая/опубликованная заявка на дату
     async with db.conn.execute(
-        "SELECT DISTINCT foreman_id FROM applications WHERE date_target = ? AND status IN ('approved', 'published', 'in_progress')",
+        "SELECT DISTINCT foreman_id FROM applications "
+        "WHERE date_target = ? AND status IN ('approved','published','in_progress')",
         (target_date,),
     ) as cur:
         approved_foremen = {r[0] for r in await cur.fetchall()}

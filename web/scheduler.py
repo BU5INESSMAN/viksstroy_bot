@@ -143,15 +143,16 @@ async def check_and_run_tasks():
 
             if not already_published and await check_all_foremen_approved(tomorrow_str):
                 logger.info(f"📋 Все прорабы утвердили заявки на {tomorrow_str}! Публикуем расстановку...")
+                # Устанавливаем флаг ДО отправки, чтобы избежать повторной публикации
+                try:
+                    await db.conn.execute(
+                        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
+                        (schedule_flag_key,),
+                    )
+                    await db.conn.commit()
+                except Exception:
+                    pass
                 if await publish_schedule_to_group(tomorrow_str):
-                    try:
-                        await db.conn.execute(
-                            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
-                            (schedule_flag_key,),
-                        )
-                        await db.conn.commit()
-                    except:
-                        pass
                     await db.add_log(0, "Система", f"Авто-публикация расстановки на {tomorrow_str}")
 
     except Exception as e:
