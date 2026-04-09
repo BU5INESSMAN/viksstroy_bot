@@ -6,6 +6,7 @@ from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File
 from typing import List
 from database_deps import db
 import json
+import tempfile
 from datetime import datetime
 
 router = APIRouter(tags=["Objects"])
@@ -61,6 +62,32 @@ async def api_update_object_kp(obj_id: int, request: Request):
     target_volumes = data.get("target_volumes", {})
     await db.add_kp_to_object(obj_id, kp_ids, target_volumes)
     return {"status": "ok"}
+
+# ==========================================
+# ПАРСИНГ PDF СМЕТЫ
+# ==========================================
+
+@router.post("/api/objects/parse_pdf")
+async def api_parse_pdf(file: UploadFile = File(...)):
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Файл должен быть в формате PDF")
+
+    content = await file.read()
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    try:
+        tmp.write(content)
+        tmp.close()
+
+        from services.pdf_parser import parse_smr_pdf
+        result = parse_smr_pdf(tmp.name)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка парсинга PDF: {str(e)}")
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
 
 # ==========================================
 # ФАЙЛЫ ОБЪЕКТА (PDF)

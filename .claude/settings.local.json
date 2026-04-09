@@ -15,7 +15,11 @@
       "Bash(python -c \"import py_compile; py_compile.compile\\('web/scheduler.py', doraise=True\\); print\\('scheduler.py OK'\\)\")",
       "Bash(python -c \"import py_compile; py_compile.compile\\('web/routers/applications.py', doraise=True\\); print\\('applications.py OK'\\)\")",
       "Bash(python -c \"import py_compile; py_compile.compile\\('web/routers/users.py', doraise=True\\); print\\('users.py OK'\\)\")",
-      "Bash(grep -n \"await notify_users\\(\" web/routers/*.py web/scheduler.py web/api_main.py)"
+      "Bash(grep -n \"await notify_users\\(\" web/routers/*.py web/scheduler.py web/api_main.py)",
+      "Bash(pip install:*)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('services/pdf_parser.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('services/pdf_parser.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/objects.py', encoding='utf-8'\\).read\\(\\)\\); print\\('OK'\\)\")"
     ]
   }
 }
