@@ -15,19 +15,6 @@ from utils import resolve_id, notify_users
 router = APIRouter(tags=["Auth"])
 
 
-async def get_frontend_role(tg_id: int, base_role: str) -> str:
-    """Определяет, является ли рабочий бригадиром, чтобы выдать ему нужную роль для UI"""
-    if base_role == 'worker':
-        try:
-            async with db.conn.execute("SELECT 1 FROM team_members WHERE tg_user_id = ? AND is_foreman = 1 LIMIT 1",
-                                       (tg_id,)) as cur:
-                if await cur.fetchone():
-                    return 'brigadier'
-        except Exception:
-            pass
-    return base_role
-
-
 @router.post("/api/auth/code")
 async def api_auth_by_code(code: str = Form(...)):
     async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (code,)) as cur:
@@ -44,8 +31,7 @@ async def api_auth_by_code(code: str = Form(...)):
     except:
         pass
 
-    frontend_role = await get_frontend_role(primary_id, user_dict['role'])
-    return {"status": "ok", "role": frontend_role, "tg_id": primary_id}
+    return {"status": "ok", "role": user_dict['role'], "tg_id": primary_id}
 
 
 @router.post("/api/users/link_account")
@@ -65,8 +51,8 @@ async def api_link_account(tg_id: int = Form(...), code: str = Form(...)):
         await db.conn.rollback()
         raise HTTPException(500, "Ошибка БД при связке аккаунтов")
     user = await db.get_user(primary_id)
-    frontend_role = await get_frontend_role(primary_id, dict(user)['role']) if user else "worker"
-    return {"status": "ok", "new_tg_id": primary_id, "role": frontend_role}
+    user_role = dict(user)['role'] if user else "worker"
+    return {"status": "ok", "new_tg_id": primary_id, "role": user_role}
 
 
 @router.post("/api/users/unlink_platform")
@@ -105,8 +91,7 @@ async def max_web_auth(code: str = Form(...)):
     await db.conn.execute("DELETE FROM web_codes WHERE code = ?", (code,))
     await db.conn.commit()
 
-    frontend_role = await get_frontend_role(real_tg_id, dict(user)['role'])
-    return {"status": "ok", "role": frontend_role, "tg_id": real_tg_id}
+    return {"status": "ok", "role": dict(user)['role'], "tg_id": real_tg_id}
 
 
 @router.post("/api/max/auth")
@@ -116,8 +101,7 @@ async def api_max_auth(max_id: int = Form(...), first_name: str = Form(""), last
     user = await db.get_user(real_tg_id)
     if user:
         if dict(user).get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
-        frontend_role = await get_frontend_role(real_tg_id, dict(user)['role'])
-        return {"status": "ok", "role": frontend_role, "fio": dict(user)['fio'], "tg_id": real_tg_id}
+        return {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id}
     return {"status": "needs_password", "max_id": max_id, "first_name": first_name, "last_name": last_name}
 
 
@@ -164,8 +148,7 @@ async def telegram_auth(data: dict):
                 await db.update_user_avatar(real_tg_id, photo_url)
                 user_dict['avatar_url'] = photo_url
 
-            frontend_role = await get_frontend_role(real_tg_id, user_dict['role'])
-            return {"status": "ok", "role": frontend_role, "fio": user_dict['fio'], "tg_id": real_tg_id,
+            return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": real_tg_id,
                     "avatar_url": user_dict.get('avatar_url', photo_url)}
         return {"status": "needs_password", "tg_id": raw_id, "first_name": data.get('first_name', ''),
                 "last_name": data.get('last_name', ''), "photo_url": photo_url}
@@ -181,8 +164,7 @@ async def api_tma_auth(tg_id: int = Form(...), first_name: str = Form(""), last_
     user = await db.get_user(real_tg_id)
     if user:
         if dict(user).get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
-        frontend_role = await get_frontend_role(real_tg_id, dict(user)['role'])
-        return {"status": "ok", "role": frontend_role, "fio": dict(user)['fio'], "tg_id": real_tg_id}
+        return {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id}
     return {"status": "needs_password", "tg_id": tg_id, "first_name": first_name, "last_name": last_name}
 
 

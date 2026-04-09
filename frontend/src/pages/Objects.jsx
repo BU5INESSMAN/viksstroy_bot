@@ -8,6 +8,7 @@ import {
 export default function Objects() {
     const role = localStorage.getItem('user_role') || 'Гость';
     const canManage = ['moderator', 'boss', 'superadmin', 'foreman'].includes(role);
+    const canCreate = ['moderator', 'boss', 'superadmin'].includes(role);
 
     const [objects, setObjects] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -143,9 +144,11 @@ export default function Objects() {
                         <button onClick={() => setShowArchived(!showArchived)} className={`px-5 py-2.5 rounded-xl font-bold transition-all text-sm flex items-center gap-2 ${showArchived ? 'bg-gray-800 text-white dark:bg-gray-200 dark:text-gray-900' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>
                             <Archive className="w-4 h-4" /> {showArchived ? 'Показать активные' : 'Архив'}
                         </button>
-                        <button onClick={() => setCreateModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-all flex items-center gap-2 active:scale-95">
-                            <Plus className="w-4 h-4" /> Создать
-                        </button>
+                        {canCreate && (
+                            <button onClick={() => setCreateModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-all flex items-center gap-2 active:scale-95">
+                                <Plus className="w-4 h-4" /> Создать
+                            </button>
+                        )}
                     </div>
                 )}
             </div>

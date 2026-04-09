@@ -55,19 +55,19 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
                             ) : (
                                 <div className="space-y-2.5 max-h-96 overflow-y-auto pr-2 custom-scrollbar">
                                     {manageTeamData.members.map(m => (
-                                        <div key={m.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm gap-4 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
-                                            <div className="flex items-center gap-3">
-                                                <div className={`p-2 rounded-full ${m.is_foreman ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-400'}`}>
+                                        <div key={m.id} className="flex flex-col sm:flex-row sm:items-center p-4 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm gap-4 hover:border-gray-300 dark:hover:border-gray-600 transition-colors">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <div className={`p-2 rounded-full flex-shrink-0 ${m.is_foreman ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-400'}`}>
                                                     {m.is_foreman ? <Star className="w-5 h-5 fill-current" /> : <User className="w-5 h-5" />}
                                                 </div>
-                                                <div>
-                                                    <p className="font-bold text-gray-800 dark:text-gray-100 text-base leading-tight">{m.fio}</p>
+                                                <div className="min-w-0">
+                                                    <p className="font-bold text-gray-800 dark:text-gray-100 text-base leading-tight truncate">{m.fio}</p>
                                                     <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold mt-0.5">{m.position}</p>
                                                 </div>
                                             </div>
 
                                             {canManage && (
-                                                <div className="flex flex-wrap gap-2">
+                                                <div className="flex flex-wrap gap-2 sm:ml-auto sm:flex-shrink-0">
                                                     <button type="button" onClick={() => { setManageModalOpen(false); openProfile(m.tg_user_id, 'member', m.id); }} className="bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 px-3.5 py-2 rounded-xl text-xs font-bold hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors flex items-center gap-1.5 shadow-sm active:scale-95">
                                                         <User className="w-3.5 h-3.5" /> Профиль
                                                     </button>

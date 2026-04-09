@@ -89,6 +89,21 @@ async def add_team_member(team_id: int, fio: str = Form(...), position: str = Fo
 @router.post("/api/teams/members/{member_id}/toggle_foreman")
 async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int = Form(0)):
     await db.conn.execute("UPDATE team_members SET is_foreman = ? WHERE id = ?", (is_foreman, member_id))
+    # Update global user role in DB
+    async with db.conn.execute("SELECT tg_user_id FROM team_members WHERE id = ?", (member_id,)) as cur:
+        row = await cur.fetchone()
+    if row and row[0]:
+        member_tg_id = row[0]
+        if is_foreman:
+            await db.update_user_role(member_tg_id, "brigadier")
+        else:
+            # Only downgrade to worker if not a foreman in any other team
+            async with db.conn.execute(
+                "SELECT 1 FROM team_members WHERE tg_user_id = ? AND is_foreman = 1 AND id != ? LIMIT 1",
+                (member_tg_id, member_id)
+            ) as cur2:
+                if not await cur2.fetchone():
+                    await db.update_user_role(member_tg_id, "worker")
     await db.conn.commit()
     return {"status": "ok"}
 

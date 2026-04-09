@@ -14,8 +14,12 @@ async def api_get_objects(archived: int = 0):
     return await db.get_objects(include_archived=bool(archived))
 
 @router.post("/api/objects/create")
-async def api_create_object(name: str = Form(...), address: str = Form(...)):
+async def api_create_object(name: str = Form(...), address: str = Form(...), tg_id: int = Form(0)):
     if db.conn is None: await db.init_db()
+    if tg_id:
+        user = await db.get_user(tg_id)
+        if user and dict(user).get('role') in ('foreman', 'brigadier'):
+            raise HTTPException(status_code=403, detail="Нет прав на создание объектов")
     await db.create_object(name, address)
     return {"status": "ok"}
 
