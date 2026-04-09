@@ -1,5 +1,6 @@
 import sys
 import os
+import logging
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
@@ -11,8 +12,15 @@ import asyncio
 
 from database_deps import db, TZ_BARNAUL
 from utils import notify_users, execute_app_publish
-from routers import auth, dashboard, users, teams, equipment, applications, objects, kp # <-- ПОДКЛЮЧЕН KP
+from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system
 from scheduler import start_scheduler
+
+# --- File-based logging for server-logs endpoint ---
+os.makedirs("data", exist_ok=True)
+file_handler = logging.FileHandler(os.path.join("data", "server.log"), encoding="utf-8")
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s"))
+logging.getLogger().addHandler(file_handler)
 
 app = FastAPI(title="ВИКС Расписание API")
 
@@ -30,7 +38,8 @@ app.include_router(teams.router)
 app.include_router(equipment.router)
 app.include_router(applications.router)
 app.include_router(objects.router)
-app.include_router(kp.router) # <-- ВНЕДРЕН РОУТЕР KP
+app.include_router(kp.router)
+app.include_router(system.router)
 
 
 @app.exception_handler(Exception)
@@ -67,6 +76,21 @@ async def startup():
         await db.conn.commit()
     except Exception as e:
         print("Ошибка создания таблиц:", e)
+
+    # Seed default settings for new features (safe upserts)
+    for key, default_val in [
+        ('auto_backup_enabled', '0'),
+        ('office_reminder_enabled', '0'),
+        ('office_reminder_time', ''),
+    ]:
+        try:
+            await db.conn.execute(
+                "INSERT INTO settings (key, value) SELECT ?, ? WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = ?)",
+                (key, default_val, key)
+            )
+        except:
+            pass
+    await db.conn.commit()
 
     try: start_scheduler()
     except Exception as e: print(f"Ошибка при запуске планировщика: {e}")
