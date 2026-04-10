@@ -108,7 +108,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
     };
 
     return (
-        <><div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
+        <><div className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                 <div className="bg-white dark:bg-gray-800 rounded-[2rem] w-full max-w-xl shadow-2xl overflow-hidden transition-colors border border-gray-100 dark:border-gray-700">
 

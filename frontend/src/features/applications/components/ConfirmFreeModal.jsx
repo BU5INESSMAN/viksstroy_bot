@@ -1,6 +1,6 @@
 export default function ConfirmFreeModal({ freeModal, setFreeModal, isSubmitting, executeFree }) {
     return (
-        <div className="fixed inset-0 z-[120] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+        <div className="fixed inset-0 w-screen h-[100dvh] z-[120] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
             <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl relative">
                 <h3 className="text-2xl font-bold mb-2 dark:text-white">Подтверждение</h3>
                 <p className="text-sm text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">

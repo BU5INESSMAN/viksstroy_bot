@@ -67,7 +67,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
             {/* ВСПЛЫВАЮЩЕЕ МЕНЮ (BOTTOM SHEET) */}
             {isMenuOpen && (
-                <div className="fixed inset-0 z-[100] bg-black/60 flex items-end sm:items-center justify-center sm:p-4 transition-opacity" onClick={() => setIsMenuOpen(false)}>
+                <div className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 flex items-end sm:items-center justify-center sm:p-4 transition-opacity" onClick={() => setIsMenuOpen(false)}>
                     <div className="bg-white dark:bg-gray-800 w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 sm:slide-in-from-bottom-0" onClick={e => e.stopPropagation()}>
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-bold dark:text-white">Дополнительно</h3>

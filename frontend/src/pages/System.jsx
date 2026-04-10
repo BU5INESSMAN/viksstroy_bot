@@ -485,7 +485,7 @@ export default function System() {
 
             {/* ====== DM BROADCAST MODAL ====== */}
             {dmModalOpen && (
-                <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setDmModalOpen(false)}>
+                <div className="fixed inset-0 w-screen h-[100dvh] z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4" onClick={() => setDmModalOpen(false)}>
                     <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] overflow-hidden" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
                             <h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center gap-2">
