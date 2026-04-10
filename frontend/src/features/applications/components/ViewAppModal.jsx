@@ -107,10 +107,11 @@ export default function ViewAppModal({ app, onClose, data }) {
     if (!app) return null;
 
     const statusConfig = {
-        waiting:   { label: 'Ожидание',   color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',           icon: Clock },
-        approved:  { label: 'Одобрено',   color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-500', icon: CheckCircle },
-        published: { label: 'В работе',   color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',         icon: HardHat },
-        completed: { label: 'Завершено',  color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', icon: Flag },
+        waiting:     { label: 'Ожидание',   color: 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300',           icon: Clock },
+        approved:    { label: 'Одобрено',   color: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-500', icon: CheckCircle },
+        published:   { label: 'В работе',   color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',         icon: HardHat },
+        in_progress: { label: 'В работе',   color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',         icon: HardHat },
+        completed:   { label: 'Завершено',  color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400', icon: Flag },
     };
     const st = statusConfig[app.status] || statusConfig.waiting;
     const StIcon = st.icon;

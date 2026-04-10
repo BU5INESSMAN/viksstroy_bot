@@ -7,11 +7,13 @@ import {
     Upload, Trash2, BarChart3, Calendar, ChevronDown, ChevronUp,
     FileUp, AlertCircle, Pencil, CheckCheck
 } from 'lucide-react';
+import useConfirm from '../hooks/useConfirm';
 
 export default function Objects() {
     const role = localStorage.getItem('user_role') || 'Гость';
     const canManage = ['moderator', 'boss', 'superadmin', 'foreman'].includes(role);
     const canCreate = ['moderator', 'boss', 'superadmin'].includes(role);
+    const { confirm, ConfirmUI } = useConfirm();
     const canViewStats = ['moderator', 'boss', 'superadmin'].includes(role);
 
     const [objects, setObjects] = useState([]);
@@ -168,7 +170,9 @@ export default function Objects() {
     };
 
     const handleArchiveToggle = async (objId, isCurrentlyArchived) => {
-        if (!window.confirm(isCurrentlyArchived ? "Вернуть объект в работу?" : "Отправить объект в архив? Он больше не будет доступен для новых заявок.")) return;
+        const msg = isCurrentlyArchived ? "Вернуть объект в работу?" : "Отправить объект в архив? Он больше не будет доступен для новых заявок.";
+        const ok = await confirm(msg, { title: isCurrentlyArchived ? "Восстановление" : "Архивация объекта", variant: isCurrentlyArchived ? "info" : "warning", confirmText: isCurrentlyArchived ? "Восстановить" : "В архив" });
+        if (!ok) return;
         try {
             await axios.post(`/api/objects/${objId}/${isCurrentlyArchived ? 'restore' : 'archive'}`);
             fetchObjects();
@@ -239,7 +243,8 @@ export default function Objects() {
     };
 
     const handleDeleteFile = async (fileId) => {
-        if (!window.confirm("Удалить файл?")) return;
+        const ok = await confirm("Удалить файл?", { title: "Удаление файла", confirmText: "Удалить" });
+        if (!ok) return;
         try {
             await axios.delete(`/api/objects/files/${fileId}`);
             setObjectFiles(prev => prev.filter(f => f.id !== fileId));
@@ -703,6 +708,7 @@ export default function Objects() {
                     </div>
                 </div>
             )}
+            <ConfirmUI />
         </main>
     );
 }

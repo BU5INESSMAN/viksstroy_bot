@@ -12,7 +12,8 @@ CREATE TABLE IF NOT EXISTS users (
     notify_orders INTEGER DEFAULT 1,
     notify_reports INTEGER DEFAULT 1,
     notify_errors INTEGER DEFAULT 1,
-    avatar_url TEXT
+    avatar_url TEXT,
+    last_used_objects TEXT DEFAULT '[]'
 );
 
 -- Таблица бригад
@@ -76,6 +77,8 @@ CREATE TABLE IF NOT EXISTS applications (
     approved_by TEXT,
     approved_by_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP,
+    is_archived INTEGER DEFAULT 0,
     FOREIGN KEY (foreman_id) REFERENCES users (user_id),
     FOREIGN KEY (team_id) REFERENCES teams (id),
     FOREIGN KEY (equipment_id) REFERENCES equipment (id)

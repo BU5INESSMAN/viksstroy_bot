@@ -8,6 +8,7 @@ import EquipmentCard from '../features/equipment/components/EquipmentCard';
 import AddEquipForm from '../features/equipment/components/AddEquipForm';
 import BulkUploadForm from '../features/equipment/components/BulkUploadForm';
 import EquipmentInviteModal from '../features/equipment/components/EquipmentInviteModal';
+import useConfirm from '../hooks/useConfirm';
 
 export default function Equipment() {
     const role = localStorage.getItem('user_role') || 'Гость';
@@ -29,6 +30,7 @@ export default function Equipment() {
 
     const canManageEquipment = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canDeleteEquipment = ['moderator', 'boss', 'superadmin'].includes(role);
+    const { confirm, ConfirmUI } = useConfirm();
 
     const fetchData = async () => {
         try {
@@ -77,7 +79,8 @@ export default function Equipment() {
     };
 
     const handleDeleteEquip = async (id) => {
-        if (!window.confirm("Удалить эту технику из базы?")) return;
+        const ok = await confirm("Удалить эту технику из базы?", { title: "Удаление техники", confirmText: "Удалить" });
+        if (!ok) return;
         try {
             const fd = new FormData(); fd.append('tg_id', tgId);
             await axios.post(`/api/equipment/${id}/delete`, fd);
@@ -94,7 +97,8 @@ export default function Equipment() {
     };
 
     const handleUnlinkEquipment = async (equipId) => {
-        if (!window.confirm("Отвязать Telegram/MAX аккаунт водителя от этой техники?")) return;
+        const ok = await confirm("Отвязать Telegram/MAX аккаунт водителя от этой техники?", { title: "Отвязка аккаунта", variant: "warning", confirmText: "Отвязать" });
+        if (!ok) return;
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
@@ -194,6 +198,7 @@ export default function Equipment() {
                 copiedLink={copiedLink}
                 setCopiedLink={setCopiedLink}
             />
+            <ConfirmUI />
         </div>
     );
 }

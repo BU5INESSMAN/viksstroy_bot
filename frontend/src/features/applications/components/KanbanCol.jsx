@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import {
     Calendar, MapPin, Users, Truck,
-    ChevronDown, ChevronUp, HardHat, CheckCircle, Search
+    ChevronDown, ChevronUp, HardHat, CheckCircle, Search, Archive
 } from 'lucide-react';
 
-export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen, toggleOpen, onAppClick }) {
+export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen, toggleOpen, onAppClick, canArchive, onArchive }) {
     const [showAll, setShowAll] = useState(false);
     const displayedApps = showAll ? apps : apps.slice(0, 10);
 
@@ -88,6 +88,16 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                                         </p>
                                     ))}
                                 </div>
+                            )}
+
+                            {canArchive && onArchive && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onArchive(a.id); }}
+                                    className="mt-3 w-full flex items-center justify-center gap-1.5 text-[11px] font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 py-2 rounded-lg border border-purple-200 dark:border-purple-800/50 transition-all active:scale-[0.98]"
+                                    title="Отправить в архив"
+                                >
+                                    <Archive className="w-3.5 h-3.5" /> В архив
+                                </button>
                             )}
                         </div>
                     );

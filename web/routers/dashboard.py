@@ -48,7 +48,7 @@ async def get_dashboard_data(tg_id: int = 0):
     categories = [r[0].strip().capitalize() for r in cat_rows if r[0].strip()]
 
     async with db.conn.execute(
-            "SELECT * FROM applications WHERE date_target >= date('now', '-14 days') ORDER BY id DESC") as cur:
+            "SELECT * FROM applications WHERE date_target >= date('now', '-14 days') AND (is_archived = 0 OR is_archived IS NULL) ORDER BY id DESC") as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
     for a in all_apps:

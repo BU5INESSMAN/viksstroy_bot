@@ -7,6 +7,7 @@ import TeamCard from '../features/teams/components/TeamCard';
 import CreateTeamModal from '../features/teams/components/CreateTeamModal';
 import ManageTeamModal from '../features/teams/components/ManageTeamModal';
 import TeamInviteModal from '../features/teams/components/TeamInviteModal';
+import useConfirm from '../hooks/useConfirm';
 
 export default function Teams() {
     const tgId = localStorage.getItem('tg_id') || '0';
@@ -21,6 +22,7 @@ export default function Teams() {
     const [newMember, setNewMember] = useState({ fio: '', position: 'Рабочий', is_foreman: false });
     const [inviteInfo, setInviteInfo] = useState(null);
     const [copiedLink, setCopiedLink] = useState('');
+    const { confirm, ConfirmUI } = useConfirm();
 
     const fetchData = () => { axios.get('/api/dashboard').then(res => setTeams(res.data.teams || [])).catch(()=>{}); };
     useEffect(() => { fetchData(); }, []);
@@ -39,7 +41,8 @@ export default function Teams() {
     };
 
     const handleDeleteTeam = async (id) => {
-        if (!window.confirm("Удалить бригаду и отвязать всех участников?")) return;
+        const ok = await confirm("Удалить бригаду и отвязать всех участников?", { title: "Удаление бригады", confirmText: "Удалить" });
+        if (!ok) return;
         try {
             const fd = new FormData(); fd.append('tg_id', tgId);
             await axios.post(`/api/teams/${id}/delete`, fd);
@@ -80,7 +83,8 @@ export default function Teams() {
     };
 
     const handleUnlinkMember = async (memberId) => {
-        if (!window.confirm("Отвязать Telegram/MAX аккаунт от этого рабочего?")) return;
+        const ok = await confirm("Отвязать Telegram/MAX аккаунт от этого рабочего?", { title: "Отвязка аккаунта", variant: "warning", confirmText: "Отвязать" });
+        if (!ok) return;
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
@@ -90,7 +94,8 @@ export default function Teams() {
     };
 
     const deleteMember = async (memberId) => {
-        if (!window.confirm("Удалить участника из бригады?")) return;
+        const ok = await confirm("Удалить участника из бригады?", { title: "Удаление участника", confirmText: "Удалить" });
+        if (!ok) return;
         try {
             const fd = new FormData(); fd.append('tg_id', tgId);
             await axios.post(`/api/teams/members/${memberId}/delete`, fd);
@@ -136,6 +141,7 @@ export default function Teams() {
             <ManageTeamModal isManageModalOpen={isManageModalOpen} setManageModalOpen={setManageModalOpen} manageTeamData={manageTeamData} canManage={canManage} generateInvite={generateInvite} newMember={newMember} setNewMember={setNewMember} handleAddMember={handleAddMember} toggleForeman={toggleForeman} handleUnlinkMember={handleUnlinkMember} deleteMember={deleteMember} openProfile={openProfile} />
 
             <TeamInviteModal inviteInfo={inviteInfo} setInviteInfo={setInviteInfo} copiedLink={copiedLink} setCopiedLink={setCopiedLink} />
+            <ConfirmUI />
         </div>
     );
 }

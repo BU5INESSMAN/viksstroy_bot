@@ -57,14 +57,32 @@ async def enrich_app_with_members_data(app_dict):
 # НОВЫЕ ЭНДПОИНТЫ ОБЪЕКТОВ И ПРОВЕРОК
 # ==========================================
 @router.get("/api/objects/active")
-async def get_active_objects():
-    """Отдает список активных объектов для выпадающего списка"""
+async def get_active_objects(tg_id: int = 0):
+    """Отдает список активных объектов, отсортированных по последним использованным."""
     if db.conn is None: await db.init_db()
     async with db.conn.execute(
             "SELECT id, name, address, default_team_ids, default_equip_ids FROM objects WHERE is_archived = 0 ORDER BY name") as cur:
         rows = await cur.fetchall()
-        return [{"id": r[0], "name": r[1], "address": r[2], "default_team_ids": r[3], "default_equip_ids": r[4]} for r
-                in rows]
+        objects = [{"id": r[0], "name": r[1], "address": r[2], "default_team_ids": r[3], "default_equip_ids": r[4]} for r in rows]
+
+    # Sort by user's last used objects
+    if tg_id:
+        real_id = await resolve_id(tg_id)
+        try:
+            async with db.conn.execute("SELECT last_used_objects FROM users WHERE user_id = ?", (real_id,)) as cur:
+                row = await cur.fetchone()
+                if row and row[0]:
+                    last_ids = json.loads(row[0])
+                    def sort_key(obj):
+                        try:
+                            return last_ids.index(obj['id'])
+                        except ValueError:
+                            return len(last_ids) + obj['id']
+                    objects.sort(key=sort_key)
+        except:
+            pass
+
+    return objects
 
 
 @router.post("/api/applications/check_availability")
@@ -192,7 +210,7 @@ async def get_review_apps():
     await ensure_app_columns()
     teams_dict = await fetch_teams_dict()
     async with db.conn.execute(
-            "SELECT * FROM applications WHERE status IN ('waiting', 'approved', 'published', 'in_progress') ORDER BY id DESC") as cursor:
+            "SELECT * FROM applications WHERE status IN ('waiting', 'approved', 'published', 'in_progress', 'completed') AND (is_archived = 0 OR is_archived IS NULL) ORDER BY id DESC") as cursor:
         rows = await cursor.fetchall()
     result = []
     for row in rows:
@@ -236,6 +254,9 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
             await db.conn.execute(
                 "UPDATE applications SET status = ?, approved_by = ?, approved_by_id = ? WHERE id = ?",
                 (new_status, mod_fio, real_tg_id, app_id))
+        elif new_status == 'completed':
+            now_ts = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d %H:%M:%S")
+            await db.conn.execute("UPDATE applications SET status = ?, completed_at = ? WHERE id = ?", (new_status, now_ts, app_id))
         else:
             await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
 
@@ -562,3 +583,107 @@ async def publish_schedule(tg_id: int = Form(0), target_date: str = Form("")):
     fio = dict(user).get('fio', 'Модератор')
     await db.add_log(real_tg_id, fio, f"Опубликовал расстановку на {target_date}")
     return {"status": "ok", "date": target_date}
+
+
+# ==========================================
+# АРХИВ ЗАЯВОК
+# ==========================================
+@router.post("/api/applications/{app_id}/archive")
+async def archive_app(app_id: int, tg_id: int = Form(0)):
+    """Ручная архивация заявки (moderator/boss/superadmin)."""
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+    if not user or dict(user).get('role') not in ['moderator', 'boss', 'superadmin']:
+        raise HTTPException(403, "Нет прав для архивации")
+
+    async with db.conn.execute("SELECT status FROM applications WHERE id = ?", (app_id,)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Заявка не найдена")
+    if row[0] != 'completed':
+        raise HTTPException(400, "Архивировать можно только завершённые заявки")
+
+    await db.conn.execute("UPDATE applications SET is_archived = 1 WHERE id = ?", (app_id,))
+    await db.conn.commit()
+
+    fio = dict(user).get('fio', 'Модератор')
+    await db.add_log(real_tg_id, fio, f"Архивировал заявку №{app_id}")
+    return {"status": "ok"}
+
+
+@router.get("/api/applications/archive")
+async def get_archived_apps(date_from: str = "", date_to: str = ""):
+    """Получение архивных заявок с фильтрацией по дате."""
+    teams_dict = await fetch_teams_dict()
+
+    query = "SELECT * FROM applications WHERE is_archived = 1"
+    params = []
+    if date_from:
+        query += " AND date_target >= ?"
+        params.append(date_from)
+    if date_to:
+        query += " AND date_target <= ?"
+        params.append(date_to)
+    query += " ORDER BY date_target DESC, id DESC"
+
+    async with db.conn.execute(query, params) as cursor:
+        rows = await cursor.fetchall()
+
+    result = []
+    for row in rows:
+        app_dict = dict(zip([c[0] for c in cursor.description], row))
+        enrich_app_with_team_name(app_dict, teams_dict)
+        await enrich_app_with_members_data(app_dict)
+        result.append(app_dict)
+    return result
+
+
+# ==========================================
+# ПОСЛЕДНИЕ ОБЪЕКТЫ ПОЛЬЗОВАТЕЛЯ
+# ==========================================
+@router.post("/api/users/{user_id}/last_objects")
+async def update_last_objects(user_id: int, object_id: int = Form(...)):
+    """Обновляет список последних использованных объектов."""
+    real_id = await resolve_id(user_id)
+    user = await db.get_user(real_id)
+    if not user:
+        raise HTTPException(404, "Пользователь не найден")
+
+    # Get current list
+    last_used = '[]'
+    try:
+        async with db.conn.execute("SELECT last_used_objects FROM users WHERE user_id = ?", (real_id,)) as cur:
+            row = await cur.fetchone()
+            if row and row[0]:
+                last_used = row[0]
+    except:
+        pass
+
+    try:
+        ids = json.loads(last_used)
+    except:
+        ids = []
+
+    # Move to front, keep max 10
+    if object_id in ids:
+        ids.remove(object_id)
+    ids.insert(0, object_id)
+    ids = ids[:10]
+
+    await db.conn.execute("UPDATE users SET last_used_objects = ? WHERE user_id = ?", (json.dumps(ids), real_id))
+    await db.conn.commit()
+    return {"status": "ok"}
+
+
+@router.get("/api/users/{user_id}/last_objects")
+async def get_last_objects(user_id: int):
+    """Возвращает список последних использованных объектов."""
+    real_id = await resolve_id(user_id)
+    try:
+        async with db.conn.execute("SELECT last_used_objects FROM users WHERE user_id = ?", (real_id,)) as cur:
+            row = await cur.fetchone()
+            if row and row[0]:
+                return json.loads(row[0])
+    except:
+        pass
+    return []

@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { getTodayStr } from '../utils/dateUtils';
+import useConfirm from '../hooks/useConfirm';
 
 const ReviewSection = ({ title, icon: Icon, colorClass, titleColorClass, apps, statusType, renderAppCard }) => {
     const [showAll, setShowAll] = useState(false);
@@ -46,6 +47,7 @@ export default function Review() {
     const [selectedToPublish, setSelectedToPublish] = useState([]);
 
     const [isProcessing, setIsProcessing] = useState(false);
+    const { confirm, prompt, ConfirmUI } = useConfirm();
 
     const fetchData = () => {
         axios.get('/api/applications/review').then(res => setReviewApps(res.data || [])).catch(() => {});
@@ -56,12 +58,14 @@ export default function Review() {
     const handleReviewAction = async (status) => {
         let reason = '';
         if (status === 'rejected') {
-            reason = window.prompt('Укажите причину отклонения/отзыва заявки (увидит прораб):');
+            reason = await prompt('Укажите причину отклонения/отзыва заявки (увидит прораб):', { title: 'Отклонение заявки', placeholder: 'Причина...' });
             if (reason === null) return;
         } else if (status === 'completed') {
-            if (!window.confirm('Завершить заявку досрочно и освободить всю технику?')) return;
+            const ok = await confirm('Завершить заявку досрочно и освободить всю технику?', { title: 'Досрочное завершение', variant: 'warning', confirmText: 'Завершить' });
+            if (!ok) return;
         } else {
-            if (!window.confirm('Одобрить заявку?')) return;
+            const ok = await confirm('Одобрить заявку?', { title: 'Одобрение заявки', variant: 'info', confirmText: 'Одобрить' });
+            if (!ok) return;
         }
 
         setIsProcessing(true);
@@ -114,7 +118,8 @@ export default function Review() {
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
 
     const handlePublishSchedule = async () => {
-        if (!window.confirm('Опубликовать расстановку на завтра в групповой чат?')) return;
+        const ok = await confirm('Опубликовать расстановку на завтра в групповой чат?', { title: 'Публикация расстановки', variant: 'info', confirmText: 'Опубликовать' });
+        if (!ok) return;
         setIsProcessing(true);
         try {
             const fd = new FormData();
@@ -131,8 +136,9 @@ export default function Review() {
     const todayYYYYMMDD = getTodayStr();
 
     const waitingApps = reviewApps.filter(a => a.status === 'waiting');
-    const approvedApps = reviewApps.filter(a => a.status === 'approved' || (a.status === 'published' && a.date_target > todayYYYYMMDD));
-    const publishedApps = reviewApps.filter(a => (a.status === 'published' || a.status === 'in_progress') && a.date_target <= todayYYYYMMDD);
+    const approvedApps = reviewApps.filter(a => a.status === 'approved');
+    const inProgressApps = reviewApps.filter(a => a.status === 'in_progress' || a.status === 'published');
+    const completedApps = reviewApps.filter(a => a.status === 'completed');
 
     const filteredForPublish = publishDateFilter
         ? approvedApps.filter(a => a.date_target === publishDateFilter && a.status === 'approved')
@@ -256,7 +262,8 @@ export default function Review() {
 
             <ReviewSection title="Требуют проверки" icon={Clock} colorClass="border-yellow-200 dark:border-yellow-900/30" titleColorClass="text-yellow-700 dark:text-yellow-500" apps={waitingApps} statusType="waiting" renderAppCard={renderAppCard} />
             <ReviewSection title="Одобрены (ожидают начала)" icon={CheckCircle} colorClass="border-emerald-200 dark:border-emerald-900/30" titleColorClass="text-emerald-700 dark:text-emerald-500" apps={approvedApps} statusType="approved" renderAppCard={renderAppCard} />
-            <ReviewSection title="В работе" icon={HardHat} colorClass="border-blue-200 dark:border-blue-900/30" titleColorClass="text-blue-700 dark:text-blue-500" apps={publishedApps} statusType="published" renderAppCard={renderAppCard} />
+            <ReviewSection title="В работе" icon={HardHat} colorClass="border-blue-200 dark:border-blue-900/30" titleColorClass="text-blue-700 dark:text-blue-500" apps={inProgressApps} statusType="published" renderAppCard={renderAppCard} />
+            <ReviewSection title="Завершены" icon={Flag} colorClass="border-gray-200 dark:border-gray-700" titleColorClass="text-gray-600 dark:text-gray-400" apps={completedApps} statusType="completed" renderAppCard={renderAppCard} />
 
             {reviewApps.length === 0 && (
                 <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm">
@@ -471,7 +478,7 @@ export default function Review() {
                                             <Undo className="w-4 h-4" /> Отозвать заявку
                                         </button>
                                     )}
-                                    {selectedApp.status === 'published' && canModerate && (
+                                                    {(selectedApp.status === 'published' || selectedApp.status === 'in_progress') && canModerate && (
                                         <button disabled={isProcessing} onClick={() => handleReviewAction('completed')} className="w-full bg-gray-800 text-white disabled:opacity-50 dark:bg-gray-700 py-3.5 rounded-xl font-bold hover:bg-gray-900 dark:hover:bg-gray-600 transition-all active:scale-[0.98] shadow-md hover:shadow-lg flex items-center justify-center gap-2">
                                             <Flag className="w-4 h-4" /> Отменить / Завершить наряд
                                         </button>
@@ -482,6 +489,7 @@ export default function Review() {
                     </div>
                 </div>
             )}
+            <ConfirmUI />
         </main>
     );
 }

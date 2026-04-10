@@ -5,12 +5,14 @@ import {
     User, X, Camera, Trash2, Unplug, ShieldCheck,
     Send, Smartphone, MessageCircle, Bell, UserPlus, ClipboardList, FileText, AlertTriangle
 } from 'lucide-react';
+import useConfirm from '../../../hooks/useConfirm';
 
 const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
 
 export default function ProfileModal({ profileData, setProfileData, editProfile, setEditProfile, setProfileModalOpen, canEditUsers, isMyProfile }) {
     const tgId = localStorage.getItem('tg_id');
     const [linkCode, setLinkCode] = useState('');
+    const { confirm, ConfirmUI } = useConfirm();
 
     const handleToggleNotify = (platform) => {
         setEditProfile(prev => {
@@ -59,7 +61,8 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
     };
 
     const handleDeleteUser = async () => {
-        if (!window.confirm(`Вы уверены, что хотите полностью удалить пользователя ${profileData.fio}? Это действие нельзя отменить.`)) return;
+        const ok = await confirm(`Вы уверены, что хотите полностью удалить пользователя ${profileData.fio}? Это действие нельзя отменить.`, { title: "Удаление пользователя", confirmText: "Удалить" });
+        if (!ok) return;
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
@@ -90,7 +93,8 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
 
     const handleUnlinkPlatform = async (platform) => {
         const platformName = platform === 'max' ? 'MAX' : 'Telegram';
-        if (!window.confirm(`Вы уверены, что хотите отвязать мессенджер ${platformName}?`)) return;
+        const ok = await confirm(`Вы уверены, что хотите отвязать мессенджер ${platformName}?`, { title: "Отвязка мессенджера", variant: "warning", confirmText: "Отвязать" });
+        if (!ok) return;
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
@@ -104,7 +108,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
     };
 
     return (
-        <div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
+        <><div className="fixed inset-0 z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                 <div className="bg-white dark:bg-gray-800 rounded-[2rem] w-full max-w-xl shadow-2xl overflow-hidden transition-colors border border-gray-100 dark:border-gray-700">
 
@@ -309,6 +313,6 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                     )}
                 </div>
             </div>
-        </div>
+        </div><ConfirmUI /></>
     );
 }

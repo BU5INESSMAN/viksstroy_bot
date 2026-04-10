@@ -60,12 +60,11 @@ async def check_and_run_tasks():
 
         # =========================================================================
         # ТРИГГЕР 2: АВТО-СТАРТ НАРЯДОВ (перевод в in_progress)
-        # Забирает ВСЕ approved заявки на сегодня и стартует их.
+        # Забирает ВСЕ approved/published заявки на сегодня и стартует их.
         # =========================================================================
         if auto_start_orders_time and current_time_str == auto_start_orders_time:
             logger.info(f"▶️ {current_time_str} - Авто-старт всех одобренных нарядов на сегодня...")
 
-            # Берём все approved И published на сегодня
             async with db.conn.execute(
                 "SELECT * FROM applications WHERE status IN ('approved', 'published') AND date_target = ?",
                 (today_date_str,)
@@ -79,7 +78,6 @@ async def check_and_run_tasks():
                     (app_dict['id'],))
                 started_count += 1
 
-                # Собираем всех участников для уведомления
                 workers_ids = []
                 selected_list = [int(x.strip()) for x in app_dict.get('selected_members', '').split(',') if
                                  x.strip().isdigit()] if app_dict.get('selected_members') else []
@@ -145,7 +143,9 @@ async def check_and_run_tasks():
             for app in apps_to_complete:
                 app_id, address, foreman_id = app
 
-                await db.conn.execute("UPDATE applications SET status = 'pending_report' WHERE id = ?", (app_id,))
+                await db.conn.execute(
+                    "UPDATE applications SET status = 'completed', completed_at = ? WHERE id = ?",
+                    (now.strftime("%Y-%m-%d %H:%M:%S"), app_id))
 
                 # Освобождаем технику при завершении наряда
                 try:
@@ -202,6 +202,43 @@ async def check_and_run_tasks():
                     pass
                 if await publish_schedule_to_group(tomorrow_str):
                     await db.add_log(0, "Система", f"Авто-публикация расстановки на {tomorrow_str}")
+
+        # =========================================================================
+        # ТРИГГЕР 7: АВТО-АРХИВАЦИЯ ЗАВЕРШЁННЫХ НАРЯДОВ (через 48 часов)
+        # =========================================================================
+        try:
+            cutoff = (now - timedelta(hours=48)).strftime("%Y-%m-%d %H:%M:%S")
+            async with db.conn.execute(
+                "UPDATE applications SET is_archived = 1 WHERE status = 'completed' AND is_archived = 0 AND completed_at IS NOT NULL AND completed_at <= ?",
+                (cutoff,)
+            ) as cur:
+                pass
+            await db.conn.commit()
+        except Exception as e:
+            logger.error(f"Ошибка авто-архивации: {e}")
+
+        # =========================================================================
+        # ТРИГГЕР 8: АВТО-СТАРТ одобренных заявок на сегодня (каждую минуту)
+        # Если заявка одобрена и дата наступила — сразу переводим в работу.
+        # =========================================================================
+        try:
+            async with db.conn.execute(
+                "SELECT id, object_address, foreman_id FROM applications WHERE status = 'approved' AND date_target <= ?",
+                (today_date_str,)
+            ) as cur:
+                same_day_apps = await cur.fetchall()
+
+            for app in same_day_apps:
+                app_id, address, foreman_id = app
+                await db.conn.execute("UPDATE applications SET status = 'in_progress' WHERE id = ?", (app_id,))
+                if foreman_id:
+                    msg = f"🚀 <b>Наряд начался!</b>\n📍 Объект: {address}\nЗаявка одобрена и автоматически переведена в работу."
+                    await notify_users([], msg, "my-apps", extra_tg_ids=[foreman_id], category="orders")
+            if same_day_apps:
+                await db.conn.commit()
+                await db.add_log(0, "Система", f"Авто-старт: {len(same_day_apps)} одобренных нарядов переведены в работу")
+        except Exception as e:
+            logger.error(f"Ошибка авто-старта одобренных заявок: {e}")
 
     except Exception as e:
         logger.error(f"Ошибка в планировщике: {e}")

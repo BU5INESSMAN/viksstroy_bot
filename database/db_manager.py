@@ -77,6 +77,18 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
 
         await self.conn.commit()
 
+        # Stage 2 migrations
+        for col_stmt in [
+            "ALTER TABLE applications ADD COLUMN completed_at TIMESTAMP",
+            "ALTER TABLE applications ADD COLUMN is_archived INTEGER DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN last_used_objects TEXT DEFAULT '[]'",
+        ]:
+            try:
+                await self.conn.execute(col_stmt)
+            except Exception:
+                pass
+        await self.conn.commit()
+
         await self.upgrade_db_for_invites()
         await self.upgrade_db_for_logs()
         await self.upgrade_db_for_profiles()

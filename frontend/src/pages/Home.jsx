@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { ClipboardList, Clock, CheckCircle, HardHat, Flag } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
 import ActiveApplicationsCard from '../features/applications/components/ActiveApplicationsCard';
@@ -10,6 +10,8 @@ import MyTeamCard from '../features/applications/components/MyTeamCard';
 import CreateAppModal from '../features/applications/components/CreateAppModal';
 import ConfirmFreeModal from '../features/applications/components/ConfirmFreeModal';
 import ViewAppModal from '../features/applications/components/ViewAppModal';
+import ArchiveModal from '../features/applications/components/ArchiveModal';
+import useConfirm from '../hooks/useConfirm';
 
 export default function Home() {
     const smartDates = getSmartDates();
@@ -25,12 +27,15 @@ export default function Home() {
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
+    const [isArchiveOpen, setArchiveOpen] = useState(false);
+
+    const { confirm, ConfirmUI } = useConfirm();
 
     const [appForm, setAppForm] = useState({
         id: null, status: '', date_target: smartDates[1].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: []
     });
 
-    const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
+    const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, in_progress: false, completed: false });
     const [freeModal, setFreeModal] = useState({ isOpen: false, type: '', app: null, teamId: null, inputValue: '' });
     const [viewApp, setViewApp] = useState(null);
 
@@ -51,7 +56,7 @@ export default function Home() {
 
     useEffect(() => {
         if (isGlobalCreateAppOpen) {
-            axios.get('/api/objects/active').then(res => setObjectsList(res.data)).catch(()=>{});
+            axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(()=>{});
             setAppForm({ id: null, status: '', date_target: smartDates[1].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
             setActiveEqCategory(null);
             setTeamMembers([]);
@@ -133,7 +138,7 @@ export default function Home() {
 
     const checkTeamStatus = (team_id) => {
         if (data.kanban_apps) {
-            const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && ['approved', 'published'].includes(a.status));
+            const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && ['approved', 'in_progress'].includes(a.status));
             for (const a of appsOnDate) {
                 const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
                 if (tIds.includes(team_id) && appForm.id !== a.id) return { state: 'busy', message: `Эта бригада уже занята в этот день на объекте:\n📍 ${a.object_address}` };
@@ -145,7 +150,7 @@ export default function Home() {
     const checkEquipStatus = (equip) => {
         if (equip.status === 'repair') return { state: 'repair', message: 'Техника в ремонте.' };
         if (data.kanban_apps) {
-            const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && ['approved', 'published'].includes(a.status));
+            const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && ['approved', 'in_progress'].includes(a.status));
             for (const a of appsOnDate) {
                 try {
                     const eqList = JSON.parse(a.equipment_data || '[]');
@@ -167,12 +172,28 @@ export default function Home() {
     };
     const updateEquipmentTime = (id, field, value) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, equipment: prev.equipment.map(e => e.id === id ? { ...e, [field]: value } : e) })); };
 
+    const handleObjectSelect = async (objectId) => {
+        const selObj = objectsList.find(o => o.id === parseInt(objectId));
+        setAppForm(prev => ({...prev, object_id: objectId, object_address: selObj ? `${selObj.name} (${selObj.address})` : ''}));
+        // Update last used objects
+        if (objectId) {
+            try {
+                const fd = new FormData();
+                fd.append('object_id', objectId);
+                await axios.post(`/api/users/${tgId}/last_objects`, fd);
+            } catch(e) {}
+        }
+    };
+
     const handleCreateApp = async (e) => {
         e.preventDefault();
         if(appForm.isViewOnly) { setGlobalCreateAppOpen(false); return; }
         if (!appForm.object_id) return toast.error("Выберите объект!");
         if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) return toast.error("Выберите бригаду или технику!");
-        if (appForm.team_ids.length === 0 && !window.confirm("Создать заявку ТОЛЬКО на технику (без людей)?")) return;
+        if (appForm.team_ids.length === 0) {
+            const ok = await confirm("Создать заявку ТОЛЬКО на технику (без людей)?", { title: "Подтверждение", variant: "warning", confirmText: "Да, создать" });
+            if (!ok) return;
+        }
         if (appForm.team_ids.length > 0 && appForm.members.length === 0) return toast.error("Выберите хотя бы одного рабочего из бригады!");
 
         setIsSubmitting(true);
@@ -203,7 +224,8 @@ export default function Home() {
     };
 
     const handleDeleteApp = async () => {
-        if (!window.confirm("ВНИМАНИЕ! Вы уверены, что хотите полностью УДАЛИТЬ эту заявку из системы? Это действие необратимо!")) return;
+        const ok = await confirm("ВНИМАНИЕ! Вы уверены, что хотите полностью УДАЛИТЬ эту заявку из системы? Это действие необратимо!", { title: "Удаление заявки", variant: "danger", confirmText: "Удалить" });
+        if (!ok) return;
         setIsSubmitting(true);
         try {
             const fd = new FormData();
@@ -216,6 +238,20 @@ export default function Home() {
             toast.error(err.response?.data?.detail || "Ошибка при удалении заявки.");
         } finally {
             setIsSubmitting(false);
+        }
+    };
+
+    const handleArchiveApp = async (appId) => {
+        const ok = await confirm("Отправить эту заявку в архив?", { title: "Архивация", variant: "info", confirmText: "В архив" });
+        if (!ok) return;
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            await axios.post(`/api/applications/${appId}/archive`, fd);
+            toast.success("Заявка отправлена в архив");
+            fetchData();
+        } catch (err) {
+            toast.error(err.response?.data?.detail || "Ошибка архивации");
         }
     };
 
@@ -258,17 +294,14 @@ export default function Home() {
     };
 
     const todayYYYYMMDD = getTodayStr();
-    const appsMap = { waiting: [], approved: [], published: [], completed: [] };
+    const appsMap = { waiting: [], approved: [], in_progress: [], completed: [] };
 
     if (data.kanban_apps) {
         data.kanban_apps.forEach(a => {
             if (a.status === 'waiting') appsMap.waiting.push(a);
             else if (a.status === 'completed') appsMap.completed.push(a);
             else if (a.status === 'approved') appsMap.approved.push(a);
-            else if (a.status === 'published' || a.status === 'in_progress') {
-                if (a.date_target > todayYYYYMMDD) appsMap.approved.push(a);
-                else appsMap.published.push(a);
-            }
+            else if (a.status === 'in_progress' || a.status === 'published') appsMap.in_progress.push(a);
         });
     }
 
@@ -276,6 +309,7 @@ export default function Home() {
     const upcomingApps = activeApps.filter(a => a.date_target > todayYYYYMMDD);
 
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
+    const canArchive = ['moderator', 'boss', 'superadmin'].includes(role);
 
     if (loading) return (
         <div className="flex flex-col items-center justify-center mt-32 text-gray-400">
@@ -308,13 +342,18 @@ export default function Home() {
                         <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
                             <ClipboardList className="text-blue-500 w-7 h-7" /> ЗАЯВКИ
                         </h2>
+                        {canArchive && (
+                            <button onClick={() => setArchiveOpen(true)} className="flex items-center gap-2 text-sm font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 px-4 py-2 rounded-xl border border-purple-200 dark:border-purple-800 transition-all active:scale-95 shadow-sm">
+                                <Archive className="w-4 h-4" /> Архив
+                            </button>
+                        )}
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                         <KanbanCol title="На модерации" icon={Clock} colorClass="bg-yellow-50/80 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 border-yellow-100 dark:border-yellow-900/50" apps={appsMap.waiting} isOpen={openKanban.waiting} toggleOpen={() => setOpenKanban({...openKanban, waiting: !openKanban.waiting})} onAppClick={openAppModalFromKanban} />
                         <KanbanCol title="Одобрены" icon={CheckCircle} colorClass="bg-emerald-50/80 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50" apps={appsMap.approved} isOpen={openKanban.approved} toggleOpen={() => setOpenKanban({...openKanban, approved: !openKanban.approved})} onAppClick={openAppModalFromKanban} />
-                        <KanbanCol title="В работе" icon={HardHat} colorClass="bg-blue-50/80 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 border-blue-100 dark:border-blue-900/50" apps={appsMap.published} isOpen={openKanban.published} toggleOpen={() => setOpenKanban({...openKanban, published: !openKanban.published})} onAppClick={openAppModalFromKanban} />
-                        <KanbanCol title="Завершены" icon={Flag} colorClass="bg-gray-100/80 text-gray-800 dark:bg-gray-800/50 dark:text-gray-300 border-gray-200 dark:border-gray-700" apps={appsMap.completed} isOpen={openKanban.completed} toggleOpen={() => setOpenKanban({...openKanban, completed: !openKanban.completed})} onAppClick={openAppModalFromKanban} />
+                        <KanbanCol title="В работе" icon={HardHat} colorClass="bg-blue-50/80 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 border-blue-100 dark:border-blue-900/50" apps={appsMap.in_progress} isOpen={openKanban.in_progress} toggleOpen={() => setOpenKanban({...openKanban, in_progress: !openKanban.in_progress})} onAppClick={openAppModalFromKanban} />
+                        <KanbanCol title="Завершены" icon={Flag} colorClass="bg-gray-100/80 text-gray-800 dark:bg-gray-800/50 dark:text-gray-300 border-gray-200 dark:border-gray-700" apps={appsMap.completed} isOpen={openKanban.completed} toggleOpen={() => setOpenKanban({...openKanban, completed: !openKanban.completed})} onAppClick={openAppModalFromKanban} canArchive={canArchive} onArchive={handleArchiveApp} />
                     </div>
                 </div>
             )}
@@ -342,6 +381,7 @@ export default function Home() {
                     handleDeleteApp={handleDeleteApp}
                     handleFormChange={handleFormChange}
                     handleApplyDefaults={handleApplyDefaults}
+                    handleObjectSelect={handleObjectSelect}
                     smartDates={smartDates}
                     objectsList={objectsList}
                     data={data}
@@ -359,6 +399,9 @@ export default function Home() {
                     openFreeModal={openFreeModal}
                 />
             )}
+
+            <ArchiveModal isOpen={isArchiveOpen} onClose={() => setArchiveOpen(false)} />
+            <ConfirmUI />
         </main>
     );
 }
