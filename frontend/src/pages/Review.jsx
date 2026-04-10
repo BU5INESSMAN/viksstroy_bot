@@ -7,13 +7,7 @@ import {
     XCircle, Search, Undo, Send, ChevronDown, ChevronUp, User, X, Check, LayoutGrid
 } from 'lucide-react';
 
-const getTodayStr = () => {
-    try {
-        return new Intl.DateTimeFormat('en-CA', {timeZone: 'Asia/Barnaul'}).format(new Date());
-    } catch(e) {
-        return new Date().toISOString().split('T')[0];
-    }
-};
+import { getTodayStr } from '../utils/dateUtils';
 
 const ReviewSection = ({ title, icon: Icon, colorClass, titleColorClass, apps, statusType, renderAppCard }) => {
     const [showAll, setShowAll] = useState(false);
