@@ -36,7 +36,8 @@
       "WebFetch(domain:raw.githubusercontent.com)",
       "WebSearch",
       "Bash(npm install:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('database/apps_repo.py', doraise=True\\); py_compile.compile\\('web/routers/applications.py', doraise=True\\); print\\('OK'\\)\")"
     ]
   }
 }

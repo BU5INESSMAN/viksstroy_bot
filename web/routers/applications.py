@@ -116,7 +116,7 @@ async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_targ
     # Строгая серверная проверка занятости перед сохранением
     occupied = await db.check_resource_availability(date_target, object_id, team_id, equipment_data)
     if occupied:
-        raise HTTPException(400, "Ошибка создания наряда:\n" + "\n".join(occupied))
+        raise HTTPException(409, "Ошибка создания наряда:\n" + "\n".join(occupied))
 
     await db.conn.execute(
         "INSERT INTO applications (foreman_id, foreman_name, team_id, object_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed, freed_team_ids) VALUES (?, ?, ?, ?, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0, '')",
@@ -141,10 +141,10 @@ async def update_app(app_id: int, tg_id: int = Form(...), team_id: str = Form("0
         row = await cur.fetchone()
         if not row or row[0] != 'waiting': raise HTTPException(400, "Заявка уже в работе или проверена")
 
-    # Строгая серверная проверка занятости перед сохранением
-    occupied = await db.check_resource_availability(date_target, object_id, team_id, equipment_data)
+    # Строгая серверная проверка занятости перед сохранением (исключаем текущую заявку)
+    occupied = await db.check_resource_availability(date_target, object_id, team_id, equipment_data, exclude_app_id=app_id)
     if occupied:
-        raise HTTPException(400, "Ошибка обновления наряда:\n" + "\n".join(occupied))
+        raise HTTPException(409, "Ошибка обновления наряда:\n" + "\n".join(occupied))
 
     try:
         await db.conn.execute(
@@ -157,8 +157,8 @@ async def update_app(app_id: int, tg_id: int = Form(...), team_id: str = Form("0
     fio = dict(user).get('fio', 'Пользователь')
     await db.add_log(real_tg_id, fio, f"Отредактировал заявку №{app_id}")
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["report_group", "boss", "superadmin"],
-                       f"✏️ <b>Заявка №{app_id} изменена</b>\n👤 Кто: {fio}\n📍 Объект: {object_address}\n🕒 Время: {now}",
+    await notify_users(["report_group", "moderator", "boss", "superadmin"],
+                       f"⚠️ <b>Заявка #{app_id} (Объект: {object_address}) была отредактирована</b>\n👤 Прораб: {fio}\n🕒 Время: {now}",
                        "review", category="orders")
     return {"status": "ok"}
 

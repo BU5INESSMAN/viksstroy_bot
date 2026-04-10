@@ -57,7 +57,10 @@ export default function Home() {
     useEffect(() => {
         if (isGlobalCreateAppOpen) {
             axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(()=>{});
-            setAppForm({ id: null, status: '', date_target: smartDates[1].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
+            // Only reset form if not pre-populated (e.g. by handleEditFromView)
+            if (!appForm.id) {
+                setAppForm({ id: null, status: '', date_target: smartDates[1].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
+            }
             setActiveEqCategory(null);
             setTeamMembers([]);
             setIsSubmitting(false);
@@ -244,6 +247,7 @@ export default function Home() {
     const handleArchiveApp = async (appId) => {
         const ok = await confirm("Отправить эту заявку в архив?", { title: "Архивация", variant: "info", confirmText: "В архив" });
         if (!ok) return;
+        setIsSubmitting(true);
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
@@ -252,6 +256,8 @@ export default function Home() {
             fetchData();
         } catch (err) {
             toast.error(err.response?.data?.detail || "Ошибка архивации");
+        } finally {
+            setIsSubmitting(false);
         }
     };
 

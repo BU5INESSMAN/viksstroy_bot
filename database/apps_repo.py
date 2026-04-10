@@ -128,20 +128,26 @@ class AppsRepoMixin:
         await self.conn.execute("UPDATE applications SET is_published = 1 WHERE id = ?", (app_id,))
         await self.conn.commit()
 
-    async def check_resource_availability(self, date_target: str, object_id: int, team_ids: str, equip_data: str):
+    async def check_resource_availability(self, date_target: str, object_id: int, team_ids: str, equip_data: str, exclude_app_id: int = None):
         """Строгая проверка занятости бригад и техники в других заявках"""
         import json
         occupied_resources = []
 
-        async with self.conn.execute("""
-                                     SELECT a.team_id, a.equipment_data, o.name as obj_name, a.object_address
-                                     FROM applications a
-                                              LEFT JOIN objects o ON a.object_id = o.id
-                                     WHERE a.date_target = ?
-                                       AND a.status NOT IN ('rejected', 'completed', 'cancelled')
-                                       AND (a.object_id != ? OR a.object_id IS NULL)
-                                       AND a.is_team_freed = 0
-                                     """, (date_target, object_id)) as cur:
+        query = """
+                SELECT a.id, a.team_id, a.equipment_data, o.name as obj_name, a.object_address
+                FROM applications a
+                         LEFT JOIN objects o ON a.object_id = o.id
+                WHERE a.date_target = ?
+                  AND a.status NOT IN ('rejected', 'completed', 'cancelled')
+                  AND (a.object_id != ? OR a.object_id IS NULL)
+                  AND a.is_team_freed = 0
+                """
+        params = [date_target, object_id]
+        if exclude_app_id:
+            query += " AND a.id != ?"
+            params.append(exclude_app_id)
+
+        async with self.conn.execute(query, params) as cur:
             active_apps = await cur.fetchall()
 
         target_teams = [t.strip() for t in str(team_ids).split(',')] if team_ids and str(team_ids) != '0' else []
@@ -155,9 +161,9 @@ class AppsRepoMixin:
                 pass
 
         for app in active_apps:
-            app_team = str(app[0]) if app[0] is not None else ""
-            app_equip_data = str(app[1]) if app[1] is not None else ""
-            obj_name = app[2] or app[3] or "Неизвестный объект"
+            app_team = str(app[1]) if app[1] is not None else ""
+            app_equip_data = str(app[2]) if app[2] is not None else ""
+            obj_name = app[3] or app[4] or "Неизвестный объект"
 
             app_team_list = [t.strip() for t in app_team.split(',')]
             for t in target_teams:
