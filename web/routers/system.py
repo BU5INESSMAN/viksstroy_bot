@@ -158,11 +158,14 @@ async def test_notification_extended(tg_id: int = Form(...), test_type: str = Fo
         )
 
     elif test_type == "system_error":
+        # HARDCODED: system errors go STRICTLY to superadmins via DM + main group chat.
+        # Never send debug/error alerts to moderators.
+        error_msg = f"🚨 <b>Тест системной ошибки ({platform_name}):</b>\n❌ RuntimeError: Test exception\n👣 Маршрут: /api/system/test\n🕐 {datetime.now(TZ_BARNAUL).strftime('%H:%M:%S')}"
         await notify_users(
-            ["superadmin"],
-            f"🚨 <b>Тест системной ошибки ({platform_name}):</b>\n❌ RuntimeError: Test exception\n👣 Маршрут: /api/system/test\n🕐 {datetime.now(TZ_BARNAUL).strftime('%H:%M:%S')}",
+            ["report_group", "superadmin"],
+            error_msg,
             "system",
-            [real_tg_id],
+            extra_tg_ids=[real_tg_id],
             target_platform=platform,
             category="errors"
         )

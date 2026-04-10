@@ -199,7 +199,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                             )}
 
                             {/* НАСТРОЙКИ УВЕДОМЛЕНИЙ */}
-                            {isMyProfile && (
+                            {(isMyProfile || canEditUsers) && (
                                 <div className="space-y-4 bg-gray-50/50 dark:bg-gray-700/20 p-5 rounded-2xl border border-gray-100 dark:border-gray-700/50 mt-4">
                                     <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2 text-sm">
                                         <span className="text-xl">🔔</span> Уведомления в ЛС

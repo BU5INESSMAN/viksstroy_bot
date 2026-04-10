@@ -92,11 +92,14 @@ export default function System() {
     const [serverLogsLoading, setServerLogsLoading] = useState(false);
     const [settings, setSettings] = useState({
         auto_publish_time: '', auto_publish_enabled: false,
+        auto_start_orders_time: '',
+        report_request_time: '',
         foreman_reminder_time: '', foreman_reminder_weekends: false,
         auto_complete_time: '',
         auto_backup_enabled: false,
         office_reminder_enabled: false, office_reminder_time: '',
     });
+    const isAdmin = ['superadmin', 'boss'].includes(role);
     const [testPlatform, setTestPlatform] = useState('all');
     const [logsExpanded, setLogsExpanded] = useState(false);
     const [userSearch, setUserSearch] = useState('');
@@ -116,14 +119,17 @@ export default function System() {
 
         if (['superadmin', 'boss', 'moderator'].includes(role)) {
             axios.get('/api/settings').then(res => {
+                const b = (k) => res.data[k] === '1' || res.data[k] === 'true';
                 setSettings({
                     auto_publish_time: res.data.auto_publish_time || '',
-                    auto_publish_enabled: res.data.auto_publish_enabled === '1' || res.data.auto_publish_enabled === 'true',
+                    auto_publish_enabled: b('auto_publish_enabled'),
+                    auto_start_orders_time: res.data.auto_start_orders_time || '',
+                    report_request_time: res.data.report_request_time || '',
                     foreman_reminder_time: res.data.foreman_reminder_time || '',
-                    foreman_reminder_weekends: res.data.foreman_reminder_weekends === '1' || res.data.foreman_reminder_weekends === 'true',
+                    foreman_reminder_weekends: b('foreman_reminder_weekends'),
                     auto_complete_time: res.data.auto_complete_time || '',
-                    auto_backup_enabled: res.data.auto_backup_enabled === '1' || res.data.auto_backup_enabled === 'true',
-                    office_reminder_enabled: res.data.office_reminder_enabled === '1' || res.data.office_reminder_enabled === 'true',
+                    auto_backup_enabled: b('auto_backup_enabled'),
+                    office_reminder_enabled: b('office_reminder_enabled'),
                     office_reminder_time: res.data.office_reminder_time || '',
                 });
             }).catch(() => {});
@@ -141,6 +147,8 @@ export default function System() {
             await axios.post('/api/settings/update', {
                 auto_publish_time: settings.auto_publish_time,
                 auto_publish_enabled: settings.auto_publish_enabled ? '1' : '0',
+                auto_start_orders_time: settings.auto_start_orders_time,
+                report_request_time: settings.report_request_time,
                 foreman_reminder_time: settings.foreman_reminder_time,
                 foreman_reminder_weekends: settings.foreman_reminder_weekends ? '1' : '0',
                 auto_complete_time: settings.auto_complete_time,
@@ -270,32 +278,47 @@ export default function System() {
     return (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-6 pb-24">
 
-            {/* ====== AUTOMATION SETTINGS ====== */}
+            {/* ====== AUTOMATION SETTINGS (hidden from moderators) ====== */}
+            {role !== 'moderator' && (
             <GlassCard className="p-6 sm:p-8">
                 <SectionHeader icon={Settings} iconColor="text-blue-500 bg-blue-500" title="Настройки автоматизации" />
                 <div className="space-y-5">
 
-                    {/* Auto-start */}
-                    <div className="bg-gray-50/80 dark:bg-gray-700/20 p-5 rounded-xl border border-gray-100 dark:border-gray-700/50">
-                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
-                            <Clock className="w-4 h-4 text-blue-500" /> Авто-старт нарядов (Базовое время)
-                        </h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 font-medium">Стандартное время начала работ для заявок без техники.</p>
-                        <input type="time" name="auto_publish_time" value={settings.auto_publish_time} onChange={handleSettingChange}
-                            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-blue-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
-                    </div>
-
-                    {/* Auto-publish toggle */}
+                    {/* Auto-publish toggle + time */}
                     <div className={`p-5 rounded-xl border transition-colors ${settings.auto_publish_enabled ? 'bg-blue-50/50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800/50' : 'bg-gray-50/80 dark:bg-gray-700/20 border-gray-100 dark:border-gray-700/50'}`}>
-                        <div className="flex items-start justify-between gap-4">
+                        <div className="flex items-start justify-between gap-4 mb-3">
                             <div>
                                 <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
                                     <Rocket className={`w-4 h-4 ${settings.auto_publish_enabled ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400'}`} /> Авто-публикация заявок
                                 </h3>
-                                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Одобренные заявки на текущий день автоматически публикуются в беседу.</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Одобренные заявки автоматически публикуются в беседу в указанное время.</p>
                             </div>
                             <Toggle name="auto_publish_enabled" checked={settings.auto_publish_enabled} onChange={handleSettingChange} />
                         </div>
+                        {settings.auto_publish_enabled && (
+                            <input type="time" name="auto_publish_time" value={settings.auto_publish_time} onChange={handleSettingChange}
+                                className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-blue-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
+                        )}
+                    </div>
+
+                    {/* Auto-start orders */}
+                    <div className="bg-gray-50/80 dark:bg-gray-700/20 p-5 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
+                            <Zap className="w-4 h-4 text-amber-500" /> Авто-старт нарядов
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 font-medium">Все одобренные заявки на текущий день переводятся в статус "В работе".</p>
+                        <input type="time" name="auto_start_orders_time" value={settings.auto_start_orders_time} onChange={handleSettingChange}
+                            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-amber-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
+                    </div>
+
+                    {/* Report request */}
+                    <div className="bg-gray-50/80 dark:bg-gray-700/20 p-5 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
+                            <ClipboardCheck className="w-4 h-4 text-indigo-500" /> Запрос отчётов
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 font-medium">Бот запросит у прорабов заполнение табеля/отчёта по активным нарядам.</p>
+                        <input type="time" name="report_request_time" value={settings.report_request_time} onChange={handleSettingChange}
+                            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
                     </div>
 
                     {/* Auto-complete */}
@@ -303,9 +326,9 @@ export default function System() {
                         <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
                             <CheckCircle className="w-4 h-4 text-emerald-500" /> Авто-завершение нарядов
                         </h3>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 font-medium">Активные наряды переводятся в "Ожидает отчета" и запрашивается табель.</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 font-medium">Активные наряды переводятся в "Ожидает отчета".</p>
                         <input type="time" name="auto_complete_time" value={settings.auto_complete_time} onChange={handleSettingChange}
-                            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-blue-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
+                            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-emerald-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
                     </div>
 
                     {/* Foreman reminder */}
@@ -323,10 +346,10 @@ export default function System() {
                             </div>
                         </div>
                         <input type="time" name="foreman_reminder_time" value={settings.foreman_reminder_time} onChange={handleSettingChange}
-                            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-blue-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
+                            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-orange-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
                     </div>
 
-                    {/* NEW: Auto-backup */}
+                    {/* Auto-backup */}
                     <div className={`p-5 rounded-xl border transition-colors ${settings.auto_backup_enabled ? 'bg-emerald-50/50 dark:bg-emerald-900/10 border-emerald-200 dark:border-emerald-800/50' : 'bg-gray-50/80 dark:bg-gray-700/20 border-gray-100 dark:border-gray-700/50'}`}>
                         <div className="flex items-start justify-between gap-4">
                             <div>
@@ -339,7 +362,7 @@ export default function System() {
                         </div>
                     </div>
 
-                    {/* NEW: Office reminders */}
+                    {/* Office reminders */}
                     <div className={`p-5 rounded-xl border transition-colors ${settings.office_reminder_enabled ? 'bg-violet-50/50 dark:bg-violet-900/10 border-violet-200 dark:border-violet-800/50' : 'bg-gray-50/80 dark:bg-gray-700/20 border-gray-100 dark:border-gray-700/50'}`}>
                         <div className="flex items-start justify-between gap-4 mb-3">
                             <div>
@@ -362,8 +385,10 @@ export default function System() {
                     </button>
                 </div>
             </GlassCard>
+            )}
 
-            {/* ====== TESTING & ROLES ROW ====== */}
+            {/* ====== TESTING & ROLES ROW (hidden from moderators) ====== */}
+            {role !== 'moderator' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
 
                 {/* Notification Testing */}
@@ -430,6 +455,7 @@ export default function System() {
                     </div>
                 </GlassCard>
             </div>
+            )}
 
             {/* ====== BROADCAST (Рассылка) ====== */}
             <GlassCard className="p-6 sm:p-8">
@@ -609,7 +635,8 @@ export default function System() {
                 </div>
             </GlassCard>
 
-            {/* ====== ACTION LOGS ====== */}
+            {/* ====== ACTION LOGS (hidden from moderators) ====== */}
+            {role !== 'moderator' && (
             <GlassCard className="p-6 sm:p-8 overflow-hidden">
                 <SectionHeader icon={FileText} iconColor="text-orange-500 bg-orange-500" title="Журнал действий" />
                 <div className="-mx-2 sm:mx-0 overflow-x-auto">
@@ -679,6 +706,7 @@ export default function System() {
                     )}
                 </div>
             </GlassCard>
+            )}
         </div>
     );
 }

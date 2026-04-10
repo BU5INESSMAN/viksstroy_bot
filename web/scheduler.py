@@ -34,15 +34,18 @@ async def check_and_run_tasks():
             settings = {r[0]: r[1] for r in await cur.fetchall()}
 
         auto_publish_time = settings.get('auto_publish_time', '')
+        auto_publish_enabled = settings.get('auto_publish_enabled', '0') == '1'
+        auto_start_orders_time = settings.get('auto_start_orders_time', '')
+        report_request_time = settings.get('report_request_time', '')
         auto_complete_time = settings.get('auto_complete_time', '')
         foreman_reminder_time = settings.get('foreman_reminder_time', '')
         remind_on_weekends = settings.get('foreman_reminder_weekends', '0') == '1'
 
         # =========================================================================
-        # ТРИГГЕР 1: АВТО-ПУБЛИКАЦИЯ И СТАРТ НАРЯДА
+        # ТРИГГЕР 1: АВТО-ПУБЛИКАЦИЯ НАРЯДОВ В БЕСЕДУ
         # =========================================================================
-        if auto_publish_time and current_time_str == auto_publish_time:
-            logger.info(f"🚀 {current_time_str} - Запуск нарядов на сегодня...")
+        if auto_publish_enabled and auto_publish_time and current_time_str == auto_publish_time:
+            logger.info(f"🚀 {current_time_str} - Авто-публикация нарядов в беседу...")
 
             async with db.conn.execute("SELECT * FROM applications WHERE status = 'approved' AND date_target = ?",
                                        (today_date_str,)) as cur:
@@ -55,15 +58,28 @@ async def check_and_run_tasks():
             if count > 0:
                 await db.add_log(0, "Система", f"Авто-публикация: {count} нарядов")
 
-            async with db.conn.execute("SELECT * FROM applications WHERE status = 'published' AND date_target = ?",
-                                       (today_date_str,)) as cur:
+        # =========================================================================
+        # ТРИГГЕР 2: АВТО-СТАРТ НАРЯДОВ (перевод в in_progress)
+        # Забирает ВСЕ approved заявки на сегодня и стартует их.
+        # =========================================================================
+        if auto_start_orders_time and current_time_str == auto_start_orders_time:
+            logger.info(f"▶️ {current_time_str} - Авто-старт всех одобренных нарядов на сегодня...")
+
+            # Берём все approved И published на сегодня
+            async with db.conn.execute(
+                "SELECT * FROM applications WHERE status IN ('approved', 'published') AND date_target = ?",
+                (today_date_str,)
+            ) as cur:
                 apps_to_start = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
+            started_count = 0
             for app_dict in apps_to_start:
                 await db.conn.execute(
-                    "UPDATE applications SET status = 'in_progress', is_started_notified = 1 WHERE id = ?",
+                    "UPDATE applications SET status = 'in_progress' WHERE id = ?",
                     (app_dict['id'],))
+                started_count += 1
 
+                # Собираем всех участников для уведомления
                 workers_ids = []
                 selected_list = [int(x.strip()) for x in app_dict.get('selected_members', '').split(',') if
                                  x.strip().isdigit()] if app_dict.get('selected_members') else []
@@ -93,9 +109,30 @@ async def check_and_run_tasks():
                     await notify_users([], msg, "my-apps", extra_tg_ids=all_involved, category="orders")
 
             await db.conn.commit()
+            if started_count > 0:
+                await db.add_log(0, "Система", f"Авто-старт: {started_count} нарядов переведены в работу")
 
         # =========================================================================
-        # ТРИГГЕР 2: АВТО-ЗАВЕРШЕНИЕ НАРЯДА
+        # ТРИГГЕР 3: ЗАПРОС ОТЧЁТОВ (report_request_time)
+        # Уведомляет прорабов о необходимости заполнить отчёт по активным нарядам.
+        # =========================================================================
+        if report_request_time and current_time_str == report_request_time:
+            logger.info(f"📋 {current_time_str} - Запрос отчётов по активным нарядам...")
+
+            async with db.conn.execute(
+                "SELECT id, object_address, foreman_id FROM applications WHERE date_target = ? AND status = 'in_progress'",
+                (today_date_str,)
+            ) as cur:
+                active_apps = await cur.fetchall()
+
+            for app in active_apps:
+                app_id, address, foreman_id = app
+                if foreman_id:
+                    msg = f"📋 <b>Пора заполнить отчёт!</b>\n📍 Объект: {address}\n\nПожалуйста, заполните табель/отчет по этому наряду."
+                    await notify_users([], msg, "dashboard", extra_tg_ids=[foreman_id], category="orders")
+
+        # =========================================================================
+        # ТРИГГЕР 4: АВТО-ЗАВЕРШЕНИЕ НАРЯДА
         # =========================================================================
         if auto_complete_time and current_time_str == auto_complete_time:
             logger.info(f"🏁 {current_time_str} - Завершение нарядов на сегодня...")
@@ -117,7 +154,7 @@ async def check_and_run_tasks():
             await db.conn.commit()
 
         # =========================================================================
-        # ТРИГГЕР 3: НАПОМИНАНИЕ ПРОРАБАМ
+        # ТРИГГЕР 5: НАПОМИНАНИЕ ПРОРАБАМ
         # =========================================================================
         if foreman_reminder_time and current_time_str == foreman_reminder_time:
             if not is_weekend or remind_on_weekends:
@@ -126,7 +163,7 @@ async def check_and_run_tasks():
                 await notify_users(["foreman"], msg, "dashboard", category="orders")
 
         # =========================================================================
-        # ТРИГГЕР 4: АВТО-ПУБЛИКАЦИЯ РАССТАНОВКИ (когда все прорабы утвердили)
+        # ТРИГГЕР 6: АВТО-ПУБЛИКАЦИЯ РАССТАНОВКИ (когда все прорабы утвердили)
         # =========================================================================
         # Проверяем каждую минуту с 12:00 до 22:00, опубликована ли уже расстановка на завтра
         if 12 <= now.hour <= 22:

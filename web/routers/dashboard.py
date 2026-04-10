@@ -59,6 +59,8 @@ async def get_settings():
 
 @router.post("/api/settings/update")
 async def update_settings(auto_publish_time: str = Form(""), auto_publish_enabled: str = Form("0"),
+                          auto_start_orders_time: str = Form(""),
+                          report_request_time: str = Form(""),
                           foreman_reminder_time: str = Form(""),
                           foreman_reminder_weekends: str = Form("0"), auto_complete_time: str = Form(""),
                           auto_backup_enabled: str = Form("0"),
@@ -73,6 +75,8 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
         for k, v in [
             ('auto_publish_time', auto_publish_time),
             ('auto_publish_enabled', auto_publish_enabled),
+            ('auto_start_orders_time', auto_start_orders_time),
+            ('report_request_time', report_request_time),
             ('foreman_reminder_time', foreman_reminder_time),
             ('foreman_reminder_weekends', foreman_reminder_weekends),
             ('auto_complete_time', auto_complete_time),

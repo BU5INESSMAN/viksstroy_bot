@@ -82,6 +82,8 @@ async def startup():
         ('auto_backup_enabled', '0'),
         ('office_reminder_enabled', '0'),
         ('office_reminder_time', ''),
+        ('auto_start_orders_time', ''),
+        ('report_request_time', ''),
     ]:
         try:
             await db.conn.execute(
