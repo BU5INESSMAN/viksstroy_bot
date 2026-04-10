@@ -5,7 +5,8 @@ import {
     MapPin, Plus, Settings, Archive, CheckCircle,
     X, Search, Users, Truck, FileText, Check,
     Upload, Trash2, BarChart3, Calendar, ChevronDown, ChevronUp,
-    FileUp, AlertCircle, Pencil, CheckCheck
+    FileUp, AlertCircle, Pencil, CheckCheck, Download, MessageSquarePlus,
+    Send, Clock, XCircle, Bell
 } from 'lucide-react';
 import useConfirm from '../hooks/useConfirm';
 
@@ -55,6 +56,15 @@ export default function Objects() {
     const [statsLoading, setStatsLoading] = useState(false);
     const [expandedDates, setExpandedDates] = useState({});
 
+    // Object requests
+    const tgId = localStorage.getItem('tg_id') || '0';
+    const isForeman = role === 'foreman';
+    const isOffice = ['moderator', 'boss', 'superadmin'].includes(role);
+    const [isRequestModalOpen, setRequestModalOpen] = useState(false);
+    const [requestForm, setRequestForm] = useState({ name: '', address: '', comment: '' });
+    const [objectRequests, setObjectRequests] = useState([]);
+    const [showRequests, setShowRequests] = useState(false);
+
     const fetchObjects = async () => {
         setLoading(true);
         try {
@@ -67,6 +77,53 @@ export default function Objects() {
     };
 
     useEffect(() => { fetchObjects(); }, [showArchived]);
+
+    useEffect(() => {
+        if (isOffice) {
+            axios.get('/api/object_requests?status=pending').then(res => setObjectRequests(res.data || [])).catch(() => {});
+        }
+    }, []);
+
+    const handleRequestObject = async (e) => {
+        e.preventDefault();
+        try {
+            const fd = new FormData();
+            fd.append('name', requestForm.name);
+            fd.append('address', requestForm.address);
+            fd.append('comment', requestForm.comment);
+            fd.append('tg_id', tgId);
+            await axios.post('/api/object_requests/create', fd);
+            toast.success('Запрос на объект отправлен!');
+            setRequestModalOpen(false);
+            setRequestForm({ name: '', address: '', comment: '' });
+        } catch (e) { toast.error(e.response?.data?.detail || 'Ошибка отправки запроса'); }
+    };
+
+    const handleReviewRequest = async (reqId, action) => {
+        try {
+            const fd = new FormData();
+            fd.append('action', action);
+            fd.append('tg_id', tgId);
+            await axios.post(`/api/object_requests/${reqId}/review`, fd);
+            toast.success(action === 'approve' ? 'Объект создан!' : 'Запрос отклонён');
+            setObjectRequests(prev => prev.filter(r => r.id !== reqId));
+            if (action === 'approve') fetchObjects();
+        } catch (e) { toast.error('Ошибка обработки запроса'); }
+    };
+
+    const handleUploadPdf = async (objId, e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const fd = new FormData();
+        fd.append('file', file);
+        fd.append('tg_id', tgId);
+        try {
+            await axios.post(`/api/objects/${objId}/upload_pdf`, fd);
+            toast.success('Смета загружена!');
+            fetchObjects();
+        } catch (err) { toast.error(err.response?.data?.detail || 'Ошибка загрузки'); }
+        e.target.value = '';
+    };
 
     const handleCreate = async (e) => {
         e.preventDefault();
@@ -292,18 +349,28 @@ export default function Objects() {
                 <h2 className="text-2xl font-bold flex items-center text-gray-800 dark:text-gray-100">
                     <MapPin className="w-8 h-8 text-blue-500 mr-3" /> Объекты
                 </h2>
-                {canManage && (
-                    <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
+                    {canManage && (
                         <button onClick={() => setShowArchived(!showArchived)} className={`px-5 py-2.5 rounded-xl font-bold transition-all text-sm flex items-center gap-2 ${showArchived ? 'bg-gray-800 text-white dark:bg-gray-200 dark:text-gray-900' : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'}`}>
-                            <Archive className="w-4 h-4" /> {showArchived ? 'Показать активные' : 'Архив'}
+                            <Archive className="w-4 h-4" /> {showArchived ? 'Активные' : 'Архив'}
                         </button>
-                        {canCreate && (
-                            <button onClick={() => setCreateModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-all flex items-center gap-2 active:scale-95">
-                                <Plus className="w-4 h-4" /> Создать
-                            </button>
-                        )}
-                    </div>
-                )}
+                    )}
+                    {isForeman && (
+                        <button onClick={() => setRequestModalOpen(true)} className="bg-emerald-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-emerald-700 transition-all flex items-center gap-2 active:scale-95">
+                            <MessageSquarePlus className="w-4 h-4" /> Запросить объект
+                        </button>
+                    )}
+                    {isOffice && objectRequests.length > 0 && (
+                        <button onClick={() => setShowRequests(!showRequests)} className="bg-amber-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-amber-600 transition-all flex items-center gap-2 active:scale-95">
+                            <Bell className="w-4 h-4" /> Запросы ({objectRequests.length})
+                        </button>
+                    )}
+                    {canCreate && (
+                        <button onClick={() => setCreateModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-all flex items-center gap-2 active:scale-95">
+                            <Plus className="w-4 h-4" /> Создать
+                        </button>
+                    )}
+                </div>
             </div>
 
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
@@ -319,21 +386,34 @@ export default function Objects() {
                             </p>
                         </div>
 
-                        {canManage && (
-                            <div className="flex gap-2 border-t border-gray-100 dark:border-gray-700 pt-4">
+                        <div className="flex gap-2 border-t border-gray-100 dark:border-gray-700 pt-4">
+                            {obj.pdf_file_path && (
+                                <a href={obj.pdf_file_path} target="_blank" rel="noreferrer" className="flex-none px-4 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 py-2.5 rounded-xl font-bold transition-colors flex justify-center items-center" title="Смета PDF">
+                                    <FileText className="w-4 h-4" />
+                                </a>
+                            )}
+                            {isOffice && (
+                                <label className="flex-none px-4 bg-violet-50 text-violet-600 hover:bg-violet-100 dark:bg-violet-900/20 dark:text-violet-400 py-2.5 rounded-xl font-bold transition-colors flex justify-center items-center cursor-pointer" title="Загрузить смету">
+                                    <input type="file" accept=".pdf" className="hidden" onChange={(e) => handleUploadPdf(obj.id, e)} />
+                                    <Upload className="w-4 h-4" />
+                                </label>
+                            )}
+                            {canManage && (
                                 <button onClick={() => openEditModal(obj)} className="flex-1 bg-blue-50 text-blue-600 hover:bg-blue-100 dark:bg-blue-900/20 dark:text-blue-400 py-2.5 rounded-xl text-sm font-bold transition-colors flex justify-center items-center gap-1.5">
-                                    <Settings className="w-4 h-4" /> Редактировать
+                                    <Settings className="w-4 h-4" /> Настройки
                                 </button>
-                                {canViewStats && (
-                                    <button onClick={() => openStatsModal(obj)} className="flex-none px-4 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 py-2.5 rounded-xl font-bold transition-colors flex justify-center items-center" title="Статистика">
-                                        <BarChart3 className="w-4 h-4" />
-                                    </button>
-                                )}
+                            )}
+                            {canViewStats && (
+                                <button onClick={() => openStatsModal(obj)} className="flex-none px-4 bg-amber-50 text-amber-600 hover:bg-amber-100 dark:bg-amber-900/20 dark:text-amber-400 py-2.5 rounded-xl font-bold transition-colors flex justify-center items-center" title="Статистика">
+                                    <BarChart3 className="w-4 h-4" />
+                                </button>
+                            )}
+                            {canManage && (
                                 <button onClick={() => handleArchiveToggle(obj.id, obj.is_archived === 1)} className="flex-none px-4 bg-gray-50 text-gray-500 hover:bg-gray-200 dark:bg-gray-700 py-2.5 rounded-xl font-bold transition-colors flex justify-center items-center">
                                     <Archive className="w-4 h-4" />
                                 </button>
-                            </div>
-                        )}
+                            )}
+                        </div>
                     </div>
                 ))}
                 {objects.length === 0 && <div className="col-span-full text-center py-12 text-gray-400 italic">Нет доступных объектов.</div>}
@@ -708,6 +788,63 @@ export default function Objects() {
                     </div>
                 </div>
             )}
+            {/* ПАНЕЛЬ ЗАПРОСОВ НА ОБЪЕКТЫ (для модераторов) */}
+            {showRequests && objectRequests.length > 0 && (
+                <div className="fixed inset-0 w-screen h-[100dvh] z-[99990] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative">
+                        <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
+                            <h3 className="text-xl font-bold dark:text-white flex items-center gap-2"><Bell className="w-5 h-5 text-amber-500" /> Запросы на объекты</h3>
+                            <button onClick={() => setShowRequests(false)} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-1.5 border border-gray-100 dark:border-gray-700"><X className="w-5 h-5" /></button>
+                        </div>
+                        <div className="p-6 space-y-4 max-h-[60vh] overflow-y-auto">
+                            {objectRequests.map(req => (
+                                <div key={req.id} className="p-5 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600/50">
+                                    <h4 className="font-bold text-gray-800 dark:text-white flex items-center gap-2 mb-2"><MapPin className="w-4 h-4 text-blue-500" /> {req.name}</h4>
+                                    {req.address && <p className="text-sm text-gray-500 mb-1">Адрес: {req.address}</p>}
+                                    {req.comment && <p className="text-sm text-gray-500 mb-1">Комментарий: {req.comment}</p>}
+                                    <p className="text-xs text-gray-400 mb-3">От: {req.requested_by_name} · {req.created_at?.slice(0, 16)}</p>
+                                    <div className="flex gap-2">
+                                        <button onClick={() => handleReviewRequest(req.id, 'approve')} className="flex-1 bg-emerald-500 text-white py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 hover:bg-emerald-600 active:scale-95 transition-all">
+                                            <CheckCircle className="w-4 h-4" /> Одобрить
+                                        </button>
+                                        <button onClick={() => handleReviewRequest(req.id, 'reject')} className="flex-1 bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 hover:bg-red-100 active:scale-95 transition-all border border-red-200 dark:border-red-800/50">
+                                            <XCircle className="w-4 h-4" /> Отклонить
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* МОДАЛКА ЗАПРОСА ОБЪЕКТА (для прорабов) */}
+            {isRequestModalOpen && (
+                <div className="fixed inset-0 w-screen h-[100dvh] z-[99990] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-lg shadow-2xl relative">
+                        <button onClick={() => setRequestModalOpen(false)} className="absolute top-5 right-5 text-gray-400 hover:text-red-500 bg-gray-50 dark:bg-gray-700 rounded-full p-1.5"><X className="w-5 h-5" /></button>
+                        <h3 className="text-2xl font-bold mb-6 dark:text-white flex items-center gap-2"><MessageSquarePlus className="text-emerald-500" /> Запросить объект</h3>
+                        <form onSubmit={handleRequestObject} className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Название объекта</label>
+                                <input type="text" required value={requestForm.name} onChange={e => setRequestForm({...requestForm, name: e.target.value})} className="w-full p-4 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white" placeholder="Например: ЖК Новый" />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Адрес</label>
+                                <input type="text" value={requestForm.address} onChange={e => setRequestForm({...requestForm, address: e.target.value})} className="w-full p-4 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white" placeholder="г. Барнаул, ул. ..." />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Комментарий</label>
+                                <textarea value={requestForm.comment} onChange={e => setRequestForm({...requestForm, comment: e.target.value})} rows={3} className="w-full p-4 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-emerald-500 dark:text-white resize-none" placeholder="Дополнительная информация..." />
+                            </div>
+                            <button type="submit" className="w-full bg-emerald-600 text-white font-bold py-4 rounded-xl shadow-md hover:bg-emerald-700 transition-all flex items-center justify-center gap-2">
+                                <Send className="w-4 h-4" /> Отправить запрос
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            )}
+
             {ConfirmUI}
         </main>
     );

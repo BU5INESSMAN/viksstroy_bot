@@ -118,6 +118,35 @@ async def api_upload_object_files(obj_id: int, files: List[UploadFile] = File(..
         saved.append(rel_path)
     return {"status": "ok", "files": saved}
 
+@router.post("/api/objects/{obj_id}/upload_pdf")
+async def api_upload_object_pdf(obj_id: int, file: UploadFile = File(...), tg_id: int = Form(0)):
+    """Загружает основную смету (PDF) для объекта."""
+    if db.conn is None: await db.init_db()
+    if tg_id:
+        from utils import resolve_id
+        real_tg_id = await resolve_id(tg_id)
+        user = await db.get_user(real_tg_id)
+        if not user or dict(user).get('role') not in ('moderator', 'boss', 'superadmin'):
+            raise HTTPException(403, "Нет прав для загрузки сметы")
+
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(400, "Файл должен быть в формате PDF")
+
+    upload_dir = os.path.join("data", "uploads", "objects", str(obj_id))
+    os.makedirs(upload_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name = f"{ts}_{file.filename}"
+    dest = os.path.join(upload_dir, safe_name)
+    content = await file.read()
+    with open(dest, "wb") as out:
+        out.write(content)
+
+    rel_path = f"/uploads/objects/{obj_id}/{safe_name}"
+    await db.conn.execute("UPDATE objects SET pdf_file_path = ? WHERE id = ?", (rel_path, obj_id))
+    await db.conn.commit()
+    return {"status": "ok", "pdf_file_path": rel_path}
+
+
 @router.delete("/api/objects/files/{file_id}")
 async def api_delete_object_file(file_id: int):
     if db.conn is None: await db.init_db()
@@ -131,6 +160,171 @@ async def api_delete_object_file(file_id: int):
 # ==========================================
 # СТАТИСТИКА ОБЪЕКТА
 # ==========================================
+
+# ==========================================
+# ЗАПРОСЫ НА СОЗДАНИЕ ОБЪЕКТОВ (FOREMAN -> MODERATOR)
+# ==========================================
+
+@router.post("/api/object_requests/create")
+async def api_create_object_request(name: str = Form(...), address: str = Form(""), comment: str = Form(""), tg_id: int = Form(0)):
+    """Прораб запрашивает создание нового объекта."""
+    if db.conn is None: await db.init_db()
+    from utils import resolve_id
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+    fio = dict(user).get('fio', 'Пользователь') if user else 'Пользователь'
+
+    await db.conn.execute(
+        "INSERT INTO object_requests (name, address, comment, requested_by, requested_by_name) VALUES (?, ?, ?, ?, ?)",
+        (name, address, comment, real_tg_id, fio)
+    )
+    await db.conn.commit()
+
+    import asyncio
+    from utils import notify_users
+    asyncio.create_task(notify_users(
+        ["moderator", "boss", "superadmin"],
+        f"📍 <b>Запрос на новый объект</b>\n👤 От: {fio}\n🏗 Название: {name}\n📍 Адрес: {address or 'Не указан'}",
+        "objects", category="orders"
+    ))
+    return {"status": "ok"}
+
+
+@router.get("/api/object_requests")
+async def api_get_object_requests(status: str = "pending"):
+    """Получить список запросов на объекты."""
+    if db.conn is None: await db.init_db()
+    async with db.conn.execute(
+        "SELECT * FROM object_requests WHERE status = ? ORDER BY created_at DESC", (status,)
+    ) as cur:
+        return [dict(row) for row in await cur.fetchall()]
+
+
+@router.post("/api/object_requests/{req_id}/review")
+async def api_review_object_request(req_id: int, action: str = Form(...), tg_id: int = Form(0)):
+    """Модератор одобряет или отклоняет запрос на объект."""
+    if db.conn is None: await db.init_db()
+    from utils import resolve_id, notify_users
+    import asyncio
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+    if not user or dict(user).get('role') not in ('moderator', 'boss', 'superadmin'):
+        raise HTTPException(403, "Нет прав")
+    mod_fio = dict(user).get('fio', 'Модератор')
+
+    async with db.conn.execute("SELECT * FROM object_requests WHERE id = ?", (req_id,)) as cur:
+        req_row = await cur.fetchone()
+    if not req_row:
+        raise HTTPException(404, "Запрос не найден")
+    req_dict = dict(req_row)
+
+    if action == 'approve':
+        # Создаем объект
+        await db.create_object(req_dict['name'], req_dict['address'] or '')
+        await db.conn.execute(
+            "UPDATE object_requests SET status = 'approved', reviewed_by = ?, reviewed_by_name = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (real_tg_id, mod_fio, req_id)
+        )
+        await db.conn.commit()
+        asyncio.create_task(notify_users(
+            [], f"✅ <b>Ваш запрос на объект одобрен!</b>\n🏗 {req_dict['name']}",
+            "objects", extra_tg_ids=[req_dict['requested_by']], category="orders"
+        ))
+    elif action == 'reject':
+        await db.conn.execute(
+            "UPDATE object_requests SET status = 'rejected', reviewed_by = ?, reviewed_by_name = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (real_tg_id, mod_fio, req_id)
+        )
+        await db.conn.commit()
+        asyncio.create_task(notify_users(
+            [], f"❌ <b>Ваш запрос на объект отклонён</b>\n🏗 {req_dict['name']}",
+            "objects", extra_tg_ids=[req_dict['requested_by']], category="orders"
+        ))
+    else:
+        raise HTTPException(400, "Неверное действие")
+    return {"status": "ok"}
+
+
+# ==========================================
+# ДОПОЛНИТЕЛЬНЫЕ РАБОТЫ
+# ==========================================
+
+@router.get("/api/extra_works/catalog")
+async def api_get_extra_works_catalog():
+    """Получить справочник дополнительных работ."""
+    if db.conn is None: await db.init_db()
+    async with db.conn.execute("SELECT * FROM extra_works_catalog ORDER BY name") as cur:
+        return [dict(row) for row in await cur.fetchall()]
+
+
+@router.post("/api/extra_works/catalog/create")
+async def api_create_extra_work(name: str = Form(...), unit: str = Form("шт"), salary: float = Form(0), price: float = Form(0), tg_id: int = Form(0)):
+    """Добавить позицию в справочник дополнительных работ (модератор+)."""
+    if db.conn is None: await db.init_db()
+    if tg_id:
+        from utils import resolve_id
+        real_tg_id = await resolve_id(tg_id)
+        user = await db.get_user(real_tg_id)
+        if not user or dict(user).get('role') not in ('moderator', 'boss', 'superadmin'):
+            raise HTTPException(403, "Нет прав")
+    await db.conn.execute(
+        "INSERT INTO extra_works_catalog (name, unit, salary, price) VALUES (?, ?, ?, ?)",
+        (name, unit, salary, price)
+    )
+    await db.conn.commit()
+    return {"status": "ok"}
+
+
+@router.get("/api/kp/apps/{app_id}/extra_works")
+async def api_get_app_extra_works(app_id: int, tg_id: int = 0):
+    """Получить доп. работы заявки."""
+    if db.conn is None: await db.init_db()
+    async with db.conn.execute("""
+        SELECT aew.*, ewc.name as catalog_name, ewc.unit as catalog_unit
+        FROM application_extra_works aew
+        LEFT JOIN extra_works_catalog ewc ON aew.extra_work_id = ewc.id
+        WHERE aew.application_id = ?
+        ORDER BY aew.id
+    """, (app_id,)) as cur:
+        items = [dict(row) for row in await cur.fetchall()]
+
+    # Strip financial data for non-office roles
+    if tg_id:
+        from utils import resolve_id
+        real_tg_id = await resolve_id(tg_id)
+        user = await db.get_user(real_tg_id)
+        role = dict(user).get('role', 'worker') if user else 'worker'
+        if role not in ('moderator', 'boss', 'superadmin'):
+            for item in items:
+                item.pop('salary', None)
+                item.pop('price', None)
+    return items
+
+
+@router.post("/api/kp/apps/{app_id}/extra_works/submit")
+async def api_submit_app_extra_works(app_id: int, request: Request):
+    """Сохранить доп. работы заявки."""
+    if db.conn is None: await db.init_db()
+    data = await request.json()
+    items = data.get('items', [])
+
+    await db.conn.execute("DELETE FROM application_extra_works WHERE application_id = ?", (app_id,))
+    for item in items:
+        if float(item.get('volume', 0)) > 0:
+            await db.conn.execute("""
+                INSERT INTO application_extra_works (application_id, extra_work_id, custom_name, volume, salary, price)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (
+                app_id,
+                item.get('extra_work_id', 0),
+                item.get('custom_name', ''),
+                float(item.get('volume', 0)),
+                float(item.get('salary', 0)),
+                float(item.get('price', 0))
+            ))
+    await db.conn.commit()
+    return {"status": "ok"}
+
 
 @router.get("/api/objects/{obj_id}/stats")
 async def api_get_object_stats(obj_id: int):

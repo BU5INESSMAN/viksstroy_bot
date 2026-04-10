@@ -89,6 +89,16 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
                 pass
         await self.conn.commit()
 
+        # Stage 3 migrations
+        for col_stmt in [
+            "ALTER TABLE objects ADD COLUMN pdf_file_path TEXT DEFAULT ''",
+        ]:
+            try:
+                await self.conn.execute(col_stmt)
+            except Exception:
+                pass
+        await self.conn.commit()
+
         await self.upgrade_db_for_invites()
         await self.upgrade_db_for_logs()
         await self.upgrade_db_for_profiles()

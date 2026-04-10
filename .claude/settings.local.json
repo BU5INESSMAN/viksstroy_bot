@@ -47,7 +47,8 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/applications.py'\\).read\\(\\)\\); print\\('applications.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/dashboard.py'\\).read\\(\\)\\); print\\('dashboard.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/applications.py', encoding='utf-8'\\).read\\(\\)\\); print\\('applications.py OK'\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/dashboard.py', encoding='utf-8'\\).read\\(\\)\\); print\\('dashboard.py OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/dashboard.py', encoding='utf-8'\\).read\\(\\)\\); print\\('dashboard.py OK'\\)\")",
+      "Bash(grep -E \"\\\\.\\(jsx|js|py\\)$\")"
     ]
   }
 }

@@ -118,8 +118,47 @@ CREATE TABLE IF NOT EXISTS objects (
     address TEXT,
     default_team_ids TEXT DEFAULT '',
     default_equip_ids TEXT DEFAULT '',
+    pdf_file_path TEXT DEFAULT '',
     is_archived INTEGER DEFAULT 0,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Запросы на создание объектов (от прорабов)
+CREATE TABLE IF NOT EXISTS object_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    address TEXT,
+    comment TEXT DEFAULT '',
+    requested_by INTEGER,
+    requested_by_name TEXT,
+    status TEXT DEFAULT 'pending',
+    reviewed_by INTEGER,
+    reviewed_by_name TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    reviewed_at TIMESTAMP,
+    FOREIGN KEY (requested_by) REFERENCES users(user_id)
+);
+
+-- Справочник дополнительных работ
+CREATE TABLE IF NOT EXISTS extra_works_catalog (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    unit TEXT DEFAULT 'шт',
+    salary REAL DEFAULT 0,
+    price REAL DEFAULT 0
+);
+
+-- Доп. работы внутри заявки
+CREATE TABLE IF NOT EXISTS application_extra_works (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER,
+    extra_work_id INTEGER,
+    custom_name TEXT DEFAULT '',
+    volume REAL DEFAULT 0,
+    salary REAL DEFAULT 0,
+    price REAL DEFAULT 0,
+    FOREIGN KEY (application_id) REFERENCES applications(id),
+    FOREIGN KEY (extra_work_id) REFERENCES extra_works_catalog(id)
 );
 
 -- Глобальный справочник КП (Прайс-лист)
