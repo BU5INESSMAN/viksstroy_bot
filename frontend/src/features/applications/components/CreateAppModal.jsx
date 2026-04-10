@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle,
@@ -12,6 +13,33 @@ export default function CreateAppModal({
     toggleEquipmentSelection, updateEquipmentTime,
     activeEqCategory, setActiveEqCategory, teamMembers, openProfile, openFreeModal
 }) {
+    const dateButtons = [
+        { key: 'today', label: 'Сегодня', val: smartDates[0].val },
+        { key: 'tomorrow', label: 'Завтра', val: smartDates[1].val },
+        { key: 'dayafter', label: 'Послезавтра', val: smartDates[2].val },
+        { key: 'other', label: 'Другая', val: null },
+    ];
+
+    const isPresetDate = dateButtons.slice(0, 3).some(b => b.val === appForm.date_target);
+    const [showCustomDate, setShowCustomDate] = useState(!isPresetDate && !!appForm.date_target);
+
+    const handleDateBtn = (btn) => {
+        if (btn.key === 'other') {
+            setShowCustomDate(true);
+        } else {
+            setShowCustomDate(false);
+            handleFormChange('date_target', btn.val);
+        }
+    };
+
+    const getActiveDateKey = () => {
+        if (showCustomDate) return 'other';
+        for (const b of dateButtons) {
+            if (b.val && b.val === appForm.date_target) return b.key;
+        }
+        return 'other';
+    };
+
     return (
         <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
@@ -41,15 +69,31 @@ export default function CreateAppModal({
                                 <label className="flex items-center gap-1.5 text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
                                     <Calendar className="w-4 h-4" /> Дата выезда
                                 </label>
-                                <input type="date" disabled={appForm.isViewOnly || isSubmitting} required value={appForm.date_target} onChange={e => handleFormChange('date_target', e.target.value)} className="w-full border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-3.5 rounded-xl outline-none font-bold text-gray-800 dark:text-gray-100 shadow-inner mb-3 disabled:opacity-80 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
-                                {!appForm.isViewOnly && (
-                                    <div className="flex flex-wrap gap-2">
-                                        {smartDates.map(d => (
-                                            <button key={d.val} type="button" disabled={isSubmitting} onClick={() => handleFormChange('date_target', d.val)} className={`px-3.5 py-2 text-xs font-bold rounded-xl border transition-all disabled:opacity-50 active:scale-95 ${appForm.date_target === d.val ? 'bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 shadow-sm ring-1 ring-blue-500' : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
-                                                {d.label}
-                                            </button>
-                                        ))}
+                                {appForm.isViewOnly ? (
+                                    <div className="w-full p-3.5 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 rounded-xl font-bold text-gray-800 dark:text-gray-100">
+                                        {appForm.date_target}
                                     </div>
+                                ) : (
+                                    <>
+                                        <div className="grid grid-cols-4 gap-2">
+                                            {dateButtons.map(btn => {
+                                                const active = getActiveDateKey() === btn.key;
+                                                return (
+                                                    <button key={btn.key} type="button" disabled={isSubmitting}
+                                                        onClick={() => handleDateBtn(btn)}
+                                                        className={`py-2.5 text-xs font-bold rounded-xl border transition-all disabled:opacity-50 active:scale-95 ${active ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                                                        {btn.label}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        {getActiveDateKey() === 'other' && (
+                                            <input type="date" required value={appForm.date_target}
+                                                disabled={isSubmitting}
+                                                onChange={e => handleFormChange('date_target', e.target.value)}
+                                                className="mt-3 w-full border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-3.5 rounded-xl outline-none font-bold text-gray-800 dark:text-gray-100 shadow-inner disabled:opacity-80 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
+                                        )}
+                                    </>
                                 )}
                             </div>
                             <div>
