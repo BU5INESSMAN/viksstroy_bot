@@ -32,7 +32,9 @@
       "Bash(pip show:*)",
       "Bash(python -c \"from graphify import report; print\\(dir\\(report\\)\\)\")",
       "Bash(python -c ':*)",
-      "Bash(echo \"EXIT:$?\")"
+      "Bash(echo \"EXIT:$?\")",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch"
     ]
   }
 }

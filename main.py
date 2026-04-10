@@ -36,6 +36,19 @@ db = DatabaseManager(db_path)
 WEB_APP_URL = "https://miniapp.viks22.ru"
 
 
+class Socks5Session(AiohttpSession):
+    def __init__(self, proxy_url: str):
+        super().__init__()
+        self.proxy_url = proxy_url
+
+    async def create_session(self) -> aiohttp.ClientSession:
+        if self._session is None or self._session.closed:
+            from aiohttp_socks import ProxyConnector
+            connector = ProxyConnector.from_url(self.proxy_url)
+            self._session = aiohttp.ClientSession(connector=connector)
+        return self._session
+
+
 class RegState(StatesGroup):
     waiting_for_password = State()
     waiting_for_fio = State()
@@ -252,8 +265,7 @@ async def main():
     session = None
     if TG_PROXY_URL:
         if TG_PROXY_URL.startswith("socks5://"):
-            from aiohttp_socks import ProxyConnector
-            session = AiohttpSession(connector=ProxyConnector.from_url(TG_PROXY_URL))
+            session = Socks5Session(proxy_url=TG_PROXY_URL)
         elif TG_PROXY_URL.startswith("http://") or TG_PROXY_URL.startswith("https://"):
             session = AiohttpSession(proxy=TG_PROXY_URL)
         else:
