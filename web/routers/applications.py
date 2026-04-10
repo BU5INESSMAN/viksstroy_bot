@@ -240,6 +240,7 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
             await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
 
         if new_status in ['completed', 'rejected']:
+            # Освобождаем технику
             if app_dict.get('equipment_data'):
                 try:
                     eq_list = json.loads(app_dict['equipment_data'])
@@ -247,6 +248,12 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
                                                             (e['id'],))
                 except:
                     pass
+            # Освобождаем бригады (помечаем как freed)
+            all_team_ids_str = str(app_dict.get('team_id') or "")
+            if all_team_ids_str and all_team_ids_str != '0':
+                await db.conn.execute(
+                    "UPDATE applications SET is_team_freed = 1, freed_team_ids = ? WHERE id = ?",
+                    (all_team_ids_str, app_id))
         await db.conn.commit()
     except:
         await db.conn.rollback()

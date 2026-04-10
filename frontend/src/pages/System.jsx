@@ -427,7 +427,7 @@ export default function System() {
                             </button>
                             <button onClick={() => testExtended('kp_review')}
                                 className="py-2.5 px-3 rounded-xl text-[11px] font-bold transition-all border active:scale-95 flex items-center justify-center gap-1.5 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-400 dark:border-amber-800/50 hover:bg-amber-100 dark:hover:bg-amber-900/30">
-                                <ClipboardCheck className="w-3.5 h-3.5" /> Проверка КП
+                                <ClipboardCheck className="w-3.5 h-3.5" /> Проверка СМР
                             </button>
                             <button onClick={() => testExtended('system_error')}
                                 className="py-2.5 px-3 rounded-xl text-[11px] font-bold transition-all border active:scale-95 flex items-center justify-center gap-1.5 bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800/50 hover:bg-red-100 dark:hover:bg-red-900/30 col-span-2">

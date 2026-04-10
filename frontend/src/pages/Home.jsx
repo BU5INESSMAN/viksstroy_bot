@@ -26,7 +26,7 @@ export default function Home() {
     const [activeEqCategory, setActiveEqCategory] = useState(null);
 
     const [appForm, setAppForm] = useState({
-        id: null, status: '', date_target: smartDates[0].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: []
+        id: null, status: '', date_target: smartDates[1].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: []
     });
 
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, published: false, completed: false });
@@ -51,7 +51,7 @@ export default function Home() {
     useEffect(() => {
         if (isGlobalCreateAppOpen) {
             axios.get('/api/objects/active').then(res => setObjectsList(res.data)).catch(()=>{});
-            setAppForm({ id: null, status: '', date_target: smartDates[0].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
+            setAppForm({ id: null, status: '', date_target: smartDates[1].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
             setActiveEqCategory(null);
             setTeamMembers([]);
             setIsSubmitting(false);

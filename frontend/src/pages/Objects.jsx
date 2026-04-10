@@ -218,8 +218,8 @@ export default function Objects() {
     const handleSaveKPPlan = async () => {
         try {
             await axios.post(`/api/objects/${editObj.id}/kp/update`, { kp_ids: objectKpPlan, target_volumes: targetVolumes });
-            alert("План КП успешно обновлен!");
-        } catch (e) { alert("Ошибка сохранения плана КП"); }
+            alert("План СМР успешно обновлен!");
+        } catch (e) { alert("Ошибка сохранения плана СМР"); }
     };
 
     const handleFileUpload = async (e) => {
@@ -471,7 +471,7 @@ export default function Objects() {
                         <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
                             <button onClick={() => setActiveTab('info')} className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'info' ? 'text-blue-600 border-b-2 border-blue-600 bg-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>Инфо</button>
                             <button onClick={() => setActiveTab('resources')} className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'resources' ? 'text-indigo-600 border-b-2 border-indigo-600 bg-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>Ресурсы</button>
-                            <button onClick={() => setActiveTab('kp')} className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'kp' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>План КП</button>
+                            <button onClick={() => setActiveTab('kp')} className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'kp' ? 'text-emerald-600 border-b-2 border-emerald-600 bg-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>План СМР</button>
                             <button onClick={() => setActiveTab('files')} className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === 'files' ? 'text-orange-600 border-b-2 border-orange-600 bg-white dark:bg-gray-800' : 'text-gray-500 hover:text-gray-700'}`}>Файлы</button>
                         </div>
 
@@ -656,7 +656,7 @@ export default function Objects() {
                                                 </div>
                                             </div>
                                         ) : (
-                                            <p className="text-center text-gray-400 italic py-4">Нет данных по плану КП</p>
+                                            <p className="text-center text-gray-400 italic py-4">Нет данных по плану СМР</p>
                                         )}
                                     </div>
 

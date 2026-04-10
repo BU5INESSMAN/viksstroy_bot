@@ -229,7 +229,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                         {[
                                             { key: 'notify_new_users', label: 'Новые пользователи', icon: UserPlus, color: 'text-emerald-500' },
                                             { key: 'notify_orders', label: 'Наряды', icon: ClipboardList, color: 'text-blue-500' },
-                                            { key: 'notify_reports', label: 'Отчеты КП', icon: FileText, color: 'text-violet-500' },
+                                            { key: 'notify_reports', label: 'Отчеты СМР', icon: FileText, color: 'text-violet-500' },
                                             { key: 'notify_errors', label: 'Системные ошибки', icon: AlertTriangle, color: 'text-red-500' },
                                         ].map(({ key, label, icon: Ico, color }) => (
                                             <div key={key} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">

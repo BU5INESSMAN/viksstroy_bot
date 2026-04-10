@@ -18,6 +18,28 @@ async def get_dashboard_data(tg_id: int = 0):
     teams = await db.get_all_teams()
     teams_dict = {t['id']: t['name'] for t in teams}
 
+    # Синхронизация статусов техники: сбрасываем 'work' если нет активных заявок
+    import json as _json
+    async with db.conn.execute("SELECT id FROM equipment WHERE status = 'work'") as cur:
+        work_equip_ids = [r[0] for r in await cur.fetchall()]
+    if work_equip_ids:
+        async with db.conn.execute(
+            "SELECT equipment_data FROM applications WHERE status IN ('approved', 'published', 'in_progress')"
+        ) as cur:
+            active_eq_ids = set()
+            for r in await cur.fetchall():
+                if r[0]:
+                    try:
+                        for e in _json.loads(r[0]):
+                            if not e.get('is_freed'):
+                                active_eq_ids.add(e['id'])
+                    except:
+                        pass
+        for eq_id in work_equip_ids:
+            if eq_id not in active_eq_ids:
+                await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (eq_id,))
+        await db.conn.commit()
+
     async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur:
         equip = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
     async with db.conn.execute(

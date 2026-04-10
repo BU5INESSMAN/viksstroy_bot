@@ -121,7 +121,7 @@ export default function KP() {
                     <Lock className="w-16 h-16 text-gray-300 dark:text-gray-600" />
                 </div>
                 <p className="text-xl font-bold">Доступ закрыт</p>
-                <p className="text-sm mt-2 text-center max-w-sm">Заполнение сметных расчетов (КП) доступно только бригадирам и руководству.</p>
+                <p className="text-sm mt-2 text-center max-w-sm">Заполнение сметных расчетов (СМР) доступно только бригадирам и руководству.</p>
             </main>
         );
     }
@@ -139,7 +139,7 @@ export default function KP() {
                     <>
                         <input type="file" className="hidden" ref={fileInputRef} onChange={handleUploadCatalog} accept=".xlsx,.csv" />
                         <button onClick={() => setShowSettings(true)} className="bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 transition-all flex items-center gap-2 hover:bg-gray-100">
-                            <Settings className="w-4 h-4" /> Настройка КП
+                            <Settings className="w-4 h-4" /> Настройка СМР
                         </button>
                     </>
                 )}
@@ -243,7 +243,7 @@ export default function KP() {
                 <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
                     <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-md shadow-2xl overflow-hidden">
                         <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700">
-                            <h3 className="text-lg font-bold dark:text-white flex items-center gap-2"><Settings className="w-5 h-5 text-blue-500" /> Настройка КП</h3>
+                            <h3 className="text-lg font-bold dark:text-white flex items-center gap-2"><Settings className="w-5 h-5 text-blue-500" /> Настройка СМР</h3>
                             <button onClick={() => setShowSettings(false)} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-2 border border-gray-100 dark:border-gray-700"><X className="w-5 h-5" /></button>
                         </div>
                         <div className="p-6 space-y-4">

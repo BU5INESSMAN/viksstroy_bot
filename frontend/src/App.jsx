@@ -1,24 +1,22 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import Layout from './components/Layout';
-import Login from './pages/Login';
-import TMAAuth from './pages/TMAAuth';
-import MAXAuth from './pages/MAXAuth';
-import Home from './pages/Home';
-import Guide from './pages/Guide';
-import Updates from './pages/Updates';
-import System from './pages/System';
-import MyApps from './pages/MyApps';
-import Review from './pages/Review';
-import Resources from './pages/Resources';
 
-// Новые маршруты
-import Objects from './pages/Objects';
-import KP from './pages/KP';
-
-// Подключаем страницы инвайтов
-import JoinTeam from './pages/JoinTeam';
-import JoinEquipment from './pages/JoinEquipment';
+// Lazy-loaded pages
+const Login = lazy(() => import('./pages/Login'));
+const TMAAuth = lazy(() => import('./pages/TMAAuth'));
+const MAXAuth = lazy(() => import('./pages/MAXAuth'));
+const Home = lazy(() => import('./pages/Home'));
+const Guide = lazy(() => import('./pages/Guide'));
+const Updates = lazy(() => import('./pages/Updates'));
+const System = lazy(() => import('./pages/System'));
+const MyApps = lazy(() => import('./pages/MyApps'));
+const Review = lazy(() => import('./pages/Review'));
+const Resources = lazy(() => import('./pages/Resources'));
+const Objects = lazy(() => import('./pages/Objects'));
+const KP = lazy(() => import('./pages/KP'));
+const JoinTeam = lazy(() => import('./pages/JoinTeam'));
+const JoinEquipment = lazy(() => import('./pages/JoinEquipment'));
 
 function ProtectedRoute({ children }) {
   const isAuth = localStorage.getItem('user_role');
@@ -43,6 +41,10 @@ function ProtectedRoute({ children }) {
   return children;
 }
 
+const SuspenseFallback = (
+  <div className="flex h-screen items-center justify-center text-gray-500">Загрузка...</div>
+);
+
 export default function App() {
   useEffect(() => {
     document.body.style.overscrollBehaviorY = 'none';
@@ -54,29 +56,31 @@ export default function App() {
 
   return (
     <BrowserRouter>
-      <Routes>
-        <Route path="/" element={<Login />} />
-        <Route path="/tma" element={<TMAAuth />} />
-        <Route path="/max" element={<MAXAuth />} />
+      <Suspense fallback={SuspenseFallback}>
+        <Routes>
+          <Route path="/" element={<Login />} />
+          <Route path="/tma" element={<TMAAuth />} />
+          <Route path="/max" element={<MAXAuth />} />
 
-        {/* Публичные роуты для приглашений */}
-        <Route path="/invite/:code" element={<JoinTeam />} />
-        <Route path="/equip-invite/:code" element={<JoinEquipment />} />
+          {/* Публичные роуты для приглашений */}
+          <Route path="/invite/:code" element={<JoinTeam />} />
+          <Route path="/equip-invite/:code" element={<JoinEquipment />} />
 
-        <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-          <Route path="/dashboard" element={<Home />} />
-          <Route path="/guide" element={<Guide />} />
-          <Route path="/updates" element={<Updates />} />
-          <Route path="/system" element={<System />} />
-          <Route path="/my-apps" element={<MyApps />} />
-          <Route path="/review" element={<Review />} />
-          <Route path="/resources" element={<Resources />} />
+          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route path="/dashboard" element={<Home />} />
+            <Route path="/guide" element={<Guide />} />
+            <Route path="/updates" element={<Updates />} />
+            <Route path="/system" element={<System />} />
+            <Route path="/my-apps" element={<MyApps />} />
+            <Route path="/review" element={<Review />} />
+            <Route path="/resources" element={<Resources />} />
 
-          {/* Этап 2: Новые страницы */}
-          <Route path="/objects" element={<Objects />} />
-          <Route path="/kp" element={<KP />} />
-        </Route>
-      </Routes>
+            {/* Этап 2: Новые страницы */}
+            <Route path="/objects" element={<Objects />} />
+            <Route path="/kp" element={<KP />} />
+          </Route>
+        </Routes>
+      </Suspense>
     </BrowserRouter>
   );
 }

@@ -52,9 +52,9 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                     onClick={() => navigate(isWorkerOrDriver ? "/my-apps" : "/review")}
                 />
 
-                {/* 6. КП (Прайс и выполнение) */}
+                {/* 6. СМР (Прайс и выполнение) */}
                 {canSeeKP && (
-                    <NavBtn icon={FileText} label="КП" path="/kp" current={location.pathname} onClick={() => navigate('/kp')} />
+                    <NavBtn icon={FileText} label="СМР" path="/kp" current={location.pathname} onClick={() => navigate('/kp')} />
                 )}
 
                 {/* 7. Меню (Сэндвич) */}

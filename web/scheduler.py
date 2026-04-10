@@ -147,6 +147,17 @@ async def check_and_run_tasks():
 
                 await db.conn.execute("UPDATE applications SET status = 'pending_report' WHERE id = ?", (app_id,))
 
+                # Освобождаем технику при завершении наряда
+                try:
+                    async with db.conn.execute("SELECT equipment_data FROM applications WHERE id = ?", (app_id,)) as eq_cur:
+                        eq_row = await eq_cur.fetchone()
+                    if eq_row and eq_row[0]:
+                        eq_list = json.loads(eq_row[0])
+                        for e in eq_list:
+                            await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (e['id'],))
+                except:
+                    pass
+
                 if foreman_id:
                     msg = f"📋 <b>Смена окончена!</b>\n📍 Объект: {address}\n\nПожалуйста, заполните табель/отчет по этому наряду."
                     await notify_users([], msg, "dashboard", extra_tg_ids=[foreman_id], category="orders")
