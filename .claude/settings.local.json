@@ -37,7 +37,17 @@
       "WebSearch",
       "Bash(npm install:*)",
       "Bash(npm run:*)",
-      "Bash(python -c \"import py_compile; py_compile.compile\\('database/apps_repo.py', doraise=True\\); py_compile.compile\\('web/routers/applications.py', doraise=True\\); print\\('OK'\\)\")"
+      "Bash(python -c \"import py_compile; py_compile.compile\\('database/apps_repo.py', doraise=True\\); py_compile.compile\\('web/routers/applications.py', doraise=True\\); print\\('OK'\\)\")",
+      "Bash(npx -y @anthropic-ai/codebase-graph)",
+      "Bash(npx -y safishamsi-graphify)",
+      "Bash(npx -y @anthropic-ai/graphify)",
+      "Bash(npx -y graphify)",
+      "Bash(npx -y acorn --ecma2020 --module --allow-import-export-everywhere src/App.jsx)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/applications.py'\\).read\\(\\)\\); print\\('OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/applications.py'\\).read\\(\\)\\); print\\('applications.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/dashboard.py'\\).read\\(\\)\\); print\\('dashboard.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/applications.py', encoding='utf-8'\\).read\\(\\)\\); print\\('applications.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/dashboard.py', encoding='utf-8'\\).read\\(\\)\\); print\\('dashboard.py OK'\\)\")"
     ]
   }
 }

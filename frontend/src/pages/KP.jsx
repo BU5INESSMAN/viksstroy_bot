@@ -3,7 +3,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     FileText, CheckCircle, Clock, Search, X, MapPin,
-    Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings
+    Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat
 } from 'lucide-react';
 
 export default function KP() {
@@ -23,6 +23,7 @@ export default function KP() {
     const [selectedForExport, setSelectedForExport] = useState([]);
     const [showSettings, setShowSettings] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
+    const [smrUnlockTime, setSmrUnlockTime] = useState('');
 
     const fileInputRef = useRef(null);
 
@@ -41,6 +42,19 @@ export default function KP() {
     };
 
     useEffect(() => { fetchApps(); }, [tgId]);
+
+    useEffect(() => {
+        axios.get('/api/settings').then(res => {
+            setSmrUnlockTime(res.data.smr_unlock_time || '');
+        }).catch(() => {});
+    }, []);
+
+    const isSmrLocked = (() => {
+        if (!smrUnlockTime || isOffice) return false;
+        const [h, m] = smrUnlockTime.split(':').map(Number);
+        const now = new Date();
+        return now.getHours() < h || (now.getHours() === h && now.getMinutes() < m);
+    })();
 
     const openModal = async (app) => {
         setModalApp(app);
@@ -65,7 +79,7 @@ export default function KP() {
         try {
             await axios.post(`/api/kp/apps/${modalApp.id}/submit`, {
                 tg_id: tgId, role: role,
-                items: kpItems.map(i => ({ kp_id: i.kp_id, volume: i.volume || 0, salary: i.current_salary, price: i.current_price }))
+                items: kpItems.map(i => ({ kp_id: i.kp_id, volume: i.volume || 0, ...(isOffice ? { salary: i.current_salary, price: i.current_price } : {}) }))
             });
             toast.success("Отчет отправлен!");
             setModalApp(null); fetchApps();
@@ -167,8 +181,25 @@ export default function KP() {
                             {activeTab === 'approved' && isOffice && <input type="checkbox" checked={selectedForExport.includes(app.id)} onChange={() => setSelectedForExport(prev => prev.includes(app.id) ? prev.filter(x => x !== app.id) : [...prev, app.id])} className="w-5 h-5 text-emerald-600 rounded" />}
                         </div>
                         <h4 className="font-bold text-gray-800 dark:text-gray-100 flex items-start gap-1.5 mb-2 leading-tight"><MapPin className="w-4 h-4 text-red-500 mt-0.5" />{app.obj_name || 'Объект'}</h4>
-                        <p className="text-xs text-gray-500 mb-4">Прораб: {app.foreman_name}</p>
-                        <button onClick={() => openModal(app)} className="w-full bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 flex justify-center items-center gap-2">{activeTab === 'to_fill' ? 'Заполнить' : 'Посмотреть'}</button>
+                        <p className="text-xs text-gray-500 mb-4 flex items-center gap-1"><HardHat className="w-3.5 h-3.5 text-gray-400" /> {app.foreman_name}</p>
+                        {activeTab === 'to_fill' && isOffice ? (
+                            <button onClick={async () => {
+                                try {
+                                    const fd = new FormData();
+                                    fd.append('tg_id', tgId);
+                                    await axios.post(`/api/applications/${app.id}/remind`, fd);
+                                    toast.success('Напоминание отправлено прорабу!');
+                                } catch (e) { toast.error(e.response?.data?.detail || 'Ошибка отправки'); }
+                            }} className="w-full bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 py-3 rounded-xl text-sm font-bold border border-orange-200 dark:border-orange-800/50 flex justify-center items-center gap-2 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors active:scale-[0.98]">
+                                <Bell className="w-4 h-4" /> Напомнить
+                            </button>
+                        ) : activeTab === 'to_fill' && isSmrLocked ? (
+                            <div className="w-full bg-gray-100 dark:bg-gray-700/50 text-gray-400 dark:text-gray-500 py-3 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 flex justify-center items-center gap-2 cursor-not-allowed">
+                                <Clock className="w-4 h-4" /> Откроется в {smrUnlockTime}
+                            </div>
+                        ) : (
+                            <button onClick={() => openModal(app)} className="w-full bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 flex justify-center items-center gap-2">{activeTab === 'to_fill' ? 'Заполнить' : 'Посмотреть'}</button>
+                        )}
                     </div>
                 ))}
             </div>

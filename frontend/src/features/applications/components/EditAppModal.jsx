@@ -276,7 +276,7 @@ export default function EditAppModal({
     ];
 
     return (
-        <div className="!fixed !inset-0 !top-0 !left-0 !w-screen !h-[100dvh] z-[9999] bg-black/50 m-0 p-0 overflow-y-auto">
+        <div className="!fixed !inset-0 !top-0 !left-0 !w-screen !h-[100dvh] z-[99990] bg-black/50 m-0 p-0 overflow-y-auto">
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                 <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden">
 

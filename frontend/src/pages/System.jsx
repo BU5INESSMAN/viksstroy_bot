@@ -99,6 +99,7 @@ export default function System() {
         auto_complete_time: '',
         auto_backup_enabled: false,
         office_reminder_enabled: false, office_reminder_time: '',
+        smr_unlock_time: '',
     });
     const isAdmin = ['superadmin', 'boss'].includes(role);
     const [testPlatform, setTestPlatform] = useState('all');
@@ -132,6 +133,7 @@ export default function System() {
                     auto_backup_enabled: b('auto_backup_enabled'),
                     office_reminder_enabled: b('office_reminder_enabled'),
                     office_reminder_time: res.data.office_reminder_time || '',
+                    smr_unlock_time: res.data.smr_unlock_time || '',
                 });
             }).catch(() => {});
         }
@@ -156,6 +158,7 @@ export default function System() {
                 auto_backup_enabled: settings.auto_backup_enabled ? '1' : '0',
                 office_reminder_enabled: settings.office_reminder_enabled ? '1' : '0',
                 office_reminder_time: settings.office_reminder_time,
+                smr_unlock_time: settings.smr_unlock_time,
                 tg_id: tgId
             }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
             toast.success('Настройки успешно сохранены!');
@@ -378,6 +381,16 @@ export default function System() {
                             <input type="time" name="office_reminder_time" value={settings.office_reminder_time} onChange={handleSettingChange}
                                 className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-violet-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
                         )}
+                    </div>
+
+                    {/* SMR unlock time */}
+                    <div className="bg-gray-50/80 dark:bg-gray-700/20 p-5 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
+                            <Lock className="w-4 h-4 text-rose-500" /> Время открытия СМР
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 font-medium">Прорабы смогут заполнить отчёт СМР только после указанного времени (HH:MM).</p>
+                        <input type="time" name="smr_unlock_time" value={settings.smr_unlock_time} onChange={handleSettingChange}
+                            className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-rose-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
                     </div>
 
                     <button onClick={saveSettings}

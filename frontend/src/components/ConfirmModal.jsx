@@ -44,7 +44,7 @@ export default function ConfirmModal({
     };
 
     return (
-        <div className="!fixed !inset-0 !top-0 !left-0 !w-screen !h-[100dvh] z-[9999] bg-black/50 m-0 p-0 flex items-center justify-center" onClick={handleCancel}>
+        <div className="!fixed !inset-0 !top-0 !left-0 !w-screen !h-[100dvh] z-[99990] bg-black/50 m-0 p-0 flex items-center justify-center" onClick={handleCancel}>
             <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
                 <div className="flex items-start gap-4 p-6 pb-4">
                     <div className={`p-2.5 rounded-xl flex-shrink-0 ${variant === 'danger' ? 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400' : variant === 'warning' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400'}`}>

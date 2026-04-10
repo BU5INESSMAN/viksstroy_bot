@@ -215,9 +215,18 @@ async def delete_app(app_id: int, tg_id: int = Form(0)):
 
 
 @router.get("/api/applications/review")
-async def get_review_apps():
+async def get_review_apps(tg_id: int = 0):
     await ensure_app_columns()
     teams_dict = await fetch_teams_dict()
+
+    # Определяем роль пользователя для фильтрации
+    real_tg_id = None
+    user_role = None
+    if tg_id:
+        real_tg_id = await resolve_id(tg_id)
+        user = await db.get_user(real_tg_id)
+        user_role = dict(user).get('role') if user else None
+
     async with db.conn.execute(
             "SELECT * FROM applications WHERE status IN ('waiting', 'approved', 'published', 'in_progress', 'completed') AND (is_archived = 0 OR is_archived IS NULL) ORDER BY id DESC") as cursor:
         rows = await cursor.fetchall()
@@ -226,6 +235,12 @@ async def get_review_apps():
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
         await enrich_app_with_members_data(app_dict)
+
+        # Фильтрация для прорабов и бригадиров: только свои заявки
+        if user_role in ('foreman', 'brigadier') and real_tg_id:
+            if app_dict.get('foreman_id') != real_tg_id:
+                continue
+
         eq_data_str = app_dict.get('equipment_data', '')
         equip_text = ""
         if eq_data_str:
@@ -625,6 +640,41 @@ async def archive_app(app_id: int, tg_id: int = Form(0)):
 
     fio = dict(user).get('fio', 'Модератор')
     await db.add_log(real_tg_id, fio, f"Архивировал заявку №{app_id}")
+    return {"status": "ok"}
+
+
+@router.post("/api/applications/{app_id}/remind")
+async def remind_foreman(app_id: int, tg_id: int = Form(0)):
+    """Отправляет напоминание прорабу о необходимости заполнить СМР."""
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+    if not user or dict(user).get('role') not in ['moderator', 'boss', 'superadmin']:
+        raise HTTPException(403, "Нет прав для отправки напоминаний")
+
+    async with db.conn.execute("SELECT * FROM applications WHERE id = ?", (app_id,)) as cur:
+        app_row = await cur.fetchone()
+    if not app_row:
+        raise HTTPException(404, "Заявка не найдена")
+
+    app_dict = dict(zip([c[0] for c in cur.description], app_row))
+    foreman_id = app_dict.get('foreman_id')
+    if not foreman_id:
+        raise HTTPException(400, "У заявки не указан прораб")
+
+    object_name = app_dict.get('object_address', 'Неизвестный объект')
+    date_target = app_dict.get('date_target', '')
+
+    async def _send_reminder():
+        try:
+            msg = f"⚠️ <b>Напоминание:</b> Необходимо заполнить СМР по объекту <b>{object_name}</b> на дату <b>{date_target}</b>"
+            await notify_users([], msg, "kp", extra_tg_ids=[foreman_id], category="reports")
+        except Exception as e:
+            logger.error(f"Error sending SMR reminder for app #{app_id}: {e}")
+
+    asyncio.create_task(_send_reminder())
+
+    mod_fio = dict(user).get('fio', 'Модератор')
+    await db.add_log(real_tg_id, mod_fio, f"Отправил напоминание о СМР по заявке №{app_id}")
     return {"status": "ok"}
 
 

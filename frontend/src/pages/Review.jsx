@@ -50,7 +50,7 @@ export default function Review() {
     const { confirm, prompt, ConfirmUI } = useConfirm();
 
     const fetchData = () => {
-        axios.get('/api/applications/review').then(res => setReviewApps(res.data || [])).catch(() => {});
+        axios.get(`/api/applications/review?tg_id=${tgId}`).then(res => setReviewApps(res.data || [])).catch(() => {});
     };
 
     useEffect(() => { fetchData(); }, []);

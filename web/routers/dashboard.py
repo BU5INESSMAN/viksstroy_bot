@@ -56,13 +56,21 @@ async def get_dashboard_data(tg_id: int = 0):
         await enrich_app_with_members_data(a)
 
     recent_addresses = []
+    real_tg_id = None
+    user_role = None
     if tg_id != 0:
         real_tg_id = await resolve_id(tg_id)
+        user = await db.get_user(real_tg_id)
+        user_role = dict(user).get('role') if user else None
         async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
                                    (real_tg_id,)) as cur:
             for r in await cur.fetchall():
                 if r[0] and r[0] not in recent_addresses: recent_addresses.append(r[0])
                 if len(recent_addresses) >= 5: break
+
+    # Фильтрация для прорабов и бригадиров: только свои заявки
+    if user_role in ('foreman', 'brigadier') and real_tg_id:
+        all_apps = [a for a in all_apps if a.get('foreman_id') == real_tg_id]
 
     return {"stats": stats, "teams": [{"id": t['id'], "name": t['name']} for t in teams], "equipment": equip,
             "equip_categories": list(set(categories)), "kanban_apps": all_apps, "recent_addresses": recent_addresses}
@@ -88,6 +96,7 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
                           auto_backup_enabled: str = Form("0"),
                           office_reminder_enabled: str = Form("0"),
                           office_reminder_time: str = Form(""),
+                          smr_unlock_time: str = Form(""),
                           tg_id: int = Form(0)):
     user = await db.get_user(tg_id)
     if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403,
@@ -105,6 +114,7 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
             ('auto_backup_enabled', auto_backup_enabled),
             ('office_reminder_enabled', office_reminder_enabled),
             ('office_reminder_time', office_reminder_time),
+            ('smr_unlock_time', smr_unlock_time),
         ]:
             await db.conn.execute("UPDATE settings SET value = ? WHERE key = ?", (v, k))
             await db.conn.execute("INSERT INTO settings (key, value) SELECT ?, ? WHERE (SELECT Changes() = 0)", (k, v))

@@ -176,7 +176,7 @@ export default function ViewAppModal({ app, onClose, onEdit, data }) {
     ];
 
     return (
-        <div className="!fixed !inset-0 !top-0 !left-0 !w-screen !h-[100dvh] z-[9999] bg-black/50 m-0 p-0 overflow-y-auto flex items-start sm:items-center justify-center pt-8 sm:pt-4">
+        <div className="!fixed !inset-0 !top-0 !left-0 !w-screen !h-[100dvh] z-[99990] bg-black/50 m-0 p-0 overflow-y-auto flex items-start sm:items-center justify-center pt-8 sm:pt-4">
             <div
                 className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-3xl shadow-2xl relative overflow-hidden"
                 onClick={e => e.stopPropagation()}
