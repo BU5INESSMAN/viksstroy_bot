@@ -48,7 +48,13 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/dashboard.py'\\).read\\(\\)\\); print\\('dashboard.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/applications.py', encoding='utf-8'\\).read\\(\\)\\); print\\('applications.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/dashboard.py', encoding='utf-8'\\).read\\(\\)\\); print\\('dashboard.py OK'\\)\")",
-      "Bash(grep -E \"\\\\.\\(jsx|js|py\\)$\")"
+      "Bash(grep -E \"\\\\.\\(jsx|js|py\\)$\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/system.py'\\).read\\(\\)\\); print\\('system.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/system.py', encoding='utf-8'\\).read\\(\\)\\); print\\('system.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/utils.py', encoding='utf-8'\\).read\\(\\)\\); print\\('utils.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/scheduler.py', encoding='utf-8'\\).read\\(\\)\\); print\\('scheduler.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main.py', encoding='utf-8'\\).read\\(\\)\\); print\\('main.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('main_max.py', encoding='utf-8'\\).read\\(\\)\\); print\\('main_max.py OK'\\)\")"
     ]
   }
 }

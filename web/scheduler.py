@@ -218,6 +218,52 @@ async def check_and_run_tasks():
             logger.error(f"Ошибка авто-архивации: {e}")
 
         # =========================================================================
+        # ТРИГГЕР 9: SMART SCHEDULING — запрос модераторам на публикацию расстановки
+        # =========================================================================
+        if auto_publish_enabled and auto_publish_time and current_time_str == auto_publish_time:
+            prompt_flag_key = f"smart_prompt_sent_{today_date_str}"
+            already_prompted = False
+            try:
+                async with db.conn.execute("SELECT value FROM settings WHERE key = ?", (prompt_flag_key,)) as cur:
+                    if await cur.fetchone():
+                        already_prompted = True
+            except:
+                pass
+
+            if not already_prompted:
+                from utils import send_smart_schedule_prompt
+                logger.info(f"📅 {current_time_str} - Отправка запроса на публикацию расстановки на завтра...")
+                await send_smart_schedule_prompt()
+                await db.conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')", (prompt_flag_key,))
+                await db.conn.commit()
+
+        # =========================================================================
+        # ТРИГГЕР 10: АВТО-ПУБЛИКАЦИЯ ПО ТАЙМЕРУ (10-мин таймаут)
+        # =========================================================================
+        try:
+            async with db.conn.execute("SELECT value FROM settings WHERE key = 'smart_publish_at'") as cur:
+                timer_row = await cur.fetchone()
+            if timer_row and timer_row[0]:
+                publish_at = datetime.strptime(timer_row[0], "%Y-%m-%d %H:%M:%S")
+                if now.replace(tzinfo=None) >= publish_at:
+                    from utils import publish_tomorrow_apps
+                    count = await publish_tomorrow_apps()
+                    await db.conn.execute("DELETE FROM settings WHERE key = 'smart_publish_at'")
+                    await db.conn.commit()
+                    logger.info(f"⏰ Авто-публикация по таймеру: {count} нарядов на завтра")
+                    if count > 0:
+                        await notify_users(
+                            ["moderator", "boss", "superadmin"],
+                            f"✅ <b>Расстановка на завтра опубликована автоматически</b>\n"
+                            f"📋 Опубликовано нарядов: {count}",
+                            "dashboard", category="orders")
+                        await db.add_log(0, "Система",
+                                         f"Авто-публикация расстановки на завтра: {count} нарядов")
+        except Exception as e:
+            logger.error(f"Ошибка проверки таймера авто-публикации: {e}")
+
+        # =========================================================================
         # ТРИГГЕР 8: АВТО-СТАРТ одобренных заявок на сегодня (каждую минуту)
         # Если заявка одобрена и дата наступила — сразу переводим в работу.
         # =========================================================================

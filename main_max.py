@@ -346,6 +346,51 @@ async def message_callback(event: MessageCallback):
 
     if db.conn is None: await db.init_db()
 
+    # ---------------- SMART SCHEDULING: ОПУБЛИКОВАТЬ ----------------
+    if payload == "smart_publish_now":
+        user = await db.get_user(real_tg_id)
+        if not user or dict(user).get('role') not in ['moderator', 'boss', 'superadmin']:
+            return await send_max_msg(event, "❌ Нет прав для выполнения этого действия.")
+        try:
+            async with aiohttp.ClientSession() as session:
+                fd = aiohttp.FormData()
+                fd.add_field('tg_id', str(real_tg_id))
+                async with session.post(
+                    "http://127.0.0.1:8000/api/system/publish_tomorrow", data=fd
+                ) as resp:
+                    result = await resp.json()
+                    count = result.get('published', 0)
+            await send_max_msg(event,
+                               f"✅ Расстановка на завтра опубликована!\n📋 Опубликовано нарядов: {count}")
+        except Exception as e:
+            await send_max_msg(event, f"❌ Ошибка: {e}")
+        return
+
+    # ---------------- SMART SCHEDULING: ОТЛОЖИТЬ ----------------
+    if payload == "smart_publish_delay":
+        user = await db.get_user(real_tg_id)
+        if not user or dict(user).get('role') not in ['moderator', 'boss', 'superadmin']:
+            return await send_max_msg(event, "❌ Нет прав для выполнения этого действия.")
+        try:
+            async with aiohttp.ClientSession() as session:
+                fd = aiohttp.FormData()
+                fd.add_field('tg_id', str(real_tg_id))
+                async with session.post(
+                    "http://127.0.0.1:8000/api/system/delay_publish", data=fd
+                ) as resp:
+                    pass
+            buttons = [
+                [CallbackButton(text="✅ Опубликовать сейчас", payload="smart_publish_now")],
+                [CallbackButton(text="⏳ Отложить ещё на 10 мин", payload="smart_publish_delay")]
+            ]
+            btn_payload = ButtonsPayload(buttons=buttons).pack()
+            await send_max_msg(event,
+                               "⏳ Отложено на 10 минут. Авто-публикация через 10 мин.",
+                               attachments=[btn_payload])
+        except Exception as e:
+            await send_max_msg(event, f"❌ Ошибка: {e}")
+        return
+
     # ---------------- ОТМЕНА ----------------
     if payload == "join_cancel":
         return await send_max_msg(event, "🛑 Действие отменено.")

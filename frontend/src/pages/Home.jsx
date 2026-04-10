@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, Send } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
 import ActiveApplicationsCard from '../features/applications/components/ActiveApplicationsCard';
@@ -29,6 +29,7 @@ export default function Home() {
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
     const [isArchiveOpen, setArchiveOpen] = useState(false);
+    const [debtors, setDebtors] = useState([]);
 
     const { confirm, ConfirmUI } = useConfirm();
 
@@ -45,6 +46,9 @@ export default function Home() {
     const fetchData = () => {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
         axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApps(res.data || []); setLoading(false); }).catch(() => { setActiveApps([]); setLoading(false); });
+        if (['moderator', 'boss', 'superadmin'].includes(role)) {
+            axios.get(`/api/system/debtors?tg_id=${tgId}`).then(res => setDebtors(res.data || [])).catch(() => {});
+        }
 
         if (['worker', 'foreman', 'boss', 'superadmin'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {
@@ -261,6 +265,23 @@ export default function Home() {
         }
     };
 
+    const handlePublishTomorrow = async () => {
+        const ok = await confirm("Опубликовать расстановку на завтра? Все заявки в статусе «На модерации» на завтра будут одобрены, уведомления отправлены.", { title: "Публикация на завтра", variant: "info", confirmText: "Опубликовать" });
+        if (!ok) return;
+        setIsSubmitting(true);
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            await axios.post('/api/system/publish_tomorrow', fd);
+            toast.success("Расстановка на завтра опубликована!");
+            fetchData();
+        } catch (err) {
+            toast.error(err.response?.data?.detail || "Ошибка публикации");
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
     const openAppModalFromKanban = (app) => {
         setViewApp(app);
     };
@@ -349,17 +370,42 @@ export default function Home() {
                 {myTeam && <MyTeamCard myTeam={myTeam} />}
             </div>
 
+            {/* Debtors Widget */}
+            {!isWorkerOrDriver && debtors.length > 0 && (
+                <div className="bg-red-50/80 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-2xl p-5 shadow-sm">
+                    <h3 className="text-sm font-bold text-red-800 dark:text-red-400 mb-3 flex items-center gap-2">
+                        <AlertTriangle className="w-4 h-4" /> Должники СМР
+                    </h3>
+                    <div className="space-y-2">
+                        {debtors.map((d, i) => (
+                            <div key={i} className="flex justify-between items-center text-sm bg-white/60 dark:bg-gray-800/40 rounded-xl px-3 py-2">
+                                <span className="font-semibold text-red-700 dark:text-red-300">{d.foreman_name}</span>
+                                <span className="text-red-500/80 dark:text-red-400/70 text-xs truncate ml-2 max-w-[50%] text-right">{d.object_address}</span>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
             {!isWorkerOrDriver && (
                 <div className="space-y-6">
                     <div className="flex justify-between items-center mt-4">
                         <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">
                             <ClipboardList className="text-blue-500 w-7 h-7" /> ЗАЯВКИ
                         </h2>
-                        {canArchive && (
-                            <button onClick={() => setArchiveOpen(true)} className="flex items-center gap-2 text-sm font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 px-4 py-2 rounded-xl border border-purple-200 dark:border-purple-800 transition-all active:scale-95 shadow-sm">
-                                <Archive className="w-4 h-4" /> Архив
-                            </button>
-                        )}
+                        <div className="flex items-center gap-2">
+                            {canArchive && (
+                                <button onClick={handlePublishTomorrow} disabled={isSubmitting}
+                                    className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-4 py-2 rounded-xl border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm disabled:opacity-50">
+                                    <Send className="w-4 h-4" /> На завтра
+                                </button>
+                            )}
+                            {canArchive && (
+                                <button onClick={() => setArchiveOpen(true)} className="flex items-center gap-2 text-sm font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 px-4 py-2 rounded-xl border border-purple-200 dark:border-purple-800 transition-all active:scale-95 shadow-sm">
+                                    <Archive className="w-4 h-4" /> Архив
+                                </button>
+                            )}
+                        </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">

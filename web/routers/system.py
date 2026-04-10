@@ -8,8 +8,8 @@ from fastapi import APIRouter, Form, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from database_deps import db, TZ_BARNAUL
-from datetime import datetime
-from utils import resolve_id, notify_users, notify_group_chat, strip_html
+from datetime import datetime, timedelta
+from utils import resolve_id, notify_users, notify_group_chat, strip_html, publish_tomorrow_apps
 
 router = APIRouter(tags=["System"])
 logger = logging.getLogger("SYSTEM")
@@ -175,3 +175,71 @@ async def test_notification_extended(tg_id: int = Form(...), test_type: str = Fo
         raise HTTPException(400, f"Неизвестный тип теста: {test_type}")
 
     return {"status": "ok", "test_type": test_type}
+
+
+# --- Debtors Endpoint ---
+
+@router.get("/api/system/debtors")
+async def get_debtors(tg_id: int = 0):
+    """Должники СМР: прорабы с просроченными нарядами (in_progress, date_target <= сегодня)."""
+    if tg_id:
+        await verify_moderator_plus(tg_id)
+
+    today_str = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
+    async with db.conn.execute(
+        "SELECT DISTINCT foreman_id, foreman_name, object_address, date_target FROM applications "
+        "WHERE status = 'in_progress' AND date_target <= ? AND foreman_id IS NOT NULL "
+        "ORDER BY date_target ASC",
+        (today_str,)
+    ) as cur:
+        rows = await cur.fetchall()
+
+    return [
+        {"foreman_id": r[0], "foreman_name": r[1] or "Неизвестный",
+         "object_address": r[2] or "—", "date_target": r[3]}
+        for r in rows
+    ]
+
+
+# --- Smart Scheduling Endpoints ---
+
+@router.post("/api/system/publish_tomorrow")
+async def api_publish_tomorrow(tg_id: int = Form(0)):
+    """Publish all waiting apps for tomorrow and notify teams."""
+    user_info = None
+    if tg_id:
+        real_id, user_info = await verify_moderator_plus(tg_id)
+
+    count = await publish_tomorrow_apps()
+
+    # Clear pending auto-publish timer
+    try:
+        await db.conn.execute("DELETE FROM settings WHERE key = 'smart_publish_at'")
+        await db.conn.commit()
+    except:
+        pass
+
+    if user_info:
+        await db.add_log(real_id, user_info.get('fio'), f"Ручная публикация расстановки на завтра ({count} нарядов)")
+
+    return {"status": "ok", "published": count}
+
+
+@router.post("/api/system/delay_publish")
+async def api_delay_publish(tg_id: int = Form(0)):
+    """Delay auto-publish by 10 minutes."""
+    if tg_id:
+        real_id, user_info = await verify_moderator_plus(tg_id)
+
+    new_time = datetime.now(TZ_BARNAUL) + timedelta(minutes=10)
+    new_time_str = new_time.strftime("%Y-%m-%d %H:%M:%S")
+
+    await db.conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('smart_publish_at', ?)",
+        (new_time_str,))
+    await db.conn.commit()
+
+    if tg_id:
+        await db.add_log(real_id, user_info.get('fio'), "Отложил авто-публикацию на 10 минут")
+
+    return {"status": "ok", "publish_at": new_time_str}

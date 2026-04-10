@@ -15,9 +15,10 @@ import io
 
 from maxapi import Bot
 # Импортируем классы для кнопок
-from maxapi.types import InputMedia, ButtonsPayload, LinkButton
+from maxapi.types import InputMedia, ButtonsPayload, LinkButton, CallbackButton
 
-from database_deps import db
+from datetime import datetime, timedelta
+from database_deps import db, TZ_BARNAUL
 
 _max_bot_instance = None
 
@@ -640,3 +641,147 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
 
         return True
     return False
+
+
+async def get_smr_debtors():
+    """Должники СМР: прорабы, у которых наряд 'in_progress' с date_target <= сегодня."""
+    if db.conn is None: await db.init_db()
+    today_str = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
+
+    async with db.conn.execute(
+        "SELECT DISTINCT foreman_id, foreman_name, object_address, date_target FROM applications "
+        "WHERE status = 'in_progress' AND date_target <= ? AND foreman_id IS NOT NULL "
+        "ORDER BY date_target ASC",
+        (today_str,)
+    ) as cur:
+        rows = await cur.fetchall()
+
+    return [{"foreman_id": r[0], "foreman_name": r[1] or "Неизвестный",
+             "object_address": r[2] or "—", "date_target": r[3]} for r in rows]
+
+
+async def publish_tomorrow_apps():
+    """Одобрить все заявки 'waiting' на завтра и уведомить бригады/рабочих."""
+    if db.conn is None: await db.init_db()
+    tomorrow_str = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    async with db.conn.execute(
+        "SELECT * FROM applications WHERE status = 'waiting' AND date_target = ?",
+        (tomorrow_str,)
+    ) as cur:
+        apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
+
+    count = 0
+    for app in apps:
+        app_id = app['id']
+        await db.conn.execute("UPDATE applications SET status = 'approved' WHERE id = ?", (app_id,))
+        count += 1
+
+        # Собираем ID всех участников
+        all_involved = []
+        if app.get('foreman_id'):
+            all_involved.append(app['foreman_id'])
+
+        selected = app.get('selected_members', '')
+        if selected:
+            selected_list = [int(x.strip()) for x in selected.split(',') if x.strip().isdigit()]
+            if selected_list:
+                pl = ','.join(['?'] * len(selected_list))
+                async with db.conn.execute(
+                    f"SELECT tg_user_id FROM team_members WHERE id IN ({pl})", selected_list
+                ) as c:
+                    for r in await c.fetchall():
+                        if r[0]: all_involved.append(r[0])
+
+        eq_data_str = app.get('equipment_data', '')
+        if eq_data_str:
+            try:
+                for eq in json.loads(eq_data_str):
+                    async with db.conn.execute("SELECT tg_id FROM equipment WHERE id = ?", (eq['id'],)) as c:
+                        eq_row = await c.fetchone()
+                        if eq_row and eq_row[0]: all_involved.append(eq_row[0])
+            except:
+                pass
+
+        all_involved = list(set(all_involved))
+        if all_involved:
+            msg = (f"📢 <b>Наряд на завтра:</b>\n"
+                   f"Вы назначены на объект <b>{app.get('object_address', '—')}</b>\n"
+                   f"📅 Дата: {tomorrow_str}")
+            await notify_users([], msg, "my-apps", extra_tg_ids=all_involved, category="orders")
+
+    if count > 0:
+        await db.conn.commit()
+    return count
+
+
+async def send_smart_schedule_prompt():
+    """Отправить модераторам запрос на публикацию расстановки с inline-кнопками (TG + MAX)."""
+    if db.conn is None: await db.init_db()
+
+    debtors = await get_smr_debtors()
+    tomorrow_str = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    async with db.conn.execute(
+        "SELECT COUNT(*) FROM applications WHERE status = 'waiting' AND date_target = ?",
+        (tomorrow_str,)
+    ) as cur:
+        waiting_count = (await cur.fetchone())[0]
+
+    debtors_text = ", ".join([d['foreman_name'] for d in debtors]) if debtors else "Нет"
+
+    text = (
+        f"📅 <b>Подготовка нарядов на завтра</b>\n"
+        f"⚠️ <b>Должники по СМР:</b> {debtors_text}\n"
+        f"📋 Заявок на завтра (ожидают): {waiting_count}\n"
+        f"❓ Опубликовать расстановку на завтра?"
+    )
+
+    # Устанавливаем таймер авто-публикации через 10 минут
+    publish_at = datetime.now(TZ_BARNAUL) + timedelta(minutes=10)
+    await db.conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('smart_publish_at', ?)",
+        (publish_at.strftime("%Y-%m-%d %H:%M:%S"),))
+    await db.conn.commit()
+
+    bot_token = os.getenv("BOT_TOKEN")
+    max_bot_token = os.getenv("MAX_BOT_TOKEN")
+
+    # Получаем модераторов+
+    async with db.conn.execute(
+        "SELECT user_id, notify_tg, notify_max FROM users "
+        "WHERE role IN ('moderator', 'boss', 'superadmin') AND is_blacklisted = 0"
+    ) as cur:
+        mod_users = await cur.fetchall()
+
+    tg_markup = {"inline_keyboard": [
+        [{"text": "✅ Опубликовать", "callback_data": "smart_publish_now"}],
+        [{"text": "⏳ Отложить на 10 мин", "callback_data": "smart_publish_delay"}]
+    ]}
+
+    max_plain_text = strip_html(text)
+
+    for user_row in mod_users:
+        uid, notify_tg, notify_max = user_row
+        linked_ids = await get_all_linked_ids(uid)
+
+        for lid in linked_ids:
+            if lid > 0 and notify_tg and bot_token:
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        await session.post(
+                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                            json={"chat_id": lid, "text": text,
+                                  "parse_mode": "HTML", "reply_markup": tg_markup}
+                        )
+                except:
+                    pass
+            elif lid < 0 and notify_max and max_bot_token:
+                max_buttons = [
+                    [CallbackButton(text="✅ Опубликовать", payload="smart_publish_now")],
+                    [CallbackButton(text="⏳ Отложить на 10 мин", payload="smart_publish_delay")]
+                ]
+                max_payload = ButtonsPayload(buttons=max_buttons).pack()
+                dm_chat_id = await get_max_dm_chat_id(str(abs(lid)))
+                await send_max_text(max_bot_token, dm_chat_id, max_plain_text,
+                                    attachments=[max_payload])

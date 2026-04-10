@@ -228,6 +228,62 @@ async def process_fio(message: types.Message, state: FSMContext):
         reply_markup=get_webapp_keyboard(), parse_mode="html")
 
 
+@dp.callback_query(F.data.startswith("smart_publish"))
+async def handle_smart_publish_callback(callback: types.CallbackQuery):
+    """Обработка inline-кнопок публикации расстановки на завтра."""
+    raw_id = callback.from_user.id
+    tg_id = await resolve_id(raw_id)
+    user = await db.get_user(tg_id)
+
+    if not user or dict(user).get('role') not in ['moderator', 'boss', 'superadmin']:
+        return await callback.answer("❌ Нет прав", show_alert=True)
+
+    if callback.data == "smart_publish_now":
+        try:
+            async with aiohttp.ClientSession() as session:
+                fd = aiohttp.FormData()
+                fd.add_field('tg_id', str(tg_id))
+                async with session.post(
+                    "http://127.0.0.1:8000/api/system/publish_tomorrow", data=fd
+                ) as resp:
+                    result = await resp.json()
+                    count = result.get('published', 0)
+            await callback.message.edit_text(
+                f"✅ <b>Расстановка на завтра опубликована!</b>\n📋 Опубликовано нарядов: {count}",
+                parse_mode="HTML")
+            await callback.answer("✅ Опубликовано!")
+        except Exception as e:
+            logger.error(f"Ошибка публикации через кнопку: {e}")
+            await callback.answer(f"❌ Ошибка публикации", show_alert=True)
+
+    elif callback.data == "smart_publish_delay":
+        try:
+            async with aiohttp.ClientSession() as session:
+                fd = aiohttp.FormData()
+                fd.add_field('tg_id', str(tg_id))
+                async with session.post(
+                    "http://127.0.0.1:8000/api/system/delay_publish", data=fd
+                ) as resp:
+                    pass
+            original_text = callback.message.text or ""
+            await callback.message.edit_text(
+                f"📅 <b>Подготовка нарядов на завтра</b>\n"
+                f"{original_text.split(chr(10), 1)[-1] if chr(10) in original_text else ''}\n\n"
+                f"⏳ <i>Отложено на 10 минут. Авто-публикация через 10 мин.</i>",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ Опубликовать сейчас",
+                                          callback_data="smart_publish_now")],
+                    [InlineKeyboardButton(text="⏳ Отложить ещё на 10 мин",
+                                          callback_data="smart_publish_delay")]
+                ])
+            )
+            await callback.answer("⏳ Отложено на 10 минут")
+        except Exception as e:
+            logger.error(f"Ошибка отложения публикации: {e}")
+            await callback.answer("❌ Ошибка", show_alert=True)
+
+
 async def call_api(endpoint):
     url = f"http://127.0.0.1:8000{endpoint}"
     async with aiohttp.ClientSession() as session:
