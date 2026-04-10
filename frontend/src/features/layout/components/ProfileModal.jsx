@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import {
     User, X, Camera, Trash2, Unplug, ShieldCheck,
     Send, Smartphone, MessageCircle, Bell, UserPlus, ClipboardList, FileText, AlertTriangle
@@ -15,7 +16,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
         setEditProfile(prev => {
             const newVal = !prev[platform];
             if (!newVal && ((platform === 'notify_tg' && !prev.notify_max) || (platform === 'notify_max' && !prev.notify_tg))) {
-                alert("Хотя бы один мессенджер должен быть включен!");
+                toast.error("Хотя бы один мессенджер должен быть включен!");
                 return prev;
             }
             return { ...prev, [platform]: newVal };
@@ -31,7 +32,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
             try {
                 const res = await axios.post(`/api/users/${profileData.user_id}/update_avatar`, fd);
                 setProfileData({...profileData, avatar_url: res.data.avatar_url});
-            } catch(e) { alert("Ошибка загрузки"); }
+            } catch(e) { toast.error("Ошибка загрузки"); }
         };
         reader.readAsDataURL(file);
     };
@@ -53,8 +54,8 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
             fd.append('notify_errors', editProfile.notify_errors ? 1 : 0);
 
             await axios.post(`/api/users/${profileData.user_id}/update_profile`, fd);
-            alert("Успешно!"); setProfileModalOpen(false); window.location.reload();
-        } catch (e) { alert("Ошибка сохранения"); }
+            toast.success("Успешно!"); setProfileModalOpen(false); window.location.reload();
+        } catch (e) { toast.error("Ошибка сохранения"); }
     };
 
     const handleDeleteUser = async () => {
@@ -63,10 +64,10 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
             const fd = new FormData();
             fd.append('tg_id', tgId);
             await axios.post(`/api/users/${profileData.user_id}/delete`, fd);
-            alert("Пользователь успешно удален из системы.");
+            toast.success("Пользователь успешно удален из системы.");
             setProfileModalOpen(false);
             window.location.reload();
-        } catch (e) { alert("Ошибка удаления пользователя"); }
+        } catch (e) { toast.error("Ошибка удаления пользователя"); }
     };
 
     const handleLinkAccount = async () => {
@@ -80,10 +81,10 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
             localStorage.setItem('tg_id', res.data.new_tg_id);
             localStorage.setItem('user_role', res.data.role);
 
-            alert("Аккаунты успешно связаны!");
+            toast.success("Аккаунты успешно связаны!");
             window.location.reload();
         } catch (e) {
-            alert(e.response?.data?.detail || "Ошибка привязки. Проверьте правильность кода.");
+            toast.error(e.response?.data?.detail || "Ошибка привязки. Проверьте правильность кода.");
         }
     };
 
@@ -95,10 +96,10 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
             fd.append('tg_id', tgId);
             fd.append('platform', platform);
             await axios.post('/api/users/unlink_platform', fd);
-            alert(`Мессенджер ${platformName} успешно отвязан.`);
+            toast.success(`Мессенджер ${platformName} успешно отвязан.`);
             window.location.reload();
         } catch (e) {
-            alert(e.response?.data?.detail || "Ошибка при отвязке.");
+            toast.error(e.response?.data?.detail || "Ошибка при отвязке.");
         }
     };
 

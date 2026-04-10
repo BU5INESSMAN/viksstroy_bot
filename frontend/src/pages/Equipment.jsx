@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import { Plus, Upload, Search } from 'lucide-react';
 
 import EquipmentCard from '../features/equipment/components/EquipmentCard';
@@ -57,8 +58,8 @@ export default function Equipment() {
             setCustomCategory('');
             setActiveTab('list');
             fetchData();
-            alert("Техника добавлена!");
-        } catch (e) { alert("Ошибка добавления"); }
+            toast.success("Техника добавлена!");
+        } catch (e) { toast.error("Ошибка добавления"); }
     };
 
     const handleBulkUpload = async (e) => {
@@ -71,8 +72,8 @@ export default function Equipment() {
             setBulkText('');
             setActiveTab('list');
             fetchData();
-            alert(`Успешно загружено единиц: ${res.data.added}`);
-        } catch (e) { alert("Ошибка массовой загрузки"); }
+            toast.success(`Успешно загружено единиц: ${res.data.added}`);
+        } catch (e) { toast.error("Ошибка массовой загрузки"); }
     };
 
     const handleDeleteEquip = async (id) => {
@@ -81,7 +82,7 @@ export default function Equipment() {
             const fd = new FormData(); fd.append('tg_id', tgId);
             await axios.post(`/api/equipment/${id}/delete`, fd);
             fetchData();
-        } catch (e) { alert("Ошибка удаления"); }
+        } catch (e) { toast.error("Ошибка удаления"); }
     };
 
     const handleEquipStatusChange = async (id, newStatus) => {
@@ -89,7 +90,7 @@ export default function Equipment() {
             const fd = new FormData(); fd.append('tg_id', tgId); fd.append('status', newStatus);
             await axios.post(`/api/equipment/${id}/status`, fd);
             fetchData();
-        } catch (e) { alert("Ошибка изменения статуса"); }
+        } catch (e) { toast.error("Ошибка изменения статуса"); }
     };
 
     const handleUnlinkEquipment = async (equipId) => {
@@ -100,7 +101,7 @@ export default function Equipment() {
             await axios.post(`/api/equipment/${equipId}/unlink`, fd);
             fetchData();
         } catch (e) {
-            alert("Ошибка при отвязке аккаунта");
+            toast.error("Ошибка при отвязке аккаунта");
         }
     };
 
@@ -109,7 +110,7 @@ export default function Equipment() {
             const res = await axios.post(`/api/equipment/${eq.id}/generate_invite`);
             setInviteInfo({...res.data, equipName: eq.name});
             setCopiedLink('');
-        } catch (e) { alert("Ошибка генерации ссылки"); }
+        } catch (e) { toast.error("Ошибка генерации ссылки"); }
     };
 
     if (loading) return (

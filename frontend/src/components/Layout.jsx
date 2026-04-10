@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useLocation, Outlet } from 'react-router-dom';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import Header from '../features/layout/components/Header';
 import BottomNav from '../features/layout/components/BottomNav';
 import ProfileModal from '../features/layout/components/ProfileModal';
@@ -83,7 +84,7 @@ export default function Layout() {
             if (err.response?.status === 401 || err.response?.status === 403) {
                 setSessionModalOpen(true);
             } else {
-                alert("Ошибка загрузки профиля");
+                toast.error("Ошибка загрузки профиля");
             }
         }
     };

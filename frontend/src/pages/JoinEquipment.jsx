@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import { Truck, CheckCircle, XCircle } from 'lucide-react';
 
 export default function JoinEquipment() {
@@ -55,19 +56,19 @@ export default function JoinEquipment() {
   }, [location, tgId]);
 
   const handleJoin = async () => {
-      if (!tgId) return alert("Не удалось определить ваш ID. Пожалуйста, откройте ссылку из бота.");
+      if (!tgId) return toast.error("Не удалось определить ваш ID. Пожалуйста, откройте ссылку из бота.");
       try {
           const fd = new FormData();
           fd.append('invite_code', code);
           fd.append('tg_id', tgId);
           await axios.post('/api/equipment/invite/join', fd);
-          alert("Успешно привязано!");
+          toast.success("Успешно привязано!");
 
           if (window.location.search.includes('WebAppData') || window.location.pathname.includes('/max')) { navigate('/max'); }
           else if (window.Telegram?.WebApp?.initData) { navigate('/tma'); }
           else { navigate('/'); }
       } catch (e) {
-          alert(e.response?.data?.detail || "Ошибка привязки");
+          toast.error(e.response?.data?.detail || "Ошибка привязки");
       }
   };
 

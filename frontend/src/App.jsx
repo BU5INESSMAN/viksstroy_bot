@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect, lazy, Suspense } from 'react';
+import { Toaster } from 'react-hot-toast';
 import Layout from './components/Layout';
 
 // Lazy-loaded pages
@@ -56,6 +57,21 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          duration: 3000,
+          style: {
+            borderRadius: '12px',
+            padding: '12px 16px',
+            fontSize: '14px',
+            fontWeight: '600',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+          },
+          success: { style: { background: '#ecfdf5', color: '#065f46', border: '1px solid #a7f3d0' } },
+          error: { style: { background: '#fef2f2', color: '#991b1b', border: '1px solid #fecaca' }, duration: 4000 },
+        }}
+      />
       <Suspense fallback={SuspenseFallback}>
         <Routes>
           <Route path="/" element={<Login />} />

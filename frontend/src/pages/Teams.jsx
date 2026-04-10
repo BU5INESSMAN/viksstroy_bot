@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import { Plus } from 'lucide-react';
 import TeamCard from '../features/teams/components/TeamCard';
 import CreateTeamModal from '../features/teams/components/CreateTeamModal';
@@ -34,7 +35,7 @@ export default function Teams() {
             setTeamModalOpen(false);
             setNewTeamName('');
             fetchData();
-        } catch (err) { alert("Ошибка создания бригады"); }
+        } catch (err) { toast.error("Ошибка создания бригады"); }
     };
 
     const handleDeleteTeam = async (id) => {
@@ -43,7 +44,7 @@ export default function Teams() {
             const fd = new FormData(); fd.append('tg_id', tgId);
             await axios.post(`/api/teams/${id}/delete`, fd);
             fetchData();
-        } catch(e) { alert("Ошибка удаления"); }
+        } catch(e) { toast.error("Ошибка удаления"); }
     };
 
     const openManageModal = async (teamId) => {
@@ -51,7 +52,7 @@ export default function Teams() {
             const res = await axios.get(`/api/teams/${teamId}/details`);
             setManageTeamData(res.data);
             setManageModalOpen(true);
-        } catch (e) { alert("Ошибка загрузки бригады"); }
+        } catch (e) { toast.error("Ошибка загрузки бригады"); }
     };
 
     const handleAddMember = async (e) => {
@@ -65,7 +66,7 @@ export default function Teams() {
             await axios.post(`/api/teams/${manageTeamData.id}/members/add`, fd);
             setNewMember({ fio: '', position: 'Рабочий', is_foreman: false });
             openManageModal(manageTeamData.id);
-        } catch (e) { alert("Ошибка добавления участника"); }
+        } catch (e) { toast.error("Ошибка добавления участника"); }
     };
 
     const toggleForeman = async (memberId, is_foreman) => {
@@ -75,7 +76,7 @@ export default function Teams() {
             fd.append('tg_id', tgId);
             await axios.post(`/api/teams/members/${memberId}/toggle_foreman`, fd);
             openManageModal(manageTeamData.id);
-        } catch (e) { alert("Ошибка обновления роли"); }
+        } catch (e) { toast.error("Ошибка обновления роли"); }
     };
 
     const handleUnlinkMember = async (memberId) => {
@@ -85,7 +86,7 @@ export default function Teams() {
             fd.append('tg_id', tgId);
             await axios.post(`/api/teams/members/${memberId}/unlink`, fd);
             openManageModal(manageTeamData.id);
-        } catch (e) { alert("Ошибка при отвязке аккаунта"); }
+        } catch (e) { toast.error("Ошибка при отвязке аккаунта"); }
     };
 
     const deleteMember = async (memberId) => {
@@ -94,7 +95,7 @@ export default function Teams() {
             const fd = new FormData(); fd.append('tg_id', tgId);
             await axios.post(`/api/teams/members/${memberId}/delete`, fd);
             openManageModal(manageTeamData.id);
-        } catch (e) { alert("Ошибка удаления участника"); }
+        } catch (e) { toast.error("Ошибка удаления участника"); }
     };
 
     const generateInvite = async () => {
@@ -102,7 +103,7 @@ export default function Teams() {
             const res = await axios.post(`/api/teams/${manageTeamData.id}/generate_invite`);
             setInviteInfo(res.data);
             setCopiedLink('');
-        } catch (e) { alert("Ошибка генерации ссылки"); }
+        } catch (e) { toast.error("Ошибка генерации ссылки"); }
     };
 
     const canManage = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);

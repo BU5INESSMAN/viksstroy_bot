@@ -26,7 +26,13 @@ sys.path.append(web_dir)
 from database_deps import db
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+os.makedirs("data", exist_ok=True)
+_log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
+_console_handler = logging.StreamHandler()
+_console_handler.setFormatter(_log_formatter)
+_file_handler = logging.FileHandler(os.path.join("data", "server.log"), encoding="utf-8")
+_file_handler.setFormatter(_log_formatter)
+logging.basicConfig(level=logging.INFO, handlers=[_console_handler, _file_handler])
 logger = logging.getLogger(__name__)
 
 dp = Dispatcher()

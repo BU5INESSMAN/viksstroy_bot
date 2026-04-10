@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import { HardHat, User, CheckCircle, XCircle } from 'lucide-react';
 
 export default function JoinTeam() {
@@ -55,7 +56,7 @@ export default function JoinTeam() {
   }, [location, tgId]);
 
   const handleJoin = async () => {
-    if (!tgId) return alert("Не удалось определить ваш ID. Пожалуйста, откройте ссылку из бота.");
+    if (!tgId) return toast.error("Не удалось определить ваш ID. Пожалуйста, откройте ссылку из бота.");
     try {
         const fd = new FormData();
         fd.append('invite_code', code);
@@ -64,12 +65,12 @@ export default function JoinTeam() {
 
         await axios.post('/api/invite/join', fd);
 
-        alert("Успешно привязано!");
+        toast.success("Успешно привязано!");
         if (window.location.search.includes('WebAppData') || window.location.pathname.includes('/max')) { navigate('/max'); }
         else if (window.Telegram?.WebApp?.initData) { navigate('/tma'); }
         else { navigate('/'); }
     } catch (e) {
-        alert(e.response?.data?.detail || "Ошибка привязки");
+        toast.error(e.response?.data?.detail || "Ошибка привязки");
     }
   };
 

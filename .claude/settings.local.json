@@ -34,7 +34,8 @@
       "Bash(python -c ':*)",
       "Bash(echo \"EXIT:$?\")",
       "WebFetch(domain:raw.githubusercontent.com)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(npm install:*)"
     ]
   }
 }

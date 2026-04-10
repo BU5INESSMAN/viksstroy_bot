@@ -98,7 +98,8 @@ async def get_server_logs(tg_id: int = 0):
     try:
         with open(LOG_FILE_PATH, "r", encoding="utf-8", errors="replace") as f:
             all_lines = f.readlines()
-        last_100 = all_lines[-100:] if len(all_lines) > 100 else all_lines
+        filtered = [line for line in all_lines if 'apscheduler' not in line.lower()]
+        last_100 = filtered[-100:] if len(filtered) > 100 else filtered
         return {"lines": [line.rstrip('\n') for line in last_100]}
     except Exception as e:
         return {"lines": [f"[Ошибка чтения лог-файла: {e}]"]}

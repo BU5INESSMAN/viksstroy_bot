@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle, HardHat, Flag,
@@ -74,7 +75,7 @@ export default function Review() {
             setSelectedApp(null);
             fetchData();
         } catch (err) {
-            alert("Ошибка при обновлении статуса");
+            toast.error("Ошибка при обновлении статуса");
         } finally {
             setIsProcessing(false);
         }
@@ -92,7 +93,7 @@ export default function Review() {
     };
 
     const handleExecutePublish = async () => {
-        if(selectedToPublish.length === 0) return alert("Выберите хотя бы одну заявку!");
+        if(selectedToPublish.length === 0) return toast.error("Выберите хотя бы одну заявку!");
 
         setIsProcessing(true);
         try {
@@ -100,11 +101,11 @@ export default function Review() {
             fd.append('app_ids', selectedToPublish.join(','));
             fd.append('tg_id', tgId);
             const res = await axios.post('/api/applications/publish', fd);
-            alert(`Опубликовано нарядов: ${res.data.published}`);
+            toast.success(`Опубликовано нарядов: ${res.data.published}`);
             setPublishModalOpen(false);
             fetchData();
         } catch(e) {
-            alert("Ошибка публикации");
+            toast.error("Ошибка публикации");
         } finally {
             setIsProcessing(false);
         }
@@ -119,9 +120,9 @@ export default function Review() {
             const fd = new FormData();
             fd.append('tg_id', tgId);
             await axios.post('/api/applications/publish_schedule', fd);
-            alert('Расстановка успешно опубликована!');
+            toast.success('Расстановка успешно опубликована!');
         } catch (e) {
-            alert(e.response?.data?.detail || 'Ошибка публикации расстановки');
+            toast.error(e.response?.data?.detail || 'Ошибка публикации расстановки');
         } finally {
             setIsProcessing(false);
         }

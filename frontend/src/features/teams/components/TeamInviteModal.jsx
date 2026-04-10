@@ -1,5 +1,6 @@
 import { Link, Send, Globe, MessageCircle, Copy, X } from 'lucide-react';
 import { copyToClipboard } from '../../../utils/clipboard.js';
+import toast from 'react-hot-toast';
 
 export default function TeamInviteModal({ inviteInfo, setInviteInfo, copiedLink, setCopiedLink }) {
     if (!inviteInfo) return null;
@@ -8,7 +9,7 @@ export default function TeamInviteModal({ inviteInfo, setInviteInfo, copiedLink,
         const code = inviteInfo.invite_code || inviteInfo.join_password;
         const message = `👋 Привет! Присоединяйся к нашей бригаде в системе «ВИКС Расписание».\n\n📱 Прямая ссылка:\n${inviteInfo.invite_link}\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
         copyToClipboard(message, 'all', setCopiedLink);
-        alert('Полное сообщение скопировано в буфер обмена!');
+        toast.success('Полное сообщение скопировано в буфер обмена!');
     };
 
     return (

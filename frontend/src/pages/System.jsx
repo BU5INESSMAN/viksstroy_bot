@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import {
     Lock, Settings, Save, Mail, Rocket, Send, MessageSquare,
     Shield, Users, FileText, ChevronUp, ChevronDown, Search,
@@ -157,8 +158,8 @@ export default function System() {
                 office_reminder_time: settings.office_reminder_time,
                 tg_id: tgId
             }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
-            alert('Настройки успешно сохранены!');
-        } catch { alert('Ошибка при сохранении настроек.'); }
+            toast.success('Настройки успешно сохранены!');
+        } catch { toast.error('Ошибка при сохранении настроек.'); }
     };
 
     const testNotification = async () => {
@@ -167,8 +168,8 @@ export default function System() {
             formData.append('tg_id', tgId);
             formData.append('platform', testPlatform);
             await axios.post('/api/system/test_notification', formData);
-            alert("Тестовые уведомления успешно отправлены!");
-        } catch { alert("Ошибка отправки теста."); }
+            toast.success("Тестовые уведомления успешно отправлены!");
+        } catch { toast.error("Ошибка отправки теста."); }
     };
 
     const testExtended = async (testType) => {
@@ -178,8 +179,8 @@ export default function System() {
             formData.append('test_type', testType);
             formData.append('platform', testPlatform);
             await axios.post('/api/system/test_notification_extended', formData);
-            alert(`Тест "${testType}" отправлен!`);
-        } catch { alert("Ошибка отправки теста."); }
+            toast.success(`Тест "${testType}" отправлен!`);
+        } catch { toast.error("Ошибка отправки теста."); }
     };
 
     const handleRoleSimulation = (targetRole) => {
@@ -203,9 +204,9 @@ export default function System() {
         setBroadcastLoading(true);
         try {
             await axios.post('/api/system/broadcast/group', { tg_id: parseInt(tgId), message: broadcastText });
-            alert('Сообщение отправлено в группу!');
+            toast.success('Сообщение отправлено в группу!');
             setBroadcastText('');
-        } catch { alert('Ошибка отправки.'); }
+        } catch { toast.error('Ошибка отправки.'); }
         setBroadcastLoading(false);
     };
 
@@ -219,10 +220,10 @@ export default function System() {
                 roles: dmMode === 'roles' ? dmSelectedRoles : undefined,
                 user_ids: dmMode === 'users' ? dmSelectedUsers : undefined,
             });
-            alert('Рассылка в ЛС отправлена!');
+            toast.success('Рассылка в ЛС отправлена!');
             setDmModalOpen(false);
             setBroadcastText('');
-        } catch { alert('Ошибка рассылки.'); }
+        } catch { toast.error('Ошибка рассылки.'); }
         setBroadcastLoading(false);
     };
 

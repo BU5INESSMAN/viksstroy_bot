@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import {
     MapPin, Plus, Settings, Archive, CheckCircle,
     X, Search, Users, Truck, FileText, Check,
@@ -75,8 +76,8 @@ export default function Objects() {
             setCreateModalOpen(false);
             setNewObj({ name: '', address: '' });
             fetchObjects();
-            alert("Объект успешно создан!");
-        } catch (e) { alert("Ошибка создания"); }
+            toast.success("Объект успешно создан!");
+        } catch (e) { toast.error("Ошибка создания"); }
     };
 
     const handlePdfUpload = async (e) => {
@@ -91,7 +92,7 @@ export default function Objects() {
             setNewObj({ name: res.data.name || '', address: res.data.address || '' });
             setPdfStep('verify');
         } catch (err) {
-            alert(err.response?.data?.detail || 'Ошибка парсинга PDF');
+            toast.error(err.response?.data?.detail || 'Ошибка парсинга PDF');
         }
         setPdfParsing(false);
         e.target.value = '';
@@ -111,7 +112,7 @@ export default function Objects() {
 
     const handlePdfConfirmAndCreate = async () => {
         if (!newObj.name || !newObj.address) {
-            alert('Заполните название и адрес объекта');
+            toast.error('Заполните название и адрес объекта');
             return;
         }
         try {
@@ -153,9 +154,9 @@ export default function Objects() {
             setPdfData(null);
             setPdfStep('upload');
             fetchObjects();
-            alert('Объект успешно создан!');
+            toast.success('Объект успешно создан!');
         } catch (err) {
-            alert('Ошибка создания объекта');
+            toast.error('Ошибка создания объекта');
         }
     };
 
@@ -171,7 +172,7 @@ export default function Objects() {
         try {
             await axios.post(`/api/objects/${objId}/${isCurrentlyArchived ? 'restore' : 'archive'}`);
             fetchObjects();
-        } catch (e) { alert("Ошибка смены статуса"); }
+        } catch (e) { toast.error("Ошибка смены статуса"); }
     };
 
     const openEditModal = async (obj) => {
@@ -211,15 +212,15 @@ export default function Objects() {
             fd.append('default_equip', editObj.default_equip_ids.join(','));
             await axios.post(`/api/objects/${editObj.id}/update`, fd);
             fetchObjects();
-            alert("Настройки объекта сохранены!");
-        } catch (e) { alert("Ошибка сохранения"); }
+            toast.success("Настройки объекта сохранены!");
+        } catch (e) { toast.error("Ошибка сохранения"); }
     };
 
     const handleSaveKPPlan = async () => {
         try {
             await axios.post(`/api/objects/${editObj.id}/kp/update`, { kp_ids: objectKpPlan, target_volumes: targetVolumes });
-            alert("План СМР успешно обновлен!");
-        } catch (e) { alert("Ошибка сохранения плана СМР"); }
+            toast.success("План СМР успешно обновлен!");
+        } catch (e) { toast.error("Ошибка сохранения плана СМР"); }
     };
 
     const handleFileUpload = async (e) => {
@@ -232,7 +233,7 @@ export default function Objects() {
             await axios.post(`/api/objects/${editObj.id}/files/upload`, fd);
             const res = await axios.get(`/api/objects/${editObj.id}/files`);
             setObjectFiles(res.data || []);
-        } catch (err) { alert("Ошибка загрузки файлов"); }
+        } catch (err) { toast.error("Ошибка загрузки файлов"); }
         setUploading(false);
         e.target.value = '';
     };
@@ -242,7 +243,7 @@ export default function Objects() {
         try {
             await axios.delete(`/api/objects/files/${fileId}`);
             setObjectFiles(prev => prev.filter(f => f.id !== fileId));
-        } catch (e) { alert("Ошибка удаления"); }
+        } catch (e) { toast.error("Ошибка удаления"); }
     };
 
     const openStatsModal = async (obj) => {
@@ -253,7 +254,7 @@ export default function Objects() {
         try {
             const res = await axios.get(`/api/objects/${obj.id}/stats`);
             setStatsData(res.data);
-        } catch (e) { alert("Ошибка загрузки статистики"); }
+        } catch (e) { toast.error("Ошибка загрузки статистики"); }
         setStatsLoading(false);
     };
 

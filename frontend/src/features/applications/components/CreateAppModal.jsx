@@ -3,6 +3,7 @@ import {
     ClipboardList, Clock, CheckCircle,
     User, HardHat, X, Check, XCircle
 } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 export default function CreateAppModal({
     appForm, setAppForm, isSubmitting, setGlobalCreateAppOpen,
@@ -206,7 +207,7 @@ export default function CreateAppModal({
                                         }
 
                                         return (
-                                            <button key={t.id} type="button" disabled={isSubmitting} onClick={() => { if(st.state !== 'free') return alert(st.message); toggleTeamSelection(t.id); }} className={`px-4 py-2.5 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${btnStyles}`}>
+                                            <button key={t.id} type="button" disabled={isSubmitting} onClick={() => { if(st.state !== 'free') return toast.error(st.message); toggleTeamSelection(t.id); }} className={`px-4 py-2.5 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${btnStyles}`}>
                                                 {icon} {t.name}
                                             </button>
                                         );
@@ -265,7 +266,7 @@ export default function CreateAppModal({
                                             else if (isSelected) btnStyles = 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 shadow-sm ring-1 ring-blue-500';
 
                                             return (
-                                                <button key={e.id} type="button" disabled={isSubmitting} onClick={() => { if (st.state !== 'free') return alert(st.message); toggleEquipmentSelection(e); }} className={`px-3.5 py-2 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${btnStyles}`}>
+                                                <button key={e.id} type="button" disabled={isSubmitting} onClick={() => { if (st.state !== 'free') return toast.error(st.message); toggleEquipmentSelection(e); }} className={`px-3.5 py-2 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${btnStyles}`}>
                                                     {isSelected ? <CheckCircle className="w-4 h-4" /> : (st.state === 'repair' ? <XCircle className="w-4 h-4" /> : (st.state === 'busy' ? <Clock className="w-4 h-4" /> : <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>))}
                                                     {displayName}
                                                 </button>

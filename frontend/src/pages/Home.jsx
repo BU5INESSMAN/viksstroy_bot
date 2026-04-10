@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import { ClipboardList, Clock, CheckCircle, HardHat, Flag } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
@@ -84,7 +85,7 @@ export default function Home() {
         const targetEquips = type === 'equip' ? selectedObj.default_equip_ids : "";
 
         if (!targetTeams && !targetEquips) {
-            alert("Для этого объекта не назначены ресурсы по умолчанию.");
+            toast.error("Для этого объекта не назначены ресурсы по умолчанию.");
             return;
         }
 
@@ -102,7 +103,7 @@ export default function Home() {
             const res = await axios.post('/api/applications/check_availability', fd);
 
             if (res.data.status === 'occupied') {
-                alert(`❌ ОШИБКА ЗАНЯТОСТИ:\n\n${res.data.message}\n\nДобавление заблокировано.`);
+                toast.error(`Ошибка занятости: ${res.data.message}`);
             } else {
                 if (type === 'teams') {
                     const ids = targetTeams.split(',').map(Number);
@@ -113,10 +114,10 @@ export default function Home() {
                     const newEq = data.equipment.filter(e => ids.includes(e.id)).map(e => ({ id: e.id, name: e.driver ? `${e.name} (${e.driver})` : e.name, time_start: '08', time_end: '17' }));
                     setAppForm(prev => ({...prev, equipment: newEq}));
                 }
-                alert("✅ Ресурсы успешно подставлены!");
+                toast.success("Ресурсы успешно подставлены!");
             }
         } catch (e) {
-            alert("Ошибка связи с сервером при проверке занятости.");
+            toast.error("Ошибка связи с сервером при проверке занятости.");
         }
     };
 
@@ -169,10 +170,10 @@ export default function Home() {
     const handleCreateApp = async (e) => {
         e.preventDefault();
         if(appForm.isViewOnly) { setGlobalCreateAppOpen(false); return; }
-        if (!appForm.object_id) return alert("Выберите объект!");
-        if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) return alert("Выберите бригаду или технику!");
+        if (!appForm.object_id) return toast.error("Выберите объект!");
+        if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) return toast.error("Выберите бригаду или технику!");
         if (appForm.team_ids.length === 0 && !window.confirm("Создать заявку ТОЛЬКО на технику (без людей)?")) return;
-        if (appForm.team_ids.length > 0 && appForm.members.length === 0) return alert("Выберите хотя бы одного рабочего из бригады!");
+        if (appForm.team_ids.length > 0 && appForm.members.length === 0) return toast.error("Выберите хотя бы одного рабочего из бригады!");
 
         setIsSubmitting(true);
         try {
@@ -188,14 +189,14 @@ export default function Home() {
 
             if (appForm.id) {
                 await axios.post(`/api/applications/${appForm.id}/update`, fd);
-                alert("Заявка успешно обновлена!");
+                toast.success("Заявка успешно обновлена!");
             } else {
                 await axios.post('/api/applications/create', fd);
-                alert("Успешно отправлено на модерацию!");
+                toast.success("Успешно отправлено на модерацию!");
             }
             setGlobalCreateAppOpen(false); fetchData();
         } catch (err) {
-            alert(err.response?.data?.detail || "Ошибка сохранения");
+            toast.error(err.response?.data?.detail || "Ошибка сохранения");
         } finally {
             setIsSubmitting(false);
         }
@@ -208,11 +209,11 @@ export default function Home() {
             const fd = new FormData();
             fd.append('tg_id', tgId);
             await axios.post(`/api/applications/${appForm.id}/delete`, fd);
-            alert("Заявка успешно удалена!");
+            toast.success("Заявка успешно удалена!");
             setGlobalCreateAppOpen(false);
             fetchData();
         } catch (err) {
-            alert(err.response?.data?.detail || "Ошибка при удалении заявки.");
+            toast.error(err.response?.data?.detail || "Ошибка при удалении заявки.");
         } finally {
             setIsSubmitting(false);
         }
@@ -237,20 +238,20 @@ export default function Home() {
             fd.append('tg_id', tgId);
             if (freeModal.type === 'equipment') {
                 await axios.post(`/api/applications/${freeModal.app.id}/free_equipment`, fd);
-                alert("Успешно! Вы переведены в статус 'Свободен'.");
+                toast.success("Вы переведены в статус 'Свободен'.");
             } else if (freeModal.type === 'team') {
                 await axios.post(`/api/applications/${freeModal.app.id}/free_team`, fd);
-                alert("Успешно! Все бригады переведены в статус 'Свободны'.");
+                toast.success("Все бригады переведены в статус 'Свободны'.");
             } else if (freeModal.type === 'specific_team') {
                 fd.append('team_id', freeModal.teamId);
                 await axios.post(`/api/applications/${freeModal.app.id}/free_team`, fd);
-                alert("Успешно! Выбранная бригада переведена в статус 'Свободна'.");
+                toast.success("Выбранная бригада переведена в статус 'Свободна'.");
             }
             setFreeModal({ isOpen: false, type: '', app: null, teamId: null, inputValue: '' });
             fetchData();
             if (isGlobalCreateAppOpen) setGlobalCreateAppOpen(false);
         } catch(e) {
-            alert(e.response?.data?.detail || "Ошибка при освобождении.");
+            toast.error(e.response?.data?.detail || "Ошибка при освобождении.");
         } finally {
             setIsSubmitting(false);
         }
@@ -287,7 +288,7 @@ export default function Home() {
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 pb-24">
 
             <div className="space-y-6">
-                {['worker', 'driver', 'foreman', 'boss', 'superadmin'].includes(role) && (
+                {['worker', 'driver', 'foreman'].includes(role) && (
                     <ActiveApplicationsCard
                         todayApps={todayApps}
                         upcomingApps={upcomingApps}

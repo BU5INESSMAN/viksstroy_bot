@@ -1,12 +1,13 @@
 import { Link, X, Send, Globe, MessageCircle, Copy } from 'lucide-react';
 import { copyToClipboard } from '../../../utils/clipboard.js';
+import toast from 'react-hot-toast';
 
 export default function EquipmentInviteModal({ inviteInfo, setInviteInfo, copiedLink, setCopiedLink }) {
     const copyEquipMessage = () => {
         const code = inviteInfo.invite_code || inviteInfo.join_password;
         const message = `🚜 Привет! Вот приглашение для привязки техники в «ВИКС Расписание».\n\nМашина: ${inviteInfo.equipName}\n\n📱 Прямая ссылка:\n${inviteInfo.invite_link}\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
         copyToClipboard(message, 'all', setCopiedLink);
-        alert('Сообщение скопировано в буфер обмена!');
+        toast.success('Сообщение скопировано в буфер обмена!');
     };
 
     if (!inviteInfo) return null;

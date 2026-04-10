@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import {
     FileText, CheckCircle, Clock, Search, X, MapPin,
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings
@@ -52,7 +53,7 @@ export default function KP() {
                 current_salary: i.saved_salary !== null ? i.saved_salary : i.salary,
                 current_price: i.saved_price !== null ? i.saved_price : i.price,
             })));
-        } catch (e) { alert("Ошибка загрузки"); setModalApp(null); }
+        } catch (e) { toast.error("Ошибка загрузки"); setModalApp(null); }
     };
 
     const handleVolumeChange = (kp_id, value) => {
@@ -66,9 +67,9 @@ export default function KP() {
                 tg_id: tgId, role: role,
                 items: kpItems.map(i => ({ kp_id: i.kp_id, volume: i.volume || 0, salary: i.current_salary, price: i.current_price }))
             });
-            alert("Отчет отправлен!");
+            toast.success("Отчет отправлен!");
             setModalApp(null); fetchApps();
-        } catch (e) { alert("Ошибка сохранения"); }
+        } catch (e) { toast.error("Ошибка сохранения"); }
         setIsSubmitting(false);
     };
 
@@ -81,7 +82,7 @@ export default function KP() {
             link.href = url;
             link.setAttribute('download', `Отчет_работы_${new Date().toLocaleDateString()}.xlsx`);
             document.body.appendChild(link); link.click(); link.remove();
-        } catch (e) { alert("Ошибка генерации Excel"); }
+        } catch (e) { toast.error("Ошибка генерации Excel"); }
         setIsSubmitting(false);
     };
 
@@ -93,7 +94,7 @@ export default function KP() {
             link.href = url;
             link.setAttribute('download', 'Справочник_КП_актуальный.xlsx');
             document.body.appendChild(link); link.click(); link.remove();
-        } catch (e) { alert("Файл не найден на сервере. Загрузите его впервые."); }
+        } catch (e) { toast.error("Файл не найден на сервере. Загрузите его впервые."); }
     };
 
     const handleUploadCatalog = async (e) => {
@@ -104,9 +105,9 @@ export default function KP() {
         setIsSubmitting(true);
         try {
             await axios.post('/api/kp/catalog/upload', fd);
-            alert("Справочник успешно обновлен!");
+            toast.success("Справочник успешно обновлен!");
             fetchApps();
-        } catch (e) { alert(e.response?.data?.detail || "Ошибка загрузки файла"); }
+        } catch (e) { toast.error(e.response?.data?.detail || "Ошибка загрузки файла"); }
         setIsSubmitting(false);
         e.target.value = null;
     };
