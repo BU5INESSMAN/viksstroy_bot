@@ -29,25 +29,6 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-TG_PROXY_URL = os.getenv("TG_PROXY_URL")
-if TG_PROXY_URL:
-    if TG_PROXY_URL.startswith("socks5://"):
-        from aiohttp_socks import ProxyConnector
-        session = AiohttpSession(connector=ProxyConnector.from_url(TG_PROXY_URL))
-    elif TG_PROXY_URL.startswith("http://") or TG_PROXY_URL.startswith("https://"):
-        session = AiohttpSession(proxy=TG_PROXY_URL)
-    else:
-        logger.warning(f"Неизвестный тип прокси: {TG_PROXY_URL}, запуск без прокси")
-        session = None
-else:
-    session = None
-
-if session:
-    bot = Bot(token=os.getenv("BOT_TOKEN"), session=session)
-    logger.info(f"Bot initialized WITH PROXY: {TG_PROXY_URL}")
-else:
-    bot = Bot(token=os.getenv("BOT_TOKEN"))
-    logger.info("Bot initialized WITHOUT PROXY (direct connection)")
 dp = Dispatcher()
 db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
@@ -266,6 +247,24 @@ async def backup_database():
 async def main():
     await db.init_db()
     logger.info("База данных готова.")
+
+    TG_PROXY_URL = os.getenv("TG_PROXY_URL")
+    session = None
+    if TG_PROXY_URL:
+        if TG_PROXY_URL.startswith("socks5://"):
+            from aiohttp_socks import ProxyConnector
+            session = AiohttpSession(connector=ProxyConnector.from_url(TG_PROXY_URL))
+        elif TG_PROXY_URL.startswith("http://") or TG_PROXY_URL.startswith("https://"):
+            session = AiohttpSession(proxy=TG_PROXY_URL)
+        else:
+            logger.warning(f"Неизвестный тип прокси: {TG_PROXY_URL}, запуск без прокси")
+
+    if session:
+        bot = Bot(token=os.getenv("BOT_TOKEN"), session=session)
+        logger.info(f"Bot initialized WITH PROXY: {TG_PROXY_URL}")
+    else:
+        bot = Bot(token=os.getenv("BOT_TOKEN"))
+        logger.info("Bot initialized WITHOUT PROXY (direct connection)")
 
     scheduler = AsyncIOScheduler(timezone='Asia/Barnaul')
     scheduler.add_job(start_day_jobs, 'cron', hour=7, minute=0, id='start_day')
