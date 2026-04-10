@@ -678,8 +678,10 @@ export default function System() {
                     </div>
                 )}
             </GlassCard>
+            )}
 
-            {/* ====== SERVER LOGS TERMINAL ====== */}
+            {/* ====== SERVER LOGS TERMINAL (hidden from moderators) ====== */}
+            {role !== 'moderator' && (
             <GlassCard className="overflow-hidden">
                 <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700/50">
                     <SectionHeader icon={Terminal} iconColor="text-green-500 bg-green-500" title="Серверные логи" />
