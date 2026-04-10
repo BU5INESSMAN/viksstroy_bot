@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import ConfirmModal from '../components/ConfirmModal';
 
 /**
@@ -56,7 +56,7 @@ export default function useConfirm() {
         }
     }, [state]);
 
-    const ConfirmUI = () => (
+    const ConfirmUI = useMemo(() => (
         <ConfirmModal
             isOpen={!!state}
             title={state?.title || ''}
@@ -69,7 +69,7 @@ export default function useConfirm() {
             onConfirm={handleConfirm}
             onCancel={handleCancel}
         />
-    );
+    ), [state, handleConfirm, handleCancel]);
 
     return { confirm, prompt, ConfirmUI };
 }

@@ -341,7 +341,7 @@ export default function Objects() {
 
             {/* МОДАЛКА СОЗДАНИЯ */}
             {isCreateModalOpen && (
-                <div className="fixed inset-0 z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
+                <div className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
                     <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-lg shadow-2xl relative">
                         <button onClick={resetCreateModal} className="absolute top-5 right-5 text-gray-400 hover:text-red-500 bg-gray-50 dark:bg-gray-700 rounded-full p-1.5"><X className="w-5 h-5" /></button>
                         <h3 className="text-2xl font-bold mb-6 dark:text-white flex items-center gap-2"><MapPin className="text-blue-500" /> Новый объект</h3>
@@ -467,7 +467,7 @@ export default function Objects() {
 
             {/* МОДАЛКА РЕДАКТИРОВАНИЯ И КП */}
             {isEditModalOpen && editObj && (
-                <div className="fixed inset-0 z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
+                <div className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
                     <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden">
                         <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
                             <h3 className="text-xl font-bold dark:text-white truncate">Настройки: {editObj.name}</h3>
@@ -615,7 +615,7 @@ export default function Objects() {
 
             {/* МОДАЛКА СТАТИСТИКИ */}
             {isStatsModalOpen && statsObj && (
-                <div className="fixed inset-0 z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
+                <div className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
                     <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden">
                         <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
                             <h3 className="text-xl font-bold dark:text-white flex items-center gap-2"><BarChart3 className="w-5 h-5 text-amber-500" /> Статистика: {statsObj.name}</h3>
@@ -708,7 +708,7 @@ export default function Objects() {
                     </div>
                 </div>
             )}
-            <ConfirmUI />
+            {ConfirmUI}
         </main>
     );
 }

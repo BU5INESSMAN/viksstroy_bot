@@ -233,7 +233,7 @@ export default function Review() {
         <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24 relative">
 
             {isProcessing && isPublishModalOpen && (
-                <div className="fixed inset-0 z-[200] bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center transition-opacity">
+                <div className="fixed inset-0 w-screen h-[100dvh] z-[200] bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center transition-opacity">
                     <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-2xl flex flex-col items-center border border-gray-100 dark:border-gray-700">
                         <div className="w-14 h-14 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Публикация нарядов...</h3>
@@ -274,7 +274,7 @@ export default function Review() {
 
             {/* МОДАЛЬНОЕ ОКНО ПУБЛИКАЦИИ */}
             {isPublishModalOpen && (
-                <div className="fixed inset-0 z-[120] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
+                <div className="fixed inset-0 w-screen h-[100dvh] z-[120] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-center justify-center p-4">
                         <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden border border-gray-100 dark:border-gray-700">
                             <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
@@ -324,7 +324,7 @@ export default function Review() {
 
             {/* МОДАЛЬНОЕ ОКНО ЗАЯВКИ (ИНДИВИДУАЛЬНОЕ) */}
             {selectedApp && (
-                <div className="fixed inset-0 z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
+                <div className="fixed inset-0 w-screen h-[100dvh] z-[110] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
                     <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                         <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden border border-gray-100 dark:border-gray-700">
 
@@ -489,7 +489,7 @@ export default function Review() {
                     </div>
                 </div>
             )}
-            <ConfirmUI />
+            {ConfirmUI}
         </main>
     );
 }

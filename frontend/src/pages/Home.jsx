@@ -259,6 +259,40 @@ export default function Home() {
         setViewApp(app);
     };
 
+    const handleEditFromView = (app) => {
+        setViewApp(null);
+        // Parse equipment data
+        let eqData = [];
+        if (app.equipment_data) {
+            try { eqData = typeof app.equipment_data === 'string' ? JSON.parse(app.equipment_data) : app.equipment_data; } catch(_) {}
+        }
+        // Parse team IDs
+        const teamIds = app.team_id ? String(app.team_id).split(',').map(Number).filter(Boolean) : [];
+        // Parse selected members
+        const memberIds = app.selected_members ? String(app.selected_members).split(',').map(Number).filter(Boolean) : [];
+
+        setAppForm({
+            id: app.id,
+            status: app.status,
+            date_target: app.date_target || smartDates[1].val,
+            object_id: app.object_id || '',
+            object_address: app.object_address || '',
+            team_ids: teamIds,
+            team_name: '',
+            members: memberIds,
+            members_data: app.members_data || [],
+            equipment: eqData,
+            comment: app.comment || '',
+            isViewOnly: true,
+            foreman_id: app.foreman_id,
+            foreman_name: app.foreman_name || '',
+            is_team_freed: app.is_team_freed || 0,
+            freed_team_ids: [],
+        });
+        axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(()=>{});
+        setGlobalCreateAppOpen(true);
+    };
+
     const openFreeModal = (type, dataPayload) => {
         if (type === 'specific_team') {
             setFreeModal({ isOpen: true, type, app: dataPayload.app, teamId: dataPayload.teamId, inputValue: '' });
@@ -368,7 +402,19 @@ export default function Home() {
             )}
 
             {viewApp && (
-                <ViewAppModal app={viewApp} onClose={() => setViewApp(null)} data={data} />
+                <ViewAppModal
+                    app={viewApp}
+                    onClose={() => setViewApp(null)}
+                    data={data}
+                    onEdit={
+                        (viewApp.status === 'waiting' && (
+                            ['moderator', 'boss', 'superadmin'].includes(role) ||
+                            (role === 'foreman' && String(viewApp.foreman_id) === String(tgId))
+                        ))
+                        ? handleEditFromView
+                        : undefined
+                    }
+                />
             )}
 
             {isGlobalCreateAppOpen && (
@@ -401,7 +447,7 @@ export default function Home() {
             )}
 
             <ArchiveModal isOpen={isArchiveOpen} onClose={() => setArchiveOpen(false)} />
-            <ConfirmUI />
+            {ConfirmUI}
         </main>
     );
 }

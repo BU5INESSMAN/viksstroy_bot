@@ -414,7 +414,10 @@ export default function CreateAppModal({
                                 </button>
                             )}
 
-                            {appForm.isViewOnly && appForm.status === 'waiting' && ['foreman', 'moderator', 'boss', 'superadmin'].includes(role) && (
+                            {appForm.isViewOnly && appForm.status === 'waiting' && (
+                                ['moderator', 'boss', 'superadmin'].includes(role) ||
+                                (role === 'foreman' && String(appForm.foreman_id) === String(localStorage.getItem('tg_id') || '0'))
+                            ) && (
                                 <button type="button" disabled={isSubmitting} onClick={() => setAppForm(prev => ({...prev, isViewOnly: false}))} className="bg-yellow-500 text-white py-4 px-6 rounded-xl font-bold disabled:opacity-50 shadow-md hover:shadow-lg hover:bg-yellow-600 transition-all active:scale-[0.98] flex-1 flex justify-center items-center gap-2">
                                     Редактировать
                                 </button>

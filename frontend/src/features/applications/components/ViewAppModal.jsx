@@ -103,7 +103,7 @@ function InfoCell({ label, icon: Icon, iconColor, children }) {
 }
 
 /* ─── Main Modal ─── */
-export default function ViewAppModal({ app, onClose, data }) {
+export default function ViewAppModal({ app, onClose, onEdit, data }) {
     if (!app) return null;
 
     const statusConfig = {
@@ -176,7 +176,7 @@ export default function ViewAppModal({ app, onClose, data }) {
     ];
 
     return (
-        <div className="fixed inset-0 z-[120] bg-black/60 overflow-y-auto backdrop-blur-sm flex items-start sm:items-center justify-center p-4 pt-8 sm:pt-4">
+        <div className="fixed inset-0 z-[120] w-screen h-[100dvh] bg-black/60 overflow-y-auto backdrop-blur-sm flex items-start sm:items-center justify-center p-4 pt-8 sm:pt-4">
             <div
                 className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-3xl shadow-2xl relative overflow-hidden"
                 onClick={e => e.stopPropagation()}
@@ -364,14 +364,23 @@ export default function ViewAppModal({ app, onClose, data }) {
                 </div>
 
                 {/* ── Footer ── */}
-                <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/30">
+                <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/30 flex gap-3">
                     <button
                         type="button"
                         onClick={onClose}
-                        className="w-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 px-6 rounded-xl font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition-all active:scale-[0.98]"
+                        className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 px-6 rounded-xl font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition-all active:scale-[0.98]"
                     >
                         Закрыть
                     </button>
+                    {onEdit && app.status === 'waiting' && (
+                        <button
+                            type="button"
+                            onClick={() => onEdit(app)}
+                            className="flex-1 bg-yellow-500 text-white py-3 px-6 rounded-xl font-bold shadow-md hover:shadow-lg hover:bg-yellow-600 transition-all active:scale-[0.98]"
+                        >
+                            Редактировать
+                        </button>
+                    )}
                 </div>
             </div>
         </div>

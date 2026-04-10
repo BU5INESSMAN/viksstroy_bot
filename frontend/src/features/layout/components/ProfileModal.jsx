@@ -313,6 +313,6 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                     )}
                 </div>
             </div>
-        </div><ConfirmUI /></>
+        </div>{ConfirmUI}</>
     );
 }

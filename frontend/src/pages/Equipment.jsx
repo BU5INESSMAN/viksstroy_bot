@@ -198,7 +198,7 @@ export default function Equipment() {
                 copiedLink={copiedLink}
                 setCopiedLink={setCopiedLink}
             />
-            <ConfirmUI />
+            {ConfirmUI}
         </div>
     );
 }
