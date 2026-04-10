@@ -94,11 +94,12 @@ async def check_availability(
         date_target: str = Form(...),
         object_id: int = Form(0),
         team_ids: str = Form(""),
-        equip_data: str = Form("")
+        equip_data: str = Form(""),
+        exclude_app_id: int = Form(0)
 ):
     """Проверяет занятость ресурсов перед подстановкой"""
     if db.conn is None: await db.init_db()
-    occupied = await db.check_resource_availability(date_target, object_id, team_ids, equip_data)
+    occupied = await db.check_resource_availability(date_target, object_id, team_ids, equip_data, exclude_app_id=exclude_app_id or None)
 
     if occupied:
         return {"status": "occupied", "message": "Выбранные ресурсы недоступны:\n\n" + "\n".join(occupied)}

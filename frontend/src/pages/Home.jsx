@@ -8,6 +8,7 @@ import KanbanCol from '../features/applications/components/KanbanCol';
 import ActiveApplicationsCard from '../features/applications/components/ActiveApplicationsCard';
 import MyTeamCard from '../features/applications/components/MyTeamCard';
 import CreateAppModal from '../features/applications/components/CreateAppModal';
+import EditAppModal from '../features/applications/components/EditAppModal';
 import ConfirmFreeModal from '../features/applications/components/ConfirmFreeModal';
 import ViewAppModal from '../features/applications/components/ViewAppModal';
 import ArchiveModal from '../features/applications/components/ArchiveModal';
@@ -38,6 +39,8 @@ export default function Home() {
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, in_progress: false, completed: false });
     const [freeModal, setFreeModal] = useState({ isOpen: false, type: '', app: null, teamId: null, inputValue: '' });
     const [viewApp, setViewApp] = useState(null);
+    const [isEditModalOpen, setEditModalOpen] = useState(false);
+    const [editApp, setEditApp] = useState(null);
 
     const fetchData = () => {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
@@ -57,10 +60,7 @@ export default function Home() {
     useEffect(() => {
         if (isGlobalCreateAppOpen) {
             axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(()=>{});
-            // Only reset form if not pre-populated (e.g. by handleEditFromView)
-            if (!appForm.id) {
-                setAppForm({ id: null, status: '', date_target: smartDates[1].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
-            }
+            setAppForm({ id: null, status: '', date_target: smartDates[1].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
             setActiveEqCategory(null);
             setTeamMembers([]);
             setIsSubmitting(false);
@@ -141,7 +141,7 @@ export default function Home() {
 
     const checkTeamStatus = (team_id) => {
         if (data.kanban_apps) {
-            const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && ['approved', 'in_progress'].includes(a.status));
+            const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && !['rejected', 'cancelled', 'completed'].includes(a.status));
             for (const a of appsOnDate) {
                 const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
                 if (tIds.includes(team_id) && appForm.id !== a.id) return { state: 'busy', message: `Эта бригада уже занята в этот день на объекте:\n📍 ${a.object_address}` };
@@ -153,7 +153,7 @@ export default function Home() {
     const checkEquipStatus = (equip) => {
         if (equip.status === 'repair') return { state: 'repair', message: 'Техника в ремонте.' };
         if (data.kanban_apps) {
-            const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && ['approved', 'in_progress'].includes(a.status));
+            const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && !['rejected', 'cancelled', 'completed'].includes(a.status));
             for (const a of appsOnDate) {
                 try {
                     const eqList = JSON.parse(a.equipment_data || '[]');
@@ -267,36 +267,9 @@ export default function Home() {
 
     const handleEditFromView = (app) => {
         setViewApp(null);
-        // Parse equipment data
-        let eqData = [];
-        if (app.equipment_data) {
-            try { eqData = typeof app.equipment_data === 'string' ? JSON.parse(app.equipment_data) : app.equipment_data; } catch(_) {}
-        }
-        // Parse team IDs
-        const teamIds = app.team_id ? String(app.team_id).split(',').map(Number).filter(Boolean) : [];
-        // Parse selected members
-        const memberIds = app.selected_members ? String(app.selected_members).split(',').map(Number).filter(Boolean) : [];
-
-        setAppForm({
-            id: app.id,
-            status: app.status,
-            date_target: app.date_target || smartDates[1].val,
-            object_id: app.object_id || '',
-            object_address: app.object_address || '',
-            team_ids: teamIds,
-            team_name: '',
-            members: memberIds,
-            members_data: app.members_data || [],
-            equipment: eqData,
-            comment: app.comment || '',
-            isViewOnly: true,
-            foreman_id: app.foreman_id,
-            foreman_name: app.foreman_name || '',
-            is_team_freed: app.is_team_freed || 0,
-            freed_team_ids: [],
-        });
+        setEditApp(app);
         axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(()=>{});
-        setGlobalCreateAppOpen(true);
+        setEditModalOpen(true);
     };
 
     const openFreeModal = (type, dataPayload) => {
@@ -449,6 +422,20 @@ export default function Home() {
                     teamMembers={teamMembers}
                     openProfile={openProfile}
                     openFreeModal={openFreeModal}
+                />
+            )}
+
+            {isEditModalOpen && editApp && (
+                <EditAppModal
+                    app={editApp}
+                    onClose={() => { setEditModalOpen(false); setEditApp(null); }}
+                    onSaved={() => { setEditModalOpen(false); setEditApp(null); fetchData(); }}
+                    data={data}
+                    objectsList={objectsList}
+                    smartDates={smartDates}
+                    role={role}
+                    tgId={tgId}
+                    openProfile={openProfile}
                 />
             )}
 
