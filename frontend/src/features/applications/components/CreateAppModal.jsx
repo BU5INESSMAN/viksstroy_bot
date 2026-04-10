@@ -4,13 +4,6 @@ import {
     User, HardHat, X, Check, XCircle
 } from 'lucide-react';
 
-function formatDateShort(dateStr) {
-    try {
-        const [y, m, d] = dateStr.split('-');
-        return new Date(y, m - 1, d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }).replace('.', '');
-    } catch { return dateStr; }
-}
-
 export default function CreateAppModal({
     appForm, setAppForm, isSubmitting, setGlobalCreateAppOpen,
     handleCreateApp, handleDeleteApp, handleFormChange, handleApplyDefaults,
@@ -339,7 +332,7 @@ export default function CreateAppModal({
 
                             {!appForm.isViewOnly && (
                                 <button type="submit" disabled={isSubmitting} className="bg-blue-600 text-white py-4 px-6 rounded-xl font-bold shadow-md hover:shadow-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex-[2] flex justify-center items-center gap-2">
-                                    {isSubmitting ? '⏳ Обработка...' : (appForm.id ? 'Сохранить изменения' : `Отправить наряд на ${formatDateShort(appForm.date_target)}`)}
+                                    {isSubmitting ? '⏳ Обработка...' : (appForm.id ? 'Сохранить изменения' : 'Отправить')}
                                 </button>
                             )}
                         </div>
