@@ -1,5 +1,7 @@
 import sys
 import os
+import asyncio
+import logging
 
 # Переходим на уровень выше (в папку web), чтобы импорты сработали
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -10,6 +12,8 @@ from datetime import datetime, timedelta
 from database_deps import db, TZ_BARNAUL
 from utils import resolve_id, notify_users, notify_group_chat, execute_app_publish, fetch_teams_dict, enrich_app_with_team_name
 from schedule_generator import generate_schedule_image, publish_schedule_to_group
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Applications"])
 
@@ -123,10 +127,11 @@ async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_targ
         (real_tg_id, fio, team_id, object_id, date_target, object_address, comment, selected_members, equipment_data))
     await db.conn.commit()
 
+    logger.info("Action saved to DB, sending notifications in background")
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["report_group", "moderator", "boss", "superadmin"],
+    asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"📝 <b>Новая заявка на выезд</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}\n🕒 Время: {now}",
-                       "review", category="orders")
+                       "review", category="orders"))
     return {"status": "ok"}
 
 
@@ -156,10 +161,12 @@ async def update_app(app_id: int, tg_id: int = Form(...), team_id: str = Form("0
 
     fio = dict(user).get('fio', 'Пользователь')
     await db.add_log(real_tg_id, fio, f"Отредактировал заявку №{app_id}")
+
+    logger.info("Action saved to DB, sending notifications in background")
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["report_group", "moderator", "boss", "superadmin"],
+    asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"⚠️ <b>Заявка #{app_id} (Объект: {object_address}) была отредактирована</b>\n👤 Прораб: {fio}\n🕒 Время: {now}",
-                       "review", category="orders")
+                       "review", category="orders"))
     return {"status": "ok"}
 
 
@@ -194,10 +201,11 @@ async def delete_app(app_id: int, tg_id: int = Form(0)):
         await db.add_log(real_tg_id, fio,
                          f"Полностью удалил заявку №{app_id} (Объект: {app_dict.get('object_address')})")
 
+        logger.info("Action saved to DB, sending notifications in background")
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-        await notify_users(["report_group", "boss", "superadmin"],
+        asyncio.create_task(notify_users(["report_group", "boss", "superadmin"],
                            f"🗑 <b>Заявка №{app_id} удалена</b>\n👤 Кто: {fio}\n📍 Объект: {app_dict.get('object_address')}\n🕒 Время: {now}",
-                           "review", category="orders")
+                           "review", category="orders"))
     except Exception as e:
         await db.conn.rollback()
         raise HTTPException(500, f"Ошибка удаления: {e}")
@@ -279,47 +287,54 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
     except:
         await db.conn.rollback()
 
-    status_ru = "✅ Одобрена" if new_status == 'approved' else (
-        "❌ Отклонена / Отозвана" if new_status == 'rejected' else "🏁 Досрочно завершена")
-    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+    logger.info("Action saved to DB, sending notifications in background")
 
-    msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Проверил: {mod_fio}\n📍 Объект: {app_dict['object_address']}\n🕒 Время: {now}"
-    if reason: msg_group += f"\n💬 Причина: {reason}"
-    await notify_users(["report_group", "boss", "superadmin"], msg_group, "review", category="orders")
+    async def _send_review_notifications():
+        try:
+            status_ru = "✅ Одобрена" if new_status == 'approved' else (
+                "❌ Отклонена / Отозвана" if new_status == 'rejected' else "🏁 Досрочно завершена")
+            now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
 
-    if new_status in ['approved', 'rejected']:
-        msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
-        if reason: msg_foreman += f"\n💬 Причина: {reason}"
-        await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']], category="orders")
+            msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Проверил: {mod_fio}\n📍 Объект: {app_dict['object_address']}\n🕒 Время: {now}"
+            if reason: msg_group += f"\n💬 Причина: {reason}"
+            await notify_users(["report_group", "boss", "superadmin"], msg_group, "review", category="orders")
 
-        if new_status == 'approved':
-            workers_ids = []
-            selected_members = app_dict.get('selected_members', '')
-            if selected_members:
-                m_ids = [int(x.strip()) for x in selected_members.split(',') if x.strip().isdigit()]
-                if m_ids:
-                    pl = ','.join(['?'] * len(m_ids))
-                    async with db.conn.execute(f"SELECT tg_user_id FROM team_members WHERE id IN ({pl})", m_ids) as c:
-                        for r in await c.fetchall():
-                            if r[0]: workers_ids.append(r[0])
+            if new_status in ['approved', 'rejected']:
+                msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
+                if reason: msg_foreman += f"\n💬 Причина: {reason}"
+                await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']], category="orders")
 
-            drivers_ids = []
-            eq_data_str = app_dict.get('equipment_data', '')
-            if eq_data_str:
-                try:
-                    eq_list = json.loads(eq_data_str)
-                    for e in eq_list:
-                        async with db.conn.execute("SELECT tg_id FROM equipment WHERE id = ?", (e['id'],)) as c:
-                            eq_row = await c.fetchone()
-                            if eq_row and eq_row[0]: drivers_ids.append(eq_row[0])
-                except:
-                    pass
+                if new_status == 'approved':
+                    workers_ids = []
+                    selected_members = app_dict.get('selected_members', '')
+                    if selected_members:
+                        m_ids = [int(x.strip()) for x in selected_members.split(',') if x.strip().isdigit()]
+                        if m_ids:
+                            pl = ','.join(['?'] * len(m_ids))
+                            async with db.conn.execute(f"SELECT tg_user_id FROM team_members WHERE id IN ({pl})", m_ids) as c:
+                                for r in await c.fetchall():
+                                    if r[0]: workers_ids.append(r[0])
 
-            all_involved = list(set(workers_ids + drivers_ids))
-            if all_involved:
-                msg_inv = f"👷‍♂️ <b>Вас добавили в наряд! (Предварительная бронь)</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}\n\nОжидайте публикации наряда."
-                await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved, category="orders")
+                    drivers_ids = []
+                    eq_data_str = app_dict.get('equipment_data', '')
+                    if eq_data_str:
+                        try:
+                            eq_list = json.loads(eq_data_str)
+                            for e in eq_list:
+                                async with db.conn.execute("SELECT tg_id FROM equipment WHERE id = ?", (e['id'],)) as c:
+                                    eq_row = await c.fetchone()
+                                    if eq_row and eq_row[0]: drivers_ids.append(eq_row[0])
+                        except:
+                            pass
 
+                    all_involved = list(set(workers_ids + drivers_ids))
+                    if all_involved:
+                        msg_inv = f"👷‍♂️ <b>Вас добавили в наряд! (Предварительная бронь)</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}\n\nОжидайте публикации наряда."
+                        await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved, category="orders")
+        except Exception as e:
+            logger.error(f"Background notification error for app #{app_id}: {e}")
+
+    asyncio.create_task(_send_review_notifications())
     return {"status": "ok"}
 
 
@@ -340,10 +355,11 @@ async def publish_apps(app_ids: str = Form(...), tg_id: int = Form(0)):
     fio = dict(user).get('fio', 'Руководство') if user else "Руководство"
     await db.add_log(tg_id, fio, f"Опубликовал {count} нарядов в группу")
 
+    logger.info("Action saved to DB, sending notifications in background")
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["boss", "superadmin"],
+    asyncio.create_task(notify_users(["boss", "superadmin"],
                        f"📤 <b>Публикация нарядов</b>\n👤 Кто: {fio}\n✅ Опубликовано: {count} шт.\n🕒 Время: {now}",
-                       "dashboard", category="orders")
+                       "dashboard", category="orders"))
 
     return {"status": "ok", "published": count}
 

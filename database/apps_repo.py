@@ -129,20 +129,20 @@ class AppsRepoMixin:
         await self.conn.commit()
 
     async def check_resource_availability(self, date_target: str, object_id: int, team_ids: str, equip_data: str, exclude_app_id: int = None):
-        """Строгая проверка занятости бригад и техники в других заявках"""
+        """Строгая проверка занятости бригад и техники — Python-side JSON parsing"""
         import json
         occupied_resources = []
 
+        # Fetch ALL applications for the target date where status != 'rejected'
         query = """
                 SELECT a.id, a.team_id, a.equipment_data, o.name as obj_name, a.object_address
                 FROM applications a
                          LEFT JOIN objects o ON a.object_id = o.id
                 WHERE a.date_target = ?
-                  AND a.status NOT IN ('rejected', 'completed', 'cancelled')
-                  AND (a.object_id != ? OR a.object_id IS NULL)
+                  AND a.status NOT IN ('rejected', 'cancelled')
                   AND a.is_team_freed = 0
                 """
-        params = [date_target, object_id]
+        params = [date_target]
         if exclude_app_id:
             query += " AND a.id != ?"
             params.append(exclude_app_id)
@@ -150,34 +150,43 @@ class AppsRepoMixin:
         async with self.conn.execute(query, params) as cur:
             active_apps = await cur.fetchall()
 
+        # Parse requested team IDs
         target_teams = [t.strip() for t in str(team_ids).split(',')] if team_ids and str(team_ids) != '0' else []
 
+        # Parse requested equipment IDs from JSON string
         target_equips = []
         if equip_data:
             try:
-                parsed = json.loads(equip_data)
-                target_equips = [str(e['id']) for e in parsed]
-            except:
+                raw = equip_data if isinstance(equip_data, str) else json.dumps(equip_data)
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    target_equips = [str(e['id']) for e in parsed if isinstance(e, dict) and 'id' in e]
+            except (json.JSONDecodeError, TypeError, KeyError):
                 pass
 
+        # Iterate through fetched apps and check conflicts in Python
         for app in active_apps:
             app_team = str(app[1]) if app[1] is not None else ""
-            app_equip_data = str(app[2]) if app[2] is not None else ""
+            app_equip_raw = str(app[2]) if app[2] is not None else ""
             obj_name = app[3] or app[4] or "Неизвестный объект"
 
-            app_team_list = [t.strip() for t in app_team.split(',')]
-            for t in target_teams:
-                if t in app_team_list and t != '0':
-                    occupied_resources.append(f"❌ Бригада (ID: {t}) уже занята на объекте «{obj_name}»")
+            # Team conflict check
+            if target_teams and app_team and app_team != '0':
+                app_team_list = [t.strip() for t in app_team.split(',') if t.strip() and t.strip() != '0']
+                for t in target_teams:
+                    if t in app_team_list:
+                        occupied_resources.append(f"❌ Бригада (ID: {t}) уже занята на объекте «{obj_name}»")
 
-            if target_equips and app_equip_data:
+            # Equipment conflict check — Python-side JSON parsing
+            if target_equips and app_equip_raw:
                 try:
-                    app_eq_parsed = json.loads(app_equip_data)
-                    app_eq_ids = [str(e['id']) for e in app_eq_parsed if not e.get('is_freed')]
-                    for eq in target_equips:
-                        if eq in app_eq_ids:
-                            occupied_resources.append(f"❌ Техника (ID: {eq}) уже занята на объекте «{obj_name}»")
-                except:
+                    app_eq_parsed = json.loads(app_equip_raw)
+                    if isinstance(app_eq_parsed, list):
+                        app_eq_ids = [str(e['id']) for e in app_eq_parsed if isinstance(e, dict) and 'id' in e and not e.get('is_freed')]
+                        for eq in target_equips:
+                            if eq in app_eq_ids:
+                                occupied_resources.append(f"❌ Техника (ID: {eq}) уже занята на объекте «{obj_name}»")
+                except (json.JSONDecodeError, TypeError, KeyError):
                     pass
 
         return occupied_resources
