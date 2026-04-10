@@ -13,37 +13,63 @@ export default function TMAAuth() {
   const location = useLocation();
 
   useEffect(() => {
-    const tg = window.Telegram?.WebApp;
-    if (tg) tg.expand();
+    let cancelled = false;
 
-    const user = tg?.initDataUnsafe?.user;
-    if (!user || !user.id) {
-      setError("Пожалуйста, откройте это приложение внутри мессенджера Telegram.");
-      return;
+    function tryAuth() {
+      const tg = window.Telegram?.WebApp;
+      if (!tg || !tg.initDataUnsafe?.user?.id) return false;
+
+      tg.ready();
+      tg.expand();
+
+      const user = tg.initDataUnsafe.user;
+
+      const searchParams = new URLSearchParams(location.search);
+      const returnUrl = searchParams.get('return_to') || '/dashboard';
+
+      const formData = new FormData();
+      formData.append('tg_id', user.id);
+      formData.append('first_name', user.first_name || '');
+      formData.append('last_name', user.last_name || '');
+
+      axios.post('/api/tma/auth', formData)
+        .then(res => {
+          if (cancelled) return;
+          if (res.data.status === 'ok') {
+            localStorage.setItem('user_role', res.data.role);
+            localStorage.setItem('tg_id', res.data.tg_id);
+            navigate(returnUrl);
+          } else if (res.data.status === 'needs_password') {
+            setTgUser(res.data);
+            setNeedsPassword(true);
+          }
+        })
+        .catch((err) => {
+          if (cancelled) return;
+          setError(err.response?.data?.detail || "Ошибка доступа к серверу");
+        });
+
+      return true;
     }
 
-    const searchParams = new URLSearchParams(location.search);
-    const returnUrl = searchParams.get('return_to') || '/dashboard';
+    if (tryAuth()) return () => { cancelled = true; };
 
-    const formData = new FormData();
-    formData.append('tg_id', user.id);
-    formData.append('first_name', user.first_name || '');
-    formData.append('last_name', user.last_name || '');
-
-    axios.post('/api/tma/auth', formData)
-      .then(res => {
-        if (res.data.status === 'ok') {
-          localStorage.setItem('user_role', res.data.role);
-          localStorage.setItem('tg_id', res.data.tg_id);
-          navigate(returnUrl);
-        } else if (res.data.status === 'needs_password') {
-          setTgUser(res.data);
-          setNeedsPassword(true);
+    // SDK may not be injected yet — poll briefly
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      if (tryAuth() || attempts >= 15) {
+        clearInterval(interval);
+        if (attempts >= 15 && !cancelled) {
+          setError("Пожалуйста, откройте это приложение внутри мессенджера Telegram.");
         }
-      })
-      .catch((err) => {
-        setError(err.response?.data?.detail || "Ошибка доступа к серверу");
-      });
+      }
+    }, 100);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [navigate, location]);
 
   const handleRegister = async (e) => {
