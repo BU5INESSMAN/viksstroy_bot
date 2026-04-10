@@ -5,7 +5,8 @@ import sys
 import random
 import time
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
+import aiohttp
 from dotenv import load_dotenv
 
 from maxapi import Bot, Dispatcher, F
@@ -133,6 +134,7 @@ async def extract_and_save_ids(event):
 async def message_handler(event: MessageCreated):
     max_id_str, chat_str, real_tg_id = await extract_and_save_ids(event)
     if not max_id_str: return
+    pseudo_tg_id = -int(max_id_str)
 
     if db.conn is None: await db.init_db()
     user = await db.get_user(real_tg_id)
@@ -166,7 +168,7 @@ async def message_handler(event: MessageCreated):
             await db.conn.execute("INSERT INTO link_codes (code, user_id, expires) VALUES (?, ?, ?)",
                                   (code, real_tg_id, expires))
             await db.conn.commit()
-            await send_max_msg(event, f"Ваш код для привязки: {code}\nДействителен 15 минут. Введите его на платформе.")
+            await send_max_msg(event, f"Ваш код для привязки аккаунта: {code}\nДействителен 15 минут. Введите его в другом мессенджере или в профиле платформы.")
         except Exception:
             await send_max_msg(event, "Ошибка генерации кода.")
         return
@@ -217,17 +219,48 @@ async def message_handler(event: MessageCreated):
 
         return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
 
+    if text.startswith("/schedule"):
+        if not user:
+            return await send_max_msg(event, "❌ Сначала зарегистрируйтесь (используйте /start или /join).")
+        user_role = dict(user).get('role', '')
+        if user_role not in ['moderator', 'boss', 'superadmin']:
+            return await send_max_msg(event, "❌ Эта команда доступна только модераторам и руководству.")
+        from zoneinfo import ZoneInfo
+        tz = ZoneInfo("Asia/Barnaul")
+        args = text.split(maxsplit=1)[1].strip().lower() if len(text.split()) > 1 else ""
+        if args in ['today', 'сегодня']:
+            target_date = datetime.now(tz).strftime("%Y-%m-%d")
+            label = "сегодня"
+        else:
+            target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%Y-%m-%d")
+            label = "завтра"
+        await send_max_msg(event, f"⏳ Генерирую расстановку на {label} ({target_date})...")
+        try:
+            async with aiohttp.ClientSession() as session:
+                fd = aiohttp.FormData()
+                fd.add_field('tg_id', str(real_tg_id))
+                fd.add_field('target_date', target_date)
+                async with session.post("http://127.0.0.1:8000/api/applications/publish_schedule", data=fd) as resp:
+                    if resp.status == 200:
+                        await send_max_msg(event, f"✅ Расстановка на {target_date} опубликована в групповой чат!")
+                    else:
+                        error = await resp.json()
+                        await send_max_msg(event, f"❌ Ошибка: {error.get('detail', 'Неизвестная ошибка')}")
+        except Exception as e:
+            await send_max_msg(event, f"❌ Ошибка: {str(e)}")
+        return
+
     if text.startswith("/start"):
         if user:
             if dict(user).get('is_blacklisted'):
-                await send_max_msg(event, "❌ Ваш аккаунт заблокирован.")
+                await send_max_msg(event, "❌ Ваш аккаунт заблокирован. Обратитесь к руководству.")
             else:
                 USER_STATES.pop(max_id_str, None)
-                msg = f"С возвращением, {dict(user)['fio']}!\n\nНажмите на кнопку ниже для запуска:"
+                msg = f"С возвращением, {dict(user)['fio']}!\n\nИспользуйте кнопку ниже для запуска платформы:"
                 await send_max_msg(event, msg, target_url=WEB_APP_URL)
         else:
             USER_STATES[max_id_str] = {"state": "waiting_for_password"}
-            msg = "🔐 Добро пожаловать в ВИКС Расписание!\n\nЕсли вы администратор или прораб, введите системный пароль.\nЕсли вы рабочий или водитель, используйте команду /join [код]"
+            msg = "🔐 Добро пожаловать в ВИКС Расписание!\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль или 6-значный код привязки (если аккаунт уже есть в Telegram).\nЕсли вы рабочий или водитель, используйте команду /join [код]"
             await send_max_msg(event, msg)
         return
 
@@ -242,10 +275,10 @@ async def message_handler(event: MessageCreated):
                 await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (text,))
                 await db.conn.commit()
                 USER_STATES.pop(max_id_str, None)
-                await send_max_msg(event, f"✅ Аккаунты успешно связаны!", target_url=WEB_APP_URL)
+                await send_max_msg(event, "✅ Аккаунты успешно связаны! Нажмите /start для обновления.")
                 return
             else:
-                await send_max_msg(event, "❌ Код недействителен или устарел. Введите пароль или новый код:")
+                await send_max_msg(event, "❌ Код недействителен или устарел. Введите правильный пароль или новый код привязки:")
                 return
 
         role = None
@@ -263,7 +296,7 @@ async def message_handler(event: MessageCreated):
             USER_STATES[max_id_str]["state"] = "waiting_for_fio"
             await send_max_msg(event, "✅ Пароль принят.\n\nПожалуйста, введите ваше ФИО (Например: Иванов Иван):")
         else:
-            await send_max_msg(event, "❌ Неверный ввод. Попробуйте снова (или используйте /join [код]):")
+            await send_max_msg(event, "❌ Неверный пароль. Попробуйте снова (или используйте /join [код]):")
         return
 
     if current_state == "waiting_for_fio":
@@ -364,7 +397,7 @@ async def message_callback(event: MessageCallback):
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
         await notify_users(["report_group", "boss", "superadmin"],
-                           f"🔗 <b>Привязка аккаунта (Бригада) MAX</b>\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team_name}»\n🕒 Время: {now}",
+                           f"🔗 Привязка аккаунта (Бригада) MAX\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team_name}»\n🕒 Время: {now}",
                            "teams")
 
     # ---------------- ПОДТВЕРЖДЕНИЕ ПРИВЯЗКИ (ТЕХНИКА) ----------------
@@ -395,7 +428,7 @@ async def message_callback(event: MessageCallback):
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
         await notify_users(["report_group", "boss", "superadmin"],
-                           f"🔗 <b>Привязка аккаунта (Техника) MAX</b>\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{equip_name}»\n🕒 Время: {now}",
+                           f"🔗 Привязка аккаунта (Техника) MAX\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{equip_name}»\n🕒 Время: {now}",
                            "equipment")
 
 
