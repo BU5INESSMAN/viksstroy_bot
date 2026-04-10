@@ -7,6 +7,7 @@ import random
 import time
 from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types, F
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.filters import CommandStart, Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -28,7 +29,25 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-bot = Bot(token=os.getenv("BOT_TOKEN"))
+TG_PROXY_URL = os.getenv("TG_PROXY_URL")
+if TG_PROXY_URL:
+    if TG_PROXY_URL.startswith("socks5://"):
+        from aiohttp_socks import ProxyConnector
+        session = AiohttpSession(connector=ProxyConnector.from_url(TG_PROXY_URL))
+    elif TG_PROXY_URL.startswith("http://") or TG_PROXY_URL.startswith("https://"):
+        session = AiohttpSession(proxy=TG_PROXY_URL)
+    else:
+        logger.warning(f"Неизвестный тип прокси: {TG_PROXY_URL}, запуск без прокси")
+        session = None
+else:
+    session = None
+
+if session:
+    bot = Bot(token=os.getenv("BOT_TOKEN"), session=session)
+    logger.info(f"Bot initialized WITH PROXY: {TG_PROXY_URL}")
+else:
+    bot = Bot(token=os.getenv("BOT_TOKEN"))
+    logger.info("Bot initialized WITHOUT PROXY (direct connection)")
 dp = Dispatcher()
 db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)

@@ -10,3 +10,4 @@ maxapi
 pandas
 openpyxl
 pdfplumber
+aiohttp-socks

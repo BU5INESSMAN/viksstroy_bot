@@ -24,7 +24,15 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/schedule_generator.py', encoding='utf-8'\\).read\\(\\)\\); print\\('schedule_generator.py: OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/scheduler.py', encoding='utf-8'\\).read\\(\\)\\); print\\('scheduler.py: OK'\\)\")",
       "Bash(grep -rn \"\\\\.log\\\\|logging\\\\|log_file\\\\|LOG\" /c/Users/Admin/PycharmProjects/viksstroy_bot/*.py)",
-      "Bash(grep -n \"from routers import\" /c/Users/Admin/PycharmProjects/viksstroy_bot/web/*.py)"
+      "Bash(grep -n \"from routers import\" /c/Users/Admin/PycharmProjects/viksstroy_bot/web/*.py)",
+      "WebFetch(domain:github.com)",
+      "Bash(C:/Users/mikl2/AppData/Roaming/Python/Python314/Scripts/graphify.exe --help)",
+      "Bash(python -c \"import graphifyy; print\\(dir\\(graphifyy\\)\\)\")",
+      "Bash(python -c \"from graphifyy import cli; print\\(dir\\(cli\\)\\)\")",
+      "Bash(pip show:*)",
+      "Bash(python -c \"from graphify import report; print\\(dir\\(report\\)\\)\")",
+      "Bash(python -c ':*)",
+      "Bash(echo \"EXIT:$?\")"
     ]
   }
 }
