@@ -1,9 +1,9 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle,
-    User, HardHat, X, Check, XCircle, ChevronDown, Search, RefreshCw
+    User, HardHat, X, Check, XCircle, ChevronDown, Search, RefreshCw, AlertTriangle, Lock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
@@ -93,35 +93,51 @@ export default function CreateAppModal({
     tgId
 }) {
     const [exchangeDialog, setExchangeDialog] = useState(null);
+    const [equipAvailability, setEquipAvailability] = useState(null);
+    const [equipLoading, setEquipLoading] = useState(false);
 
-    const handleEquipClick = async (e, st) => {
-        if (st.state === 'repair') return toast.error(st.message);
-        if (st.state === 'busy') {
-            if (!appForm.date_target) return toast.error(st.message);
-            try {
-                const res = await axios.get(`/api/exchange/check_equip/${e.id}?date=${appForm.date_target}`);
-                const info = res.data;
-                if (info.can_exchange) {
-                    setExchangeDialog({
-                        equipId: e.id,
-                        equipName: e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`,
-                        equipCategory: e.category,
-                        holderName: info.holder_name,
-                        holderObject: info.holder_object,
-                        holderAppStatus: info.holder_app_status,
-                        holderAppId: info.holder_app_id,
-                    });
-                } else if (info.is_in_pending_exchange) {
-                    toast.error('Эта техника уже участвует в обмене');
-                } else {
-                    toast.error(st.message);
-                }
-            } catch {
-                toast.error(st.message);
+    // Fetch equipment availability when date changes
+    const fetchAvailability = useCallback(async (date) => {
+        if (!date) { setEquipAvailability(null); return; }
+        setEquipLoading(true);
+        try {
+            const res = await axios.get(`/api/equipment/availability?date=${date}`);
+            setEquipAvailability(res.data);
+        } catch { setEquipAvailability(null); }
+        finally { setEquipLoading(false); }
+    }, []);
+
+    useEffect(() => {
+        if (!appForm.isViewOnly && appForm.date_target) fetchAvailability(appForm.date_target);
+    }, [appForm.date_target, appForm.isViewOnly, fetchAvailability]);
+
+    const handleEquipClick = async (eqAvail) => {
+        if (eqAvail.status === 'repair') return toast.error('Техника в ремонте');
+        const isSelected = appForm.equipment.some(eq => eq.id === eqAvail.id);
+        if (isSelected) return toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, driver: eqAvail.driver_fio, license_plate: eqAvail.license_plate });
+
+        if (eqAvail.status === 'busy') {
+            // Fully busy — check exchange possibility
+            const exchangeSlot = eqAvail.busy_slots?.find(s => s.can_exchange);
+            if (eqAvail.is_in_pending_exchange) return toast.error('Эта техника уже участвует в обмене');
+            if (exchangeSlot) {
+                setExchangeDialog({
+                    equipId: eqAvail.id,
+                    equipName: eqAvail.driver_fio ? `${eqAvail.name} [${eqAvail.license_plate || 'нет г.н.'}] (${eqAvail.driver_fio})` : `${eqAvail.name} [${eqAvail.license_plate || 'нет г.н.'}]`,
+                    equipCategory: eqAvail.category,
+                    holderName: exchangeSlot.foreman_name,
+                    holderObject: exchangeSlot.object_address,
+                    holderAppStatus: exchangeSlot.app_status,
+                    holderAppId: exchangeSlot.app_id,
+                });
+            } else {
+                toast.error('Техника полностью занята на этот день');
             }
             return;
         }
-        toggleEquipmentSelection(e);
+
+        // free or partial — select it
+        toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, driver: eqAvail.driver_fio, license_plate: eqAvail.license_plate });
     };
 
     // Deferred exchange: save intent, do NOT add occupied equipment to the list
@@ -367,37 +383,100 @@ export default function CreateAppModal({
                             </label>
 
                             {!appForm.isViewOnly && (
-                                <div className="flex flex-wrap gap-2.5 mb-3">
-                                    {data?.equip_categories?.map(cat => (
-                                        <button key={cat} type="button" disabled={isSubmitting} onClick={() => setActiveEqCategory(activeEqCategory === cat ? null : cat)} className={`px-4 py-2.5 disabled:opacity-50 text-xs font-bold rounded-xl border transition-all active:scale-95 ${activeEqCategory === cat ? 'bg-blue-500 text-white border-blue-600 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
-                                            {cat}
-                                        </button>
-                                    ))}
-                                </div>
-                            )}
-
-                            {activeEqCategory && !appForm.isViewOnly && (
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-200 dark:border-gray-600 shadow-inner">
-                                    <div className="flex flex-wrap gap-2.5">
-                                        {data.equipment?.filter(e => e.category === activeEqCategory).map(e => {
-                                            const st = checkEquipStatus(e);
-                                            const isSelected = appForm.equipment.some(eq => eq.id === e.id);
-                                            const displayName = e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`;
-                                            let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700';
-
-                                            if (st.state === 'repair') btnStyles = 'bg-red-50 border-red-200 text-red-500 cursor-not-allowed opacity-75 dark:bg-red-900/20 dark:border-red-800';
-                                            else if (st.state === 'busy') btnStyles = 'bg-yellow-50 border-yellow-200 text-yellow-600 cursor-not-allowed opacity-80 dark:bg-yellow-900/20 dark:border-yellow-800';
-                                            else if (isSelected) btnStyles = 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 shadow-sm ring-1 ring-blue-500';
-
-                                            return (
-                                                <button key={e.id} type="button" disabled={isSubmitting} onClick={() => handleEquipClick(e, st)} className={`px-3.5 py-2 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${btnStyles}`}>
-                                                    {isSelected ? <CheckCircle className="w-4 h-4" /> : (st.state === 'repair' ? <XCircle className="w-4 h-4" /> : (st.state === 'busy' ? <Clock className="w-4 h-4" /> : <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>))}
-                                                    {displayName}
-                                                </button>
-                                            );
-                                        })}
+                                <>
+                                    <div className="flex flex-wrap gap-2.5 mb-3">
+                                        {data?.equip_categories?.map(cat => (
+                                            <button key={cat} type="button" disabled={isSubmitting} onClick={() => setActiveEqCategory(activeEqCategory === cat ? null : cat)} className={`px-4 py-2.5 disabled:opacity-50 text-xs font-bold rounded-xl border transition-all active:scale-95 ${activeEqCategory === cat ? 'bg-blue-500 text-white border-blue-600 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                                                {cat}
+                                            </button>
+                                        ))}
                                     </div>
-                                </div>
+
+                                    {activeEqCategory && equipLoading && (
+                                        <div className="p-6 text-center text-gray-400">
+                                            <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto mb-2"></div>
+                                            <p className="text-xs font-medium">Загрузка доступности...</p>
+                                        </div>
+                                    )}
+
+                                    {activeEqCategory && !equipLoading && (
+                                        <div className="space-y-2">
+                                            {(equipAvailability || data.equipment || [])
+                                                .filter(e => e.category === activeEqCategory)
+                                                .map(eqA => {
+                                                    const isSelected = appForm.equipment.some(eq => eq.id === eqA.id);
+                                                    const displayName = eqA.driver_fio
+                                                        ? `${eqA.name} [${eqA.license_plate || 'нет г.н.'}] (${eqA.driver_fio})`
+                                                        : (eqA.driver ? `${eqA.name} [${eqA.license_plate || 'нет г.н.'}] (${eqA.driver})` : `${eqA.name} [${eqA.license_plate || 'нет г.н.'}]`);
+                                                    const st = eqA.status || 'free';
+                                                    const busySlots = eqA.busy_slots || [];
+                                                    const freeSlots = eqA.free_slots || [];
+
+                                                    let rowBg = 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700/50';
+                                                    let statusBadge = null;
+
+                                                    if (isSelected) {
+                                                        rowBg = 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 dark:border-blue-700 ring-1 ring-blue-400';
+                                                    } else if (st === 'repair') {
+                                                        rowBg = 'bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-800/50 opacity-60';
+                                                        statusBadge = <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-md"><XCircle className="w-3 h-3" />Ремонт</span>;
+                                                    } else if (st === 'busy') {
+                                                        const hasExchange = busySlots.some(s => s.can_exchange);
+                                                        rowBg = hasExchange
+                                                            ? 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/50'
+                                                            : 'bg-gray-50 dark:bg-gray-800/50 border-gray-200 dark:border-gray-700 opacity-70';
+                                                        statusBadge = hasExchange
+                                                            ? <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-md"><RefreshCw className="w-3 h-3" />Обмен</span>
+                                                            : <span className="inline-flex items-center gap-1 text-[10px] font-bold text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-md"><Lock className="w-3 h-3" />Занята</span>;
+                                                    } else if (st === 'partial') {
+                                                        rowBg = 'bg-yellow-50/30 dark:bg-yellow-900/10 border-yellow-200 dark:border-yellow-800/50';
+                                                        statusBadge = <span className="inline-flex items-center gap-1 text-[10px] font-bold text-yellow-600 bg-yellow-100 dark:bg-yellow-900/30 px-2 py-0.5 rounded-md"><Clock className="w-3 h-3" />Частично</span>;
+                                                    }
+
+                                                    return (
+                                                        <button
+                                                            key={eqA.id}
+                                                            type="button"
+                                                            disabled={isSubmitting || st === 'repair'}
+                                                            onClick={() => handleEquipClick(eqA)}
+                                                            className={`w-full text-left p-3 rounded-xl border transition-all disabled:cursor-not-allowed ${rowBg}`}
+                                                        >
+                                                            <div className="flex items-center justify-between gap-2">
+                                                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                                    {isSelected
+                                                                        ? <CheckCircle className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                                                        : <Truck className={`w-4 h-4 flex-shrink-0 ${st === 'repair' ? 'text-red-400' : st === 'busy' ? 'text-gray-400' : 'text-gray-500'}`} />
+                                                                    }
+                                                                    <span className="text-sm font-bold truncate dark:text-gray-200">{displayName}</span>
+                                                                </div>
+                                                                {statusBadge}
+                                                            </div>
+
+                                                            {/* Time slots info for partial/busy */}
+                                                            {(st === 'partial' || st === 'busy') && busySlots.length > 0 && (
+                                                                <div className="mt-2 ml-6 space-y-1">
+                                                                    {busySlots.map((slot, i) => (
+                                                                        <div key={i} className="flex items-center gap-2 text-[11px]">
+                                                                            <span className="text-red-400 font-bold whitespace-nowrap">{slot.time_start}–{slot.time_end}</span>
+                                                                            <span className="text-gray-400 truncate">{slot.object_address}{slot.foreman_name ? ` (${slot.foreman_name})` : ''}</span>
+                                                                        </div>
+                                                                    ))}
+                                                                    {st === 'partial' && freeSlots.length > 0 && (
+                                                                        <div className="flex items-center gap-2 text-[11px]">
+                                                                            <span className="text-emerald-500 font-bold">Свободна:</span>
+                                                                            <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                                                                                {freeSlots.map(s => `${s.time_start}–${s.time_end}`).join(', ')}
+                                                                            </span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            )}
+                                                        </button>
+                                                    );
+                                                })}
+                                        </div>
+                                    )}
+                                </>
                             )}
 
                             {appForm.equipment.length > 0 ? (

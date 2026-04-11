@@ -7,7 +7,7 @@ import {
     Shield, Users, FileText, ChevronUp, ChevronDown, Search,
     ToggleLeft, Clock, CalendarDays, CheckCircle, Terminal,
     RefreshCw, Database, Bell, AlertTriangle, Zap, ClipboardCheck,
-    X, UserCheck, Megaphone, Monitor
+    X, UserCheck, Megaphone, Monitor, Truck
 } from 'lucide-react';
 
 // ============================================================
@@ -100,6 +100,8 @@ export default function System() {
         auto_backup_enabled: false,
         office_reminder_enabled: false, office_reminder_time: '',
         smr_unlock_time: '',
+        equip_base_time_start: '08:00', equip_base_time_end: '18:00',
+        exchange_enabled: true,
     });
     const isAdmin = ['superadmin', 'boss'].includes(role);
     const [testPlatform, setTestPlatform] = useState('all');
@@ -134,6 +136,9 @@ export default function System() {
                     office_reminder_enabled: b('office_reminder_enabled'),
                     office_reminder_time: res.data.office_reminder_time || '',
                     smr_unlock_time: res.data.smr_unlock_time || '',
+                    equip_base_time_start: res.data.equip_base_time_start || '08:00',
+                    equip_base_time_end: res.data.equip_base_time_end || '18:00',
+                    exchange_enabled: b('exchange_enabled'),
                 });
             }).catch(() => {});
         }
@@ -159,6 +164,9 @@ export default function System() {
                 office_reminder_enabled: settings.office_reminder_enabled ? '1' : '0',
                 office_reminder_time: settings.office_reminder_time,
                 smr_unlock_time: settings.smr_unlock_time,
+                equip_base_time_start: settings.equip_base_time_start,
+                equip_base_time_end: settings.equip_base_time_end,
+                exchange_enabled: settings.exchange_enabled ? '1' : '0',
                 tg_id: tgId
             }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
             toast.success('Настройки успешно сохранены!');
@@ -391,6 +399,35 @@ export default function System() {
                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3 font-medium">Прорабы смогут заполнить отчёт СМР только после указанного времени (HH:MM).</p>
                         <input type="time" name="smr_unlock_time" value={settings.smr_unlock_time} onChange={handleSettingChange}
                             className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-rose-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
+                    </div>
+
+                    {/* Equipment settings */}
+                    <div className="bg-gray-50/80 dark:bg-gray-700/20 p-5 rounded-xl border border-gray-100 dark:border-gray-700/50">
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
+                            <Truck className="w-4 h-4 text-cyan-500" /> Настройки техники
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-medium">Базовое время работы техники и обмен.</p>
+                        <div className="flex items-center gap-3 mb-4">
+                            <div className="flex-1">
+                                <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest">С</label>
+                                <input type="time" name="equip_base_time_start" value={settings.equip_base_time_start} onChange={handleSettingChange}
+                                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-cyan-500 block w-full p-3 dark:text-white shadow-sm outline-none" />
+                            </div>
+                            <div className="flex-1">
+                                <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest">До</label>
+                                <input type="time" name="equip_base_time_end" value={settings.equip_base_time_end} onChange={handleSettingChange}
+                                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-cyan-500 block w-full p-3 dark:text-white shadow-sm outline-none" />
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between">
+                            <div>
+                                <h4 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-1.5">
+                                    <RefreshCw className={`w-3.5 h-3.5 ${settings.exchange_enabled ? 'text-cyan-500' : 'text-gray-400'}`} /> Обмен техники
+                                </h4>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Прорабы смогут обмениваться техникой.</p>
+                            </div>
+                            <Toggle name="exchange_enabled" checked={settings.exchange_enabled} onChange={handleSettingChange} color="cyan" />
+                        </div>
                     </div>
 
                     <button onClick={saveSettings}

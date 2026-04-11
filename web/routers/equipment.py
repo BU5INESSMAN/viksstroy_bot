@@ -4,12 +4,16 @@ import os
 # Переходим на уровень выше (в папку web), чтобы импорты сработали
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException, Request
+from fastapi import APIRouter, Form, HTTPException, Request, Query
 import uuid
 import random
+import json
+import logging
 from datetime import datetime
 from database_deps import db, TZ_BARNAUL
 from utils import resolve_id, notify_users, process_base64_image
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Equipment"])
 
@@ -37,6 +41,157 @@ async def set_equipment_free(tg_id: int = Form(...)):
 async def admin_equip_list():
     async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur: rows = await cur.fetchall()
     return [dict(zip([c[0] for c in cur.description], r)) for r in rows]
+
+
+@router.get("/api/equipment/availability")
+async def equipment_availability(date: str = Query(...)):
+    """Returns all equipment with time-slot availability for a given date."""
+    if db.conn is None:
+        await db.init_db()
+
+    # Get base hours from settings
+    base_start = "08:00"
+    base_end = "18:00"
+    exchange_on = "1"
+    try:
+        async with db.conn.execute("SELECT key, value FROM settings WHERE key IN ('equip_base_time_start', 'equip_base_time_end', 'exchange_enabled')") as cur:
+            for row in await cur.fetchall():
+                if row[0] == 'equip_base_time_start': base_start = row[1] or "08:00"
+                elif row[0] == 'equip_base_time_end': base_end = row[1] or "18:00"
+                elif row[0] == 'exchange_enabled': exchange_on = row[1] or "1"
+    except Exception:
+        pass
+
+    def time_to_minutes(t: str) -> int:
+        parts = str(t).split(":")
+        h = int(parts[0])
+        m = int(parts[1]) if len(parts) > 1 else 0
+        return h * 60 + m
+
+    def minutes_to_time(m: int) -> str:
+        return f"{m // 60:02d}:{m % 60:02d}"
+
+    base_start_m = time_to_minutes(base_start)
+    base_end_m = time_to_minutes(base_end)
+
+    # Get all equipment
+    async with db.conn.execute("SELECT * FROM equipment WHERE is_active = 1 ORDER BY category, name") as cur:
+        eq_rows = await cur.fetchall()
+        eq_cols = [c[0] for c in cur.description]
+    all_equip = [dict(zip(eq_cols, r)) for r in eq_rows]
+
+    # Get all apps for the date
+    async with db.conn.execute(
+        "SELECT * FROM applications WHERE date_target = ? AND status NOT IN ('rejected', 'cancelled')", (date,)
+    ) as cur:
+        app_rows = await cur.fetchall()
+        app_cols = [c[0] for c in cur.description]
+    apps = [dict(zip(app_cols, r)) for r in app_rows]
+
+    # Get foreman names
+    foreman_names = {}
+    for a in apps:
+        fid = a.get('foreman_id')
+        if fid and fid not in foreman_names:
+            foreman_names[fid] = a.get('foreman_name', f'Прораб {fid}')
+
+    # Get pending exchange equip ids
+    pending_exchange_ids = set()
+    try:
+        async with db.conn.execute(
+            "SELECT requested_equip_id, offered_equip_id FROM equipment_exchanges WHERE status = 'pending'"
+        ) as cur:
+            for row in await cur.fetchall():
+                pending_exchange_ids.add(row[0])
+                pending_exchange_ids.add(row[1])
+    except Exception:
+        pass
+
+    # Build busy_slots per equipment
+    equip_busy = {}  # equip_id -> list of {app_id, foreman_name, object_address, time_start, time_end, app_status}
+    for a in apps:
+        eq_data = a.get('equipment_data', '')
+        if not eq_data:
+            continue
+        try:
+            eq_list = json.loads(eq_data)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for eq in eq_list:
+            if not isinstance(eq, dict) or eq.get('is_freed'):
+                continue
+            eid = eq.get('id')
+            if eid is None:
+                continue
+            ts = str(eq.get('time_start', '08'))
+            te = str(eq.get('time_end', '17'))
+            # Normalize: if just hour number, add ":00"
+            if ':' not in ts: ts = f"{int(ts):02d}:00"
+            if ':' not in te: te = f"{int(te):02d}:00"
+
+            can_ex = (a.get('status') in ('pending', 'waiting') and
+                      eid not in pending_exchange_ids and
+                      exchange_on == "1")
+
+            slot = {
+                "app_id": a['id'],
+                "foreman_name": foreman_names.get(a.get('foreman_id'), ''),
+                "object_address": a.get('object_address', ''),
+                "time_start": ts,
+                "time_end": te,
+                "app_status": a.get('status', ''),
+                "can_exchange": can_ex,
+            }
+            equip_busy.setdefault(eid, []).append(slot)
+
+    # Build result
+    result = []
+    for eq in all_equip:
+        eid = eq['id']
+        busy_slots = equip_busy.get(eid, [])
+        in_exchange = eid in pending_exchange_ids
+
+        if eq.get('status') == 'repair':
+            result.append({
+                "id": eid, "name": eq.get('name', ''),
+                "category": eq.get('category', ''),
+                "license_plate": eq.get('license_plate', ''),
+                "driver_fio": eq.get('driver_fio', eq.get('driver', '')),
+                "status": "repair",
+                "busy_slots": [], "free_slots": [],
+                "is_in_pending_exchange": in_exchange,
+                "exchange_enabled": exchange_on == "1",
+            })
+            continue
+
+        # Calculate free slots
+        busy_sorted = sorted(busy_slots, key=lambda s: time_to_minutes(s['time_start']))
+        occupied = [(time_to_minutes(s['time_start']), time_to_minutes(s['time_end'])) for s in busy_sorted]
+
+        free_slots = []
+        cursor_m = base_start_m
+        for occ_start, occ_end in occupied:
+            if cursor_m < occ_start:
+                free_slots.append({"time_start": minutes_to_time(cursor_m), "time_end": minutes_to_time(occ_start)})
+            cursor_m = max(cursor_m, occ_end)
+        if cursor_m < base_end_m:
+            free_slots.append({"time_start": minutes_to_time(cursor_m), "time_end": minutes_to_time(base_end_m)})
+
+        status = "free" if len(busy_slots) == 0 else ("busy" if len(free_slots) == 0 else "partial")
+
+        result.append({
+            "id": eid, "name": eq.get('name', ''),
+            "category": eq.get('category', ''),
+            "license_plate": eq.get('license_plate', ''),
+            "driver_fio": eq.get('driver_fio', eq.get('driver', '')),
+            "status": status,
+            "busy_slots": busy_sorted,
+            "free_slots": free_slots,
+            "is_in_pending_exchange": in_exchange,
+            "exchange_enabled": exchange_on == "1",
+        })
+
+    return result
 
 
 @router.post("/api/equipment/add")

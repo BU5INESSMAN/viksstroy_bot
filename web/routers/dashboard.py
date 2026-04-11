@@ -97,6 +97,9 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
                           office_reminder_enabled: str = Form("0"),
                           office_reminder_time: str = Form(""),
                           smr_unlock_time: str = Form(""),
+                          equip_base_time_start: str = Form("08:00"),
+                          equip_base_time_end: str = Form("18:00"),
+                          exchange_enabled: str = Form("1"),
                           tg_id: int = Form(0)):
     user = await db.get_user(tg_id)
     if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403,
@@ -115,6 +118,9 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
             ('office_reminder_enabled', office_reminder_enabled),
             ('office_reminder_time', office_reminder_time),
             ('smr_unlock_time', smr_unlock_time),
+            ('equip_base_time_start', equip_base_time_start),
+            ('equip_base_time_end', equip_base_time_end),
+            ('exchange_enabled', exchange_enabled),
         ]:
             await db.conn.execute("UPDATE settings SET value = ? WHERE key = ?", (v, k))
             await db.conn.execute("INSERT INTO settings (key, value) SELECT ?, ? WHERE (SELECT Changes() = 0)", (k, v))

@@ -129,13 +129,20 @@ class AppsRepoMixin:
         await self.conn.commit()
 
     async def check_resource_availability(self, date_target: str, object_id: int, team_ids: str, equip_data: str, exclude_app_id: int = None):
-        """Строгая проверка занятости бригад и техники — Python-side JSON parsing"""
+        """Строгая проверка занятости бригад и техники с учётом временных слотов"""
         import json
         occupied_resources = []
 
+        def _to_minutes(t) -> int:
+            s = str(t)
+            if ':' in s:
+                parts = s.split(':')
+                return int(parts[0]) * 60 + int(parts[1])
+            return int(s) * 60
+
         # Fetch ALL applications for the target date where status != 'rejected'
         query = """
-                SELECT a.id, a.team_id, a.equipment_data, o.name as obj_name, a.object_address
+                SELECT a.id, a.team_id, a.equipment_data, o.name as obj_name, a.object_address, a.foreman_name
                 FROM applications a
                          LEFT JOIN objects o ON a.object_id = o.id
                 WHERE a.date_target = ?
@@ -153,22 +160,29 @@ class AppsRepoMixin:
         # Parse requested team IDs
         target_teams = [t.strip() for t in str(team_ids).split(',')] if team_ids and str(team_ids) != '0' else []
 
-        # Parse requested equipment IDs from JSON string
-        target_equips = []
+        # Parse requested equipment with time windows
+        target_equip_map = {}  # id_str -> {time_start, time_end, name}
         if equip_data:
             try:
                 raw = equip_data if isinstance(equip_data, str) else json.dumps(equip_data)
                 parsed = json.loads(raw)
                 if isinstance(parsed, list):
-                    target_equips = [str(e['id']) for e in parsed if isinstance(e, dict) and 'id' in e]
+                    for e in parsed:
+                        if isinstance(e, dict) and 'id' in e:
+                            target_equip_map[str(e['id'])] = {
+                                'time_start': _to_minutes(e.get('time_start', '08')),
+                                'time_end': _to_minutes(e.get('time_end', '17')),
+                                'name': e.get('name', f"Техника #{e['id']}"),
+                            }
             except (json.JSONDecodeError, TypeError, KeyError):
                 pass
 
-        # Iterate through fetched apps and check conflicts in Python
+        # Iterate through fetched apps and check conflicts
         for app in active_apps:
             app_team = str(app[1]) if app[1] is not None else ""
             app_equip_raw = str(app[2]) if app[2] is not None else ""
             obj_name = app[3] or app[4] or "Неизвестный объект"
+            foreman_name = app[5] or ""
 
             # Team conflict check
             if target_teams and app_team and app_team != '0':
@@ -177,15 +191,27 @@ class AppsRepoMixin:
                     if t in app_team_list:
                         occupied_resources.append(f"❌ Бригада (ID: {t}) уже занята на объекте «{obj_name}»")
 
-            # Equipment conflict check — Python-side JSON parsing
-            if target_equips and app_equip_raw:
+            # Equipment conflict check with time-overlap
+            if target_equip_map and app_equip_raw:
                 try:
                     app_eq_parsed = json.loads(app_equip_raw)
                     if isinstance(app_eq_parsed, list):
-                        app_eq_ids = [str(e['id']) for e in app_eq_parsed if isinstance(e, dict) and 'id' in e and not e.get('is_freed')]
-                        for eq in target_equips:
-                            if eq in app_eq_ids:
-                                occupied_resources.append(f"❌ Техника (ID: {eq}) уже занята на объекте «{obj_name}»")
+                        for ae in app_eq_parsed:
+                            if not isinstance(ae, dict) or ae.get('is_freed'):
+                                continue
+                            ae_id = str(ae.get('id', ''))
+                            if ae_id not in target_equip_map:
+                                continue
+                            # Time overlap: new_start < existing_end AND new_end > existing_start
+                            ae_start = _to_minutes(ae.get('time_start', '08'))
+                            ae_end = _to_minutes(ae.get('time_end', '17'))
+                            new = target_equip_map[ae_id]
+                            if new['time_start'] < ae_end and new['time_end'] > ae_start:
+                                ae_ts = f"{ae_start // 60:02d}:{ae_start % 60:02d}"
+                                ae_te = f"{ae_end // 60:02d}:{ae_end % 60:02d}"
+                                occupied_resources.append(
+                                    f"❌ Техника «{new['name']}» занята {ae_ts}-{ae_te} на объекте «{obj_name}» ({foreman_name})"
+                                )
                 except (json.JSONDecodeError, TypeError, KeyError):
                     pass
 

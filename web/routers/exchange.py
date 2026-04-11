@@ -109,6 +109,12 @@ async def create_exchange_request(request: Request):
     if db.conn is None:
         await db.init_db()
 
+    # Check if exchange is enabled globally
+    async with db.conn.execute("SELECT value FROM settings WHERE key = 'exchange_enabled'") as cur:
+        row = await cur.fetchone()
+        if row and row[0] == '0':
+            return {"error": "Обмен техники отключён администратором."}
+
     real_tg_id = await resolve_id(int(requester_tg_id))
     user = await db.get_user(real_tg_id)
     if not user:
