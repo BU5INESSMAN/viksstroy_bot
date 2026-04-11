@@ -11,8 +11,11 @@ from database_deps import db, TZ_BARNAUL
 from datetime import datetime, timedelta
 from utils import (resolve_id, notify_users, notify_group_chat, strip_html,
                    send_schedule_notifications,
-                   get_waiting_apps_for_date, get_schedule_dates)
+                   get_waiting_apps_for_date, get_schedule_dates,
+                   get_all_linked_ids, get_max_dm_chat_id, send_max_message)
 from schedule_generator import publish_schedule_to_group, generate_schedule_image
+import asyncio
+import aiohttp
 
 router = APIRouter(tags=["System"])
 logger = logging.getLogger("SYSTEM")
@@ -56,8 +59,15 @@ async def broadcast_to_group(req: BroadcastGroupRequest):
         raise HTTPException(400, "Сообщение не может быть пустым")
 
     text = f"📢 <b>Рассылка от {user.get('fio', 'Администратор')}:</b>\n\n{req.message}"
-    await notify_group_chat(text, "dashboard")
-    await db.add_log(real_id, user.get('fio'), f"Отправил рассылку в группу")
+
+    async def _do_broadcast_group():
+        try:
+            await notify_group_chat(text, "dashboard")
+            await db.add_log(real_id, user.get('fio'), f"Отправил рассылку в группу")
+        except Exception as e:
+            logger.error(f"Broadcast group error: {e}")
+
+    asyncio.create_task(_do_broadcast_group())
     return {"status": "ok"}
 
 
@@ -73,14 +83,30 @@ async def broadcast_to_dm(req: BroadcastDMRequest):
     if req.mode == "roles":
         if not req.roles:
             raise HTTPException(400, "Не выбраны роли")
-        await notify_users(req.roles, text, "dashboard")
-        await db.add_log(real_id, user.get('fio'), f"Отправил рассылку в ЛС (роли: {', '.join(req.roles)})")
+        roles = req.roles
+
+        async def _do_dm_roles():
+            try:
+                await notify_users(roles, text, "dashboard")
+                await db.add_log(real_id, user.get('fio'), f"Отправил рассылку в ЛС (роли: {', '.join(roles)})")
+            except Exception as e:
+                logger.error(f"Broadcast DM roles error: {e}")
+
+        asyncio.create_task(_do_dm_roles())
 
     elif req.mode == "users":
         if not req.user_ids:
             raise HTTPException(400, "Не выбраны пользователи")
-        await notify_users([], text, "dashboard", extra_tg_ids=req.user_ids)
-        await db.add_log(real_id, user.get('fio'), f"Отправил рассылку в ЛС ({len(req.user_ids)} пользователей)")
+        user_ids = req.user_ids
+
+        async def _do_dm_users():
+            try:
+                await notify_users([], text, "dashboard", extra_tg_ids=user_ids)
+                await db.add_log(real_id, user.get('fio'), f"Отправил рассылку в ЛС ({len(user_ids)} пользователей)")
+            except Exception as e:
+                logger.error(f"Broadcast DM users error: {e}")
+
+        asyncio.create_task(_do_dm_users())
 
     else:
         raise HTTPException(400, "Неверный режим рассылки")
@@ -256,21 +282,25 @@ async def api_send_schedule_group(tg_id: int = Form(0), date: str = Form("")):
     if not date:
         raise HTTPException(400, "Не указана дата")
 
-    await publish_schedule_to_group(date)
+    async def _do_send_group():
+        try:
+            await publish_schedule_to_group(date)
+            count = await send_schedule_notifications(date)
 
-    # Уведомить всех участников одобренных заявок
-    count = await send_schedule_notifications(date)
+            # Очищаем таймер авто-публикации
+            try:
+                await db.conn.execute("DELETE FROM settings WHERE key = 'smart_publish_at'")
+                await db.conn.commit()
+            except:
+                pass
 
-    # Очищаем таймер авто-публикации
-    try:
-        await db.conn.execute("DELETE FROM settings WHERE key = 'smart_publish_at'")
-        await db.conn.commit()
-    except:
-        pass
+            await db.add_log(real_id, user_info.get('fio'),
+                             f"Отправил расстановку на {date} в группу ({count} нарядов)")
+        except Exception as e:
+            logger.error(f"Error sending schedule group for {date}: {e}")
 
-    await db.add_log(real_id, user_info.get('fio'),
-                     f"Отправил расстановку на {date} в группу ({count} нарядов)")
-    return {"status": "ok", "notified": count}
+    asyncio.create_task(_do_send_group())
+    return {"status": "ok"}
 
 
 @router.post("/api/system/send_schedule_self")
@@ -280,51 +310,57 @@ async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
     if not date:
         raise HTTPException(400, "Не указана дата")
 
-    import aiohttp
-    buf = await generate_schedule_image(date)
-
-    # Сохраняем файл
-    import time as _time
-    filename = f"schedule_{date}_{int(_time.time())}.png"
-    filepath = os.path.join("data", "uploads", filename)
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    with open(filepath, "wb") as f:
-        f.write(buf.getvalue())
-
-    # TG — отправляем фото в ЛС
-    bot_token = os.getenv("BOT_TOKEN")
-    if bot_token:
-        buf.seek(0)
-        form = aiohttp.FormData()
-        form.add_field("chat_id", str(real_id))
-        form.add_field("photo", buf.getvalue(), filename="schedule.png", content_type="image/png")
-        form.add_field("caption", f"📋 Расстановка на {date}")
-        form.add_field("parse_mode", "HTML")
+    async def _do_send_self():
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=form
-                ) as resp:
-                    pass
-        except Exception:
-            pass
+            buf = await generate_schedule_image(date)
 
-    # MAX — отправляем фото в ЛС
-    from utils import send_max_message
-    max_bot_token = os.getenv("MAX_BOT_TOKEN")
-    if max_bot_token:
-        # Найти MAX chat_id пользователя
-        async with db.conn.execute(
-            "SELECT max_chat_id FROM users WHERE user_id = ?", (real_id,)
-        ) as cur:
-            row = await cur.fetchone()
-        max_chat_id = row[0] if row else None
-        if max_chat_id:
-            await send_max_message(max_bot_token, max_chat_id,
-                                   f"📋 Расстановка на {date}", filepath)
+            # Сохраняем файл
+            import time as _time
+            filename = f"schedule_{date}_{int(_time.time())}.png"
+            filepath = os.path.join("data", "uploads", filename)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            with open(filepath, "wb") as f:
+                f.write(buf.getvalue())
 
-    await db.add_log(real_id, user_info.get('fio'),
-                     f"Запросил расстановку на {date} себе в ЛС")
+            # Находим все связанные ID пользователя (TG + MAX)
+            linked_ids = await get_all_linked_ids(real_id)
+            tg_ids = [lid for lid in linked_ids if lid > 0]
+            max_ids = [abs(lid) for lid in linked_ids if lid < 0]
+
+            bot_token = os.getenv("BOT_TOKEN")
+            max_bot_token = os.getenv("MAX_BOT_TOKEN")
+
+            # TG — отправляем фото в ЛС
+            if bot_token and tg_ids:
+                buf.seek(0)
+                photo_bytes = buf.getvalue()
+                async with aiohttp.ClientSession() as session:
+                    for tid in tg_ids:
+                        try:
+                            form = aiohttp.FormData()
+                            form.add_field("chat_id", str(tid))
+                            form.add_field("photo", photo_bytes, filename="schedule.png", content_type="image/png")
+                            form.add_field("caption", f"📋 Расстановка на {date}")
+                            form.add_field("parse_mode", "HTML")
+                            await session.post(
+                                f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=form
+                            )
+                        except Exception:
+                            pass
+
+            # MAX — отправляем фото в ЛС
+            if max_bot_token and max_ids:
+                for mid in max_ids:
+                    dm_chat_id = await get_max_dm_chat_id(str(mid))
+                    await send_max_message(max_bot_token, dm_chat_id,
+                                           f"📋 Расстановка на {date}", filepath)
+
+            await db.add_log(real_id, user_info.get('fio'),
+                             f"Запросил расстановку на {date} себе в ЛС")
+        except Exception as e:
+            logger.error(f"Error sending schedule self for {real_id}: {e}")
+
+    asyncio.create_task(_do_send_self())
     return {"status": "ok"}
 
 

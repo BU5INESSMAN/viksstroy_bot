@@ -65,9 +65,9 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
             const res = await axios.post(endpoint, fd);
 
             if (target === 'group') {
-                toast.success(`Расстановка отправлена в группу! Уведомлено: ${res.data.notified || 0}`);
+                toast.success('Расстановка отправляется в группу...');
             } else {
-                toast.success('Расстановка отправлена вам в ЛС!');
+                toast.success('Расстановка отправляется вам в ЛС...');
             }
         } catch (err) {
             toast.error(err.response?.data?.detail || 'Ошибка отправки');

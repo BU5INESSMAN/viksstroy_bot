@@ -92,8 +92,8 @@ export default function Home() {
             const fd = new FormData();
             fd.append('tg_id', tgId);
             fd.append('date', dateStr);
-            const res = await axios.post('/api/system/send_schedule_group', fd);
-            toast.success(`Расстановка на завтра отправлена! Уведомлено: ${res.data.notified || 0}`);
+            await axios.post('/api/system/send_schedule_group', fd);
+            toast.success('Расстановка на завтра отправляется...');
         } catch (err) {
             toast.error(err.response?.data?.detail || "Ошибка отправки расстановки");
         } finally {
@@ -402,12 +402,6 @@ export default function Home() {
                         <h3 className="text-sm font-bold text-red-800 dark:text-red-400 flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4" /> Должники СМР
                         </h3>
-                        {canArchive && (
-                            <button onClick={publishTomorrow} disabled={publishingTomorrow}
-                                className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm disabled:opacity-50">
-                                {publishingTomorrow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} На завтра
-                            </button>
-                        )}
                     </div>
                     <div className="space-y-3">
                         {debtors.map((group, i) => (
