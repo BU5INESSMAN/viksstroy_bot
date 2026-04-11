@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle,
@@ -467,7 +468,7 @@ export default function CreateAppModal({
                     </form>
                 </div>
             </div>
-            {exchangeDialog && (
+            {exchangeDialog && createPortal(
                 <ExchangeDialog
                     info={exchangeDialog}
                     equipment={data.equipment || []}
@@ -476,7 +477,8 @@ export default function CreateAppModal({
                     tgId={tgId}
                     dateTarget={appForm.date_target}
                     onClose={() => setExchangeDialog(null)}
-                />
+                />,
+                document.body
             )}
         </div>
     );

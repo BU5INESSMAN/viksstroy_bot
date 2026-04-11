@@ -235,10 +235,15 @@ export default function Home() {
     };
 
     const handleCreateApp = async (e) => {
+        console.log("=== MAIN FORM SUBMIT TRIGGERED ===");
+        console.log("Event target:", e?.target?.tagName, e?.target?.className);
+        console.log("Event type:", e?.type);
+        console.trace("handleCreateApp call stack");
         e.preventDefault();
         if(appForm.isViewOnly) { setGlobalCreateAppOpen(false); return; }
-        if (!appForm.object_id) return toast.error("Выберите объект!");
-        if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) return toast.error("Выберите бригаду или технику!");
+        console.log("Validation check — object_id:", appForm.object_id, "team_ids:", appForm.team_ids, "equipment:", appForm.equipment, "members:", appForm.members);
+        if (!appForm.object_id) { console.log("FAIL: no object_id"); return toast.error("Выберите объект!"); }
+        if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) { console.log("FAIL: no team_ids and no equipment"); return toast.error("Выберите бригаду или технику!"); }
         if (appForm.team_ids.length === 0) {
             const ok = await confirm("Создать заявку ТОЛЬКО на технику (без людей)?", { title: "Подтверждение", variant: "warning", confirmText: "Да, создать" });
             if (!ok) return;

@@ -43,9 +43,12 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
     }, [info, equipment, appEquipment, dateTarget]);
 
     const handleSubmit = async (e) => {
+        console.log("=== EXCHANGE handleSubmit TRIGGERED ===");
+        console.log("Event:", e?.type, e?.target?.tagName, e?.target?.className);
+        console.trace("Exchange handleSubmit stack");
         e.preventDefault();
         e.stopPropagation();
-        if (sending) return;
+        if (sending) { console.log("BLOCKED: already sending"); return; }
         if (!offeredEquipId) return toast.error('Выберите технику для обмена');
         setSending(true);
         try {
@@ -69,13 +72,14 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
     };
 
     const handleClose = (e) => {
+        console.log("=== EXCHANGE handleClose TRIGGERED ===");
         e.preventDefault();
         e.stopPropagation();
         onClose();
     };
 
     return (
-        <div className="fixed inset-0 z-[99999] bg-black/60 flex items-center justify-center p-4" onClick={handleClose}>
+        <div className="fixed inset-0 z-[99999] bg-black/60 flex items-center justify-center p-4" onClick={handleClose} onSubmit={(e) => { console.log("=== EXCHANGE ROOT onSubmit INTERCEPTED ==="); e.preventDefault(); e.stopPropagation(); }}>
             <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 flex items-center justify-between">
