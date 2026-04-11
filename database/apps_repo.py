@@ -131,6 +131,8 @@ class AppsRepoMixin:
     async def check_resource_availability(self, date_target: str, object_id: int, team_ids: str, equip_data: str, exclude_app_id: int = None):
         """Строгая проверка занятости бригад и техники с учётом временных слотов"""
         import json
+        import logging
+        logger = logging.getLogger(__name__)
         occupied_resources = []
 
         def _to_minutes(t) -> int:
@@ -177,6 +179,10 @@ class AppsRepoMixin:
             except (json.JSONDecodeError, TypeError, KeyError):
                 pass
 
+        for eid, info in target_equip_map.items():
+            logger.info(f"Equipment validation: equip_id={eid}, date={date_target}, "
+                        f"new_time={info['time_start']//60:02d}:{info['time_start']%60:02d}-{info['time_end']//60:02d}:{info['time_end']%60:02d}")
+
         # Iterate through fetched apps and check conflicts
         for app in active_apps:
             app_team = str(app[1]) if app[1] is not None else ""
@@ -206,7 +212,14 @@ class AppsRepoMixin:
                             ae_start = _to_minutes(ae.get('time_start', '08'))
                             ae_end = _to_minutes(ae.get('time_end', '17'))
                             new = target_equip_map[ae_id]
-                            if new['time_start'] < ae_end and new['time_end'] > ae_start:
+                            has_overlap = new['time_start'] < ae_end and new['time_end'] > ae_start
+                            logger.info(
+                                f"  Existing app #{app[0]}: equip={ae_id}, "
+                                f"time={ae_start//60:02d}:{ae_start%60:02d}-{ae_end//60:02d}:{ae_end%60:02d}, "
+                                f"vs new={new['time_start']//60:02d}:{new['time_start']%60:02d}-{new['time_end']//60:02d}:{new['time_end']%60:02d}, "
+                                f"overlap={has_overlap}"
+                            )
+                            if has_overlap:
                                 ae_ts = f"{ae_start // 60:02d}:{ae_start % 60:02d}"
                                 ae_te = f"{ae_end // 60:02d}:{ae_end % 60:02d}"
                                 occupied_resources.append(
