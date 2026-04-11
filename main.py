@@ -240,18 +240,20 @@ async def handle_smart_publish_callback(callback: types.CallbackQuery):
 
     if callback.data == "smart_publish_now":
         try:
+            tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
             async with aiohttp.ClientSession() as session:
                 fd = aiohttp.FormData()
                 fd.add_field('tg_id', str(tg_id))
+                fd.add_field('date', tomorrow)
                 async with session.post(
-                    "http://127.0.0.1:8000/api/system/publish_tomorrow", data=fd
+                    "http://127.0.0.1:8000/api/system/send_schedule_group", data=fd
                 ) as resp:
                     result = await resp.json()
-                    count = result.get('published', 0)
+                    count = result.get('notified', 0)
             await callback.message.edit_text(
-                f"✅ <b>Расстановка на завтра опубликована!</b>\n📋 Опубликовано нарядов: {count}",
+                f"✅ <b>Расстановка на завтра отправлена в группу!</b>\n📋 Уведомлено нарядов: {count}",
                 parse_mode="HTML")
-            await callback.answer("✅ Опубликовано!")
+            await callback.answer("✅ Отправлено!")
         except Exception as e:
             logger.error(f"Ошибка публикации через кнопку: {e}")
             await callback.answer(f"❌ Ошибка публикации", show_alert=True)

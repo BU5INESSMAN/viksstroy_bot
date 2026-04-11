@@ -9,7 +9,9 @@ from pydantic import BaseModel
 from typing import List, Optional
 from database_deps import db, TZ_BARNAUL
 from datetime import datetime, timedelta
-from utils import resolve_id, notify_users, notify_group_chat, strip_html, publish_tomorrow_apps
+from utils import (resolve_id, notify_users, notify_group_chat, strip_html,
+                   send_schedule_notifications, compile_schedule_text,
+                   get_waiting_apps_for_date, get_schedule_dates)
 
 router = APIRouter(tags=["System"])
 logger = logging.getLogger("SYSTEM")
@@ -181,48 +183,89 @@ async def test_notification_extended(tg_id: int = Form(...), test_type: str = Fo
 
 @router.get("/api/system/debtors")
 async def get_debtors(tg_id: int = 0):
-    """Должники СМР: прорабы с просроченными нарядами (in_progress, date_target <= сегодня)."""
+    """Должники СМР: прорабы с просроченными нарядами, сгруппированные по прорабу."""
     if tg_id:
         await verify_moderator_plus(tg_id)
 
     today_str = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
     async with db.conn.execute(
-        "SELECT DISTINCT foreman_id, foreman_name, object_address, date_target FROM applications "
+        "SELECT foreman_id, foreman_name, object_address, date_target FROM applications "
         "WHERE status = 'in_progress' AND date_target <= ? AND foreman_id IS NOT NULL "
-        "ORDER BY date_target ASC",
+        "ORDER BY foreman_name, date_target ASC",
         (today_str,)
     ) as cur:
         rows = await cur.fetchall()
 
-    return [
-        {"foreman_id": r[0], "foreman_name": r[1] or "Неизвестный",
-         "object_address": r[2] or "—", "date_target": r[3]}
-        for r in rows
-    ]
+    grouped = {}
+    for r in rows:
+        fid = r[0]
+        if fid not in grouped:
+            grouped[fid] = {"foreman_id": fid, "foreman_name": r[1] or "Неизвестный", "smrs": []}
+        grouped[fid]["smrs"].append({"object_address": r[2] or "—", "date_target": r[3]})
+
+    return list(grouped.values())
 
 
 # --- Smart Scheduling Endpoints ---
 
-@router.post("/api/system/publish_tomorrow")
-async def api_publish_tomorrow(tg_id: int = Form(0)):
-    """Publish all waiting apps for tomorrow and notify teams."""
-    user_info = None
+@router.get("/api/system/schedule_dates")
+async def api_schedule_dates(tg_id: int = 0):
+    """Даты, на которые есть хотя бы одна заявка."""
     if tg_id:
-        real_id, user_info = await verify_moderator_plus(tg_id)
+        await verify_moderator_plus(tg_id)
+    dates = await get_schedule_dates()
+    return dates
 
-    count = await publish_tomorrow_apps()
 
-    # Clear pending auto-publish timer
+@router.get("/api/system/schedule_warnings")
+async def api_schedule_warnings(tg_id: int = 0, date: str = ""):
+    """Получить непроверенные заявки на дату (для предупреждения в модалке)."""
+    if tg_id:
+        await verify_moderator_plus(tg_id)
+    if not date:
+        raise HTTPException(400, "Не указана дата")
+    waiting = await get_waiting_apps_for_date(date)
+    return waiting
+
+
+@router.post("/api/system/send_schedule_group")
+async def api_send_schedule_group(tg_id: int = Form(0), date: str = Form("")):
+    """Отправить расстановку по одобренным заявкам в групповой чат."""
+    real_id, user_info = await verify_moderator_plus(tg_id)
+    if not date:
+        raise HTTPException(400, "Не указана дата")
+
+    text = await compile_schedule_text(date)
+    await notify_group_chat(text, "dashboard")
+
+    # Уведомить всех участников одобренных заявок
+    count = await send_schedule_notifications(date)
+
+    # Очищаем таймер авто-публикации
     try:
         await db.conn.execute("DELETE FROM settings WHERE key = 'smart_publish_at'")
         await db.conn.commit()
     except:
         pass
 
-    if user_info:
-        await db.add_log(real_id, user_info.get('fio'), f"Ручная публикация расстановки на завтра ({count} нарядов)")
+    await db.add_log(real_id, user_info.get('fio'),
+                     f"Отправил расстановку на {date} в группу ({count} нарядов)")
+    return {"status": "ok", "notified": count}
 
-    return {"status": "ok", "published": count}
+
+@router.post("/api/system/send_schedule_self")
+async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
+    """Отправить расстановку в ЛС запрашивающему пользователю."""
+    real_id, user_info = await verify_moderator_plus(tg_id)
+    if not date:
+        raise HTTPException(400, "Не указана дата")
+
+    text = await compile_schedule_text(date)
+    await notify_users([], text, "dashboard", extra_tg_ids=[real_id])
+
+    await db.add_log(real_id, user_info.get('fio'),
+                     f"Запросил расстановку на {date} себе в ЛС")
+    return {"status": "ok"}
 
 
 @router.post("/api/system/delay_publish")

@@ -247,8 +247,9 @@ async def check_and_run_tasks():
             if timer_row and timer_row[0]:
                 publish_at = datetime.strptime(timer_row[0], "%Y-%m-%d %H:%M:%S")
                 if now.replace(tzinfo=None) >= publish_at:
-                    from utils import publish_tomorrow_apps
-                    count = await publish_tomorrow_apps()
+                    from utils import send_schedule_notifications
+                    tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
+                    count = await send_schedule_notifications(tomorrow_str)
                     await db.conn.execute("DELETE FROM settings WHERE key = 'smart_publish_at'")
                     await db.conn.commit()
                     logger.info(f"⏰ Авто-публикация по таймеру: {count} нарядов на завтра")

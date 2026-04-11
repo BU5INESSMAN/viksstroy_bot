@@ -660,23 +660,18 @@ async def get_smr_debtors():
              "object_address": r[2] or "—", "date_target": r[3]} for r in rows]
 
 
-async def publish_tomorrow_apps():
-    """Одобрить все заявки 'waiting' на завтра и уведомить бригады/рабочих."""
+async def send_schedule_notifications(target_date: str):
+    """Отправить уведомления по ОДОБРЕННЫМ заявкам на указанную дату. НЕ меняет статусы."""
     if db.conn is None: await db.init_db()
-    tomorrow_str = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
 
     async with db.conn.execute(
-        "SELECT * FROM applications WHERE status = 'waiting' AND date_target = ?",
-        (tomorrow_str,)
+        "SELECT * FROM applications WHERE status = 'approved' AND date_target = ?",
+        (target_date,)
     ) as cur:
         apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
     count = 0
     for app in apps:
-        app_id = app['id']
-        await db.conn.execute("UPDATE applications SET status = 'approved' WHERE id = ?", (app_id,))
-        count += 1
-
         # Собираем ID всех участников
         all_involved = []
         if app.get('foreman_id'):
@@ -705,14 +700,74 @@ async def publish_tomorrow_apps():
 
         all_involved = list(set(all_involved))
         if all_involved:
-            msg = (f"📢 <b>Наряд на завтра:</b>\n"
+            msg = (f"📢 <b>Наряд на {target_date}:</b>\n"
                    f"Вы назначены на объект <b>{app.get('object_address', '—')}</b>\n"
-                   f"📅 Дата: {tomorrow_str}")
+                   f"📅 Дата: {target_date}")
             await notify_users([], msg, "my-apps", extra_tg_ids=all_involved, category="orders")
+            count += 1
 
-    if count > 0:
-        await db.conn.commit()
     return count
+
+
+async def compile_schedule_text(target_date: str):
+    """Собрать текстовую расстановку по ОДОБРЕННЫМ заявкам на дату."""
+    if db.conn is None: await db.init_db()
+
+    teams_dict = await fetch_teams_dict()
+
+    async with db.conn.execute(
+        "SELECT * FROM applications WHERE status = 'approved' AND date_target = ? ORDER BY id",
+        (target_date,)
+    ) as cur:
+        apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
+
+    if not apps:
+        return f"📅 <b>Расстановка на {target_date}</b>\n\nОдобренных заявок нет."
+
+    lines = [f"📅 <b>Расстановка на {target_date}</b>\n"]
+    for i, app in enumerate(apps, 1):
+        enrich_app_with_team_name(app, teams_dict)
+        equip_names = []
+        if app.get('equipment_data'):
+            try:
+                for eq in json.loads(app['equipment_data']):
+                    equip_names.append(eq.get('name', f"#{eq['id']}"))
+            except:
+                pass
+
+        lines.append(f"<b>{i}. {app.get('object_address', '—')}</b>")
+        lines.append(f"   👷 Прораб: {app.get('foreman_name', '—')}")
+        lines.append(f"   👥 Бригада: {app.get('team_name', '—')}")
+        if equip_names:
+            lines.append(f"   🚜 Техника: {', '.join(equip_names)}")
+        if app.get('comment'):
+            lines.append(f"   💬 {app['comment']}")
+        lines.append("")
+
+    lines.append(f"<i>Всего нарядов: {len(apps)}</i>")
+    return "\n".join(lines)
+
+
+async def get_waiting_apps_for_date(target_date: str):
+    """Получить непроверенные (waiting) заявки на дату для предупреждения."""
+    if db.conn is None: await db.init_db()
+    async with db.conn.execute(
+        "SELECT object_address, foreman_name FROM applications WHERE status = 'waiting' AND date_target = ?",
+        (target_date,)
+    ) as cur:
+        return [{"object_address": r[0] or "—", "foreman_name": r[1] or "—"} for r in await cur.fetchall()]
+
+
+async def get_schedule_dates():
+    """Получить список дат, на которые есть хотя бы одна заявка (не archived, не cancelled/rejected)."""
+    if db.conn is None: await db.init_db()
+    async with db.conn.execute(
+        "SELECT DISTINCT date_target FROM applications "
+        "WHERE status IN ('waiting', 'approved', 'published', 'in_progress') "
+        "AND (is_archived = 0 OR is_archived IS NULL) "
+        "ORDER BY date_target ASC"
+    ) as cur:
+        return [r[0] for r in await cur.fetchall()]
 
 
 async def send_smart_schedule_prompt():
@@ -723,18 +778,27 @@ async def send_smart_schedule_prompt():
     tomorrow_str = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
 
     async with db.conn.execute(
+        "SELECT COUNT(*) FROM applications WHERE status = 'approved' AND date_target = ?",
+        (tomorrow_str,)
+    ) as cur:
+        approved_count = (await cur.fetchone())[0]
+
+    async with db.conn.execute(
         "SELECT COUNT(*) FROM applications WHERE status = 'waiting' AND date_target = ?",
         (tomorrow_str,)
     ) as cur:
         waiting_count = (await cur.fetchone())[0]
 
-    debtors_text = ", ".join([d['foreman_name'] for d in debtors]) if debtors else "Нет"
+    debtors_text = ", ".join(list({d['foreman_name'] for d in debtors})) if debtors else "Нет"
+
+    warning = f"\n⚠️ Непроверенных заявок: {waiting_count}" if waiting_count > 0 else ""
 
     text = (
         f"📅 <b>Подготовка нарядов на завтра</b>\n"
         f"⚠️ <b>Должники по СМР:</b> {debtors_text}\n"
-        f"📋 Заявок на завтра (ожидают): {waiting_count}\n"
-        f"❓ Опубликовать расстановку на завтра?"
+        f"📋 Одобренных заявок на завтра: {approved_count}"
+        f"{warning}\n"
+        f"❓ Отправить расстановку по одобренным?"
     )
 
     # Устанавливаем таймер авто-публикации через 10 минут

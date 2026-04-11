@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, Send } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, CalendarCheck } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
 import ActiveApplicationsCard from '../features/applications/components/ActiveApplicationsCard';
@@ -12,6 +12,7 @@ import EditAppModal from '../features/applications/components/EditAppModal';
 import ConfirmFreeModal from '../features/applications/components/ConfirmFreeModal';
 import ViewAppModal from '../features/applications/components/ViewAppModal';
 import ArchiveModal from '../features/applications/components/ArchiveModal';
+import ScheduleModal from '../features/applications/components/ScheduleModal';
 import useConfirm from '../hooks/useConfirm';
 
 export default function Home() {
@@ -29,6 +30,7 @@ export default function Home() {
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
     const [isArchiveOpen, setArchiveOpen] = useState(false);
+    const [isScheduleOpen, setScheduleOpen] = useState(false);
     const [debtors, setDebtors] = useState([]);
 
     const { confirm, ConfirmUI } = useConfirm();
@@ -265,23 +267,6 @@ export default function Home() {
         }
     };
 
-    const handlePublishTomorrow = async () => {
-        const ok = await confirm("Опубликовать расстановку на завтра? Все заявки в статусе «На модерации» на завтра будут одобрены, уведомления отправлены.", { title: "Публикация на завтра", variant: "info", confirmText: "Опубликовать" });
-        if (!ok) return;
-        setIsSubmitting(true);
-        try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            await axios.post('/api/system/publish_tomorrow', fd);
-            toast.success("Расстановка на завтра опубликована!");
-            fetchData();
-        } catch (err) {
-            toast.error(err.response?.data?.detail || "Ошибка публикации");
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
     const openAppModalFromKanban = (app) => {
         setViewApp(app);
     };
@@ -370,17 +355,24 @@ export default function Home() {
                 {myTeam && <MyTeamCard myTeam={myTeam} />}
             </div>
 
-            {/* Debtors Widget */}
+            {/* Debtors Widget — grouped by foreman */}
             {!isWorkerOrDriver && debtors.length > 0 && (
                 <div className="bg-red-50/80 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-2xl p-5 shadow-sm">
                     <h3 className="text-sm font-bold text-red-800 dark:text-red-400 mb-3 flex items-center gap-2">
                         <AlertTriangle className="w-4 h-4" /> Должники СМР
                     </h3>
-                    <div className="space-y-2">
-                        {debtors.map((d, i) => (
-                            <div key={i} className="flex justify-between items-center text-sm bg-white/60 dark:bg-gray-800/40 rounded-xl px-3 py-2">
-                                <span className="font-semibold text-red-700 dark:text-red-300">{d.foreman_name}</span>
-                                <span className="text-red-500/80 dark:text-red-400/70 text-xs truncate ml-2 max-w-[50%] text-right">{d.object_address}</span>
+                    <div className="space-y-3">
+                        {debtors.map((group, i) => (
+                            <div key={i} className="bg-white/60 dark:bg-gray-800/40 rounded-xl px-4 py-3">
+                                <p className="font-semibold text-red-700 dark:text-red-300 text-sm mb-1.5">{group.foreman_name}</p>
+                                <div className="space-y-1 pl-2 border-l-2 border-red-200 dark:border-red-800">
+                                    {group.smrs.map((s, j) => (
+                                        <div key={j} className="flex justify-between items-center text-xs">
+                                            <span className="text-red-600/80 dark:text-red-400/80 truncate mr-2">{s.object_address}</span>
+                                            <span className="text-red-400 dark:text-red-500 flex-shrink-0">{s.date_target}</span>
+                                        </div>
+                                    ))}
+                                </div>
                             </div>
                         ))}
                     </div>
@@ -395,9 +387,9 @@ export default function Home() {
                         </h2>
                         <div className="flex items-center gap-2">
                             {canArchive && (
-                                <button onClick={handlePublishTomorrow} disabled={isSubmitting}
-                                    className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-4 py-2 rounded-xl border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm disabled:opacity-50">
-                                    <Send className="w-4 h-4" /> На завтра
+                                <button onClick={() => setScheduleOpen(true)}
+                                    className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-4 py-2 rounded-xl border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm">
+                                    <CalendarCheck className="w-4 h-4" /> Расстановка
                                 </button>
                             )}
                             {canArchive && (
@@ -486,6 +478,7 @@ export default function Home() {
             )}
 
             <ArchiveModal isOpen={isArchiveOpen} onClose={() => setArchiveOpen(false)} />
+            <ScheduleModal isOpen={isScheduleOpen} onClose={() => setScheduleOpen(false)} tgId={tgId} />
             {ConfirmUI}
         </main>
     );

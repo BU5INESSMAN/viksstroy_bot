@@ -352,16 +352,18 @@ async def message_callback(event: MessageCallback):
         if not user or dict(user).get('role') not in ['moderator', 'boss', 'superadmin']:
             return await send_max_msg(event, "❌ Нет прав для выполнения этого действия.")
         try:
+            tomorrow = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
             async with aiohttp.ClientSession() as session:
                 fd = aiohttp.FormData()
                 fd.add_field('tg_id', str(real_tg_id))
+                fd.add_field('date', tomorrow)
                 async with session.post(
-                    "http://127.0.0.1:8000/api/system/publish_tomorrow", data=fd
+                    "http://127.0.0.1:8000/api/system/send_schedule_group", data=fd
                 ) as resp:
                     result = await resp.json()
-                    count = result.get('published', 0)
+                    count = result.get('notified', 0)
             await send_max_msg(event,
-                               f"✅ Расстановка на завтра опубликована!\n📋 Опубликовано нарядов: {count}")
+                               f"✅ Расстановка на завтра отправлена в группу!\n📋 Уведомлено нарядов: {count}")
         except Exception as e:
             await send_max_msg(event, f"❌ Ошибка: {e}")
         return
