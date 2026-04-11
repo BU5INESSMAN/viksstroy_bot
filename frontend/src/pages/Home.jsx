@@ -473,6 +473,7 @@ export default function Home() {
                         ? handleEditFromView
                         : undefined
                     }
+                    onUpdate={() => { setViewApp(null); fetchData(); }}
                 />
             )}
 

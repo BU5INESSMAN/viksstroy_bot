@@ -354,6 +354,83 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
     return {"status": "ok"}
 
 
+# ==========================================
+# РУЧНАЯ СМЕНА СТАТУСА (Stage 4.1)
+# ==========================================
+ALLOWED_TRANSITIONS = {
+    ('approved', 'in_progress'),
+    ('in_progress', 'completed'),
+    ('in_progress', 'approved'),  # ROLLBACK
+}
+
+STATUS_LABELS = {
+    'approved': 'Одобрена',
+    'in_progress': 'В работе',
+    'completed': 'Завершена',
+}
+
+
+@router.post("/api/applications/{app_id}/change_status")
+async def change_status(app_id: int, new_status: str = Form(...), tg_id: int = Form(0)):
+    if new_status not in ('approved', 'in_progress', 'completed'):
+        raise HTTPException(400, "Неверный статус")
+
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+    user_role = dict(user).get('role') if user else ''
+    if user_role not in ('admin', 'superadmin'):
+        raise HTTPException(403, "Нет прав для смены статуса")
+
+    mod_fio = dict(user).get('fio', 'Админ')
+
+    async with db.conn.execute("SELECT * FROM applications WHERE id = ?", (app_id,)) as cur:
+        app_row = await cur.fetchone()
+    if not app_row:
+        raise HTTPException(404, "Заявка не найдена")
+    app_dict = dict(zip([c[0] for c in cur.description], app_row))
+
+    current_status = app_dict.get('status')
+    if (current_status, new_status) not in ALLOWED_TRANSITIONS:
+        raise HTTPException(400, "Недопустимый переход статуса")
+
+    try:
+        if current_status == 'in_progress' and new_status == 'approved':
+            # ROLLBACK: reset as if it never entered in_progress
+            await db.conn.execute("DELETE FROM application_kp WHERE application_id = ?", (app_id,))
+            await db.conn.execute(
+                "UPDATE applications SET status = 'approved', is_published = 0, is_archived = 0 WHERE id = ?",
+                (app_id,))
+        elif new_status == 'completed':
+            now_ts = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d %H:%M:%S")
+            await db.conn.execute(
+                "UPDATE applications SET status = ?, completed_at = ? WHERE id = ?",
+                (new_status, now_ts, app_id))
+        else:
+            await db.conn.execute(
+                "UPDATE applications SET status = ? WHERE id = ?",
+                (new_status, app_id))
+        await db.conn.commit()
+    except Exception as e:
+        await db.conn.rollback()
+        raise HTTPException(500, f"Ошибка обновления: {e}")
+
+    # Background notification to foreman
+    async def _send_change_notification():
+        try:
+            label = STATUS_LABELS.get(new_status, new_status)
+            msg = f"📋 Статус заявки «{app_dict.get('object_address', '—')}» изменён на «{label}»"
+            await notify_users([], msg, "my-apps", extra_tg_ids=[app_dict['foreman_id']], category="orders")
+        except Exception as e:
+            logger.error(f"Background notification error for status change app #{app_id}: {e}")
+
+    asyncio.create_task(_send_change_notification())
+
+    await db.add_log(real_tg_id, mod_fio,
+                     f"Изменил статус заявки №{app_id} с '{current_status}' на '{new_status}'")
+
+    return {"success": True, "new_status": new_status, "message": "Статус изменён"}
+
+
 @router.post("/api/applications/publish")
 async def publish_apps(app_ids: str = Form(...), tg_id: int = Form(0)):
     ids = [int(x) for x in app_ids.split(',') if x.strip().isdigit()]
