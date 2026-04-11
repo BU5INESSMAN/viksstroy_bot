@@ -73,7 +73,21 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/auth.py', encoding='utf-8'\\).read\\(\\)\\); print\\('auth.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/services/account_merge.py', encoding='utf-8'\\).read\\(\\)\\); print\\('account_merge.py OK'\\)\")",
       "Bash(npx -y acorn-jsx --ecma2020 src/features/layout/components/ProfileModal.jsx)",
-      "Bash(npx -y esbuild --bundle src/features/layout/components/ProfileModal.jsx --outfile=/dev/null --jsx=automatic)"
+      "Bash(npx -y esbuild --bundle src/features/layout/components/ProfileModal.jsx --outfile=/dev/null --jsx=automatic)",
+      "Bash(git clone:*)",
+      "Bash(mkdir -p ~/.claude/skills/emil-design-eng)",
+      "Bash(cp -r /tmp/emilkowalski-skill/skills/emil-design-eng/* ~/.claude/skills/emil-design-eng/)",
+      "Read(//c/Users/mikl2/.claude/skills/**)",
+      "Bash(uipro init:*)",
+      "Bash(graphify .)",
+      "Bash(pip list:*)",
+      "Bash(python -m graphifyy --help)",
+      "Bash(graphifyy --help)",
+      "Bash(python -c \"import graphifyy; print\\(graphifyy.__file__\\)\")",
+      "Bash(\"C:/Users/mikl2/AppData/Roaming/Python/Python314/Scripts/graphify.exe\" .)",
+      "Bash(\"C:/Users/mikl2/AppData/Roaming/Python/Python314/Scripts/graphify.exe\" --help)",
+      "Bash(\"C:/Users/mikl2/AppData/Roaming/Python/Python314/Scripts/graphify.exe\" install:*)",
+      "Bash(PYTHONUTF8=1 \"C:/Users/mikl2/AppData/Roaming/Python/Python314/Scripts/graphify.exe\" claude install)"
     ]
   }
 }

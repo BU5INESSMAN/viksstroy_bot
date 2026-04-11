@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, Send, Loader2 } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, Send, Loader2, Bell } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
 import ActiveApplicationsCard from '../features/applications/components/ActiveApplicationsCard';
@@ -31,6 +31,7 @@ export default function Home() {
     const [isArchiveOpen, setArchiveOpen] = useState(false);
     const [debtors, setDebtors] = useState([]);
     const [publishingTomorrow, setPublishingTomorrow] = useState(false);
+    const [remindingForeman, setRemindingForeman] = useState(null);
 
     const { confirm, ConfirmUI } = useConfirm();
 
@@ -388,6 +389,23 @@ export default function Home() {
 
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
     const canArchive = ['moderator', 'boss', 'superadmin'].includes(role);
+    const totalDebtorSMR = debtors.reduce((sum, g) => sum + g.smrs.length, 0);
+
+    const handleRemindSMR = async (group) => {
+        setRemindingForeman(group.foreman_id);
+        try {
+            await axios.post('/api/system/remind_smr', {
+                tg_id: parseInt(tgId),
+                foreman_id: group.foreman_id,
+                app_ids: group.smrs.map(s => s.app_id)
+            });
+            toast.success('Напоминание отправлено');
+        } catch {
+            toast.error('Ошибка отправки напоминания');
+        } finally {
+            setRemindingForeman(null);
+        }
+    };
 
     if (loading) return (
         <div className="flex flex-col items-center justify-center mt-32 text-gray-400">
@@ -420,17 +438,40 @@ export default function Home() {
                     <div className="flex justify-between items-center mb-3">
                         <h3 className="text-sm font-bold text-red-800 dark:text-red-400 flex items-center gap-2">
                             <AlertTriangle className="w-4 h-4" /> Должники СМР
+                            <span className="bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{totalDebtorSMR}</span>
                         </h3>
                     </div>
                     <div className="space-y-3">
                         {debtors.map((group, i) => (
                             <div key={i} className="bg-white/60 dark:bg-gray-800/40 rounded-xl px-4 py-3">
-                                <p className="font-semibold text-red-700 dark:text-red-300 text-sm mb-1.5">{group.foreman_name}</p>
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <p className="font-semibold text-red-700 dark:text-red-300 text-sm">{group.foreman_name}</p>
+                                    <button
+                                        onClick={() => handleRemindSMR(group)}
+                                        disabled={remindingForeman === group.foreman_id}
+                                        className="flex items-center gap-1 text-xs font-medium text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 px-2.5 py-1 rounded-lg border border-orange-200 dark:border-orange-800 transition-all disabled:opacity-50"
+                                    >
+                                        {remindingForeman === group.foreman_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bell className="w-3 h-3" />}
+                                        Напомнить
+                                    </button>
+                                </div>
                                 <div className="space-y-1 pl-2 border-l-2 border-red-200 dark:border-red-800">
                                     {group.smrs.map((s, j) => (
                                         <div key={j} className="flex justify-between items-center text-xs">
-                                            <span className="text-red-600/80 dark:text-red-400/80 truncate mr-2">{s.object_address}</span>
-                                            <span className="text-red-400 dark:text-red-500 flex-shrink-0">{s.date_target}</span>
+                                            <div className="flex items-center gap-1.5 truncate mr-2">
+                                                {s.status === 'completed' ? (
+                                                    <span className="flex-shrink-0 w-2 h-2 rounded-full bg-red-500" title="Завершён, СМР не заполнен" />
+                                                ) : (
+                                                    <span className="flex-shrink-0 w-2 h-2 rounded-full bg-yellow-400" title="В работе" />
+                                                )}
+                                                <span className="text-red-600/80 dark:text-red-400/80 truncate">{s.object_address}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 flex-shrink-0">
+                                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${s.status === 'completed' ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400' : 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400'}`}>
+                                                    {s.status === 'completed' ? 'Завершён' : 'В работе'}
+                                                </span>
+                                                <span className="text-red-400 dark:text-red-500">{s.date_target}</span>
+                                            </div>
                                         </div>
                                     ))}
                                 </div>

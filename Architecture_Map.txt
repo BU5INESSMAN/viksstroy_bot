@@ -1,0 +1,348 @@
+================================================================================
+                    VIKSSTROY BOT -- ARCHITECTURE MAP
+              (generated 2026-04-11, graphify 590 nodes / 728 edges)
+================================================================================
+
+--- APP OVERVIEW ---
+
+A construction workforce management platform built around a Kanban-style order
+(zayavka) system. Foremen create work orders assigning teams, equipment, and
+schedules to construction sites. Admins review/approve orders, which are then
+auto-published as visual schedule images to Telegram and MAX group chats.
+
+Key capabilities:
+  - Kanban order workflow (pending -> approved -> published -> in_progress -> completed)
+  - Time-based equipment scheduling with free-slot detection
+  - Equipment exchange between foremen (Stage 5A)
+  - Account linking: merge Telegram <-> MAX identities (Stage 5B)
+  - Cost estimation (KP) per order and per construction site
+  - Team/brigade management with invite codes and passwords
+  - PDF SMR parsing for auto-populating KP catalogs
+  - Daily schedule image generation (PNG via Pillow) and auto-publish
+  - Role-based access control (7 roles)
+
+Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG) + maxapi (MAX)
+
+--- KEY FILE MAP ---
+
+  FRONTEND PAGES (frontend/src/pages/)
+  +--------------------------+--------------------------------------------------+
+  | Home.jsx                 | Kanban board: Pending/Approved/Published/InProgress|
+  | Review.jsx               | Admin order review: approve, reject, filter      |
+  | MyApps.jsx               | Personal order history with date filters, archive |
+  | Teams.jsx                | Brigade/team CRUD, invite members via codes       |
+  | Equipment.jsx            | Equipment catalog: categories, individual/bulk add|
+  | Objects.jsx              | Construction site management and archival         |
+  | KP.jsx                   | Cost estimate (KP) dashboard per order            |
+  | Resources.jsx            | Unified view: teams + equipment management        |
+  | Login.jsx                | Auth entry page                                   |
+  | TMAAuth.jsx              | Telegram Mini App auth flow                       |
+  | MAXAuth.jsx              | MAX messenger auth flow                           |
+  | System.jsx               | Admin panel: users, settings, logs, backups       |
+  | Guide.jsx                | User help / onboarding guide                      |
+  | Updates.jsx              | Changelog / release notes page                    |
+  | JoinTeam.jsx             | Team invite acceptance page                       |
+  | JoinEquipment.jsx        | Equipment invite acceptance page                  |
+  +--------------------------+--------------------------------------------------+
+
+  FRONTEND COMPONENTS (frontend/src/)
+  +--------------------------+--------------------------------------------------+
+  | components/Layout.jsx    | App shell: header, bottom nav, profile, session   |
+  | components/ConfirmModal  | Reusable confirmation dialog                      |
+  | features/applications/   | CreateAppModal, EditAppModal, ViewAppModal,        |
+  |                          | ScheduleModal, KanbanCol, ActiveApplicationsCard, |
+  |                          | MyTeamCard, ArchiveModal, ConfirmFreeModal,        |
+  |                          | ExchangeDialog                                    |
+  | features/teams/          | TeamCard, CreateTeamModal, ManageTeamModal,        |
+  |                          | TeamInviteModal                                   |
+  | features/equipment/      | EquipmentCard, AddEquipForm, BulkUploadForm,       |
+  |                          | EditEquipmentModal, EquipmentInviteModal           |
+  | features/layout/         | Header, BottomNav, ProfileModal, SessionModal      |
+  | hooks/useConfirm.jsx     | Confirmation dialog hook                          |
+  | utils/dateUtils.js       | Smart date calculations (today, tomorrow, week)   |
+  | utils/clipboard.js       | Copy-to-clipboard helper                          |
+  | utils/equipFormat.js     | Equipment name formatting                         |
+  +--------------------------+--------------------------------------------------+
+
+  BACKEND ROUTERS (web/routers/)
+  +--------------------------+--------------------------------------------------+
+  | auth.py                  | Login via link codes, account linking (TG<->MAX), |
+  |                          | FIO auto-match, TMA auth, MAX web auth            |
+  | users.py                 | User list, profiles, notifications, admin force-  |
+  |                          | link, determine primary account                   |
+  | applications.py          | Order CRUD, status transitions, publishing logic, |
+  |                          | resource availability check with time overlap      |
+  | teams.py                 | Team CRUD, invite generation, member management   |
+  | equipment.py             | Equipment CRUD, time-slot availability, status    |
+  | exchange.py              | Equipment exchange requests between foremen       |
+  | objects.py               | Construction site CRUD, PDF upload, extra works   |
+  | kp.py                    | KP items, dashboard, catalog upload/download,     |
+  |                          | mass export to Excel                              |
+  | dashboard.py             | Stats, daily report, cron jobs (start/end day,    |
+  |                          | timeout checks)                                   |
+  | system.py                | Admin settings, logs, backups, schedule publish,   |
+  |                          | broadcast messages, delay publish                 |
+  +--------------------------+--------------------------------------------------+
+
+  CORE SERVICES (web/)
+  +--------------------------+--------------------------------------------------+
+  | api_main.py              | FastAPI app factory, lifespan, CORS, exception    |
+  |                          | handlers, router registration                     |
+  | schedule_generator.py    | Renders daily schedule as PNG (Excel-like table)  |
+  |                          | via Pillow with font rendering                    |
+  | scheduler.py             | APScheduler 3 jobs: daily publish, reminders,     |
+  |                          | auto-start orders, equipment timeout checks       |
+  | utils.py                 | Shared helpers: image gen, font download, team    |
+  |                          | enrichment, app publishing, linked ID resolution  |
+  | database_deps.py         | FastAPI dependency injection for DB manager        |
+  | services/account_merge.py| Account merge logic: combine TG+MAX into one user |
+  +--------------------------+--------------------------------------------------+
+
+  DATABASE (database/)
+  +--------------------------+--------------------------------------------------+
+  | db_manager.py            | Mixin-based async SQLite manager (WAL mode)       |
+  |                          | Composes 7 domain repo mixins into DatabaseManager|
+  | users_repo.py            | UsersRepoMixin: user CRUD, profile, avatar,       |
+  |                          | linked accounts, admin/moderator queries          |
+  | teams_repo.py            | TeamsRepoMixin: team CRUD, invite codes, member   |
+  |                          | linking, unlinked member detection                |
+  | equipment_repo.py        | EquipmentRepoMixin: equip CRUD, time-slot avail   |
+  | apps_repo.py             | AppsRepoMixin: application CRUD, resource check,  |
+  |                          | publish queries, daily reports, object history     |
+  | objects_repo.py          | ObjectsRepoMixin: object CRUD, KP plan, archive   |
+  | kp_repo.py               | KpRepoMixin: KP catalog, application KP items     |
+  | exchange_repo.py         | ExchangeRepoMixin: exchange requests, timeouts    |
+  | logs_repo.py             | LogsRepoMixin: audit log insert/query             |
+  | schema.sql               | Full DDL: 19 tables                               |
+  +--------------------------+--------------------------------------------------+
+
+  BOT ENTRY POINTS
+  +--------------------------+--------------------------------------------------+
+  | main.py                  | Telegram bot (aiogram): TMA integration, FSM,     |
+  |                          | group publishing, equipment timeout checks,        |
+  |                          | daily schedule commands, database backup           |
+  | main_max.py              | MAX bot (maxapi): webhook callbacks, message       |
+  |                          | handler, ID extraction, notifications              |
+  +--------------------------+--------------------------------------------------+
+  Both share the same DB (data/viksstroy.db) and call FastAPI at localhost:8000
+
+  OTHER
+  +--------------------------+--------------------------------------------------+
+  | services/pdf_parser.py   | SMR PDF parsing: extract works tables/text         |
+  | requirements.txt         | Python deps: aiogram, fastapi, aiosqlite, pillow,  |
+  |                          | maxapi, apscheduler, pandas, openpyxl, pdfplumber |
+  +--------------------------+--------------------------------------------------+
+
+--- DATABASE SCHEMA SUMMARY (19 tables) ---
+
+  users
+    user_id (PK), fio, role, is_active, is_blacklisted, failed_attempts,
+    notify_tg, notify_max, notify_new_users, notify_orders, notify_reports,
+    notify_errors, notify_exchange, avatar_url, last_used_objects,
+    linked_user_id (Stage 5B), created_at (Stage 5B)
+
+  teams
+    id (PK), name, creator_id (FK->users), invite_code, join_password
+
+  team_members
+    id (PK), team_id (FK->teams), fio, position, invite_code (UNIQUE),
+    tg_user_id, tg_id, is_leader, is_foreman
+
+  equipment
+    id (PK), name, category, driver_fio, status (free|work),
+    tg_id, photo_url, invite_code, is_active, license_plate
+
+  applications
+    id (PK), foreman_id (FK->users), foreman_name, object_address,
+    object_id, team_id (FK->teams), equip_id, equipment_id (FK->equipment),
+    date_target, time_start, time_end, comment,
+    status (pending|approved|published|in_progress|rejected|completed),
+    rejection_reason, selected_members, equipment_data,
+    is_team_freed, freed_team_ids, is_published,
+    approved_by, approved_by_id, created_at, completed_at, is_archived
+
+  application_selected_staff
+    id (PK), app_id (FK->applications), member_id (FK->team_members)
+
+  logs
+    id (PK), tg_id, fio, action, timestamp
+
+  web_codes           code, max_id, expires
+  account_links       primary_id, secondary_id (UNIQUE)
+  link_codes          code (UNIQUE), user_id, expires
+  settings            key (PK), value
+
+  objects
+    id (PK), name, address, default_team_ids, default_equip_ids,
+    pdf_file_path, is_archived, created_at
+
+  object_requests
+    id (PK), name, address, comment, requested_by (FK->users),
+    requested_by_name, status, reviewed_by, reviewed_by_name,
+    created_at, reviewed_at
+
+  extra_works_catalog
+    id (PK), name, unit, salary, price
+
+  application_extra_works
+    id (PK), application_id (FK->applications), extra_work_id (FK->extra_works),
+    custom_name, volume, salary, price
+
+  kp_catalog
+    id (PK), category, name, unit, coefficient, salary, price, old_salary
+
+  object_kp_plan
+    id (PK), object_id (FK->objects), kp_id (FK->kp_catalog)
+
+  object_files
+    id (PK), object_id (FK->objects), file_path, uploaded_at
+
+  application_kp
+    id (PK), application_id (FK->applications), kp_id (FK->kp_catalog),
+    volume, current_salary, current_price, status
+
+  equipment_exchanges (Stage 5A)
+    id (PK), requester_id (FK->users), requester_app_id (FK->applications),
+    donor_id (FK->users), donor_app_id (FK->applications),
+    requested_equip_id (FK->equipment), offered_equip_id (FK->equipment),
+    status, created_at, resolved_at
+
+--- CORE FLOW ---
+
+  1. AUTH: User opens Telegram/MAX -> link code generated -> auth router
+     validates -> session created. Account linking (Stage 5B): FIO auto-match
+     detects same person on both platforms, admin can force-link in profile.
+     Merged accounts share role, orders, and team memberships.
+
+  2. CREATE ORDER: Foreman opens Kanban UI -> CreateAppModal -> selects object,
+     team, equipment, date, time slot -> applications router validates resource
+     availability (time-overlap detection) -> stores order as "pending".
+
+  3. REVIEW: Admin opens Review page -> approves/rejects -> bot notifications
+     sent to foreman via Telegram and/or MAX. Rejection requires reason.
+
+  4. PUBLISH: Approved orders -> schedule_generator renders PNG (Excel-like
+     daily table with teams, equipment, sites) -> bots post image to
+     Telegram group and MAX group chat. APScheduler handles auto-publish.
+
+  5. EXECUTION: Workers view assignments via bot or web. Equipment exchange
+     (Stage 5A) allows foremen to swap equipment between active orders.
+     Time-based free-slot system prevents double-booking.
+
+  6. COST TRACKING: KP cost estimation workflow per order and per site.
+     KP catalog uploadable via Excel. PDF SMR parser auto-extracts works.
+     Mass export to Excel for reporting.
+
+  7. DASHBOARD: Aggregates daily stats (total/approved/rejected orders,
+     top equipment usage, foremen activity). Cron jobs handle day start/end
+     transitions, equipment timeout checks, and reminders.
+
+--- ROLES ---
+
+  superadmin > boss > admin > foreman > master > worker > viewer
+
+  superadmin  -- full system access, user management, settings, backups
+  boss        -- read-all access, no editing restrictions
+  admin       -- approve/reject orders, manage users/teams/equipment
+  foreman     -- create/edit own orders, manage own team
+  master      -- limited order creation
+  worker      -- view own assignments
+  viewer      -- read-only access
+
+--- GOD NODES (highest connectivity, from graphify analysis) ---
+
+  These are the most interconnected components in the codebase. Changes to
+  these files have the highest blast radius:
+
+  1. DatabaseManager        (34 edges) -- database/db_manager.py
+     Central hub: composes all 7 repo mixins, every backend module depends on it
+
+  2. TeamsRepoMixin         (25 edges) -- database/teams_repo.py
+     Complex team logic: CRUD, invites, member linking, unlinked detection
+
+  3. ObjectsRepoMixin       (19 edges) -- database/objects_repo.py
+     Object lifecycle: CRUD, KP plan management, archive/restore, history
+
+  4. AppsRepoMixin          (17 edges) -- database/apps_repo.py
+     Order queries: availability checks, publish lists, daily reports
+
+  5. UsersRepoMixin         (17 edges) -- database/users_repo.py
+     User management: profiles, linked accounts, role-based queries
+
+  6. EquipmentRepoMixin     (16 edges) -- database/equipment_repo.py
+     Equipment state: time-slot availability, status management
+
+  7. KpRepoMixin            (15 edges) -- database/kp_repo.py
+     Cost estimation data layer
+
+  8. ExchangeRepoMixin      (13 edges) -- database/exchange_repo.py
+     Equipment exchange request lifecycle
+
+  9. verify_moderator_plus  (11 edges) -- web/utils.py
+     Auth guard used across nearly all routers
+
+ 10. web/utils.py           (high fan-out) -- shared helpers
+     Image generation, font download, app enrichment, linked ID resolution
+
+--- KEY CONNECTIONS (from graphify community analysis) ---
+
+  COMMUNITY CLUSTERS (38 total, major ones):
+
+  Cluster                    | Cohesion | Key Insight
+  ---------------------------+----------+-------------------------------------------
+  Database & Account Merge   |  0.03    | Large cluster: DB manager + all repos +
+                             |          | account merge service. Low cohesion =
+                             |          | many loosely connected responsibilities
+  Utility Functions          |  0.08    | utils.py is a "god module" -- consider
+                             |          | splitting by domain
+  API Server & Dashboard     |  0.07    | api_main + scheduler + schedule_generator
+  Application Cards & Modals |  0.07    | Frontend order UI components
+  Objects & Extra Works API  |  0.06    | Backend object + extra works endpoints
+  App Layout & Navigation    |  0.07    | Shell, routing, nav components
+  Applications Backend       |  0.09    | Core order logic (CRUD, status, publish)
+  Equipment Forms            |  0.07    | Frontend equipment management
+  System Settings & Schedule |  0.10    | Admin panel + schedule publishing
+  Teams Repository           |  0.08    | Team data layer
+  Telegram Bot Entry         |  0.12    | main.py: TMA, FSM, commands
+  Users API & Data Models    |  0.10    | User endpoints + Pydantic models
+  Equipment Exchange Flow    |  0.29    | High cohesion: well-isolated feature
+  Auth & Account Linking     |  0.24    | Stage 5B: TG<->MAX identity merge
+  MAX Bot Entry              |  0.39    | main_max.py: webhook, handlers
+  PDF SMR Parser             |  0.31    | Standalone parser, well-isolated
+  KP Cost Estimation         |  0.17    | KP router + catalog management
+
+  HYPEREDGES (group relationships):
+  - Order Lifecycle Flow: Kanban system + schedule publishing + core flow +
+    scheduler triggers all participate in the order lifecycle
+  - Three-Phase Refactoring: rationale -> phase 1 (layout) -> phase 2
+    (equipment/teams/repos) -> phase 3 (deep Home decomposition) -> 7 mixins
+
+  SURPRISING CONNECTIONS:
+  - Telegram bot inline handlers directly use DatabaseManager (tight coupling)
+  - Socks5Session (proxy) depends on DatabaseManager (unusual dependency)
+  - RegState (FSM) depends on DatabaseManager (registration flow)
+
+--- ARCHITECTURAL INSIGHTS ---
+
+  1. GOD MODULE RISK: web/utils.py has high fan-out (11+ edges). It mixes
+     image generation, font management, team enrichment, app publishing,
+     and linked ID resolution. Consider domain-based splitting.
+
+  2. LOW COHESION WARNING: The Database & Account Merge cluster (74 nodes,
+     cohesion 0.03) suggests DatabaseManager aggregates too many concerns.
+     The mixin pattern helps, but the manager itself is a single point of
+     coupling.
+
+  3. WELL-ISOLATED FEATURES: Equipment Exchange (0.29), PDF Parser (0.31),
+     MAX Bot (0.39), Auth & Linking (0.24) are cleanly separated -- good
+     modular boundaries.
+
+  4. 112 ISOLATED NODES: Many functions have <=1 connection, suggesting
+     either missing documentation or truly standalone utilities. Consider
+     adding integration tests for these to verify they are still in use.
+
+  5. DUAL-BOT ARCHITECTURE: main.py (Telegram) and main_max.py (MAX) share
+     the same database but have independent event loops. Account linking
+     (Stage 5B) bridges identities across both platforms via linked_user_id.
+
+================================================================================

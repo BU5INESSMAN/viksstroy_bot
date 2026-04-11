@@ -210,14 +210,17 @@ async def test_notification_extended(tg_id: int = Form(...), test_type: str = Fo
 
 @router.get("/api/system/debtors")
 async def get_debtors(tg_id: int = 0):
-    """Должники СМР: прорабы с просроченными нарядами, сгруппированные по прорабу."""
+    """Должники СМР: прорабы с незаполненным СМР, сгруппированные по прорабу."""
     if tg_id:
         await verify_moderator_plus(tg_id)
 
     today_str = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
     async with db.conn.execute(
-        "SELECT foreman_id, foreman_name, object_address, date_target FROM applications "
-        "WHERE status = 'in_progress' AND date_target <= ? AND foreman_id IS NOT NULL "
+        "SELECT id, foreman_id, foreman_name, object_address, date_target, status FROM applications "
+        "WHERE status IN ('in_progress', 'completed') "
+        "AND date_target <= ? AND foreman_id IS NOT NULL "
+        "AND (kp_status IS NULL OR kp_status NOT IN ('approved', 'submitted')) "
+        "AND (is_archived = 0 OR is_archived IS NULL) "
         "ORDER BY foreman_name, date_target ASC",
         (today_str,)
     ) as cur:
@@ -225,12 +228,70 @@ async def get_debtors(tg_id: int = 0):
 
     grouped = {}
     for r in rows:
-        fid = r[0]
+        fid = r[1]
         if fid not in grouped:
-            grouped[fid] = {"foreman_id": fid, "foreman_name": r[1] or "Неизвестный", "smrs": []}
-        grouped[fid]["smrs"].append({"object_address": r[2] or "—", "date_target": r[3]})
+            grouped[fid] = {"foreman_id": fid, "foreman_name": r[2] or "Неизвестный", "smrs": []}
+        grouped[fid]["smrs"].append({
+            "app_id": r[0],
+            "object_address": r[3] or "—",
+            "date_target": r[4],
+            "status": r[5]
+        })
 
     return list(grouped.values())
+
+
+class RemindSMRRequest(BaseModel):
+    tg_id: int
+    foreman_id: int
+    app_ids: List[int]
+
+
+@router.post("/api/system/remind_smr")
+async def remind_smr(req: RemindSMRRequest):
+    """Отправить напоминание прорабу о незаполненных СМР."""
+    real_id, user = await verify_moderator_plus(req.tg_id)
+
+    # Build the list of unfilled objects
+    if not req.app_ids:
+        raise HTTPException(400, "Нет заявок для напоминания")
+
+    placeholders = ','.join(['?'] * len(req.app_ids))
+    async with db.conn.execute(
+        f"SELECT id, object_address, date_target FROM applications WHERE id IN ({placeholders})",
+        req.app_ids
+    ) as cur:
+        apps = await cur.fetchall()
+
+    if not apps:
+        raise HTTPException(404, "Заявки не найдены")
+
+    lines = [f"• {a[1] or '—'} ({a[2]})" for a in apps]
+    message = "⏰ <b>Напоминание: заполните СМР отчёт</b>\n\n" + "\n".join(lines)
+
+    # Send to all linked accounts of the foreman
+    foreman_ids = await get_all_linked_ids(req.foreman_id)
+    tg_ids = [lid for lid in foreman_ids if lid > 0]
+    max_ids = [abs(lid) for lid in foreman_ids if lid < 0]
+
+    async def _do_remind():
+        try:
+            if tg_ids:
+                await notify_users([], message, "kp", extra_tg_ids=tg_ids, category="reports")
+            if max_ids:
+                max_bot_token = os.getenv("MAX_BOT_TOKEN")
+                if max_bot_token:
+                    for mid in max_ids:
+                        dm_chat_id = await get_max_dm_chat_id(str(mid))
+                        if dm_chat_id:
+                            await send_max_message(max_bot_token, dm_chat_id, strip_html(message))
+            await db.add_log(real_id, user.get('fio'),
+                             f"Отправил напоминание СМР прорабу (ID: {req.foreman_id}, {len(req.app_ids)} заявок)")
+        except Exception as e:
+            logger.error(f"Remind SMR error: {e}")
+
+    asyncio.create_task(_do_remind())
+    return {"status": "ok"}
 
 
 # --- Smart Scheduling Endpoints ---
