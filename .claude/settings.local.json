@@ -62,7 +62,16 @@
       "Bash(echo \"EXIT: $?\")",
       "Bash(python -c \"import py_compile; py_compile.compile\\('web/routers/system.py', doraise=True\\); py_compile.compile\\('web/utils.py', doraise=True\\); py_compile.compile\\('web/scheduler.py', doraise=True\\); print\\('All Python files compiled OK'\\)\")",
       "Bash(python -m py_compile web/schedule_generator.py)",
-      "Bash(python -m py_compile web/routers/system.py)"
+      "Bash(python -m py_compile web/routers/system.py)",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('database/db_manager.py'\\).read\\(\\)\\); print\\('db_manager.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/users.py'\\).read\\(\\)\\); print\\('users.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/auth.py'\\).read\\(\\)\\); print\\('auth.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/services/account_merge.py'\\).read\\(\\)\\); print\\('account_merge.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/utils.py'\\).read\\(\\)\\); print\\('utils.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('database/db_manager.py', encoding='utf-8'\\).read\\(\\)\\); print\\('db_manager.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/users.py', encoding='utf-8'\\).read\\(\\)\\); print\\('users.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/auth.py', encoding='utf-8'\\).read\\(\\)\\); print\\('auth.py OK'\\)\")",
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/services/account_merge.py', encoding='utf-8'\\).read\\(\\)\\); print\\('account_merge.py OK'\\)\")"
     ]
   }
 }

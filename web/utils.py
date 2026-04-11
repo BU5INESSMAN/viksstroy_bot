@@ -803,3 +803,74 @@ async def send_smart_schedule_prompt():
                 dm_chat_id = await get_max_dm_chat_id(str(abs(lid)))
                 await send_max_text(max_bot_token, dm_chat_id, max_plain_text,
                                     attachments=[max_payload])
+
+
+ROLE_LABELS = {
+    'superadmin': 'Суперадмин',
+    'boss': 'Руководитель',
+    'moderator': 'Модератор',
+    'foreman': 'Прораб',
+    'worker': 'Рабочий',
+    'viewer': 'Наблюдатель',
+}
+
+
+async def notify_role_conflict(primary_id: int, secondary_id: int, primary_role: str, secondary_role: str):
+    """Уведомляет модераторов+ о конфликте ролей при слиянии аккаунтов."""
+    if db.conn is None: await db.init_db()
+
+    # Получаем ФИО основного аккаунта
+    user = await db.get_user(primary_id)
+    fio = dict(user).get('fio', 'Неизвестный') if user else 'Неизвестный'
+
+    tg_role_label = ROLE_LABELS.get(primary_role if primary_id > 0 else secondary_role, primary_role)
+    max_role_label = ROLE_LABELS.get(secondary_role if primary_id > 0 else primary_role, secondary_role)
+
+    text = (
+        f"⚠️ <b>Конфликт ролей при связывании аккаунтов</b>\n\n"
+        f"Пользователь: {fio}\n"
+        f"TG роль: {tg_role_label}\n"
+        f"MAX роль: {max_role_label}\n\n"
+        f"Выберите роль:"
+    )
+
+    # Определяем роли для кнопок
+    roles_for_buttons = []
+    for r in [primary_role, secondary_role]:
+        if r not in roles_for_buttons:
+            roles_for_buttons.append(r)
+
+    tg_buttons = [[{"text": ROLE_LABELS.get(r, r), "callback_data": f"set_role:{primary_id}:{r}"}] for r in roles_for_buttons]
+    tg_markup = {"inline_keyboard": tg_buttons}
+
+    max_buttons = [[CallbackButton(text=ROLE_LABELS.get(r, r), payload=f"set_role:{primary_id}:{r}")] for r in roles_for_buttons]
+    max_payload = ButtonsPayload(buttons=max_buttons).pack()
+
+    await notify_users(
+        ["superadmin", "boss", "moderator"],
+        text,
+        url_path="system",
+        tg_reply_markup=tg_markup,
+        max_attachments=[max_payload],
+        category=None,
+    )
+
+
+async def notify_fio_match(new_user_id: int, new_fio: str, existing_user_id: int, existing_fio: str):
+    """Уведомляет модераторов+ о возможном совпадении аккаунтов на разных платформах."""
+    platform_new = "TG" if new_user_id > 0 else "MAX"
+    platform_existing = "TG" if existing_user_id > 0 else "MAX"
+
+    text = (
+        f"🔗 <b>Возможное совпадение аккаунтов</b>\n\n"
+        f"{new_fio} ({platform_new}) похож на {existing_fio} ({platform_existing})\n\n"
+        f"Свяжите аккаунты вручную в разделе Система → Пользователи, "
+        f"или пользователь может сделать это сам в Профиле."
+    )
+
+    await notify_users(
+        ["superadmin", "boss", "moderator"],
+        text,
+        url_path="system",
+        category=None,
+    )

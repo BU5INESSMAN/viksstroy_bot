@@ -109,6 +109,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_logs()
         await self.upgrade_db_for_profiles()
         await self.upgrade_db_for_foreman()
+        await self.upgrade_db_for_account_linking()
 
         # Инициализация справочника из последнего доступного файла
         latest_file = self.get_latest_catalog_path()
@@ -236,4 +237,16 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             await self.conn.execute("ALTER TABLE team_members ADD COLUMN is_foreman INTEGER DEFAULT 0")
         except Exception:
             pass  # Колонка уже существует
+        await self.conn.commit()
+
+    async def upgrade_db_for_account_linking(self):
+        """Stage 5B-1: Добавляет поля для связывания аккаунтов TG <-> MAX"""
+        for col_stmt in [
+            "ALTER TABLE users ADD COLUMN linked_user_id INTEGER DEFAULT NULL",
+            "ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP",
+        ]:
+            try:
+                await self.conn.execute(col_stmt)
+            except Exception:
+                pass  # Колонка уже существует
         await self.conn.commit()
