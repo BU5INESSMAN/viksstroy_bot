@@ -160,6 +160,7 @@ export default function EditAppModal({
     const handleEquipClick = async (e, st) => {
         if (st.state === 'repair') return toast.error(st.message);
         if (st.state === 'busy') {
+            if (!form.date_target) return toast.error(st.message);
             try {
                 const res = await axios.get(`/api/exchange/check_equip/${e.id}?date=${form.date_target}`);
                 const info = res.data;
@@ -550,6 +551,7 @@ export default function EditAppModal({
                     appEquipment={form.equipment}
                     appId={form.id}
                     tgId={tgId}
+                    dateTarget={form.date_target}
                     onClose={() => setExchangeDialog(null)}
                 />
             )}

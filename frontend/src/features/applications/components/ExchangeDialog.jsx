@@ -12,12 +12,14 @@ const STATUS_LABELS = {
     completed: 'Завершена',
 };
 
-export default function ExchangeDialog({ info, equipment, appEquipment, appId, tgId, onClose }) {
+export default function ExchangeDialog({ info, equipment, appEquipment, appId, tgId, dateTarget, onClose }) {
     const [offeredEquipId, setOfferedEquipId] = useState(null);
     const [sending, setSending] = useState(false);
     const [availableOffer, setAvailableOffer] = useState([]);
 
     useEffect(() => {
+        if (!dateTarget) return;
+
         // Filter equipment: same category, in current app or free, not in pending exchange
         const candidates = equipment.filter(e =>
             e.category === info.equipCategory &&
@@ -29,7 +31,7 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
         Promise.all(
             candidates.map(async (e) => {
                 try {
-                    const res = await axios.get(`/api/exchange/check_equip/${e.id}?date=`);
+                    const res = await axios.get(`/api/exchange/check_equip/${e.id}?date=${dateTarget}`);
                     return { ...e, inExchange: res.data.is_in_pending_exchange };
                 } catch {
                     return { ...e, inExchange: false };
@@ -38,9 +40,12 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
         ).then(results => {
             setAvailableOffer(results.filter(e => !e.inExchange));
         });
-    }, [info, equipment, appEquipment]);
+    }, [info, equipment, appEquipment, dateTarget]);
 
-    const handleSubmit = async () => {
+    const handleSubmit = async (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        if (sending) return;
         if (!offeredEquipId) return toast.error('Выберите технику для обмена');
         setSending(true);
         try {
@@ -63,15 +68,21 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
         }
     };
 
+    const handleClose = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClose();
+    };
+
     return (
-        <div className="fixed inset-0 z-[99999] bg-black/60 flex items-center justify-center p-4" onClick={onClose}>
+        <div className="fixed inset-0 z-[99999] bg-black/60 flex items-center justify-center p-4" onClick={handleClose}>
             <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 flex items-center justify-between">
                     <h3 className="text-white font-bold flex items-center gap-2">
                         <RefreshCw className="w-5 h-5" /> Техника занята
                     </h3>
-                    <button onClick={onClose} className="text-white/80 hover:text-white transition-colors">
+                    <button type="button" onClick={handleClose} className="text-white/80 hover:text-white transition-colors">
                         <X className="w-5 h-5" />
                     </button>
                 </div>
@@ -140,7 +151,7 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
                     <div className="flex gap-3 pt-2">
                         <button
                             type="button"
-                            onClick={onClose}
+                            onClick={handleClose}
                             disabled={sending}
                             className="flex-1 bg-white border border-gray-200 hover:bg-gray-50 dark:bg-gray-800 dark:border-gray-700 dark:hover:bg-gray-700 py-3 px-4 rounded-xl font-bold text-gray-700 dark:text-gray-300 transition-all shadow-sm active:scale-95 disabled:opacity-50"
                         >

@@ -1,3 +1,8 @@
+# === ONE-TIME CLEANUP: Remove spam duplicate pending exchanges ===
+# Run manually:
+#   sqlite3 data/viksstroy.db "UPDATE equipment_exchanges SET status='cancelled' WHERE status='pending' AND id NOT IN (SELECT MIN(id) FROM equipment_exchanges WHERE status='pending' GROUP BY requester_id, requested_equip_id)"
+# =================================================================
+
 import sys
 import os
 import json
@@ -162,6 +167,15 @@ async def create_exchange_request(request: Request):
     # Validate donor app status
     if donor_app.get('status') in ('approved', 'in_progress', 'published', 'completed'):
         return {"error": "\u0417\u0430\u044f\u0432\u043a\u0430 \u0443\u0436\u0435 \u043e\u0434\u043e\u0431\u0440\u0435\u043d\u0430 \u043c\u043e\u0434\u0435\u0440\u0430\u0442\u043e\u0440\u043e\u043c. \u041e\u0431\u043c\u0435\u043d \u043d\u0435\u0432\u043e\u0437\u043c\u043e\u0436\u0435\u043d."}
+
+    # Prevent duplicate pending exchanges from same requester for same equipment
+    async with db.conn.execute(
+        "SELECT id FROM equipment_exchanges WHERE requester_id = ? AND requested_equip_id = ? AND status = 'pending'",
+        (real_tg_id, requested_equip_id)
+    ) as cur:
+        existing = await cur.fetchone()
+    if existing:
+        return {"error": "\u0412\u044b \u0443\u0436\u0435 \u043e\u0442\u043f\u0440\u0430\u0432\u0438\u043b\u0438 \u0437\u0430\u043f\u0440\u043e\u0441 \u043d\u0430 \u044d\u0442\u0443 \u0442\u0435\u0445\u043d\u0438\u043a\u0443. \u0414\u043e\u0436\u0434\u0438\u0442\u0435\u0441\u044c \u043e\u0442\u0432\u0435\u0442\u0430."}
 
     # Check pending exchanges
     if await db.is_equip_in_pending_exchange(requested_equip_id):
