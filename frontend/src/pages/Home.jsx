@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, CalendarCheck } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, CalendarCheck, Send } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
 import ActiveApplicationsCard from '../features/applications/components/ActiveApplicationsCard';
@@ -358,9 +358,17 @@ export default function Home() {
             {/* Debtors Widget — grouped by foreman */}
             {!isWorkerOrDriver && debtors.length > 0 && (
                 <div className="bg-red-50/80 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-2xl p-5 shadow-sm">
-                    <h3 className="text-sm font-bold text-red-800 dark:text-red-400 mb-3 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4" /> Должники СМР
-                    </h3>
+                    <div className="flex justify-between items-center mb-3">
+                        <h3 className="text-sm font-bold text-red-800 dark:text-red-400 flex items-center gap-2">
+                            <AlertTriangle className="w-4 h-4" /> Должники СМР
+                        </h3>
+                        {canArchive && (
+                            <button onClick={() => setScheduleOpen(true)}
+                                className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm">
+                                <Send className="w-3.5 h-3.5" /> На завтра
+                            </button>
+                        )}
+                    </div>
                     <div className="space-y-3">
                         {debtors.map((group, i) => (
                             <div key={i} className="bg-white/60 dark:bg-gray-800/40 rounded-xl px-4 py-3">

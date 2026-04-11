@@ -709,45 +709,6 @@ async def send_schedule_notifications(target_date: str):
     return count
 
 
-async def compile_schedule_text(target_date: str):
-    """Собрать текстовую расстановку по ОДОБРЕННЫМ заявкам на дату."""
-    if db.conn is None: await db.init_db()
-
-    teams_dict = await fetch_teams_dict()
-
-    async with db.conn.execute(
-        "SELECT * FROM applications WHERE status = 'approved' AND date_target = ? ORDER BY id",
-        (target_date,)
-    ) as cur:
-        apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
-
-    if not apps:
-        return f"📅 <b>Расстановка на {target_date}</b>\n\nОдобренных заявок нет."
-
-    lines = [f"📅 <b>Расстановка на {target_date}</b>\n"]
-    for i, app in enumerate(apps, 1):
-        enrich_app_with_team_name(app, teams_dict)
-        equip_names = []
-        if app.get('equipment_data'):
-            try:
-                for eq in json.loads(app['equipment_data']):
-                    equip_names.append(eq.get('name', f"#{eq['id']}"))
-            except:
-                pass
-
-        lines.append(f"<b>{i}. {app.get('object_address', '—')}</b>")
-        lines.append(f"   👷 Прораб: {app.get('foreman_name', '—')}")
-        lines.append(f"   👥 Бригада: {app.get('team_name', '—')}")
-        if equip_names:
-            lines.append(f"   🚜 Техника: {', '.join(equip_names)}")
-        if app.get('comment'):
-            lines.append(f"   💬 {app['comment']}")
-        lines.append("")
-
-    lines.append(f"<i>Всего нарядов: {len(apps)}</i>")
-    return "\n".join(lines)
-
-
 async def get_waiting_apps_for_date(target_date: str):
     """Получить непроверенные (waiting) заявки на дату для предупреждения."""
     if db.conn is None: await db.init_db()

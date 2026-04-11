@@ -10,8 +10,9 @@ from typing import List, Optional
 from database_deps import db, TZ_BARNAUL
 from datetime import datetime, timedelta
 from utils import (resolve_id, notify_users, notify_group_chat, strip_html,
-                   send_schedule_notifications, compile_schedule_text,
+                   send_schedule_notifications,
                    get_waiting_apps_for_date, get_schedule_dates)
+from schedule_generator import publish_schedule_to_group, generate_schedule_image
 
 router = APIRouter(tags=["System"])
 logger = logging.getLogger("SYSTEM")
@@ -210,11 +211,29 @@ async def get_debtors(tg_id: int = 0):
 
 @router.get("/api/system/schedule_dates")
 async def api_schedule_dates(tg_id: int = 0):
-    """Даты, на которые есть хотя бы одна заявка."""
+    """Даты с группировкой заявок по статусу (approved / waiting)."""
     if tg_id:
         await verify_moderator_plus(tg_id)
+
     dates = await get_schedule_dates()
-    return dates
+    result = []
+    for d in dates:
+        async with db.conn.execute(
+            "SELECT object_address, foreman_name, status FROM applications "
+            "WHERE date_target = ? AND status IN ('approved','waiting') "
+            "AND (is_archived = 0 OR is_archived IS NULL) "
+            "ORDER BY status, id",
+            (d,)
+        ) as cur:
+            rows = await cur.fetchall()
+
+        approved = [{"object_address": r[0] or "—", "foreman_name": r[1] or "—"}
+                     for r in rows if r[2] == "approved"]
+        waiting = [{"object_address": r[0] or "—", "foreman_name": r[1] or "—"}
+                    for r in rows if r[2] == "waiting"]
+        result.append({"date": d, "approved": approved, "waiting": waiting})
+
+    return result
 
 
 @router.get("/api/system/schedule_warnings")
@@ -230,13 +249,12 @@ async def api_schedule_warnings(tg_id: int = 0, date: str = ""):
 
 @router.post("/api/system/send_schedule_group")
 async def api_send_schedule_group(tg_id: int = Form(0), date: str = Form("")):
-    """Отправить расстановку по одобренным заявкам в групповой чат."""
+    """Отправить расстановку-картинку в групповой чат (TG + MAX)."""
     real_id, user_info = await verify_moderator_plus(tg_id)
     if not date:
         raise HTTPException(400, "Не указана дата")
 
-    text = await compile_schedule_text(date)
-    await notify_group_chat(text, "dashboard")
+    await publish_schedule_to_group(date)
 
     # Уведомить всех участников одобренных заявок
     count = await send_schedule_notifications(date)
@@ -255,13 +273,53 @@ async def api_send_schedule_group(tg_id: int = Form(0), date: str = Form("")):
 
 @router.post("/api/system/send_schedule_self")
 async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
-    """Отправить расстановку в ЛС запрашивающему пользователю."""
+    """Отправить расстановку-картинку в ЛС запрашивающему пользователю."""
     real_id, user_info = await verify_moderator_plus(tg_id)
     if not date:
         raise HTTPException(400, "Не указана дата")
 
-    text = await compile_schedule_text(date)
-    await notify_users([], text, "dashboard", extra_tg_ids=[real_id])
+    import aiohttp
+    buf = await generate_schedule_image(date)
+
+    # Сохраняем файл
+    import time as _time
+    filename = f"schedule_{date}_{int(_time.time())}.png"
+    filepath = os.path.join("data", "uploads", filename)
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
+    with open(filepath, "wb") as f:
+        f.write(buf.getvalue())
+
+    # TG — отправляем фото в ЛС
+    bot_token = os.getenv("BOT_TOKEN")
+    if bot_token:
+        buf.seek(0)
+        form = aiohttp.FormData()
+        form.add_field("chat_id", str(real_id))
+        form.add_field("photo", buf.getvalue(), filename="schedule.png", content_type="image/png")
+        form.add_field("caption", f"📋 Расстановка на {date}")
+        form.add_field("parse_mode", "HTML")
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=form
+                ) as resp:
+                    pass
+        except Exception:
+            pass
+
+    # MAX — отправляем фото в ЛС
+    from utils import send_max_message
+    max_bot_token = os.getenv("MAX_BOT_TOKEN")
+    if max_bot_token:
+        # Найти MAX chat_id пользователя
+        async with db.conn.execute(
+            "SELECT max_chat_id FROM users WHERE user_id = ?", (real_id,)
+        ) as cur:
+            row = await cur.fetchone()
+        max_chat_id = row[0] if row else None
+        if max_chat_id:
+            await send_max_message(max_bot_token, max_chat_id,
+                                   f"📋 Расстановка на {date}", filepath)
 
     await db.add_log(real_id, user_info.get('fio'),
                      f"Запросил расстановку на {date} себе в ЛС")
