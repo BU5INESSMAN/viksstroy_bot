@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle,
-    User, HardHat, X, Check, XCircle, ChevronDown, Search, RefreshCw, AlertTriangle, Lock
+    User, HardHat, X, Check, XCircle, ChevronDown, Search, RefreshCw, AlertTriangle, Lock, ArrowLeftRight
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
@@ -96,6 +96,7 @@ export default function CreateAppModal({
     const [equipAvailability, setEquipAvailability] = useState(null);
     const [equipLoading, setEquipLoading] = useState(false);
     const [timeAutoSet, setTimeAutoSet] = useState(false);
+    const [actionChoiceEquip, setActionChoiceEquip] = useState(null);
 
     // Fetch equipment availability when date changes
     const fetchAvailability = useCallback(async (date) => {
@@ -112,14 +113,15 @@ export default function CreateAppModal({
         if (!appForm.isViewOnly && appForm.date_target) fetchAvailability(appForm.date_target);
     }, [appForm.date_target, appForm.isViewOnly, fetchAvailability]);
 
-    // Determine equipment state: 'available' | 'exchange' | 'free_time' | 'in_exchange' | 'unavailable' | 'repair'
     const getEquipState = (eqAvail) => {
         if (eqAvail.status === 'repair') return 'repair';
         if (eqAvail.status === 'free') return 'available';
         if (eqAvail.is_in_pending_exchange) return 'in_exchange';
         const hasExchangeable = (eqAvail.busy_slots || []).some(s => s.can_exchange && eqAvail.exchange_enabled);
+        const hasFreeTime = (eqAvail.free_slots || []).length > 0;
+        if (hasExchangeable && hasFreeTime) return 'both';
         if (hasExchangeable) return 'exchange';
-        if ((eqAvail.free_slots || []).length > 0) return 'free_time';
+        if (hasFreeTime) return 'free_time';
         return 'unavailable';
     };
 
@@ -127,45 +129,62 @@ export default function CreateAppModal({
         ? `${eq.name} [${eq.license_plate || 'нет г.н.'}] (${eq.driver_fio})`
         : (eq.driver ? `${eq.name} [${eq.license_plate || 'нет г.н.'}] (${eq.driver})` : `${eq.name} [${eq.license_plate || 'нет г.н.'}]`);
 
+    const openExchangeDialog = (eqAvail) => {
+        const exchangeSlot = eqAvail.busy_slots.find(s => s.can_exchange);
+        setExchangeDialog({
+            equipId: eqAvail.id,
+            equipName: makeDisplayName(eqAvail),
+            equipCategory: eqAvail.category,
+            holderName: exchangeSlot.foreman_name,
+            holderObject: exchangeSlot.object_address,
+            holderAppStatus: exchangeSlot.app_status,
+            holderAppId: exchangeSlot.app_id,
+        });
+    };
+
+    const handleFreeTimeSelect = (eqAvail) => {
+        const freeSlots = eqAvail.free_slots || [];
+        // Pick the longest free slot
+        let best = freeSlots[0];
+        if (freeSlots.length > 1) {
+            const toMin = (t) => { const p = t.split(':'); return parseInt(p[0]) * 60 + parseInt(p[1] || 0); };
+            best = freeSlots.reduce((a, b) => (toMin(b.time_end) - toMin(b.time_start)) > (toMin(a.time_end) - toMin(a.time_start)) ? b : a, freeSlots[0]);
+        }
+        const tsHour = best.time_start.split(':')[0];
+        const teHour = best.time_end.split(':')[0];
+        const displayName = makeDisplayName(eqAvail);
+        setAppForm(prev => ({
+            ...prev,
+            equipment: [...prev.equipment, { id: eqAvail.id, name: displayName, time_start: tsHour, time_end: teHour, isPartialTime: true }],
+        }));
+        setTimeAutoSet(true);
+        toast('Время автоматически изменено. Проверьте время техники.', { icon: '⏰' });
+    };
+
     const handleEquipClick = async (eqAvail) => {
         const state = getEquipState(eqAvail);
         if (state === 'repair' || state === 'unavailable') return;
         if (state === 'in_exchange') return toast.error('Эта техника уже участвует в обмене');
 
         const isSelected = appForm.equipment.some(eq => eq.id === eqAvail.id);
-        // Deselect
         if (isSelected) return toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, driver: eqAvail.driver_fio, license_plate: eqAvail.license_plate });
 
+        if (state === 'both') {
+            setActionChoiceEquip(eqAvail);
+            return;
+        }
+
         if (state === 'exchange') {
-            const exchangeSlot = eqAvail.busy_slots.find(s => s.can_exchange);
-            setExchangeDialog({
-                equipId: eqAvail.id,
-                equipName: makeDisplayName(eqAvail),
-                equipCategory: eqAvail.category,
-                holderName: exchangeSlot.foreman_name,
-                holderObject: exchangeSlot.object_address,
-                holderAppStatus: exchangeSlot.app_status,
-                holderAppId: exchangeSlot.app_id,
-            });
+            openExchangeDialog(eqAvail);
             return;
         }
 
         if (state === 'free_time') {
-            // Partial: auto-set equipment time to first free slot
-            const freeSlot = eqAvail.free_slots[0];
-            const tsHour = freeSlot.time_start.split(':')[0];
-            const teHour = freeSlot.time_end.split(':')[0];
-            const displayName = makeDisplayName(eqAvail);
-            setAppForm(prev => ({
-                ...prev,
-                equipment: [...prev.equipment, { id: eqAvail.id, name: displayName, time_start: tsHour, time_end: teHour, isPartialTime: true }],
-            }));
-            setTimeAutoSet(true);
-            toast('Время автоматически изменено. Проверьте время техники.', { icon: '⏰' });
+            handleFreeTimeSelect(eqAvail);
             return;
         }
 
-        // state === 'available' — normal select
+        // state === 'available'
         toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, driver: eqAvail.driver_fio, license_plate: eqAvail.license_plate });
     };
 
@@ -452,6 +471,11 @@ export default function CreateAppModal({
                                                     } else if (state === 'repair') {
                                                         rowBg = 'bg-red-50/50 dark:bg-red-900/10 border-red-200 dark:border-red-800/50 opacity-60';
                                                         statusBadge = <span className="inline-flex items-center gap-1 text-[10px] font-bold text-red-500 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded-md"><XCircle className="w-3 h-3" />Ремонт</span>;
+                                                    } else if (state === 'both') {
+                                                        rowBg = 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/50';
+                                                        statusBadge = <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-md"><ArrowLeftRight className="w-3 h-3" />Выбор</span>;
+                                                        const slot = busySlots[0];
+                                                        if (slot) subtitle = `${slot.foreman_name || ''} · ${slot.object_address || ''} · ${slot.time_start}–${slot.time_end}`;
                                                     } else if (state === 'exchange') {
                                                         rowBg = 'bg-amber-50/50 dark:bg-amber-900/10 border-amber-200 dark:border-amber-800/50';
                                                         statusBadge = <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-md"><RefreshCw className="w-3 h-3" />Обмен</span>;
@@ -485,7 +509,7 @@ export default function CreateAppModal({
                                                                 <div className="flex items-center gap-2 min-w-0 flex-1">
                                                                     {isSelected
                                                                         ? <CheckCircle className={`w-4 h-4 flex-shrink-0 ${appForm.equipment.find(eq => eq.id === eqA.id)?.isPartialTime ? 'text-amber-500' : 'text-blue-500'}`} />
-                                                                        : <Truck className={`w-4 h-4 flex-shrink-0 ${state === 'repair' || state === 'unavailable' ? 'text-gray-300' : state === 'exchange' ? 'text-amber-500' : 'text-gray-500'}`} />
+                                                                        : <Truck className={`w-4 h-4 flex-shrink-0 ${state === 'repair' || state === 'unavailable' ? 'text-gray-300' : (state === 'exchange' || state === 'both') ? 'text-amber-500' : 'text-gray-500'}`} />
                                                                     }
                                                                     <span className={`text-sm font-bold truncate ${state === 'unavailable' || state === 'in_exchange' ? 'text-gray-400' : 'dark:text-gray-200'}`}>{displayName}</span>
                                                                 </div>
@@ -618,6 +642,52 @@ export default function CreateAppModal({
                     </form>
                 </div>
             </div>
+            {actionChoiceEquip && createPortal(
+                <div className="fixed inset-0 z-[99992] bg-black/50 flex items-center justify-center p-4" onClick={() => setActionChoiceEquip(null)}>
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                        <div className="px-5 pt-5 pb-3">
+                            <p className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">{makeDisplayName(actionChoiceEquip)}</p>
+                            {actionChoiceEquip.busy_slots?.[0] && (
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Занята: {actionChoiceEquip.busy_slots[0].foreman_name} · {actionChoiceEquip.busy_slots[0].object_address}
+                                    <br />Время: {actionChoiceEquip.busy_slots[0].time_start} — {actionChoiceEquip.busy_slots[0].time_end}
+                                </p>
+                            )}
+                        </div>
+                        <div className="px-5 pb-3 space-y-2.5">
+                            <button type="button" onClick={() => { handleFreeTimeSelect(actionChoiceEquip); setActionChoiceEquip(null); }}
+                                className="w-full p-4 bg-amber-50 dark:bg-amber-900/20 border border-amber-300 dark:border-amber-700 rounded-xl hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors text-left">
+                                <div className="flex items-center gap-3">
+                                    <Clock className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-bold text-amber-800 dark:text-amber-200">Взять свободное время</p>
+                                        <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
+                                            {(actionChoiceEquip.free_slots || []).map(s => `${s.time_start} — ${s.time_end}`).join(' или ')}
+                                        </p>
+                                    </div>
+                                </div>
+                            </button>
+                            <button type="button" onClick={() => { openExchangeDialog(actionChoiceEquip); setActionChoiceEquip(null); }}
+                                className="w-full p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-300 dark:border-blue-700 rounded-xl hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors text-left">
+                                <div className="flex items-center gap-3">
+                                    <ArrowLeftRight className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0" />
+                                    <div>
+                                        <p className="text-sm font-bold text-blue-800 dark:text-blue-200">Предложить обмен</p>
+                                        <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">Обменять на вашу технику</p>
+                                    </div>
+                                </div>
+                            </button>
+                        </div>
+                        <div className="px-5 pb-5">
+                            <button type="button" onClick={() => setActionChoiceEquip(null)}
+                                className="w-full py-3 text-sm font-bold text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors">
+                                Отмена
+                            </button>
+                        </div>
+                    </div>
+                </div>,
+                document.body
+            )}
             {exchangeDialog && createPortal(
                 <ExchangeDialog
                     info={exchangeDialog}
