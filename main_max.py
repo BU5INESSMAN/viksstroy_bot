@@ -27,6 +27,8 @@ from utils import notify_users
 
 load_dotenv()
 
+API_URL = os.getenv("API_URL", "http://api:8000")
+
 os.makedirs("data", exist_ok=True)
 _log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 _console_handler = logging.StreamHandler()
@@ -246,7 +248,7 @@ async def message_handler(event: MessageCreated):
                 fd = aiohttp.FormData()
                 fd.add_field('tg_id', str(real_tg_id))
                 fd.add_field('target_date', target_date)
-                async with session.post("http://127.0.0.1:8000/api/applications/publish_schedule", data=fd) as resp:
+                async with session.post(f"{API_URL}/api/applications/publish_schedule", data=fd) as resp:
                     if resp.status == 200:
                         await send_max_msg(event, f"✅ Расстановка на {target_date} опубликована в групповой чат!")
                     else:
@@ -358,7 +360,7 @@ async def message_callback(event: MessageCallback):
                 fd.add_field('tg_id', str(real_tg_id))
                 fd.add_field('date', tomorrow)
                 async with session.post(
-                    "http://127.0.0.1:8000/api/system/send_schedule_group", data=fd
+                    f"{API_URL}/api/system/send_schedule_group", data=fd
                 ) as resp:
                     result = await resp.json()
                     count = result.get('notified', 0)
@@ -378,7 +380,7 @@ async def message_callback(event: MessageCallback):
                 fd = aiohttp.FormData()
                 fd.add_field('tg_id', str(real_tg_id))
                 async with session.post(
-                    "http://127.0.0.1:8000/api/system/delay_publish", data=fd
+                    f"{API_URL}/api/system/delay_publish", data=fd
                 ) as resp:
                     pass
             buttons = [
@@ -402,7 +404,7 @@ async def message_callback(event: MessageCallback):
             try:
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
-                        f"http://127.0.0.1:8000/api/exchange/{ex_id}/respond",
+                        f"{API_URL}/api/exchange/{ex_id}/respond",
                         json={"tg_id": str(real_tg_id), "action": action}
                     ) as resp:
                         result = await resp.json()

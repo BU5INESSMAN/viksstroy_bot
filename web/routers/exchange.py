@@ -13,10 +13,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Request, HTTPException
 from database_deps import db, TZ_BARNAUL
-from utils import resolve_id, notify_users, get_all_linked_ids, strip_html, \
-    send_max_text, get_max_dm_chat_id
-
-import aiohttp
+from utils import resolve_id, notify_users
 
 logger = logging.getLogger(__name__)
 
@@ -43,38 +40,27 @@ async def _get_user_fio(user_id: int) -> str:
 
 
 async def _send_exchange_notification_with_buttons(donor_id: int, text: str, exchange_id: int):
-    """Send notification with accept/reject inline buttons to donor (TG + MAX)."""
-    bot_token = os.getenv("BOT_TOKEN")
-    max_bot_token = os.getenv("MAX_BOT_TOKEN")
-
-    linked_ids = await get_all_linked_ids(donor_id)
+    """Send notification with accept/reject inline buttons to donor via notify_users (TG + MAX)."""
+    from maxapi.types import ButtonsPayload, CallbackButton
 
     tg_markup = {"inline_keyboard": [
         [{"text": "\u2705 \u041e\u0442\u0434\u0430\u0442\u044c", "callback_data": f"exchange_accept_{exchange_id}"}],
         [{"text": "\u274c \u041e\u0442\u043a\u0430\u0437\u0430\u0442\u044c", "callback_data": f"exchange_reject_{exchange_id}"}]
     ]}
 
-    plain_text = strip_html(text)
+    max_buttons = [
+        [CallbackButton(text="\u2705 \u041e\u0442\u0434\u0430\u0442\u044c", payload=f"exchange_accept_{exchange_id}")],
+        [CallbackButton(text="\u274c \u041e\u0442\u043a\u0430\u0437\u0430\u0442\u044c", payload=f"exchange_reject_{exchange_id}")]
+    ]
+    max_payload = ButtonsPayload(buttons=max_buttons).pack()
 
-    for lid in linked_ids:
-        if lid > 0 and bot_token:
-            try:
-                async with aiohttp.ClientSession() as session:
-                    await session.post(
-                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                        json={"chat_id": lid, "text": text, "parse_mode": "HTML", "reply_markup": tg_markup}
-                    )
-            except Exception as e:
-                logger.error(f"TG exchange notification error: {e}")
-        elif lid < 0 and max_bot_token:
-            from maxapi.types import ButtonsPayload, CallbackButton
-            max_buttons = [
-                [CallbackButton(text="\u2705 \u041e\u0442\u0434\u0430\u0442\u044c", payload=f"exchange_accept_{exchange_id}")],
-                [CallbackButton(text="\u274c \u041e\u0442\u043a\u0430\u0437\u0430\u0442\u044c", payload=f"exchange_reject_{exchange_id}")]
-            ]
-            max_payload = ButtonsPayload(buttons=max_buttons).pack()
-            dm_chat_id = await get_max_dm_chat_id(str(abs(lid)))
-            await send_max_text(max_bot_token, dm_chat_id, plain_text, attachments=[max_payload])
+    await notify_users(
+        [], text, "dashboard",
+        extra_tg_ids=[donor_id],
+        tg_reply_markup=tg_markup,
+        max_attachments=[max_payload],
+    )
+    logger.info(f"Exchange notification with buttons sent to donor {donor_id} (exchange #{exchange_id})")
 
 
 async def _notify_moderators_exchange(text: str):

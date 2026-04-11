@@ -26,6 +26,8 @@ sys.path.append(web_dir)
 from database_deps import db
 load_dotenv()
 
+API_URL = os.getenv("API_URL", "http://api:8000")
+
 os.makedirs("data", exist_ok=True)
 _log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s")
 _console_handler = logging.StreamHandler()
@@ -163,7 +165,7 @@ async def cmd_schedule(message: types.Message, command: CommandObject):
             fd = aiohttp.FormData()
             fd.add_field('tg_id', str(tg_id))
             fd.add_field('target_date', target_date)
-            async with session.post("http://127.0.0.1:8000/api/applications/publish_schedule", data=fd) as resp:
+            async with session.post(f"{API_URL}/api/applications/publish_schedule", data=fd) as resp:
                 if resp.status == 200:
                     await message.answer(f"✅ Расстановка на {target_date} опубликована в групповой чат!")
                 else:
@@ -246,7 +248,7 @@ async def handle_smart_publish_callback(callback: types.CallbackQuery):
                 fd.add_field('tg_id', str(tg_id))
                 fd.add_field('date', tomorrow)
                 async with session.post(
-                    "http://127.0.0.1:8000/api/system/send_schedule_group", data=fd
+                    f"{API_URL}/api/system/send_schedule_group", data=fd
                 ) as resp:
                     result = await resp.json()
                     count = result.get('notified', 0)
@@ -264,7 +266,7 @@ async def handle_smart_publish_callback(callback: types.CallbackQuery):
                 fd = aiohttp.FormData()
                 fd.add_field('tg_id', str(tg_id))
                 async with session.post(
-                    "http://127.0.0.1:8000/api/system/delay_publish", data=fd
+                    f"{API_URL}/api/system/delay_publish", data=fd
                 ) as resp:
                     pass
             original_text = callback.message.text or ""
@@ -298,7 +300,7 @@ async def handle_exchange_callback(callback: types.CallbackQuery):
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"http://127.0.0.1:8000/api/exchange/{exchange_id}/respond",
+                f"{API_URL}/api/exchange/{exchange_id}/respond",
                 json={"tg_id": str(callback.from_user.id), "action": action}
             ) as resp:
                 result = await resp.json()
@@ -316,7 +318,7 @@ async def handle_exchange_callback(callback: types.CallbackQuery):
 
 
 async def call_api(endpoint):
-    url = f"http://127.0.0.1:8000{endpoint}"
+    url = f"{API_URL}{endpoint}"
     async with aiohttp.ClientSession() as session:
         try:
             await session.post(url)

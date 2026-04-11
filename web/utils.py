@@ -402,7 +402,8 @@ NOTIFY_CATEGORY_COLUMNS = {
 
 
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
-                       target_platform: str = "all", category: str = None):
+                       target_platform: str = "all", category: str = None,
+                       tg_reply_markup: dict = None, max_attachments: list = None):
     """Универсальная рассылка уведомлений в личные DM (Telegram и MAX) с учетом настроек пользователя.
     category: 'new_users' | 'orders' | 'reports' | 'errors' | None (None = всегда отправлять)
     """
@@ -460,12 +461,15 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             elif lid < 0 and prefs["max"]:
                 final_max_ids.add(abs(lid))
 
-    markup = {"inline_keyboard": [
+    markup = tg_reply_markup or {"inline_keyboard": [
         [{"text": "📱 Открыть платформу", "web_app": {"url": f"https://miniapp.viks22.ru/{url_path}"}}]]}
 
     max_plain_text = strip_html(text)
-    max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"https://miniapp.viks22.ru/{url_path}")]]
-    max_payload = ButtonsPayload(buttons=max_buttons).pack()
+    if max_attachments is None:
+        max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"https://miniapp.viks22.ru/{url_path}")]]
+        max_payload = ButtonsPayload(buttons=max_buttons).pack()
+    else:
+        max_payload = None
 
     # Групповой чат — только если явно указан "report_group"
     if "report_group" in target_roles:
@@ -484,7 +488,8 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         for mid in final_max_ids:
             dm_chat_id = await get_max_dm_chat_id(str(mid))
             print(f"🔄 MAX ЛС: Отправка уведомления пользователю {mid} в диалог {dm_chat_id}")
-            await send_max_text(max_bot_token, dm_chat_id, max_plain_text, attachments=[max_payload])
+            att = max_attachments if max_attachments is not None else [max_payload]
+            await send_max_text(max_bot_token, dm_chat_id, max_plain_text, attachments=att)
 
     if target_platform in ["all", "tg"] and bot_token:
         try:
