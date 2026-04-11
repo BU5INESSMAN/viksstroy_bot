@@ -235,15 +235,10 @@ export default function Home() {
     };
 
     const handleCreateApp = async (e) => {
-        console.log("=== MAIN FORM SUBMIT TRIGGERED ===");
-        console.log("Event target:", e?.target?.tagName, e?.target?.className);
-        console.log("Event type:", e?.type);
-        console.trace("handleCreateApp call stack");
         e.preventDefault();
         if(appForm.isViewOnly) { setGlobalCreateAppOpen(false); return; }
-        console.log("Validation check — object_id:", appForm.object_id, "team_ids:", appForm.team_ids, "equipment:", appForm.equipment, "members:", appForm.members);
-        if (!appForm.object_id) { console.log("FAIL: no object_id"); return toast.error("Выберите объект!"); }
-        if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) { console.log("FAIL: no team_ids and no equipment"); return toast.error("Выберите бригаду или технику!"); }
+        if (!appForm.object_id) return toast.error("Выберите объект!");
+        if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) return toast.error("Выберите бригаду или технику!");
         if (appForm.team_ids.length === 0) {
             const ok = await confirm("Создать заявку ТОЛЬКО на технику (без людей)?", { title: "Подтверждение", variant: "warning", confirmText: "Да, создать" });
             if (!ok) return;
@@ -266,8 +261,27 @@ export default function Home() {
                 await axios.post(`/api/applications/${appForm.id}/update`, fd);
                 toast.success("Заявка успешно обновлена!");
             } else {
-                await axios.post('/api/applications/create', fd);
+                const createRes = await axios.post('/api/applications/create', fd);
                 toast.success("Успешно отправлено на модерацию!");
+
+                // Send deferred exchange request if pending
+                if (appForm.pendingExchange && createRes.data?.id) {
+                    try {
+                        const exRes = await axios.post('/api/exchange/request', {
+                            requester_tg_id: tgId,
+                            requester_app_id: createRes.data.id,
+                            requested_equip_id: appForm.pendingExchange.requested_equip_id,
+                            offered_equip_id: appForm.pendingExchange.offered_equip_id,
+                        });
+                        if (exRes.data.success) {
+                            toast.success('Запрос на обмен техники отправлен!');
+                        } else {
+                            toast.error(exRes.data.error || 'Ошибка отправки обмена');
+                        }
+                    } catch (exErr) {
+                        toast.error(exErr.response?.data?.error || 'Не удалось отправить запрос на обмен');
+                    }
+                }
             }
             setGlobalCreateAppOpen(false); fetchData();
         } catch (err) {

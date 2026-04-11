@@ -123,9 +123,10 @@ async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_targ
     if occupied:
         raise HTTPException(409, "Ошибка создания наряда:\n" + "\n".join(occupied))
 
-    await db.conn.execute(
+    cursor = await db.conn.execute(
         "INSERT INTO applications (foreman_id, foreman_name, team_id, object_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed, freed_team_ids) VALUES (?, ?, ?, ?, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0, '')",
         (real_tg_id, fio, team_id, object_id, date_target, object_address, comment, selected_members, equipment_data))
+    new_app_id = cursor.lastrowid
     await db.conn.commit()
 
     logger.info("Action saved to DB, sending notifications in background")
@@ -133,7 +134,7 @@ async def create_app(tg_id: int = Form(...), team_id: str = Form("0"), date_targ
     asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"📝 <b>Новая заявка на выезд</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}\n🕒 Время: {now}",
                        "review", category="orders"))
-    return {"status": "ok"}
+    return {"status": "ok", "id": new_app_id}
 
 
 @router.post("/api/applications/{app_id}/update")

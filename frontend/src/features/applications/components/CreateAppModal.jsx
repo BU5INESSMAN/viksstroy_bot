@@ -124,6 +124,23 @@ export default function CreateAppModal({
         toggleEquipmentSelection(e);
     };
 
+    // Deferred exchange: save intent to appForm, add requested equipment optimistically
+    const handleDeferredExchange = ({ requested_equip_id, offered_equip_id, offeredEquipData }) => {
+        const reqEquip = data.equipment?.find(eq => eq.id === requested_equip_id);
+        if (reqEquip) {
+            // Add requested equipment to the selection (optimistic)
+            const alreadySelected = appForm.equipment.some(eq => eq.id === reqEquip.id);
+            if (!alreadySelected) {
+                toggleEquipmentSelection(reqEquip);
+            }
+        }
+        setAppForm(prev => ({
+            ...prev,
+            pendingExchange: { requested_equip_id, offered_equip_id },
+        }));
+        toast.success('Обмен будет отправлен после создания заявки');
+    };
+
     const dateChips = [
         { label: 'Сегодня', val: smartDates[0].val },
         { label: 'Завтра', val: smartDates[1].val },
@@ -386,8 +403,15 @@ export default function CreateAppModal({
                                     <label className="flex items-center gap-2 text-xs font-bold text-blue-800 dark:text-blue-300 uppercase tracking-wider border-b border-blue-200 dark:border-blue-800/50 pb-3 mb-4">
                                         <ClipboardList className="w-4 h-4" /> Список машин:
                                     </label>
-                                    {appForm.equipment.map(eq => (
-                                        <div key={eq.id} className="flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-gray-800 p-4 rounded-xl border border-blue-100 dark:border-blue-700/50 shadow-sm gap-4 hover:shadow-md transition-shadow">
+                                    {appForm.equipment.map(eq => {
+                                        const isPendingExchange = appForm.pendingExchange?.requested_equip_id === eq.id;
+                                        return (
+                                        <div key={eq.id} className={`flex flex-col sm:flex-row sm:items-center justify-between bg-white dark:bg-gray-800 p-4 rounded-xl border shadow-sm gap-4 hover:shadow-md transition-shadow ${isPendingExchange ? 'border-amber-400 dark:border-amber-600 ring-1 ring-amber-300' : 'border-blue-100 dark:border-blue-700/50'}`}>
+                                            {isPendingExchange && (
+                                                <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 px-2 py-0.5 rounded-md flex items-center gap-1 w-fit">
+                                                    <RefreshCw className="w-3 h-3" /> Обмен после создания
+                                                </span>
+                                            )}
                                             {appForm.isViewOnly ? (
                                                 <button type="button" disabled={isSubmitting} onClick={() => { setGlobalCreateAppOpen(false); openProfile(0, 'equip', eq.id); }} className={`font-bold text-sm text-left hover:underline disabled:opacity-50 flex items-center gap-2 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
                                                     <div className={`p-1.5 rounded-lg ${eq.is_freed ? 'bg-gray-100 dark:bg-gray-700 text-gray-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-500'}`}>
@@ -418,7 +442,7 @@ export default function CreateAppModal({
                                                 </div>
                                             </div>
                                         </div>
-                                    ))}
+                                    ); })}
                                 </div>
                             ) : (
                                 appForm.isViewOnly && (
@@ -477,6 +501,7 @@ export default function CreateAppModal({
                     tgId={tgId}
                     dateTarget={appForm.date_target}
                     onClose={() => setExchangeDialog(null)}
+                    onExchange={!appForm.id ? handleDeferredExchange : undefined}
                 />,
                 document.body
             )}

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { RefreshCw, X, Truck, MapPin, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
@@ -12,22 +12,26 @@ const STATUS_LABELS = {
     completed: 'Завершена',
 };
 
-export default function ExchangeDialog({ info, equipment, appEquipment, appId, tgId, dateTarget, onClose }) {
+/**
+ * @param {object} props
+ * @param {function} [props.onExchange] - If provided, called with { requested_equip_id, offered_equip_id, offeredEquipData }
+ *   instead of sending API request. Used for deferred exchange during app creation.
+ */
+export default function ExchangeDialog({ info, equipment, appEquipment, appId, tgId, dateTarget, onClose, onExchange }) {
     const [offeredEquipId, setOfferedEquipId] = useState(null);
     const [sending, setSending] = useState(false);
     const [availableOffer, setAvailableOffer] = useState([]);
+    const submitLock = useRef(false);
 
     useEffect(() => {
         if (!dateTarget) return;
 
-        // Filter equipment: same category, in current app or free, not in pending exchange
         const candidates = equipment.filter(e =>
             e.category === info.equipCategory &&
             e.id !== info.equipId &&
             (appEquipment.some(ae => ae.id === e.id) || e.status === 'free')
         );
 
-        // Check each candidate for pending exchange
         Promise.all(
             candidates.map(async (e) => {
                 try {
@@ -43,13 +47,30 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
     }, [info, equipment, appEquipment, dateTarget]);
 
     const handleSubmit = async (e) => {
-        console.log("=== EXCHANGE handleSubmit TRIGGERED ===");
-        console.log("Event:", e?.type, e?.target?.tagName, e?.target?.className);
-        console.trace("Exchange handleSubmit stack");
         e.preventDefault();
         e.stopPropagation();
-        if (sending) { console.log("BLOCKED: already sending"); return; }
-        if (!offeredEquipId) return toast.error('Выберите технику для обмена');
+        if (submitLock.current || sending) return;
+        submitLock.current = true;
+
+        if (!offeredEquipId) {
+            submitLock.current = false;
+            return toast.error('Выберите технику для обмена');
+        }
+
+        // Deferred mode: just save the intent, don't call API
+        if (onExchange) {
+            const offeredEquip = availableOffer.find(eq => eq.id === offeredEquipId);
+            onExchange({
+                requested_equip_id: info.equipId,
+                offered_equip_id: offeredEquipId,
+                offeredEquipData: offeredEquip,
+            });
+            submitLock.current = false;
+            onClose();
+            return;
+        }
+
+        // Immediate mode: send API request (used when app already exists)
         setSending(true);
         try {
             const res = await axios.post('/api/exchange/request', {
@@ -68,18 +89,18 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
             toast.error(err.response?.data?.error || 'Ошибка отправки');
         } finally {
             setSending(false);
+            setTimeout(() => { submitLock.current = false; }, 500);
         }
     };
 
     const handleClose = (e) => {
-        console.log("=== EXCHANGE handleClose TRIGGERED ===");
         e.preventDefault();
         e.stopPropagation();
         onClose();
     };
 
     return (
-        <div className="fixed inset-0 z-[99999] bg-black/60 flex items-center justify-center p-4" onClick={handleClose} onSubmit={(e) => { console.log("=== EXCHANGE ROOT onSubmit INTERCEPTED ==="); e.preventDefault(); e.stopPropagation(); }}>
+        <div className="fixed inset-0 z-[99999] bg-black/60 flex items-center justify-center p-4" onClick={handleClose}>
             <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-sm shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
                 {/* Header */}
                 <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4 flex items-center justify-between">
@@ -150,6 +171,13 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
                             </div>
                         )}
                     </div>
+
+                    {/* Deferred mode hint */}
+                    {onExchange && (
+                        <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 p-2.5 rounded-lg border border-amber-200 dark:border-amber-800/50">
+                            Запрос на обмен будет отправлен после создания заявки
+                        </p>
+                    )}
 
                     {/* Actions */}
                     <div className="flex gap-3 pt-2">
