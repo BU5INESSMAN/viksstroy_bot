@@ -33,7 +33,7 @@ class KpRepoMixin:
             is_my_foreman = app['foreman_id'] == tg_id
             is_office = role in ['moderator', 'boss', 'superadmin']
 
-            if kp_status in ['none', 'rejected'] and (is_my_team or is_my_foreman):
+            if kp_status in ['none', 'rejected'] and (is_my_team or is_my_foreman or is_office):
                 result["to_fill"].append(app)
             if kp_status == 'submitted' and (is_my_foreman or is_office):
                 result["pending_review"].append(app)

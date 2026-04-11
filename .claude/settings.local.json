@@ -87,7 +87,9 @@
       "Bash(\"C:/Users/mikl2/AppData/Roaming/Python/Python314/Scripts/graphify.exe\" .)",
       "Bash(\"C:/Users/mikl2/AppData/Roaming/Python/Python314/Scripts/graphify.exe\" --help)",
       "Bash(\"C:/Users/mikl2/AppData/Roaming/Python/Python314/Scripts/graphify.exe\" install:*)",
-      "Bash(PYTHONUTF8=1 \"C:/Users/mikl2/AppData/Roaming/Python/Python314/Scripts/graphify.exe\" claude install)"
+      "Bash(PYTHONUTF8=1 \"C:/Users/mikl2/AppData/Roaming/Python/Python314/Scripts/graphify.exe\" claude install)",
+      "Bash(mkdir -p .claude/skills/emil-design-eng)",
+      "Bash(cp -r ~/.claude/skills/emil-design-eng/* .claude/skills/emil-design-eng/)"
     ]
   }
 }
