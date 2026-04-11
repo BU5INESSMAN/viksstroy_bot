@@ -220,7 +220,7 @@ async def api_schedule_dates(tg_id: int = 0):
     for d in dates:
         async with db.conn.execute(
             "SELECT object_address, foreman_name, status FROM applications "
-            "WHERE date_target = ? AND status IN ('approved','waiting') "
+            "WHERE date_target = ? AND status IN ('approved','pending','waiting') "
             "AND (is_archived = 0 OR is_archived IS NULL) "
             "ORDER BY status, id",
             (d,)
@@ -230,8 +230,10 @@ async def api_schedule_dates(tg_id: int = 0):
         approved = [{"object_address": r[0] or "—", "foreman_name": r[1] or "—"}
                      for r in rows if r[2] == "approved"]
         waiting = [{"object_address": r[0] or "—", "foreman_name": r[1] or "—"}
-                    for r in rows if r[2] == "waiting"]
-        result.append({"date": d, "approved": approved, "waiting": waiting})
+                    for r in rows if r[2] in ("waiting", "pending")]
+
+        if approved or waiting:
+            result.append({"date": d, "approved": approved, "waiting": waiting})
 
     return result
 

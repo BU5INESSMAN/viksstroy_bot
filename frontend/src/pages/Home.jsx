@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, CalendarCheck, Send } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, CalendarCheck, Send, Loader2 } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
 import ActiveApplicationsCard from '../features/applications/components/ActiveApplicationsCard';
@@ -32,6 +32,7 @@ export default function Home() {
     const [isArchiveOpen, setArchiveOpen] = useState(false);
     const [isScheduleOpen, setScheduleOpen] = useState(false);
     const [debtors, setDebtors] = useState([]);
+    const [publishingTomorrow, setPublishingTomorrow] = useState(false);
 
     const { confirm, ConfirmUI } = useConfirm();
 
@@ -58,6 +59,47 @@ export default function Home() {
                     axios.get(`/api/teams/${res.data.profile.team_id}/details`).then(tRes => setMyTeam(tRes.data));
                 }
             }).catch(()=>{});
+        }
+    };
+
+    const publishTomorrow = async () => {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const tomorrowStr = tomorrow.toISOString().split('T')[0];
+
+        try {
+            const warnRes = await axios.get(`/api/system/schedule_warnings?tg_id=${tgId}&date=${tomorrowStr}`);
+            const warnings = warnRes.data || [];
+            if (warnings.length > 0) {
+                const warningList = warnings.map(w => `  - ${w.object_address} (${w.foreman_name})`).join('\n');
+                const ok = await confirm(
+                    `На ${tomorrowStr} есть неодобренные заявки:\n${warningList}\n\nОтправить расстановку только по одобренным?`,
+                    { title: "Неодобренные заявки", variant: "warning", confirmText: "Да, отправить" }
+                );
+                if (!ok) return;
+            } else {
+                const ok = await confirm(`Отправить расстановку на ${tomorrowStr} в группу?`, { title: "Расстановка на завтра", variant: "info", confirmText: "Отправить" });
+                if (!ok) return;
+            }
+        } catch {
+            const ok = await confirm(`Отправить расстановку на ${tomorrowStr} в группу?`, { title: "Расстановка на завтра", variant: "info", confirmText: "Отправить" });
+            if (!ok) return;
+        }
+
+        setPublishingTomorrow(true);
+        try {
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            const dateStr = tomorrow.toISOString().split('T')[0];
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            fd.append('date', dateStr);
+            const res = await axios.post('/api/system/send_schedule_group', fd);
+            toast.success(`Расстановка на завтра отправлена! Уведомлено: ${res.data.notified || 0}`);
+        } catch (err) {
+            toast.error(err.response?.data?.detail || "Ошибка отправки расстановки");
+        } finally {
+            setPublishingTomorrow(false);
         }
     };
 
@@ -363,9 +405,9 @@ export default function Home() {
                             <AlertTriangle className="w-4 h-4" /> Должники СМР
                         </h3>
                         {canArchive && (
-                            <button onClick={() => setScheduleOpen(true)}
-                                className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm">
-                                <Send className="w-3.5 h-3.5" /> На завтра
+                            <button onClick={publishTomorrow} disabled={publishingTomorrow}
+                                className="flex items-center gap-1.5 text-xs font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm disabled:opacity-50">
+                                {publishingTomorrow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />} На завтра
                             </button>
                         )}
                     </div>

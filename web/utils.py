@@ -626,19 +626,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
             attachments=[max_payload]
         )
 
-    if (published_tg or published_max) and target_platform == "all":
-        try:
-            await db.conn.execute("UPDATE applications SET status = 'published' WHERE id = ?", (app_id,))
-            if eq_data_str:
-                try:
-                    for e in json.loads(eq_data_str): await db.conn.execute(
-                        "UPDATE equipment SET status = 'work' WHERE id = ?", (e['id'],))
-                except:
-                    pass
-            await db.conn.commit()
-        except:
-            await db.conn.rollback()
-
+    if published_tg or published_max:
         return True
     return False
 
@@ -724,7 +712,7 @@ async def get_schedule_dates():
     if db.conn is None: await db.init_db()
     async with db.conn.execute(
         "SELECT DISTINCT date_target FROM applications "
-        "WHERE status IN ('waiting', 'approved', 'published', 'in_progress') "
+        "WHERE status IN ('pending', 'waiting', 'approved', 'published', 'in_progress') "
         "AND (is_archived = 0 OR is_archived IS NULL) "
         "ORDER BY date_target ASC"
     ) as cur:

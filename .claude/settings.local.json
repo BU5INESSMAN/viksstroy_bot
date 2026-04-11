@@ -57,7 +57,10 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('main_max.py', encoding='utf-8'\\).read\\(\\)\\); print\\('main_max.py OK'\\)\")",
       "Bash(grep -E \"\\\\.py$|\\\\.html$|\\\\.jinja\")",
       "Bash(grep -E \"\\\\.py$|schedule|table\")",
-      "Bash(python -c \"import py_compile; py_compile.compile\\('web/routers/system.py', doraise=True\\)\")"
+      "Bash(python -c \"import py_compile; py_compile.compile\\('web/routers/system.py', doraise=True\\)\")",
+      "Bash(ls -1 /c/Users/mikl2/PycharmProjects/viksstroy_bot/web/routers/*.py)",
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(python -c \"import py_compile; py_compile.compile\\('web/routers/system.py', doraise=True\\); py_compile.compile\\('web/utils.py', doraise=True\\); py_compile.compile\\('web/scheduler.py', doraise=True\\); print\\('All Python files compiled OK'\\)\")"
     ]
   }
 }
