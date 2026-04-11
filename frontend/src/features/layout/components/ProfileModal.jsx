@@ -12,6 +12,10 @@ const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руково
 export default function ProfileModal({ profileData, setProfileData, editProfile, setEditProfile, setProfileModalOpen, canEditUsers, isMyProfile }) {
     const tgId = localStorage.getItem('tg_id');
     const [linkCode, setLinkCode] = useState('');
+    const [showLinkSearch, setShowLinkSearch] = useState(false);
+    const [linkSearchQuery, setLinkSearchQuery] = useState('');
+    const [linkCandidates, setLinkCandidates] = useState([]);
+    const [linkingInProgress, setLinkingInProgress] = useState(false);
     const { confirm, ConfirmUI } = useConfirm();
 
     const handleToggleNotify = (platform) => {
@@ -77,16 +81,21 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
     const handleLinkAccount = async () => {
         if (!linkCode) return;
         try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            fd.append('code', linkCode);
-            const res = await axios.post('/api/users/link_account', fd);
+            const res = await axios.post('/api/users/link-account', {
+                current_user_id: profileData.user_id,
+                link_code: linkCode
+            });
 
-            localStorage.setItem('tg_id', res.data.new_tg_id);
-            localStorage.setItem('user_role', res.data.role);
+            if (res.data.success) {
+                localStorage.setItem('tg_id', String(res.data.primary_user_id));
+                toast.success("Аккаунты успешно связаны!");
 
-            toast.success("Аккаунты успешно связаны!");
-            window.location.reload();
+                if (res.data.role_conflict) {
+                    toast('Обнаружен конфликт ролей. Модераторы уведомлены.', { icon: '⚠️', duration: 5000 });
+                }
+
+                setTimeout(() => window.location.reload(), 1000);
+            }
         } catch (e) {
             toast.error(e.response?.data?.detail || "Ошибка привязки. Проверьте правильность кода.");
         }
@@ -106,6 +115,51 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
         } catch (e) {
             toast.error(e.response?.data?.detail || "Ошибка при отвязке.");
         }
+    };
+
+    const handleAdminLink = async (targetUserId) => {
+        const ok = await confirm(
+            `Связать аккаунт ${profileData.fio} с выбранным пользователем? Аккаунты будут объединены.`,
+            { title: "Связывание аккаунтов", confirmText: "Связать", variant: "warning" }
+        );
+        if (!ok) return;
+
+        setLinkingInProgress(true);
+        try {
+            const res = await axios.post('/api/users/admin-link', {
+                admin_id: parseInt(tgId),
+                user_id_1: profileData.user_id,
+                user_id_2: targetUserId
+            });
+
+            if (res.data.success) {
+                toast.success("Аккаунты успешно связаны!");
+                if (res.data.role_conflict) {
+                    toast('Конфликт ролей — выберите роль в уведомлении бота.', { icon: '⚠️', duration: 5000 });
+                }
+                setTimeout(() => { setProfileModalOpen(false); window.location.reload(); }, 1000);
+            }
+        } catch (e) {
+            toast.error(e.response?.data?.detail || "Ошибка связывания аккаунтов");
+        }
+        setLinkingInProgress(false);
+    };
+
+    const searchLinkCandidates = async (query) => {
+        setLinkSearchQuery(query);
+        if (!query.trim() || query.length < 2) { setLinkCandidates([]); return; }
+        try {
+            const res = await axios.get('/api/users');
+            const currentPlatform = profileData.user_id > 0 ? 'TG' : 'MAX';
+            const candidates = (res.data || []).filter(u => {
+                const otherPlatform = u.user_id > 0 ? 'TG' : 'MAX';
+                return otherPlatform !== currentPlatform
+                    && !u.linked_user_id
+                    && u.role !== 'linked'
+                    && (u.fio?.toLowerCase().includes(query.toLowerCase()) || String(u.user_id).includes(query));
+            });
+            setLinkCandidates(candidates.slice(0, 10));
+        } catch { setLinkCandidates([]); }
     };
 
     return (
@@ -293,6 +347,60 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                                     </div>
                                                 )}
                                             </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* ПРИНУДИТЕЛЬНАЯ СВЯЗКА (только для модераторов, при просмотре ЧУЖОГО профиля) */}
+                            {canEditUsers && !isMyProfile && !profileData.links?.is_linked && (
+                                <div className="bg-amber-50/50 dark:bg-amber-900/10 p-5 rounded-2xl border border-amber-100 dark:border-amber-800/30">
+                                    <h4 className="font-bold text-amber-900 dark:text-amber-200 flex items-center gap-2 text-sm mb-3">
+                                        <UserPlus className="w-4 h-4 text-amber-500" /> Связать с аккаунтом другой платформы
+                                    </h4>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
+                                        Найдите пользователя на {profileData.user_id > 0 ? 'MAX' : 'Telegram'} для объединения аккаунтов.
+                                    </p>
+
+                                    {!showLinkSearch ? (
+                                        <button onClick={() => setShowLinkSearch(true)}
+                                            className="w-full bg-amber-100 hover:bg-amber-200 text-amber-800 dark:bg-amber-900/30 dark:text-amber-300 dark:hover:bg-amber-900/50 font-bold py-3 rounded-xl text-sm transition-all active:scale-95 border border-amber-200 dark:border-amber-700">
+                                            Найти и связать аккаунт
+                                        </button>
+                                    ) : (
+                                        <div className="space-y-3">
+                                            <input
+                                                type="text"
+                                                value={linkSearchQuery}
+                                                onChange={(e) => searchLinkCandidates(e.target.value)}
+                                                placeholder="Поиск по ФИО или ID..."
+                                                className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl outline-none text-sm focus:ring-2 focus:ring-amber-500"
+                                                autoFocus
+                                            />
+                                            {linkCandidates.length > 0 && (
+                                                <div className="max-h-48 overflow-y-auto space-y-1">
+                                                    {linkCandidates.map(c => (
+                                                        <button key={c.user_id} onClick={() => handleAdminLink(c.user_id)}
+                                                            disabled={linkingInProgress}
+                                                            className="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-amber-400 dark:hover:border-amber-600 transition-all text-left disabled:opacity-50">
+                                                            <div>
+                                                                <span className="text-sm font-bold text-gray-800 dark:text-gray-200">{c.fio}</span>
+                                                                <span className="text-[10px] text-gray-400 ml-2 font-mono">ID: {c.user_id}</span>
+                                                            </div>
+                                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${c.user_id > 0 ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' : 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-400'}`}>
+                                                                {c.user_id > 0 ? 'Telegram' : 'MAX'}
+                                                            </span>
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            )}
+                                            {linkSearchQuery.length >= 2 && linkCandidates.length === 0 && (
+                                                <p className="text-xs text-gray-400 text-center py-2">Не найдено подходящих аккаунтов</p>
+                                            )}
+                                            <button onClick={() => { setShowLinkSearch(false); setLinkSearchQuery(''); setLinkCandidates([]); }}
+                                                className="w-full text-xs text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 py-2 font-bold">
+                                                Отмена
+                                            </button>
                                         </div>
                                     )}
                                 </div>

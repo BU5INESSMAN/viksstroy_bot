@@ -62,50 +62,6 @@ async def api_auth_by_code(code: str = Form(...)):
     return {"status": "ok", "role": user_dict['role'], "tg_id": primary_id}
 
 
-@router.post("/api/users/link_account")
-async def api_link_account(tg_id: int = Form(...), code: str = Form(...)):
-    raw_id = tg_id
-    async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (code,)) as cur:
-        row = await cur.fetchone()
-    if not row or time.time() > row[1]: raise HTTPException(400, "Код недействителен или устарел")
-    primary_id = row[0]
-    if primary_id == raw_id: raise HTTPException(400, "Нельзя привязать аккаунт к самому себе")
-    try:
-        await db.conn.execute("INSERT OR REPLACE INTO account_links (primary_id, secondary_id) VALUES (?, ?)",
-                              (primary_id, raw_id))
-        await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (code,))
-        await db.conn.commit()
-    except Exception as e:
-        await db.conn.rollback()
-        raise HTTPException(500, "Ошибка БД при связке аккаунтов")
-    user = await db.get_user(primary_id)
-    user_role = dict(user)['role'] if user else "worker"
-    return {"status": "ok", "new_tg_id": primary_id, "role": user_role}
-
-
-@router.post("/api/users/unlink_platform")
-async def api_unlink_platform(tg_id: int = Form(...), platform: str = Form(...)):
-    real_target_id = await resolve_id(tg_id)
-    try:
-        if platform == 'max':
-            if real_target_id < 0:
-                await db.conn.execute("DELETE FROM account_links WHERE primary_id = ?", (real_target_id,))
-            else:
-                await db.conn.execute("DELETE FROM account_links WHERE primary_id = ? AND secondary_id < 0",
-                                      (real_target_id,))
-        elif platform == 'tg':
-            if real_target_id > 0:
-                await db.conn.execute("DELETE FROM account_links WHERE primary_id = ?", (real_target_id,))
-            else:
-                await db.conn.execute("DELETE FROM account_links WHERE primary_id = ? AND secondary_id > 0",
-                                      (real_target_id,))
-        await db.conn.commit()
-    except Exception:
-        await db.conn.rollback()
-        raise HTTPException(500, "Ошибка БД при отвязке")
-    return {"status": "ok"}
-
-
 @router.post("/api/max/web_auth")
 async def max_web_auth(code: str = Form(...)):
     async with db.conn.execute("SELECT max_id, expires FROM web_codes WHERE code = ?", (code,)) as cur:

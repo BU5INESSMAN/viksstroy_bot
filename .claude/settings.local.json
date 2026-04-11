@@ -71,7 +71,9 @@
       "Bash(python -c \"import ast; ast.parse\\(open\\('database/db_manager.py', encoding='utf-8'\\).read\\(\\)\\); print\\('db_manager.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/users.py', encoding='utf-8'\\).read\\(\\)\\); print\\('users.py OK'\\)\")",
       "Bash(python -c \"import ast; ast.parse\\(open\\('web/routers/auth.py', encoding='utf-8'\\).read\\(\\)\\); print\\('auth.py OK'\\)\")",
-      "Bash(python -c \"import ast; ast.parse\\(open\\('web/services/account_merge.py', encoding='utf-8'\\).read\\(\\)\\); print\\('account_merge.py OK'\\)\")"
+      "Bash(python -c \"import ast; ast.parse\\(open\\('web/services/account_merge.py', encoding='utf-8'\\).read\\(\\)\\); print\\('account_merge.py OK'\\)\")",
+      "Bash(npx -y acorn-jsx --ecma2020 src/features/layout/components/ProfileModal.jsx)",
+      "Bash(npx -y esbuild --bundle src/features/layout/components/ProfileModal.jsx --outfile=/dev/null --jsx=automatic)"
     ]
   }
 }

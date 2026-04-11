@@ -250,9 +250,10 @@ export default function System() {
     };
 
     const filteredUsers = useMemo(() => {
-        if (!userSearch.trim()) return users;
+        let result = users.filter(u => u.role !== 'linked');
+        if (!userSearch.trim()) return result;
         const q = userSearch.toLowerCase();
-        return users.filter(u =>
+        return result.filter(u =>
             (u.fio && u.fio.toLowerCase().includes(q)) ||
             String(u.user_id).includes(q)
         );
@@ -578,7 +579,7 @@ export default function System() {
                             ) : (
                                 <div className="space-y-4">
                                     {ROLE_ORDER.map(r => {
-                                        const roleUsers = users.filter(u => u.role === r);
+                                        const roleUsers = users.filter(u => u.role === r && u.role !== 'linked');
                                         if (!roleUsers.length) return null;
                                         return (
                                             <div key={r}>
@@ -650,27 +651,31 @@ export default function System() {
                                     <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500">{group.length}</span>
                                 </div>
                                 <div className="-mx-2 sm:mx-0 overflow-x-auto">
-                                    <table className="w-full text-sm text-left">
+                                    <table className="w-full text-sm text-left table-fixed">
                                         <thead>
                                             <tr className="text-[10px] text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                                                <th className="px-4 py-2 font-bold">ФИО</th>
-                                                <th className="px-4 py-2 font-bold">ID</th>
-                                                <th className="px-4 py-2 font-bold">Платформа</th>
+                                                <th className="px-4 py-2 font-bold w-[45%]">ФИО</th>
+                                                <th className="px-4 py-2 font-bold w-[25%]">ID</th>
+                                                <th className="px-4 py-2 font-bold w-[30%]">Платформа</th>
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-gray-100/80 dark:divide-gray-700/30">
                                             {group.map(u => (
                                                 <tr key={u.user_id} onClick={() => openProfile(u.user_id)}
                                                     className="cursor-pointer hover:bg-emerald-50/50 dark:hover:bg-emerald-900/10 transition-colors group">
-                                                    <td className="px-4 py-3 font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap group-hover:text-emerald-600 dark:group-hover:text-emerald-400">
+                                                    <td className="px-4 py-3 font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap group-hover:text-emerald-600 dark:group-hover:text-emerald-400 truncate">
                                                         {u.fio}
                                                         {u.is_blacklisted === 1 && <span className="ml-2 text-[9px] font-extrabold text-red-500 bg-red-50 dark:bg-red-900/20 px-1.5 py-0.5 rounded">BAN</span>}
                                                     </td>
-                                                    <td className="px-4 py-3 text-xs font-mono text-gray-400">{u.user_id}</td>
+                                                    <td className="px-4 py-3 text-xs font-mono text-gray-400 truncate">{u.user_id}</td>
                                                     <td className="px-4 py-3">
-                                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${u.user_id > 0 ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' : 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-400'}`}>
-                                                            {u.user_id > 0 ? 'Telegram' : 'MAX'}
-                                                        </span>
+                                                        <div className="flex flex-wrap gap-1">
+                                                            {(u.platforms || [u.user_id > 0 ? 'TG' : 'MAX']).map(p => (
+                                                                <span key={p} className={`text-[10px] font-bold px-2 py-0.5 rounded ${p === 'TG' ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' : 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-400'}`}>
+                                                                    {p === 'TG' ? 'Telegram' : 'MAX'}
+                                                                </span>
+                                                            ))}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}

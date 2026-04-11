@@ -211,36 +211,6 @@ async def delete_user(target_id: int, tg_id: int = Form(...)):
     return {"status": "ok"}
 
 
-@router.post("/api/users/link_account")
-async def link_account(tg_id: int = Form(...), code: str = Form(...)):
-    if db.conn is None: await db.init_db()
-    real_tg_id = await resolve_id(tg_id)
-
-    import time
-    async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (code,)) as cur:
-        row = await cur.fetchone()
-
-    if not row or time.time() > row[1]:
-        raise HTTPException(400, "Код недействителен или устарел")
-
-    primary_id = row[0]
-
-    try:
-        await db.conn.execute("INSERT OR REPLACE INTO account_links (primary_id, secondary_id) VALUES (?, ?)",
-                              (primary_id, real_tg_id))
-        await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (code,))
-        await db.conn.commit()
-    except Exception as e:
-        await db.conn.rollback()
-        raise HTTPException(500, f"Ошибка БД: {e}")
-
-    user = await db.get_user(primary_id)
-    if not user:
-        raise HTTPException(404, "Основной профиль не найден")
-
-    return {"status": "ok", "new_tg_id": primary_id, "role": dict(user).get('role')}
-
-
 @router.post("/api/users/unlink_platform")
 async def unlink_platform(tg_id: int = Form(...), platform: str = Form(...)):
     if db.conn is None: await db.init_db()
