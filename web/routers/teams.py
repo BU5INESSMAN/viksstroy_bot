@@ -7,7 +7,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import APIRouter, Form, HTTPException
 from datetime import datetime
 from database_deps import db, TZ_BARNAUL
-from utils import resolve_id, notify_users
+from utils import resolve_id
+from services.notifications import notify_users
 
 router = APIRouter(tags=["Teams"])
 

@@ -10,7 +10,9 @@ from fastapi import APIRouter, Form, HTTPException
 import json
 from datetime import datetime, timedelta
 from database_deps import db, TZ_BARNAUL
-from utils import resolve_id, notify_users, notify_group_chat, execute_app_publish, fetch_teams_dict, enrich_app_with_team_name
+from utils import resolve_id, fetch_teams_dict, enrich_app_with_team_name
+from services.notifications import notify_users, notify_group_chat
+from services.publish_service import execute_app_publish
 from schedule_generator import generate_schedule_image, publish_schedule_to_group
 
 logger = logging.getLogger(__name__)

@@ -11,7 +11,8 @@ from fastapi.responses import JSONResponse
 import asyncio
 
 from database_deps import db, TZ_BARNAUL
-from utils import notify_users, execute_app_publish
+from services.notifications import notify_users
+from services.publish_service import execute_app_publish
 from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system, exchange
 from scheduler import start_scheduler
 

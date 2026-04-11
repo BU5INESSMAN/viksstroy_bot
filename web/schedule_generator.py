@@ -15,7 +15,7 @@ import logging
 
 from PIL import Image, ImageDraw, ImageFont
 from database_deps import db, TZ_BARNAUL
-from utils import send_max_message, get_max_group_id
+from services.max_api import send_max_message, get_max_group_id
 import aiohttp
 
 logger = logging.getLogger("SCHEDULE_GEN")

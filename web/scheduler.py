@@ -8,7 +8,8 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from database_deps import db, TZ_BARNAUL
-from utils import notify_users, execute_app_publish
+from services.notifications import notify_users
+from services.publish_service import execute_app_publish
 from schedule_generator import check_all_foremen_approved, publish_schedule_to_group
 
 # Настраиваем логгер для планировщика
@@ -231,7 +232,7 @@ async def check_and_run_tasks():
                 pass
 
             if not already_prompted:
-                from utils import send_smart_schedule_prompt
+                from services.schedule_helpers import send_smart_schedule_prompt
                 logger.info(f"📅 {current_time_str} - Отправка запроса на публикацию расстановки на завтра...")
                 await send_smart_schedule_prompt()
                 await db.conn.execute(
@@ -247,7 +248,7 @@ async def check_and_run_tasks():
             if timer_row and timer_row[0]:
                 publish_at = datetime.strptime(timer_row[0], "%Y-%m-%d %H:%M:%S")
                 if now.replace(tzinfo=None) >= publish_at:
-                    from utils import send_schedule_notifications
+                    from services.notifications import send_schedule_notifications
                     tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
                     count = await send_schedule_notifications(tomorrow_str)
                     await db.conn.execute("DELETE FROM settings WHERE key = 'smart_publish_at'")

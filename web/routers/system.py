@@ -9,10 +9,12 @@ from pydantic import BaseModel
 from typing import List, Optional
 from database_deps import db, TZ_BARNAUL
 from datetime import datetime, timedelta
-from utils import (resolve_id, notify_users, notify_group_chat, strip_html,
-                   send_schedule_notifications,
-                   get_waiting_apps_for_date, get_schedule_dates,
-                   get_all_linked_ids, get_max_dm_chat_id, send_max_message)
+from utils import resolve_id, get_all_linked_ids
+from services.notifications import notify_users, notify_group_chat
+from services.image_service import strip_html
+from services.notifications import send_schedule_notifications
+from services.schedule_helpers import get_waiting_apps_for_date, get_schedule_dates
+from services.max_api import get_max_dm_chat_id, send_max_message
 from schedule_generator import publish_schedule_to_group, generate_schedule_image
 import asyncio
 import aiohttp

@@ -11,7 +11,9 @@ import json
 import logging
 from datetime import datetime
 from database_deps import db, TZ_BARNAUL
-from utils import resolve_id, notify_users, process_base64_image
+from utils import resolve_id
+from services.notifications import notify_users
+from services.image_service import process_base64_image
 
 logger = logging.getLogger(__name__)
 

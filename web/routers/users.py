@@ -9,7 +9,8 @@ from fastapi import APIRouter, Form, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from database_deps import db
-from utils import resolve_id, get_all_linked_ids, notify_role_conflict
+from utils import resolve_id, get_all_linked_ids
+from services.notifications import notify_role_conflict
 
 router = APIRouter(tags=["Users"])
 
@@ -172,7 +173,7 @@ async def update_avatar(target_id: int, tg_id: int = Form(...), avatar_base64: s
         if not user or dict(user).get('role') not in ['boss', 'superadmin', 'moderator']:
             raise HTTPException(403, "Нет прав")
 
-    from utils import process_base64_image
+    from services.image_service import process_base64_image
     url = process_base64_image(avatar_base64, f"avatar_{target_id}")
     if url:
         try:

@@ -10,7 +10,8 @@ import hashlib
 import hmac
 import os
 from database_deps import db
-from utils import resolve_id, notify_users, notify_fio_match
+from utils import resolve_id
+from services.notifications import notify_users, notify_fio_match
 
 router = APIRouter(tags=["Auth"])
 

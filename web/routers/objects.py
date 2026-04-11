@@ -181,7 +181,7 @@ async def api_create_object_request(name: str = Form(...), address: str = Form("
     await db.conn.commit()
 
     import asyncio
-    from utils import notify_users
+    from services.notifications import notify_users
     asyncio.create_task(notify_users(
         ["moderator", "boss", "superadmin"],
         f"📍 <b>Запрос на новый объект</b>\n👤 От: {fio}\n🏗 Название: {name}\n📍 Адрес: {address or 'Не указан'}",
@@ -204,7 +204,8 @@ async def api_get_object_requests(status: str = "pending"):
 async def api_review_object_request(req_id: int, action: str = Form(...), tg_id: int = Form(0)):
     """Модератор одобряет или отклоняет запрос на объект."""
     if db.conn is None: await db.init_db()
-    from utils import resolve_id, notify_users
+    from utils import resolve_id
+    from services.notifications import notify_users
     import asyncio
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)

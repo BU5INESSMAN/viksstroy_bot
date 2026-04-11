@@ -23,7 +23,7 @@ web_dir = os.path.join(current_dir, "web")
 sys.path.append(web_dir)
 
 from database_deps import db, TZ_BARNAUL
-from utils import notify_users
+from services.notifications import notify_users
 
 load_dotenv()
 
