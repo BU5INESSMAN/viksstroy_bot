@@ -12,7 +12,7 @@ import asyncio
 
 from database_deps import db, TZ_BARNAUL
 from utils import notify_users, execute_app_publish
-from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system
+from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system, exchange
 from scheduler import start_scheduler
 
 # --- File-based logging for server-logs endpoint ---
@@ -40,6 +40,7 @@ app.include_router(applications.router)
 app.include_router(objects.router)
 app.include_router(kp.router)
 app.include_router(system.router)
+app.include_router(exchange.router)
 
 
 @app.exception_handler(Exception)
@@ -72,6 +73,8 @@ async def startup():
         try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_errors INTEGER DEFAULT 1")
         except: pass
         try: await db.conn.execute("ALTER TABLE team_members ADD COLUMN is_foreman INTEGER DEFAULT 0")
+        except: pass
+        try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_exchange INTEGER DEFAULT 1")
         except: pass
         await db.conn.commit()
     except Exception as e:

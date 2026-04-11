@@ -3,7 +3,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     User, X, Camera, Trash2, Unplug, ShieldCheck,
-    Send, Smartphone, MessageCircle, Bell, UserPlus, ClipboardList, FileText, AlertTriangle
+    Send, Smartphone, MessageCircle, Bell, UserPlus, ClipboardList, FileText, AlertTriangle, RefreshCw
 } from 'lucide-react';
 import useConfirm from '../../../hooks/useConfirm';
 
@@ -54,6 +54,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
             fd.append('notify_orders', editProfile.notify_orders ? 1 : 0);
             fd.append('notify_reports', editProfile.notify_reports ? 1 : 0);
             fd.append('notify_errors', editProfile.notify_errors ? 1 : 0);
+            fd.append('notify_exchange', editProfile.notify_exchange ? 1 : 0);
 
             await axios.post(`/api/users/${profileData.user_id}/update_profile`, fd);
             toast.success("Успешно!"); setProfileModalOpen(false); window.location.reload();
@@ -236,6 +237,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                             { key: 'notify_orders', label: 'Наряды', icon: ClipboardList, color: 'text-blue-500' },
                                             { key: 'notify_reports', label: 'Отчеты СМР', icon: FileText, color: 'text-violet-500' },
                                             { key: 'notify_errors', label: 'Системные ошибки', icon: AlertTriangle, color: 'text-red-500' },
+                                            { key: 'notify_exchange', label: 'Уведомления об обменах техники', icon: RefreshCw, color: 'text-cyan-500' },
                                         ].map(({ key, label, icon: Ico, color }) => (
                                             <div key={key} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                                                 <span className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Ico className={`w-4 h-4 ${color}`} /> {label}</span>

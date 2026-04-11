@@ -2,10 +2,11 @@ import { useState, useRef, useEffect } from 'react';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle,
-    User, HardHat, X, Check, XCircle, ChevronDown, Search
+    User, HardHat, X, Check, XCircle, ChevronDown, Search, RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
+import ExchangeDialog from './ExchangeDialog';
 
 /* ---- Object Selector ---- */
 function ObjectSelector({ objects, selectedId, disabled, onSelect }) {
@@ -108,6 +109,7 @@ export default function EditAppModal({
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const [exchangeDialog, setExchangeDialog] = useState(null);
 
     useEffect(() => {
         if (form.team_ids.length > 0) {
@@ -153,6 +155,35 @@ export default function EditAppModal({
             }
         }
         return { state: 'free' };
+    };
+
+    const handleEquipClick = async (e, st) => {
+        if (st.state === 'repair') return toast.error(st.message);
+        if (st.state === 'busy') {
+            try {
+                const res = await axios.get(`/api/exchange/check_equip/${e.id}?date=${form.date_target}`);
+                const info = res.data;
+                if (info.can_exchange) {
+                    setExchangeDialog({
+                        equipId: e.id,
+                        equipName: e.driver ? `${e.name} (${e.driver})` : e.name,
+                        equipCategory: e.category,
+                        holderName: info.holder_name,
+                        holderObject: info.holder_object,
+                        holderAppStatus: info.holder_app_status,
+                        holderAppId: info.holder_app_id,
+                    });
+                } else if (info.is_in_pending_exchange) {
+                    toast.error('Эта техника уже участвует в обмене');
+                } else {
+                    toast.error(st.message);
+                }
+            } catch {
+                toast.error(st.message);
+            }
+            return;
+        }
+        toggleEquipmentSelection(e);
     };
 
     const toggleTeamSelection = (id) => {
@@ -448,7 +479,7 @@ export default function EditAppModal({
                                             else if (isSelected) btnStyles = 'bg-blue-50 border-blue-500 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 shadow-sm ring-1 ring-blue-500';
 
                                             return (
-                                                <button key={e.id} type="button" disabled={isSubmitting} onClick={() => { if (st.state !== 'free') return toast.error(st.message); toggleEquipmentSelection(e); }} className={`px-3.5 py-2 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${btnStyles}`}>
+                                                <button key={e.id} type="button" disabled={isSubmitting} onClick={() => handleEquipClick(e, st)} className={`px-3.5 py-2 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${btnStyles}`}>
                                                     {isSelected ? <CheckCircle className="w-4 h-4" /> : (st.state === 'repair' ? <XCircle className="w-4 h-4" /> : (st.state === 'busy' ? <Clock className="w-4 h-4" /> : <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>))}
                                                     {displayName}
                                                 </button>
@@ -512,6 +543,16 @@ export default function EditAppModal({
                     </form>
                 </div>
             </div>
+            {exchangeDialog && (
+                <ExchangeDialog
+                    info={exchangeDialog}
+                    equipment={data.equipment || []}
+                    appEquipment={form.equipment}
+                    appId={form.id}
+                    tgId={tgId}
+                    onClose={() => setExchangeDialog(null)}
+                />
+            )}
         </div>
     );
 }

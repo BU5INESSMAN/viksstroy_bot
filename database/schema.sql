@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS users (
     notify_orders INTEGER DEFAULT 1,
     notify_reports INTEGER DEFAULT 1,
     notify_errors INTEGER DEFAULT 1,
+    notify_exchange INTEGER DEFAULT 1,
     avatar_url TEXT,
     last_used_objects TEXT DEFAULT '[]'
 );
@@ -202,4 +203,24 @@ CREATE TABLE IF NOT EXISTS application_kp (
     status TEXT DEFAULT 'pending',
     FOREIGN KEY (application_id) REFERENCES applications(id),
     FOREIGN KEY (kp_id) REFERENCES kp_catalog(id)
+);
+
+-- Биржа ресурсов (Stage 5A): обмен техникой между прорабами
+CREATE TABLE IF NOT EXISTS equipment_exchanges (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    requester_id INTEGER NOT NULL,
+    requester_app_id INTEGER NOT NULL,
+    donor_id INTEGER NOT NULL,
+    donor_app_id INTEGER NOT NULL,
+    requested_equip_id INTEGER NOT NULL,
+    offered_equip_id INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    FOREIGN KEY (requester_id) REFERENCES users(user_id),
+    FOREIGN KEY (donor_id) REFERENCES users(user_id),
+    FOREIGN KEY (requester_app_id) REFERENCES applications(id),
+    FOREIGN KEY (donor_app_id) REFERENCES applications(id),
+    FOREIGN KEY (requested_equip_id) REFERENCES equipment(id),
+    FOREIGN KEY (offered_equip_id) REFERENCES equipment(id)
 );

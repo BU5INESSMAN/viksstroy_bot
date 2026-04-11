@@ -503,6 +503,7 @@ export default function Home() {
                     teamMembers={teamMembers}
                     openProfile={openProfile}
                     openFreeModal={openFreeModal}
+                    tgId={tgId}
                 />
             )}
 

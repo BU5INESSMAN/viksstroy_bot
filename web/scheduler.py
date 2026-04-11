@@ -287,6 +287,29 @@ async def check_and_run_tasks():
         except Exception as e:
             logger.error(f"Ошибка авто-старта одобренных заявок: {e}")
 
+        # =========================================================================
+        # ТРИГГЕР 11: АВТО-ИСТЕЧЕНИЕ ОБМЕНОВ ТЕХНИКИ (30 минут)
+        # =========================================================================
+        try:
+            expired_exchanges = await db.get_expired_exchanges(minutes=30)
+            for ex in expired_exchanges:
+                await db.resolve_exchange(ex['id'], 'expired')
+                # Уведомить инициатора
+                try:
+                    async with db.conn.execute("SELECT name FROM equipment WHERE id = ?", (ex['requested_equip_id'],)) as cur:
+                        eq_row = await cur.fetchone()
+                        equip_name = eq_row[0] if eq_row else f"Техника #{ex['requested_equip_id']}"
+                    await notify_users(
+                        [], f"⏰ Время обмена истекло. Запрос на {equip_name} отменён.",
+                        "dashboard", extra_tg_ids=[ex['requester_id']]
+                    )
+                except Exception as ne:
+                    logger.error(f"Ошибка уведомления об истечении обмена: {ne}")
+            if expired_exchanges:
+                logger.info(f"🔄 Истекло обменов: {len(expired_exchanges)}")
+        except Exception as e:
+            logger.error(f"Ошибка авто-истечения обменов: {e}")
+
     except Exception as e:
         logger.error(f"Ошибка в планировщике: {e}")
 

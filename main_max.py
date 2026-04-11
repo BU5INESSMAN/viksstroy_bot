@@ -393,6 +393,29 @@ async def message_callback(event: MessageCallback):
             await send_max_msg(event, f"❌ Ошибка: {e}")
         return
 
+    # ---------------- ОБМЕН ТЕХНИКОЙ: ACCEPT / REJECT ----------------
+    if payload.startswith("exchange_accept_") or payload.startswith("exchange_reject_"):
+        parts = payload.split("_")
+        if len(parts) >= 3:
+            action = parts[1]  # "accept" or "reject"
+            ex_id = parts[2]
+            try:
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        f"http://127.0.0.1:8000/api/exchange/{ex_id}/respond",
+                        json={"tg_id": str(real_tg_id), "action": action}
+                    ) as resp:
+                        result = await resp.json()
+
+                if result.get("success"):
+                    msg = "✅ Вы согласились на обмен" if action == "accept" else "❌ Вы отказались от обмена"
+                    await send_max_msg(event, msg)
+                else:
+                    await send_max_msg(event, result.get("error", "Ошибка"))
+            except Exception as e:
+                await send_max_msg(event, f"❌ Ошибка: {e}")
+        return
+
     # ---------------- ОТМЕНА ----------------
     if payload == "join_cancel":
         return await send_max_msg(event, "🛑 Действие отменено.")

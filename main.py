@@ -286,6 +286,35 @@ async def handle_smart_publish_callback(callback: types.CallbackQuery):
             await callback.answer("❌ Ошибка", show_alert=True)
 
 
+@dp.callback_query(F.data.startswith("exchange_"))
+async def handle_exchange_callback(callback: types.CallbackQuery):
+    """Обработка inline-кнопок обмена техникой."""
+    parts = callback.data.split("_")
+    if len(parts) < 3:
+        return await callback.answer("Ошибка данных", show_alert=True)
+    action = parts[1]  # "accept" or "reject"
+    exchange_id = parts[2]
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                f"http://127.0.0.1:8000/api/exchange/{exchange_id}/respond",
+                json={"tg_id": str(callback.from_user.id), "action": action}
+            ) as resp:
+                result = await resp.json()
+
+        if result.get("success"):
+            await callback.message.edit_text(
+                f"{'✅ Вы согласились на обмен' if action == 'accept' else '❌ Вы отказались от обмена'}",
+                reply_markup=None
+            )
+        else:
+            await callback.answer(result.get("error", "Ошибка"), show_alert=True)
+    except Exception as e:
+        logger.error(f"Exchange callback error: {e}")
+        await callback.answer("❌ Ошибка обработки", show_alert=True)
+
+
 async def call_api(endpoint):
     url = f"http://127.0.0.1:8000{endpoint}"
     async with aiohttp.ClientSession() as session:

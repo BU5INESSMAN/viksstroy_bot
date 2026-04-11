@@ -300,6 +300,25 @@ async def review_app(app_id: int, new_status: str = Form(...), reason: str = For
                     "UPDATE applications SET is_team_freed = 1, freed_team_ids = ? WHERE id = ?",
                     (all_team_ids_str, app_id))
         await db.conn.commit()
+
+        # Cancel pending exchanges involving this application on approval
+        if new_status == 'approved':
+            try:
+                async with db.conn.execute(
+                    "SELECT * FROM equipment_exchanges WHERE (donor_app_id = ? OR requester_app_id = ?) AND status = 'pending'",
+                    (app_id, app_id)
+                ) as ex_cur:
+                    pending_exchanges = [dict(zip([c[0] for c in ex_cur.description], r)) for r in await ex_cur.fetchall()]
+                for ex in pending_exchanges:
+                    await db.resolve_exchange(ex['id'], 'expired')
+                    # Notify both parties
+                    asyncio.create_task(notify_users(
+                        [], f"⚠️ Обмен отменён: заявка была одобрена модератором.",
+                        "dashboard", extra_tg_ids=[ex['requester_id'], ex['donor_id']]
+                    ))
+            except Exception as exc_err:
+                logger.error(f"Error cancelling exchanges on approve: {exc_err}")
+
     except:
         await db.conn.rollback()
 

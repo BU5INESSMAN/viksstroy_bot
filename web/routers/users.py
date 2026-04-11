@@ -27,7 +27,7 @@ async def get_profile(target_id: int, member_id: int = 0, equip_id: int = 0):
         real_tg_id = await resolve_id(target_id)
         # Обрати внимание на добавленные поля notify_tg и notify_max
         async with db.conn.execute(
-                "SELECT user_id, fio, role, avatar_url, notify_tg, notify_max, notify_new_users, notify_orders, notify_reports, notify_errors FROM users WHERE user_id = ?",
+                "SELECT user_id, fio, role, avatar_url, notify_tg, notify_max, notify_new_users, notify_orders, notify_reports, notify_errors, notify_exchange FROM users WHERE user_id = ?",
                 (real_tg_id,)) as cur:
             row = await cur.fetchone()
 
@@ -43,6 +43,7 @@ async def get_profile(target_id: int, member_id: int = 0, equip_id: int = 0):
                 "notify_orders": row[7] if row[7] is not None else 1,
                 "notify_reports": row[8] if row[8] is not None else 1,
                 "notify_errors": row[9] if row[9] is not None else 1,
+                "notify_exchange": row[10] if row[10] is not None else 1,
             }
 
             # Ищем дополнительные данные профиля из связанных таблиц
@@ -98,7 +99,8 @@ async def update_profile(target_id: int, tg_id: int = Form(...), fio: str = Form
                          team_id: str = Form(""), position: str = Form(""), max_invite_link: str = Form(""),
                          notify_tg: int = Form(1), notify_max: int = Form(1),
                          notify_new_users: int = Form(1), notify_orders: int = Form(1),
-                         notify_reports: int = Form(1), notify_errors: int = Form(1)):
+                         notify_reports: int = Form(1), notify_errors: int = Form(1),
+                         notify_exchange: int = Form(1)):
     if db.conn is None: await db.init_db()
     admin_id = await resolve_id(tg_id)
     user = await db.get_user(admin_id)
@@ -110,8 +112,8 @@ async def update_profile(target_id: int, tg_id: int = Form(...), fio: str = Form
     try:
         # Обновляем таблицу users
         await db.conn.execute(
-            "UPDATE users SET fio=?, role=?, notify_tg=?, notify_max=?, notify_new_users=?, notify_orders=?, notify_reports=?, notify_errors=? WHERE user_id=?",
-            (fio, role, notify_tg, notify_max, notify_new_users, notify_orders, notify_reports, notify_errors, target_id)
+            "UPDATE users SET fio=?, role=?, notify_tg=?, notify_max=?, notify_new_users=?, notify_orders=?, notify_reports=?, notify_errors=?, notify_exchange=? WHERE user_id=?",
+            (fio, role, notify_tg, notify_max, notify_new_users, notify_orders, notify_reports, notify_errors, notify_exchange, target_id)
         )
 
         # Обновляем таблицу team_members, если человек состоит в бригаде
