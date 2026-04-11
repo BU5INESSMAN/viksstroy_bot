@@ -114,6 +114,9 @@ async def create_exchange_request(request: Request):
     requested_equip_id = data.get("requested_equip_id")
     offered_equip_id = data.get("offered_equip_id")
 
+    logger.info(f"Exchange request: requester={requester_tg_id}, app={requester_app_id}, "
+                f"wants={requested_equip_id}, offers={offered_equip_id}")
+
     if not all([requester_tg_id, requester_app_id, requested_equip_id, offered_equip_id]):
         return {"error": "\u041d\u0435 \u0432\u0441\u0435 \u043f\u043e\u043b\u044f \u0437\u0430\u043f\u043e\u043b\u043d\u0435\u043d\u044b."}
 
@@ -246,6 +249,8 @@ async def respond_exchange(exchange_id: int, request: Request):
     tg_id = data.get("tg_id")
     action = data.get("action")
 
+    logger.info(f"Exchange {exchange_id} response: {action} by user {tg_id}")
+
     if action not in ("accept", "reject"):
         return {"error": "\u041d\u0435\u0432\u0435\u0440\u043d\u043e\u0435 \u0434\u0435\u0439\u0441\u0442\u0432\u0438\u0435."}
 
@@ -359,6 +364,8 @@ async def respond_exchange(exchange_id: int, request: Request):
 async def cancel_exchange(exchange_id: int, request: Request):
     data = await request.json()
     tg_id = data.get("tg_id")
+
+    logger.info(f"Exchange {exchange_id} cancel by user {tg_id}")
 
     if db.conn is None:
         await db.init_db()

@@ -238,7 +238,7 @@ export default function Home() {
         e.preventDefault();
         if(appForm.isViewOnly) { setGlobalCreateAppOpen(false); return; }
         if (!appForm.object_id) return toast.error("Выберите объект!");
-        if (appForm.team_ids.length === 0 && appForm.equipment.length === 0) return toast.error("Выберите бригаду или технику!");
+        if (appForm.team_ids.length === 0 && appForm.equipment.length === 0 && !appForm.pendingExchange) return toast.error("Выберите бригаду или технику!");
         if (appForm.team_ids.length === 0) {
             const ok = await confirm("Создать заявку ТОЛЬКО на технику (без людей)?", { title: "Подтверждение", variant: "warning", confirmText: "Да, создать" });
             if (!ok) return;
