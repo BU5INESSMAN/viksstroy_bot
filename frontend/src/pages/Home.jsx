@@ -165,7 +165,7 @@ export default function Home() {
                 }
                 if (type === 'equip') {
                     const ids = targetEquips.split(',').map(Number);
-                    const newEq = data.equipment.filter(e => ids.includes(e.id)).map(e => ({ id: e.id, name: e.driver ? `${e.name} (${e.driver})` : e.name, time_start: '08', time_end: '17' }));
+                    const newEq = data.equipment.filter(e => ids.includes(e.id)).map(e => ({ id: e.id, name: e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`, time_start: '08', time_end: '17' }));
                     setAppForm(prev => ({...prev, equipment: newEq}));
                 }
                 toast.success("Ресурсы успешно подставлены!");
@@ -215,7 +215,7 @@ export default function Home() {
         setAppForm(prev => {
             const exists = prev.equipment.find(e => e.id === equip.id);
             if (exists) return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id) };
-            const displayName = equip.driver ? `${equip.name} (${equip.driver})` : equip.name;
+            const displayName = equip.driver ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})` : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
             return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: '08', time_end: '17' }] };
         });
     };

@@ -39,7 +39,7 @@ function AppCard({ a, role, tgId, openProfile, openFreeModal }) {
                     <Truck className="w-3.5 h-3.5" /> Техника
                 </div>
                 {activeEquipList.length > 0 ? activeEquipList.map((e, idx) => {
-                    const eqName = e.name ? e.name.split('(')[0].trim() : `Техника #${e.id}`;
+                    const eqName = e.name || `Техника #${e.id}`;
                     const s = String(e.time_start ?? '08').padStart(2, '0');
                     const end = String(e.time_end ?? '17').padStart(2, '0');
                     return (

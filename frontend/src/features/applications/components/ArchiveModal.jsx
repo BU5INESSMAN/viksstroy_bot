@@ -134,7 +134,7 @@ export default function ArchiveModal({ isOpen, onClose }) {
                                                                 {equipList.map((eq, idx) => (
                                                                     <p key={idx} className="text-xs text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
                                                                         <Truck className="w-3.5 h-3.5" />
-                                                                        {eq.name?.split('(')[0]?.trim() || `Техника #${eq.id}`}
+                                                                        {eq.name || `Техника #${eq.id}`}
                                                                     </p>
                                                                 ))}
                                                             </div>

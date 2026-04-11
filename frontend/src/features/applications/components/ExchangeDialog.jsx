@@ -127,7 +127,7 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
                         ) : (
                             <div className="flex flex-col gap-2 max-h-40 overflow-y-auto pr-1">
                                 {availableOffer.map(e => {
-                                    const displayName = e.driver ? `${e.name} (${e.driver})` : e.name;
+                                    const displayName = e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`;
                                     const isSelected = offeredEquipId === e.id;
                                     const inApp = appEquipment.some(ae => ae.id === e.id);
                                     return (

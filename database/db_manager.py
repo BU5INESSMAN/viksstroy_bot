@@ -67,6 +67,11 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             pass
 
         try:
+            await self.conn.execute("ALTER TABLE equipment ADD COLUMN license_plate TEXT DEFAULT ''")
+        except Exception:
+            pass
+
+        try:
             await self.conn.execute("UPDATE users SET role = 'superadmin' WHERE role = 'admin'")
         except Exception:
             pass

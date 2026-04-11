@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { formatEquipName } from '../utils/equipFormat';
 import {
     MapPin, Plus, Settings, Archive, CheckCircle,
     X, Search, Users, Truck, FileText, Check,
@@ -595,7 +596,7 @@ export default function Objects() {
                                         <div className="flex flex-wrap gap-2">
                                             {allEquips.map(e => (
                                                 <button key={e.id} type="button" onClick={() => toggleResource('equip', e.id)} className={`px-3 py-2 text-sm font-bold rounded-xl border transition-all flex items-center gap-1.5 ${editObj.default_equip_ids.includes(e.id) ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50'}`}>
-                                                    {editObj.default_equip_ids.includes(e.id) && <CheckCircle className="w-4 h-4" />} {e.name}
+                                                    {editObj.default_equip_ids.includes(e.id) && <CheckCircle className="w-4 h-4" />} {formatEquipName(e.name, e.license_plate)}
                                                 </button>
                                             ))}
                                         </div>

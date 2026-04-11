@@ -197,7 +197,7 @@ export default function Review() {
                                 {equipList.map((eq, idx) => (
                                     <p key={idx} className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400 font-medium'}`}>
                                         <Truck className={`w-3.5 h-3.5 ${eq.is_freed ? 'text-gray-400' : 'text-blue-400'}`} />
-                                        <span>{eq.name.split('(')[0].trim()}</span>
+                                        <span>{eq.name}</span>
                                         {eq.is_freed && <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />}
                                     </p>
                                 ))}
@@ -424,7 +424,7 @@ export default function Review() {
                                                 <div key={eq.id} className="flex justify-between items-center bg-gray-50/80 dark:bg-gray-700/30 p-4 rounded-2xl border border-gray-200 dark:border-gray-600/50 shadow-sm transition-all hover:bg-white dark:hover:bg-gray-700">
                                                     <button type="button" disabled={isProcessing} onClick={() => { setSelectedApp(null); openProfile(0, 'equip', eq.id); }} className={`font-bold flex items-center gap-2 hover:underline disabled:opacity-50 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
                                                         <Truck className={`w-4 h-4 ${eq.is_freed ? 'text-gray-400' : 'text-blue-500'}`} />
-                                                        {eq.name.split('(')[0].trim()}
+                                                        {eq.name}
                                                         {eq.is_freed && <CheckCircle className="w-4 h-4 text-emerald-500" />}
                                                     </button>
                                                     <span className="text-xs font-bold text-gray-500 dark:text-gray-300 bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 flex items-center gap-1.5 shadow-sm">

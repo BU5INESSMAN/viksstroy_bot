@@ -168,7 +168,7 @@ export default function EditAppModal({
                 if (info.can_exchange) {
                     setExchangeDialog({
                         equipId: e.id,
-                        equipName: e.driver ? `${e.name} (${e.driver})` : e.name,
+                        equipName: e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`,
                         equipCategory: e.category,
                         holderName: info.holder_name,
                         holderObject: info.holder_object,
@@ -206,7 +206,7 @@ export default function EditAppModal({
         setForm(prev => {
             const exists = prev.equipment.find(e => e.id === equip.id);
             if (exists) return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id) };
-            const displayName = equip.driver ? `${equip.name} (${equip.driver})` : equip.name;
+            const displayName = equip.driver ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})` : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
             return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: '08', time_end: '17' }] };
         });
     };
@@ -263,7 +263,7 @@ export default function EditAppModal({
                 if (type === 'equip') {
                     const ids = targetEquips.split(',').map(Number);
                     const newEq = data.equipment.filter(e => ids.includes(e.id)).map(e => ({
-                        id: e.id, name: e.driver ? `${e.name} (${e.driver})` : e.name, time_start: '08', time_end: '17'
+                        id: e.id, name: e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`, time_start: '08', time_end: '17'
                     }));
                     setForm(prev => ({ ...prev, equipment: newEq }));
                 }
@@ -473,7 +473,7 @@ export default function EditAppModal({
                                         {data.equipment?.filter(e => e.category === activeEqCategory).map(e => {
                                             const st = checkEquipStatus(e);
                                             const isSelected = form.equipment.some(eq => eq.id === e.id);
-                                            const displayName = e.driver ? `${e.name} (${e.driver})` : e.name;
+                                            const displayName = e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`;
                                             let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700';
 
                                             if (st.state === 'repair') btnStyles = 'bg-red-50 border-red-200 text-red-500 cursor-not-allowed opacity-75 dark:bg-red-900/20 dark:border-red-800';

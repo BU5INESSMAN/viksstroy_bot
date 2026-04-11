@@ -1,9 +1,10 @@
 import {
     Truck, User, Unplug, Link,
-    CheckCircle, Wrench, Trash2
+    CheckCircle, Wrench, Pencil
 } from 'lucide-react';
+import { formatEquipName } from '../../../utils/equipFormat';
 
-export default function EquipmentCard({ eq, canManageEquipment, canDeleteEquipment, openProfile, handleUnlinkEquipment, generateInvite, handleEquipStatusChange, handleDeleteEquip }) {
+export default function EquipmentCard({ eq, canManageEquipment, canDeleteEquipment, openProfile, handleUnlinkEquipment, generateInvite, handleEquipStatusChange, onEdit }) {
     return (
         <div key={eq.id} className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all">
             <div>
@@ -14,7 +15,7 @@ export default function EquipmentCard({ eq, canManageEquipment, canDeleteEquipme
                         {eq.status === 'free' ? 'Свободна' : eq.status === 'work' ? 'В работе' : 'Ремонт'}
                     </span>
                 </div>
-                <h3 className="font-bold text-gray-800 dark:text-gray-100 text-lg leading-tight mb-2">{eq.name}</h3>
+                <h3 className="font-bold text-gray-800 dark:text-gray-100 text-lg leading-tight mb-2">{formatEquipName(eq.name, eq.license_plate)}</h3>
                 <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 font-medium bg-gray-50 dark:bg-gray-700/30 p-2.5 rounded-lg border border-gray-100 dark:border-gray-600/50">
                     <User className="w-4 h-4 text-gray-400" />
                     <span>Водитель: <b className="text-gray-800 dark:text-gray-200">{eq.driver_fio || 'Не назначен'}</b></span>
@@ -44,8 +45,8 @@ export default function EquipmentCard({ eq, canManageEquipment, canDeleteEquipme
                         </button>
 
                         {canDeleteEquipment && (
-                            <button onClick={() => handleDeleteEquip(eq.id)} className="bg-gray-50 hover:bg-red-50 text-gray-500 hover:text-red-600 dark:bg-gray-700/50 dark:text-gray-400 dark:hover:bg-red-900/30 dark:hover:text-red-400 py-2.5 px-4 rounded-xl text-xs font-bold transition-colors active:scale-95 flex items-center justify-center">
-                                <Trash2 className="w-4 h-4" />
+                            <button onClick={() => onEdit(eq)} className="bg-gray-50 hover:bg-blue-50 text-gray-500 hover:text-blue-600 dark:bg-gray-700/50 dark:text-gray-400 dark:hover:bg-blue-900/30 dark:hover:text-blue-400 py-2.5 px-4 rounded-xl text-xs font-bold transition-colors active:scale-95 flex items-center justify-center">
+                                <Pencil className="w-4 h-4" />
                             </button>
                         )}
                     </div>

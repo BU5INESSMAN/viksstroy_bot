@@ -322,8 +322,8 @@ export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
                             {eqList.length > 0 ? (
                                 <div className="space-y-2">
                                     {eqList.map((eq, i) => {
-                                        const eqName = eq.name ? eq.name.split('(')[0].trim() : `Техника #${eq.id}`;
-                                        const driver = eq.name?.match(/\((.+)\)/)?.[1] || null;
+                                        const eqName = eq.name || `Техника #${eq.id}`;
+                                        const driver = null;
                                         return (
                                             <div key={eq.id ?? i} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-100 dark:border-gray-700 gap-3">
                                                 <div className="flex items-center gap-3 min-w-0">

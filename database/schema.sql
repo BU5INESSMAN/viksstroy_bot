@@ -51,7 +51,8 @@ CREATE TABLE IF NOT EXISTS equipment (
     tg_id INTEGER NULL,
     photo_url TEXT,
     invite_code TEXT,
-    is_active INTEGER DEFAULT 1
+    is_active INTEGER DEFAULT 1,
+    license_plate TEXT DEFAULT ''
 );
 
 -- Таблица заявок

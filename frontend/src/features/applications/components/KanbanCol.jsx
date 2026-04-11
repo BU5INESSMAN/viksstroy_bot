@@ -83,7 +83,7 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                                     {equipList.map((eq, idx) => (
                                         <p key={idx} className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-indigo-600 dark:text-indigo-400'}`}>
                                             <Truck className="w-3.5 h-3.5" />
-                                            <span>{eq.name.split('(')[0].trim()}</span>
+                                            <span>{eq.name}</span>
                                             {eq.is_freed && <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />}
                                         </p>
                                     ))}

@@ -40,10 +40,10 @@ async def admin_equip_list():
 
 
 @router.post("/api/equipment/add")
-async def add_equipment(name: str = Form(...), category: str = Form(...), driver: str = Form(""), tg_id: int = Form(0)):
+async def add_equipment(name: str = Form(...), category: str = Form(...), driver: str = Form(""), tg_id: int = Form(0), license_plate: str = Form("")):
     try:
-        await db.conn.execute("INSERT INTO equipment (name, category, driver, status) VALUES (?, ?, ?, 'free')",
-                              (name, category, driver))
+        await db.conn.execute("INSERT INTO equipment (name, category, driver, status, license_plate) VALUES (?, ?, ?, 'free', ?)",
+                              (name, category, driver, license_plate))
         await db.conn.commit()
     except:
         await db.conn.rollback()
@@ -93,12 +93,38 @@ async def update_equip_photo(equip_id: int, photo_base64: str = Form(...), tg_id
     raise HTTPException(400, "Ошибка фото")
 
 
+@router.put("/api/equipment/{equip_id}")
+async def edit_equipment(equip_id: int, request: Request):
+    data = await request.json()
+    user = await db.get_user(data.get('tg_id', 0))
+    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
+        raise HTTPException(status_code=403, detail="Нет прав")
+    name = data.get('name', '').strip()
+    category = data.get('category', '').strip()
+    driver_fio = data.get('driver_fio', '').strip()
+    license_plate = data.get('license_plate', '').strip()
+    if not name or not category:
+        raise HTTPException(status_code=400, detail="Название и категория обязательны")
+    try:
+        await db.conn.execute("UPDATE equipment SET name=?, category=?, driver_fio=?, license_plate=? WHERE id=?",
+                              (name, category, driver_fio, license_plate, equip_id))
+        await db.conn.commit()
+    except:
+        await db.conn.rollback()
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
+    async with db.conn.execute("SELECT * FROM equipment WHERE id=?", (equip_id,)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Техника не найдена")
+    return dict(zip([c[0] for c in cur.description], row))
+
+
 @router.post("/api/equipment/{equip_id}/update")
 async def update_equipment(equip_id: int, name: str = Form(...), category: str = Form(...), driver: str = Form(""),
-                           status: str = Form("free"), tg_id: int = Form(0)):
+                           status: str = Form("free"), tg_id: int = Form(0), license_plate: str = Form("")):
     try:
-        await db.conn.execute("UPDATE equipment SET name=?, category=?, driver=?, status=? WHERE id=?",
-                              (name, category, driver, status, equip_id))
+        await db.conn.execute("UPDATE equipment SET name=?, category=?, driver=?, status=?, license_plate=? WHERE id=?",
+                              (name, category, driver, status, license_plate, equip_id))
         await db.conn.commit()
     except:
         await db.conn.rollback()

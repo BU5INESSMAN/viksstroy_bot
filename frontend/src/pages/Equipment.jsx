@@ -8,6 +8,7 @@ import EquipmentCard from '../features/equipment/components/EquipmentCard';
 import AddEquipForm from '../features/equipment/components/AddEquipForm';
 import BulkUploadForm from '../features/equipment/components/BulkUploadForm';
 import EquipmentInviteModal from '../features/equipment/components/EquipmentInviteModal';
+import EditEquipmentModal from '../features/equipment/components/EditEquipmentModal';
 import useConfirm from '../hooks/useConfirm';
 
 export default function Equipment() {
@@ -21,12 +22,13 @@ export default function Equipment() {
 
     const [activeTab, setActiveTab] = useState('list');
 
-    const [newEquip, setNewEquip] = useState({ name: '', driver: '', category: '' });
+    const [newEquip, setNewEquip] = useState({ name: '', driver: '', category: '', license_plate: '' });
     const [customCategory, setCustomCategory] = useState('');
     const [bulkText, setBulkText] = useState('');
 
     const [inviteInfo, setInviteInfo] = useState(null);
     const [copiedLink, setCopiedLink] = useState('');
+    const [editingEquip, setEditingEquip] = useState(null);
 
     const canManageEquipment = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canDeleteEquipment = ['moderator', 'boss', 'superadmin'].includes(role);
@@ -54,9 +56,10 @@ export default function Equipment() {
             fd.append('name', newEquip.name);
             fd.append('driver', newEquip.driver);
             fd.append('category', customCategory || newEquip.category);
+            fd.append('license_plate', newEquip.license_plate || '');
             fd.append('tg_id', tgId);
             await axios.post('/api/equipment/create', fd);
-            setNewEquip({ name: '', driver: '', category: '' });
+            setNewEquip({ name: '', driver: '', category: '', license_plate: '' });
             setCustomCategory('');
             setActiveTab('list');
             fetchData();
@@ -112,7 +115,7 @@ export default function Equipment() {
     const generateInvite = async (eq) => {
         try {
             const res = await axios.post(`/api/equipment/${eq.id}/generate_invite`);
-            setInviteInfo({...res.data, equipName: eq.name});
+            setInviteInfo({...res.data, equipName: `${eq.name} [${eq.license_plate || 'нет г.н.'}]`});
             setCopiedLink('');
         } catch (e) { toast.error("Ошибка генерации ссылки"); }
     };
@@ -158,7 +161,7 @@ export default function Equipment() {
                             handleUnlinkEquipment={handleUnlinkEquipment}
                             generateInvite={generateInvite}
                             handleEquipStatusChange={handleEquipStatusChange}
-                            handleDeleteEquip={handleDeleteEquip}
+                            onEdit={setEditingEquip}
                         />
                     ))}
                     {equipment.filter(e => activeTab === 'list' || e.category === activeTab).length === 0 && (
@@ -188,6 +191,16 @@ export default function Equipment() {
                     bulkText={bulkText}
                     setBulkText={setBulkText}
                     handleBulkUpload={handleBulkUpload}
+                />
+            )}
+
+            {/* ОКНО РЕДАКТИРОВАНИЯ ТЕХНИКИ */}
+            {editingEquip && (
+                <EditEquipmentModal
+                    equipment={editingEquip}
+                    categories={categories}
+                    onClose={() => setEditingEquip(null)}
+                    onUpdate={fetchData}
                 />
             )}
 

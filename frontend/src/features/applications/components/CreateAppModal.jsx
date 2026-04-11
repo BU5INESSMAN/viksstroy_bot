@@ -104,7 +104,7 @@ export default function CreateAppModal({
                 if (info.can_exchange) {
                     setExchangeDialog({
                         equipId: e.id,
-                        equipName: e.driver ? `${e.name} (${e.driver})` : e.name,
+                        equipName: e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`,
                         equipCategory: e.category,
                         holderName: info.holder_name,
                         holderObject: info.holder_object,
@@ -363,7 +363,7 @@ export default function CreateAppModal({
                                         {data.equipment?.filter(e => e.category === activeEqCategory).map(e => {
                                             const st = checkEquipStatus(e);
                                             const isSelected = appForm.equipment.some(eq => eq.id === e.id);
-                                            const displayName = e.driver ? `${e.name} (${e.driver})` : e.name;
+                                            const displayName = e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`;
                                             let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700';
 
                                             if (st.state === 'repair') btnStyles = 'bg-red-50 border-red-200 text-red-500 cursor-not-allowed opacity-75 dark:bg-red-900/20 dark:border-red-800';
@@ -393,7 +393,7 @@ export default function CreateAppModal({
                                                     <div className={`p-1.5 rounded-lg ${eq.is_freed ? 'bg-gray-100 dark:bg-gray-700 text-gray-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-500'}`}>
                                                         <Truck className="w-4 h-4" />
                                                     </div>
-                                                    {eq.name.split('(')[0].trim()}
+                                                    {eq.name}
                                                     {eq.is_freed && <CheckCircle className="w-4 h-4 text-emerald-500 ml-1" />}
                                                 </button>
                                             ) : (

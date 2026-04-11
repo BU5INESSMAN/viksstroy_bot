@@ -26,6 +26,10 @@ export default function AddEquipForm({ newEquip, setNewEquip, customCategory, se
                     <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">ФИО Водителя (по умолчанию)</label>
                     <input type="text" value={newEquip.driver} onChange={e => setNewEquip({...newEquip, driver: e.target.value})} className="w-full p-3.5 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-colors" />
                 </div>
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Госномер (необязательно)</label>
+                    <input type="text" value={newEquip.license_plate || ''} onChange={e => setNewEquip({...newEquip, license_plate: e.target.value})} placeholder="А123БВ22" className="w-full p-3.5 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-colors" />
+                </div>
                 <button type="submit" className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-[0.98] mt-2">Добавить в автопарк</button>
             </form>
         </div>
