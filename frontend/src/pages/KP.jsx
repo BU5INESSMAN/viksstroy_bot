@@ -3,7 +3,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     FileText, CheckCircle, Clock, Search, X, MapPin,
-    Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2
+    Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive
 } from 'lucide-react';
 
 export default function KP() {
@@ -26,6 +26,8 @@ export default function KP() {
     const [smrUnlockTime, setSmrUnlockTime] = useState('');
     const [extraWorksCatalog, setExtraWorksCatalog] = useState([]);
     const [extraWorks, setExtraWorks] = useState([]);
+    const [showArchive, setShowArchive] = useState(false);
+    const [archivedApps, setArchivedApps] = useState([]);
 
     const fileInputRef = useRef(null);
 
@@ -41,6 +43,13 @@ export default function KP() {
             }
         } catch (e) { console.error(e); }
         setLoading(false);
+    };
+
+    const fetchArchived = async () => {
+        try {
+            const res = await axios.get(`/api/kp/archived?tg_id=${tgId}`);
+            setArchivedApps(res.data || []);
+        } catch { setArchivedApps([]); }
     };
 
     useEffect(() => { fetchApps(); }, [tgId]);
@@ -179,12 +188,17 @@ export default function KP() {
                 </h2>
 
                 {isOffice && (
-                    <>
+                    <div className="flex items-center gap-2">
                         <input type="file" className="hidden" ref={fileInputRef} onChange={handleUploadCatalog} accept=".xlsx,.csv" />
+                        <button onClick={() => { setShowArchive(true); fetchArchived(); }}
+                            className="bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 transition-all flex items-center gap-2 hover:bg-gray-100"
+                            title="Архив СМР">
+                            <Archive className="w-4 h-4" />
+                        </button>
                         <button onClick={() => setShowSettings(true)} className="bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 transition-all flex items-center gap-2 hover:bg-gray-100">
                             <Settings className="w-4 h-4" /> Настройка СМР
                         </button>
-                    </>
+                    </div>
                 )}
             </div>
 
@@ -206,7 +220,26 @@ export default function KP() {
                     <div key={app.id} className="bg-white dark:bg-gray-800 p-5 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-all">
                         <div className="flex justify-between items-start mb-3">
                             <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-md">{app.date_target}</span>
-                            {activeTab === 'approved' && isOffice && <input type="checkbox" checked={selectedForExport.includes(app.id)} onChange={() => setSelectedForExport(prev => prev.includes(app.id) ? prev.filter(x => x !== app.id) : [...prev, app.id])} className="w-5 h-5 text-emerald-600 rounded" />}
+                            <div className="flex items-center gap-2">
+                                {isOffice && (
+                                    <button
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            if (!window.confirm(`Архивировать СМР: ${app.obj_name || 'Объект'} (${app.date_target})?`)) return;
+                                            try {
+                                                await axios.post(`/api/kp/apps/${app.id}/archive`, { tg_id: parseInt(tgId) });
+                                                toast.success('СМР перемещена в архив');
+                                                fetchApps();
+                                            } catch { toast.error('Ошибка архивации'); }
+                                        }}
+                                        className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                                        title="В архив"
+                                    >
+                                        <Archive className="w-4 h-4" />
+                                    </button>
+                                )}
+                                {activeTab === 'approved' && isOffice && <input type="checkbox" checked={selectedForExport.includes(app.id)} onChange={() => setSelectedForExport(prev => prev.includes(app.id) ? prev.filter(x => x !== app.id) : [...prev, app.id])} className="w-5 h-5 text-emerald-600 rounded" />}
+                            </div>
                         </div>
                         <h4 className="font-bold text-gray-800 dark:text-gray-100 flex items-start gap-1.5 mb-2 leading-tight"><MapPin className="w-4 h-4 text-red-500 mt-0.5" />{app.obj_name || 'Объект'}</h4>
                         <p className="text-xs text-gray-500 mb-4 flex items-center gap-1"><HardHat className="w-3.5 h-3.5 text-gray-400" /> {app.foreman_name}</p>
@@ -371,6 +404,49 @@ export default function KP() {
                                     <Download className="w-6 h-6" /> Экспорт
                                 </button>
                             </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            {showArchive && (
+                <div className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
+                        <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700">
+                            <h3 className="text-lg font-bold dark:text-white flex items-center gap-2">
+                                <Archive className="w-5 h-5 text-gray-500" /> Архив СМР
+                            </h3>
+                            <button onClick={() => setShowArchive(false)} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-2 border border-gray-100 dark:border-gray-700">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+                            {archivedApps.length === 0 ? (
+                                <p className="text-center text-gray-400 text-sm py-8">Архив пуст</p>
+                            ) : (
+                                <div className="space-y-3">
+                                    {archivedApps.map(app => (
+                                        <div key={app.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                                            <div>
+                                                <p className="font-bold text-sm text-gray-800 dark:text-gray-100">{app.obj_name || app.object_address || 'Объект'}</p>
+                                                <p className="text-xs text-gray-400 mt-0.5">{app.foreman_name} · {app.date_target}</p>
+                                            </div>
+                                            <button
+                                                onClick={async () => {
+                                                    try {
+                                                        await axios.post(`/api/kp/apps/${app.id}/restore`, { tg_id: parseInt(tgId) });
+                                                        toast.success('СМР восстановлена');
+                                                        fetchArchived();
+                                                        fetchApps();
+                                                    } catch { toast.error('Ошибка восстановления'); }
+                                                }}
+                                                className="text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-900/40 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-emerald-200 dark:border-emerald-800/50"
+                                            >
+                                                Восстановить
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

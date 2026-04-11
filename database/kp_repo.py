@@ -17,6 +17,7 @@ class KpRepoMixin:
                          LEFT JOIN objects o ON a.object_id = o.id
                          LEFT JOIN users u ON a.foreman_id = u.user_id
                 WHERE a.status IN ('published', 'in_progress', 'completed')
+                  AND (a.kp_archived = 0 OR a.kp_archived IS NULL)
                 ORDER BY a.date_target DESC \
                 """
         async with self.conn.execute(query) as cur:

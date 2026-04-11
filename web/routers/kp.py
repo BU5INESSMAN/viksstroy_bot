@@ -99,6 +99,61 @@ async def export_kp_mass(request: Request):
 
 
 # ==========================================
+# АРХИВ СМР
+# ==========================================
+
+
+async def _verify_office(tg_id: int):
+    """Verify user is moderator, boss, or superadmin. Returns (real_id, user_dict)."""
+    real_id = await resolve_id(tg_id)
+    user = await db.get_user(real_id)
+    if not user or dict(user).get('role') not in ('moderator', 'boss', 'superadmin'):
+        raise HTTPException(403, "Нет прав")
+    return real_id, dict(user)
+
+
+@router.post("/api/kp/apps/{app_id}/archive")
+async def archive_kp(app_id: int, request: Request):
+    """Архивировать СМР заявки (только для модератор+)."""
+    if db.conn is None: await db.init_db()
+    data = await request.json()
+    real_id, user = await _verify_office(data.get('tg_id', 0))
+    await db.conn.execute("UPDATE applications SET kp_archived = 1 WHERE id = ?", (app_id,))
+    await db.conn.commit()
+    await db.add_log(real_id, user.get('fio'), f"Архивировал СМР заявки №{app_id}")
+    return {"status": "ok"}
+
+
+@router.post("/api/kp/apps/{app_id}/restore")
+async def restore_kp(app_id: int, request: Request):
+    """Восстановить СМР заявки из архива (только для модератор+)."""
+    if db.conn is None: await db.init_db()
+    data = await request.json()
+    real_id, user = await _verify_office(data.get('tg_id', 0))
+    await db.conn.execute("UPDATE applications SET kp_archived = 0 WHERE id = ?", (app_id,))
+    await db.conn.commit()
+    await db.add_log(real_id, user.get('fio'), f"Восстановил СМР заявки №{app_id} из архива")
+    return {"status": "ok"}
+
+
+@router.get("/api/kp/archived")
+async def get_archived_kp(tg_id: int = 0):
+    """Список архивированных СМР (только для модератор+)."""
+    if db.conn is None: await db.init_db()
+    await _verify_office(tg_id)
+    async with db.conn.execute("""
+        SELECT a.id, a.date_target, a.object_address, o.name as obj_name,
+               u.fio as foreman_name, a.kp_status
+        FROM applications a
+        LEFT JOIN objects o ON a.object_id = o.id
+        LEFT JOIN users u ON a.foreman_id = u.user_id
+        WHERE a.kp_archived = 1
+        ORDER BY a.date_target DESC
+    """) as cur:
+        return [dict(row) for row in await cur.fetchall()]
+
+
+# ==========================================
 # НОВЫЕ ЭНДПОИНТЫ ДЛЯ ФАЙЛА СПРАВОЧНИКА
 # ==========================================
 

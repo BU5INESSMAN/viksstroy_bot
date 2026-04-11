@@ -98,6 +98,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         # Stage 3 migrations
         for col_stmt in [
             "ALTER TABLE objects ADD COLUMN pdf_file_path TEXT DEFAULT ''",
+            "ALTER TABLE applications ADD COLUMN kp_archived INTEGER DEFAULT 0",
         ]:
             try:
                 await self.conn.execute(col_stmt)
