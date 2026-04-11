@@ -9,12 +9,12 @@ from pydantic import BaseModel
 from typing import List, Optional
 from database_deps import db, TZ_BARNAUL
 from datetime import datetime, timedelta
-from utils import resolve_id, get_all_linked_ids
-from services.notifications import notify_users, notify_group_chat
+from utils import resolve_id, get_all_linked_ids, verify_moderator_plus
+from services.notifications import notify_users, send_schedule_notifications
 from services.image_service import strip_html
-from services.notifications import send_schedule_notifications
 from services.schedule_helpers import get_waiting_apps_for_date, get_schedule_dates
 from services.max_api import get_max_dm_chat_id, send_max_message
+from services.broadcast_service import broadcast_group, broadcast_dm_roles, broadcast_dm_users, run_test_notification
 from schedule_generator import publish_schedule_to_group, generate_schedule_image
 import asyncio
 import aiohttp
@@ -40,17 +40,6 @@ class BroadcastDMRequest(BaseModel):
     user_ids: Optional[List[int]] = None
 
 
-# --- Helpers ---
-
-async def verify_moderator_plus(tg_id: int):
-    """Verify user is moderator, boss, or superadmin."""
-    real_id = await resolve_id(tg_id)
-    user = await db.get_user(real_id)
-    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
-        raise HTTPException(403, "Нет прав")
-    return real_id, dict(user)
-
-
 # --- Broadcast Endpoints ---
 
 @router.post("/api/system/broadcast/group")
@@ -59,17 +48,7 @@ async def broadcast_to_group(req: BroadcastGroupRequest):
     real_id, user = await verify_moderator_plus(req.tg_id)
     if not req.message.strip():
         raise HTTPException(400, "Сообщение не может быть пустым")
-
-    text = f"📢 <b>Рассылка от {user.get('fio', 'Администратор')}:</b>\n\n{req.message}"
-
-    async def _do_broadcast_group():
-        try:
-            await notify_group_chat(text, "dashboard")
-            await db.add_log(real_id, user.get('fio'), f"Отправил рассылку в группу")
-        except Exception as e:
-            logger.error(f"Broadcast group error: {e}")
-
-    asyncio.create_task(_do_broadcast_group())
+    asyncio.create_task(broadcast_group(real_id, user.get('fio', 'Администратор'), req.message))
     return {"status": "ok"}
 
 
@@ -79,37 +58,16 @@ async def broadcast_to_dm(req: BroadcastDMRequest):
     real_id, user = await verify_moderator_plus(req.tg_id)
     if not req.message.strip():
         raise HTTPException(400, "Сообщение не может быть пустым")
-
-    text = f"📢 <b>Рассылка от {user.get('fio', 'Администратор')}:</b>\n\n{req.message}"
+    fio = user.get('fio', 'Администратор')
 
     if req.mode == "roles":
         if not req.roles:
             raise HTTPException(400, "Не выбраны роли")
-        roles = req.roles
-
-        async def _do_dm_roles():
-            try:
-                await notify_users(roles, text, "dashboard")
-                await db.add_log(real_id, user.get('fio'), f"Отправил рассылку в ЛС (роли: {', '.join(roles)})")
-            except Exception as e:
-                logger.error(f"Broadcast DM roles error: {e}")
-
-        asyncio.create_task(_do_dm_roles())
-
+        asyncio.create_task(broadcast_dm_roles(real_id, fio, req.message, req.roles))
     elif req.mode == "users":
         if not req.user_ids:
             raise HTTPException(400, "Не выбраны пользователи")
-        user_ids = req.user_ids
-
-        async def _do_dm_users():
-            try:
-                await notify_users([], text, "dashboard", extra_tg_ids=user_ids)
-                await db.add_log(real_id, user.get('fio'), f"Отправил рассылку в ЛС ({len(user_ids)} пользователей)")
-            except Exception as e:
-                logger.error(f"Broadcast DM users error: {e}")
-
-        asyncio.create_task(_do_dm_users())
-
+        asyncio.create_task(broadcast_dm_users(real_id, fio, req.message, req.user_ids))
     else:
         raise HTTPException(400, "Неверный режим рассылки")
 
@@ -147,64 +105,9 @@ async def test_notification_extended(tg_id: int = Form(...), test_type: str = Fo
         raise HTTPException(403, "Нет прав")
 
     fio = dict(user).get('fio', 'Супер-Админ')
-    platform_name = "MAX" if platform == "max" else "Telegram" if platform == "tg" else "MAX + Telegram"
-
-    if test_type == "brigadier":
-        # Fixed: sends to the requesting user as a brigadier-role notification
-        await notify_users(
-            ["brigadier"],
-            f"🧪 <b>Тест (Бригадир):</b> Вы назначены на смену завтра.\n📍 Объект: Тестовый объект\n⏰ Начало: 08:00 ({platform_name})",
-            "my-apps",
-            [real_tg_id],
-            target_platform=platform
-        )
-
-    elif test_type == "resource_freed":
-        await notify_users(
-            ["foreman", "moderator"],
-            f"🔓 <b>Ресурс освобождён ({platform_name}):</b>\n🚜 Кран КС-55713 свободен с 14:00\n👷 Водитель: Иванов И.И.",
-            "dashboard",
-            [real_tg_id],
-            target_platform=platform,
-            category="orders"
-        )
-
-    elif test_type == "schedule_published":
-        await notify_users(
-            ["foreman", "brigadier"],
-            f"📅 <b>Расписание опубликовано ({platform_name}):</b>\n📆 Расписание на завтра готово и утверждено.\nОткройте платформу для просмотра нарядов.",
-            "dashboard",
-            [real_tg_id],
-            target_platform=platform,
-            category="orders"
-        )
-
-    elif test_type == "kp_review":
-        await notify_users(
-            ["moderator", "boss"],
-            f"📋 <b>Требуется проверка КП ({platform_name}):</b>\n👷 Прораб: {fio}\n📍 Объект: Тестовый объект\n💰 Сумма: 150 000 ₽",
-            "kp",
-            [real_tg_id],
-            target_platform=platform,
-            category="reports"
-        )
-
-    elif test_type == "system_error":
-        # HARDCODED: system errors go STRICTLY to superadmins via DM + main group chat.
-        # Never send debug/error alerts to moderators.
-        error_msg = f"🚨 <b>Тест системной ошибки ({platform_name}):</b>\n❌ RuntimeError: Test exception\n👣 Маршрут: /api/system/test\n🕐 {datetime.now(TZ_BARNAUL).strftime('%H:%M:%S')}"
-        await notify_users(
-            ["report_group", "superadmin"],
-            error_msg,
-            "system",
-            extra_tg_ids=[real_tg_id],
-            target_platform=platform,
-            category="errors"
-        )
-
-    else:
-        raise HTTPException(400, f"Неизвестный тип теста: {test_type}")
-
+    success, error = await run_test_notification(real_tg_id, fio, test_type, platform)
+    if not success:
+        raise HTTPException(400, error)
     return {"status": "ok", "test_type": test_type}
 
 
@@ -255,7 +158,6 @@ async def remind_smr(req: RemindSMRRequest):
     """Отправить напоминание прорабу о незаполненных СМР."""
     real_id, user = await verify_moderator_plus(req.tg_id)
 
-    # Build the list of unfilled objects
     if not req.app_ids:
         raise HTTPException(400, "Нет заявок для напоминания")
 
@@ -272,7 +174,6 @@ async def remind_smr(req: RemindSMRRequest):
     lines = [f"• {a[1] or '—'} ({a[2]})" for a in apps]
     message = "⏰ <b>Напоминание: заполните СМР отчёт</b>\n\n" + "\n".join(lines)
 
-    # Send to all linked accounts of the foreman
     foreman_ids = await get_all_linked_ids(req.foreman_id)
     tg_ids = [lid for lid in foreman_ids if lid > 0]
     max_ids = [abs(lid) for lid in foreman_ids if lid < 0]
@@ -330,13 +231,12 @@ async def api_schedule_dates(tg_id: int = 0):
 
 @router.get("/api/system/schedule_warnings")
 async def api_schedule_warnings(tg_id: int = 0, date: str = ""):
-    """Получить непроверенные заявки на дату (для предупреждения в модалке)."""
+    """Получить непроверенные заявки на дату."""
     if tg_id:
         await verify_moderator_plus(tg_id)
     if not date:
         raise HTTPException(400, "Не указана дата")
-    waiting = await get_waiting_apps_for_date(date)
-    return waiting
+    return await get_waiting_apps_for_date(date)
 
 
 @router.post("/api/system/send_schedule_group")
@@ -350,14 +250,11 @@ async def api_send_schedule_group(tg_id: int = Form(0), date: str = Form("")):
         try:
             await publish_schedule_to_group(date)
             count = await send_schedule_notifications(date)
-
-            # Очищаем таймер авто-публикации
             try:
                 await db.conn.execute("DELETE FROM settings WHERE key = 'smart_publish_at'")
                 await db.conn.commit()
             except:
                 pass
-
             await db.add_log(real_id, user_info.get('fio'),
                              f"Отправил расстановку на {date} в группу ({count} нарядов)")
         except Exception as e:
@@ -378,7 +275,6 @@ async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
         try:
             buf = await generate_schedule_image(date)
 
-            # Сохраняем файл
             import time as _time
             filename = f"schedule_{date}_{int(_time.time())}.png"
             filepath = os.path.join("data", "uploads", filename)
@@ -386,7 +282,6 @@ async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
             with open(filepath, "wb") as f:
                 f.write(buf.getvalue())
 
-            # Находим все связанные ID пользователя (TG + MAX)
             linked_ids = await get_all_linked_ids(real_id)
             tg_ids = [lid for lid in linked_ids if lid > 0]
             max_ids = [abs(lid) for lid in linked_ids if lid < 0]
@@ -394,7 +289,6 @@ async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
             bot_token = os.getenv("BOT_TOKEN")
             max_bot_token = os.getenv("MAX_BOT_TOKEN")
 
-            # TG — отправляем фото в ЛС
             if bot_token and tg_ids:
                 buf.seek(0)
                 photo_bytes = buf.getvalue()
@@ -412,7 +306,6 @@ async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
                         except Exception:
                             pass
 
-            # MAX — отправляем фото в ЛС
             if max_bot_token and max_ids:
                 for mid in max_ids:
                     dm_chat_id = await get_max_dm_chat_id(str(mid))

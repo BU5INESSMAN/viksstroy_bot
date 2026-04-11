@@ -41,6 +41,16 @@ async def fetch_teams_dict():
         return {r[0]: r[1] for r in await cur.fetchall()}
 
 
+async def verify_moderator_plus(tg_id: int):
+    """Verify user is moderator, boss, or superadmin. Returns (real_id, user_dict)."""
+    from fastapi import HTTPException
+    real_id = await resolve_id(tg_id)
+    user = await db.get_user(real_id)
+    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
+        raise HTTPException(403, "Нет прав")
+    return real_id, dict(user)
+
+
 def enrich_app_with_team_name(app_dict, teams_dict):
     t_val = str(app_dict.get('team_id', '0'))
     if t_val and t_val != '0':
