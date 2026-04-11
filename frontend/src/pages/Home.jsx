@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, CalendarCheck, Send, Loader2 } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, Send, Loader2 } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
 import ActiveApplicationsCard from '../features/applications/components/ActiveApplicationsCard';
@@ -12,7 +12,6 @@ import EditAppModal from '../features/applications/components/EditAppModal';
 import ConfirmFreeModal from '../features/applications/components/ConfirmFreeModal';
 import ViewAppModal from '../features/applications/components/ViewAppModal';
 import ArchiveModal from '../features/applications/components/ArchiveModal';
-import ScheduleModal from '../features/applications/components/ScheduleModal';
 import useConfirm from '../hooks/useConfirm';
 
 export default function Home() {
@@ -30,7 +29,6 @@ export default function Home() {
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
     const [isArchiveOpen, setArchiveOpen] = useState(false);
-    const [isScheduleOpen, setScheduleOpen] = useState(false);
     const [debtors, setDebtors] = useState([]);
     const [publishingTomorrow, setPublishingTomorrow] = useState(false);
 
@@ -437,9 +435,9 @@ export default function Home() {
                         </h2>
                         <div className="flex items-center gap-2">
                             {canArchive && (
-                                <button onClick={() => setScheduleOpen(true)}
-                                    className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-4 py-2 rounded-xl border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm">
-                                    <CalendarCheck className="w-4 h-4" /> Расстановка
+                                <button onClick={publishTomorrow} disabled={publishingTomorrow}
+                                    className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-4 py-2 rounded-xl border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm disabled:opacity-50">
+                                    {publishingTomorrow ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} На завтра
                                 </button>
                             )}
                             {canArchive && (
@@ -528,7 +526,6 @@ export default function Home() {
             )}
 
             <ArchiveModal isOpen={isArchiveOpen} onClose={() => setArchiveOpen(false)} />
-            <ScheduleModal isOpen={isScheduleOpen} onClose={() => setScheduleOpen(false)} tgId={tgId} />
             {ConfirmUI}
         </main>
     );

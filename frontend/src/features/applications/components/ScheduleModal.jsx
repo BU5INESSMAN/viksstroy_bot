@@ -12,50 +12,51 @@ const DAYS_RU = ['вс', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб'];
 
 function formatDateRu(dateStr) {
     const d = new Date(dateStr + 'T00:00:00');
-    const day = d.getDate();
-    const month = MONTHS_RU[d.getMonth()];
-    const year = d.getFullYear();
-    const weekday = DAYS_RU[d.getDay()];
-    return `${day} ${month} ${year} (${weekday})`;
+    return `${d.getDate()} ${MONTHS_RU[d.getMonth()]} ${d.getFullYear()} (${DAYS_RU[d.getDay()]})`;
 }
 
 export default function ScheduleModal({ isOpen, onClose, tgId }) {
     const [dateBlocks, setDateBlocks] = useState([]);
     const [loading, setLoading] = useState(false);
-    const [sendingDate, setSendingDate] = useState(null);
-    const [sendingTarget, setSendingTarget] = useState(null);
-    const [confirmState, setConfirmState] = useState(null); // { date, target, warnings }
+    const [selectedDate, setSelectedDate] = useState(null);
+    const [sending, setSending] = useState(false);
+    const [confirmWarning, setConfirmWarning] = useState(false);
 
     useEffect(() => {
         if (isOpen) {
-            setSendingDate(null);
-            setSendingTarget(null);
-            setConfirmState(null);
+            setSelectedDate(null);
+            setConfirmWarning(false);
+            setSending(false);
             setLoading(true);
             axios.get(`/api/system/schedule_dates?tg_id=${tgId}`)
-                .then(res => setDateBlocks(res.data || []))
+                .then(res => {
+                    const blocks = (res.data || []).filter(b => b.approved.length > 0 || b.waiting.length > 0);
+                    setDateBlocks(blocks);
+                })
                 .catch(() => setDateBlocks([]))
                 .finally(() => setLoading(false));
         }
     }, [isOpen]);
 
-    const handleSend = (date, target, block) => {
-        // If there are waiting apps and sending to group — show confirmation
-        if (target === 'group' && block.waiting.length > 0) {
-            setConfirmState({ date, target, warnings: block.waiting });
+    const selectedBlock = dateBlocks.find(b => b.date === selectedDate);
+
+    const handleSendGroup = () => {
+        if (!selectedBlock) return;
+        if (selectedBlock.waiting.length > 0 && !confirmWarning) {
+            setConfirmWarning(true);
             return;
         }
-        doSend(date, target);
+        doSend('group');
     };
 
-    const doSend = async (date, target) => {
-        setConfirmState(null);
-        setSendingDate(date);
-        setSendingTarget(target);
+    const doSend = async (target) => {
+        if (!selectedDate) return;
+        setConfirmWarning(false);
+        setSending(true);
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
-            fd.append('date', date);
+            fd.append('date', selectedDate);
 
             const endpoint = target === 'group'
                 ? '/api/system/send_schedule_group'
@@ -66,27 +67,24 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
             if (target === 'group') {
                 toast.success(`Расстановка отправлена в группу! Уведомлено: ${res.data.notified || 0}`);
             } else {
-                toast.success("Расстановка отправлена вам в ЛС!");
+                toast.success('Расстановка отправлена вам в ЛС!');
             }
         } catch (err) {
-            toast.error(err.response?.data?.detail || "Ошибка отправки");
+            toast.error(err.response?.data?.detail || 'Ошибка отправки');
         } finally {
-            setSendingDate(null);
-            setSendingTarget(null);
+            setSending(false);
         }
     };
 
     if (!isOpen) return null;
 
-    const isSending = sendingDate !== null;
-
     return (
         <div className="fixed inset-0 w-screen h-[100dvh] z-[99990] bg-black/60 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
-                <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+                <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
 
                     {/* Header */}
-                    <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
+                    <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30 flex-shrink-0">
                         <h3 className="text-xl font-bold flex items-center gap-2 dark:text-white">
                             <CalendarCheck className="text-blue-500 w-6 h-6" />
                             Расстановка
@@ -96,9 +94,8 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
                         </button>
                     </div>
 
-                    {/* Content */}
-                    <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
-
+                    {/* Scrollable date blocks */}
+                    <div className="flex-1 overflow-y-auto p-6 space-y-3">
                         {loading ? (
                             <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                                 <Loader2 className="w-8 h-8 animate-spin mb-3 text-blue-500" />
@@ -110,105 +107,119 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
                                 <p className="text-sm font-medium">Нет активных заявок</p>
                             </div>
                         ) : (
-                            dateBlocks.map(block => (
-                                <div key={block.date} className="border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden">
-                                    {/* Date Header */}
-                                    <div className="bg-gray-50 dark:bg-gray-900/40 px-4 py-3 flex justify-between items-center">
-                                        <span className="font-bold text-sm dark:text-white">
-                                            {formatDateRu(block.date)}
-                                        </span>
-                                        <div className="flex items-center gap-1.5 text-xs">
-                                            {block.approved.length > 0 && (
-                                                <span className="flex items-center gap-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">
-                                                    <CheckCircle className="w-3 h-3" /> {block.approved.length}
-                                                </span>
-                                            )}
-                                            {block.waiting.length > 0 && (
-                                                <span className="flex items-center gap-1 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">
-                                                    <AlertTriangle className="w-3 h-3" /> {block.waiting.length}
-                                                </span>
-                                            )}
+                            dateBlocks.map(block => {
+                                const isSelected = selectedDate === block.date;
+                                return (
+                                    <div
+                                        key={block.date}
+                                        onClick={() => { setSelectedDate(block.date); setConfirmWarning(false); }}
+                                        className={`rounded-2xl overflow-hidden cursor-pointer transition-all duration-150 ${
+                                            isSelected
+                                                ? 'ring-2 ring-indigo-500 bg-indigo-50/50 dark:bg-indigo-900/20 border border-indigo-300 dark:border-indigo-600 shadow-md'
+                                                : 'border border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:shadow-sm'
+                                        }`}
+                                    >
+                                        {/* Date header */}
+                                        <div className={`px-4 py-3 flex justify-between items-center ${
+                                            isSelected
+                                                ? 'bg-indigo-100/60 dark:bg-indigo-900/30'
+                                                : 'bg-gray-50 dark:bg-gray-900/40'
+                                        }`}>
+                                            <span className={`font-bold text-sm ${isSelected ? 'text-indigo-800 dark:text-indigo-300' : 'dark:text-white'}`}>
+                                                {formatDateRu(block.date)}
+                                            </span>
+                                            <div className="flex items-center gap-1.5 text-xs">
+                                                {block.approved.length > 0 && (
+                                                    <span className="flex items-center gap-1 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 px-2 py-0.5 rounded-full">
+                                                        <CheckCircle className="w-3 h-3" /> {block.approved.length}
+                                                    </span>
+                                                )}
+                                                {block.waiting.length > 0 && (
+                                                    <span className="flex items-center gap-1 bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 px-2 py-0.5 rounded-full">
+                                                        <AlertTriangle className="w-3 h-3" /> {block.waiting.length}
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        {/* Apps list */}
+                                        <div className="divide-y divide-gray-100 dark:divide-gray-700/50">
+                                            {block.approved.map((app, i) => (
+                                                <div key={`a-${i}`} className="flex items-center gap-2 px-4 py-2.5 text-sm">
+                                                    <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                                                    <span className="truncate text-gray-700 dark:text-gray-300">{app.object_address}</span>
+                                                    <span className="text-gray-400 dark:text-gray-500 mx-1 flex-shrink-0">&mdash;</span>
+                                                    <span className="text-gray-500 dark:text-gray-400 flex-shrink-0 text-xs">{app.foreman_name}</span>
+                                                </div>
+                                            ))}
+                                            {block.waiting.map((app, i) => (
+                                                <div key={`w-${i}`} className="flex items-center gap-2 px-4 py-2.5 text-sm bg-amber-100/60 dark:bg-amber-900/15">
+                                                    <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
+                                                    <span className="truncate text-amber-800 dark:text-amber-300">{app.object_address}</span>
+                                                    <span className="text-amber-500 mx-1 flex-shrink-0">&mdash;</span>
+                                                    <span className="text-amber-600 dark:text-amber-400 flex-shrink-0 text-xs">{app.foreman_name}</span>
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
-
-                                    {/* Apps List */}
-                                    <div className="divide-y divide-gray-100 dark:divide-gray-700/50">
-                                        {block.approved.map((app, i) => (
-                                            <div key={`a-${i}`} className="flex items-center gap-2 px-4 py-2.5 text-sm">
-                                                <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                                                <span className="truncate text-gray-700 dark:text-gray-300">{app.object_address}</span>
-                                                <span className="text-gray-400 dark:text-gray-500 mx-1 flex-shrink-0">&mdash;</span>
-                                                <span className="text-gray-500 dark:text-gray-400 flex-shrink-0 text-xs">{app.foreman_name}</span>
-                                            </div>
-                                        ))}
-                                        {block.waiting.map((app, i) => (
-                                            <div key={`w-${i}`} className="flex items-center gap-2 px-4 py-2.5 text-sm bg-amber-100/60 dark:bg-amber-900/15">
-                                                <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                                                <span className="truncate text-amber-800 dark:text-amber-300">{app.object_address}</span>
-                                                <span className="text-amber-500 dark:text-amber-500 mx-1 flex-shrink-0">&mdash;</span>
-                                                <span className="text-amber-600 dark:text-amber-400 flex-shrink-0 text-xs">{app.foreman_name}</span>
-                                            </div>
-                                        ))}
-                                        {block.approved.length === 0 && block.waiting.length === 0 && (
-                                            <div className="px-4 py-3 text-xs text-gray-400 text-center">Нет заявок</div>
-                                        )}
-                                    </div>
-
-                                    {/* Confirmation Dialog (inline, per-card) */}
-                                    {confirmState && confirmState.date === block.date && (
-                                        <div className="px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border-t border-amber-200 dark:border-amber-800/50 space-y-2">
-                                            <p className="text-xs font-bold text-amber-800 dark:text-amber-400 flex items-center gap-1.5">
-                                                <AlertTriangle className="w-3.5 h-3.5" />
-                                                На эту дату есть неодобренные заявки. Всё равно отправить?
-                                            </p>
-                                            <div className="flex gap-2">
-                                                <button
-                                                    onClick={() => setConfirmState(null)}
-                                                    className="flex-1 px-3 py-2 rounded-xl text-xs font-bold border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all active:scale-95"
-                                                >
-                                                    Отмена
-                                                </button>
-                                                <button
-                                                    onClick={() => doSend(confirmState.date, confirmState.target)}
-                                                    disabled={isSending}
-                                                    className="flex-1 px-3 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
-                                                >
-                                                    {isSending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
-                                                    Да, отправить
-                                                </button>
-                                            </div>
-                                        </div>
-                                    )}
-
-                                    {/* Action Buttons — hide when confirmation is active for this card */}
-                                    {!(confirmState && confirmState.date === block.date) && (
-                                        <div className="flex gap-2 px-4 py-3 bg-gray-50/50 dark:bg-gray-900/20 border-t border-gray-100 dark:border-gray-700/50">
-                                            <button
-                                                onClick={() => handleSend(block.date, 'group', block)}
-                                                disabled={isSending}
-                                                className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs py-2.5 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-                                            >
-                                                {sendingDate === block.date && sendingTarget === 'group'
-                                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                    : <Users className="w-3.5 h-3.5" />}
-                                                В группу
-                                            </button>
-                                            <button
-                                                onClick={() => doSend(block.date, 'self')}
-                                                disabled={isSending}
-                                                className="flex-1 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-bold rounded-xl text-xs py-2.5 transition-all active:scale-[0.98] flex items-center justify-center gap-1.5 border border-gray-200 dark:border-gray-600 disabled:opacity-40 disabled:cursor-not-allowed"
-                                            >
-                                                {sendingDate === block.date && sendingTarget === 'self'
-                                                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                                    : <User className="w-3.5 h-3.5" />}
-                                                Себе
-                                            </button>
-                                        </div>
-                                    )}
-                                </div>
-                            ))
+                                );
+                            })
                         )}
                     </div>
+
+                    {/* Sticky bottom: warning confirmation OR action buttons */}
+                    {dateBlocks.length > 0 && (
+                        <div className="flex-shrink-0 border-t border-gray-100 dark:border-gray-700 bg-gray-50/80 dark:bg-gray-900/40 px-6 py-4 space-y-3">
+
+                            {/* Warning confirmation */}
+                            {confirmWarning && selectedBlock && (
+                                <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 rounded-xl p-3 space-y-2">
+                                    <p className="text-xs font-bold text-amber-800 dark:text-amber-400 flex items-center gap-1.5">
+                                        <AlertTriangle className="w-3.5 h-3.5" />
+                                        На выбранную дату есть неодобренные заявки. Всё равно отправить?
+                                    </p>
+                                    <div className="flex gap-2">
+                                        <button
+                                            onClick={() => setConfirmWarning(false)}
+                                            className="flex-1 px-3 py-2 rounded-xl text-xs font-bold border border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-all active:scale-95"
+                                        >
+                                            Отмена
+                                        </button>
+                                        <button
+                                            onClick={() => doSend('group')}
+                                            disabled={sending}
+                                            className="flex-1 px-3 py-2 rounded-xl text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white transition-all active:scale-95 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                        >
+                                            {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+                                            Да, отправить
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Action buttons */}
+                            {!confirmWarning && (
+                                <div className="flex gap-3">
+                                    <button
+                                        onClick={handleSendGroup}
+                                        disabled={!selectedDate || sending}
+                                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-sm py-3 transition-all active:scale-[0.98] flex items-center justify-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed shadow-md"
+                                    >
+                                        {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Users className="w-4 h-4" />}
+                                        В группу
+                                    </button>
+                                    <button
+                                        onClick={() => doSend('self')}
+                                        disabled={!selectedDate || sending}
+                                        className="flex-1 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 text-gray-700 dark:text-gray-200 font-bold rounded-xl text-sm py-3 transition-all active:scale-[0.98] flex items-center justify-center gap-2 border border-gray-200 dark:border-gray-600 disabled:opacity-40 disabled:cursor-not-allowed shadow-sm"
+                                    >
+                                        {sending ? <Loader2 className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />}
+                                        Себе
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    )}
                 </div>
             </div>
         </div>

@@ -5,11 +5,12 @@ import toast from 'react-hot-toast';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle, HardHat, Flag,
-    XCircle, Search, Undo, Send, ChevronDown, ChevronUp, User, X, Check, LayoutGrid
+    XCircle, Search, Undo, Send, ChevronDown, ChevronUp, User, X, Check
 } from 'lucide-react';
 
 import { getTodayStr } from '../utils/dateUtils';
 import useConfirm from '../hooks/useConfirm';
+import ScheduleModal from '../features/applications/components/ScheduleModal';
 
 const ReviewSection = ({ title, icon: Icon, colorClass, titleColorClass, apps, statusType, renderAppCard }) => {
     const [showAll, setShowAll] = useState(false);
@@ -47,6 +48,7 @@ export default function Review() {
     const [selectedToPublish, setSelectedToPublish] = useState([]);
 
     const [isProcessing, setIsProcessing] = useState(false);
+    const [isScheduleOpen, setScheduleOpen] = useState(false);
     const { confirm, prompt, ConfirmUI } = useConfirm();
 
     const fetchData = () => {
@@ -116,22 +118,6 @@ export default function Review() {
     };
 
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
-
-    const handlePublishSchedule = async () => {
-        const ok = await confirm('Опубликовать расстановку на завтра в групповой чат?', { title: 'Публикация расстановки', variant: 'info', confirmText: 'Опубликовать' });
-        if (!ok) return;
-        setIsProcessing(true);
-        try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            await axios.post('/api/applications/publish_schedule', fd);
-            toast.success('Расстановка успешно опубликована!');
-        } catch (e) {
-            toast.error(e.response?.data?.detail || 'Ошибка публикации расстановки');
-        } finally {
-            setIsProcessing(false);
-        }
-    };
 
     const todayYYYYMMDD = getTodayStr();
 
@@ -248,8 +234,8 @@ export default function Review() {
                 </h2>
                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     {isModOrBoss && (
-                        <button onClick={handlePublishSchedule} disabled={isProcessing} className="w-full sm:w-auto bg-violet-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                            <LayoutGrid className="w-4 h-4" /> Расстановка
+                        <button onClick={() => setScheduleOpen(true)} disabled={isProcessing} className="w-full sm:w-auto bg-violet-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                            <Calendar className="w-4 h-4" /> Расстановка
                         </button>
                     )}
                     {filteredForPublish.length > 0 && (
@@ -489,6 +475,7 @@ export default function Review() {
                     </div>
                 </div>
             )}
+            <ScheduleModal isOpen={isScheduleOpen} onClose={() => setScheduleOpen(false)} tgId={tgId} />
             {ConfirmUI}
         </main>
     );

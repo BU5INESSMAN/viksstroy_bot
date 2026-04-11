@@ -11,10 +11,14 @@ from datetime import datetime, timedelta
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
+import logging
+
 from PIL import Image, ImageDraw, ImageFont
 from database_deps import db, TZ_BARNAUL
 from utils import send_max_message, get_max_group_id
 import aiohttp
+
+logger = logging.getLogger("SCHEDULE_GEN")
 
 
 # ─────────────────────────────────────────────
@@ -52,6 +56,12 @@ async def _fetch_schedule_sections(target_date: str) -> list:
         cols = [c[0] for c in cur.description]
         apps = [dict(zip(cols, row)) for row in await cur.fetchall()]
 
+    logger.info(f"Schedule sections for {target_date}: {len(apps)} rows found")
+    for app in apps:
+        logger.info(f"  app #{app.get('id')}: status={app.get('status')}, "
+                     f"foreman_id={app.get('foreman_id')} (type={type(app.get('foreman_id')).__name__}), "
+                     f"object_address={app.get('object_address')!r}")
+
     # Обратные индексы: кто на каком объекте
     member_objs: dict[int, list[str]] = {}
     equip_objs: dict[int, list[str]] = {}
@@ -62,6 +72,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
 
         fid = app.get("foreman_id")
         if fid:
+            fid = int(fid)
             foreman_objs.setdefault(fid, []).append(obj)
 
         sel = app.get("selected_members", "") or ""
@@ -76,9 +87,13 @@ async def _fetch_schedule_sections(target_date: str) -> list:
                 for eq in json.loads(eq_str):
                     eid = eq.get("id")
                     if eid:
-                        equip_objs.setdefault(eid, []).append(obj)
+                        equip_objs.setdefault(int(eid), []).append(obj)
             except Exception:
                 pass
+
+    logger.info(f"  foreman_objs keys: {list(foreman_objs.keys())}")
+    logger.info(f"  member_objs keys: {list(member_objs.keys())}")
+    logger.info(f"  equip_objs keys: {list(equip_objs.keys())}")
 
     sections = []
 
@@ -96,6 +111,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
     ) as cur:
         foremen_rows = await cur.fetchall()
 
+    logger.info(f"  foremen from users table: {[(r[0], r[1]) for r in foremen_rows]}")
     if foremen_rows:
         rows = []
         for uid, fio, role in foremen_rows:
