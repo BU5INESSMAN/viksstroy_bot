@@ -121,7 +121,7 @@ export default function SystemSettings({ settings, handleSettingChange, saveSett
                         <Truck className="w-4 h-4 text-cyan-500" /> Настройки техники
                     </h3>
                     <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-medium">Базовое время работы техники и обмен.</p>
-                    <div className="flex items-center gap-3 mb-4">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-4">
                         <div className="flex-1">
                             <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest">С</label>
                             <input type="time" name="equip_base_time_start" value={settings.equip_base_time_start} onChange={handleSettingChange}

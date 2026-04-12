@@ -253,15 +253,15 @@ export default function Home() {
                                 <button
                                     onClick={publishTomorrow}
                                     disabled={publishingTomorrow}
-                                    className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-4 py-2 rounded-xl border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm disabled:opacity-50"
+                                    className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-3 py-2 sm:px-4 rounded-xl border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm disabled:opacity-50"
                                 >
-                                    {publishingTomorrow ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} На завтра
+                                    {publishingTomorrow ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} <span className="hidden sm:inline">На </span>завтра
                                 </button>
                             )}
                             {canArchive && (
                                 <button
                                     onClick={() => setArchiveOpen(true)}
-                                    className="flex items-center gap-2 text-sm font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 px-4 py-2 rounded-xl border border-purple-200 dark:border-purple-800 transition-all active:scale-95 shadow-sm"
+                                    className="flex items-center gap-1.5 text-xs sm:text-sm font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 px-3 py-2 sm:px-4 rounded-xl border border-purple-200 dark:border-purple-800 transition-all active:scale-95 shadow-sm"
                                 >
                                     <Archive className="w-4 h-4" /> Архив
                                 </button>

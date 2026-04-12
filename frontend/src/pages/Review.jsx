@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle, HardHat, Flag,
-    XCircle, Search, Undo, Send, ChevronDown, ChevronUp, User, X, Check
+    XCircle, Search, Undo, ChevronDown, ChevronUp, User, X
 } from 'lucide-react';
 
 import { getTodayStr } from '../utils/dateUtils';
@@ -43,10 +43,6 @@ export default function Review() {
     const [reviewApps, setReviewApps] = useState([]);
 
     const [selectedApp, setSelectedApp] = useState(null);
-    const [isPublishModalOpen, setPublishModalOpen] = useState(false);
-    const [publishDateFilter, setPublishDateFilter] = useState('');
-    const [selectedToPublish, setSelectedToPublish] = useState([]);
-
     const [isProcessing, setIsProcessing] = useState(false);
     const [isScheduleOpen, setScheduleOpen] = useState(false);
     const { confirm, prompt, ConfirmUI } = useConfirm();
@@ -87,36 +83,6 @@ export default function Review() {
         }
     };
 
-    const openPublishModal = () => {
-        setPublishDateFilter('');
-        setSelectedToPublish(approvedApps.map(a => a.id));
-        setPublishModalOpen(true);
-    };
-
-    const togglePublishSelect = (id) => {
-        if (isProcessing) return;
-        setSelectedToPublish(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-    };
-
-    const handleExecutePublish = async () => {
-        if(selectedToPublish.length === 0) return toast.error("Выберите хотя бы одну заявку!");
-
-        setIsProcessing(true);
-        try {
-            const fd = new FormData();
-            fd.append('app_ids', selectedToPublish.join(','));
-            fd.append('tg_id', tgId);
-            const res = await axios.post('/api/applications/publish', fd);
-            toast.success(`Опубликовано нарядов: ${res.data.published}`);
-            setPublishModalOpen(false);
-            fetchData();
-        } catch(e) {
-            toast.error("Ошибка публикации");
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
 
     const todayYYYYMMDD = getTodayStr();
@@ -125,10 +91,6 @@ export default function Review() {
     const approvedApps = reviewApps.filter(a => a.status === 'approved');
     const inProgressApps = reviewApps.filter(a => a.status === 'in_progress' || a.status === 'published');
     const completedApps = reviewApps.filter(a => a.status === 'completed');
-
-    const filteredForPublish = publishDateFilter
-        ? approvedApps.filter(a => a.date_target === publishDateFilter && a.status === 'approved')
-        : approvedApps.filter(a => a.status === 'approved');
 
     const canModerate = ['moderator', 'boss', 'superadmin'].includes(role);
 
@@ -218,16 +180,6 @@ export default function Review() {
     return (
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24 relative">
 
-            {isProcessing && isPublishModalOpen && (
-                <div className="fixed inset-0 w-screen h-[100dvh] z-[200] bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center transition-opacity">
-                    <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl shadow-2xl flex flex-col items-center border border-gray-100 dark:border-gray-700">
-                        <div className="w-14 h-14 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-                        <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Публикация нарядов...</h3>
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Пожалуйста, не закрывайте страницу</p>
-                    </div>
-                </div>
-            )}
-
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-5 border border-gray-100 dark:border-gray-700 gap-4">
                 <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100">
                     <ClipboardList className="w-7 h-7 text-blue-500 mr-2.5" /> Управление заявками
@@ -236,11 +188,6 @@ export default function Review() {
                     {isModOrBoss && (
                         <button onClick={() => setScheduleOpen(true)} disabled={isProcessing} className="w-full sm:w-auto bg-violet-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-2">
                             <Calendar className="w-4 h-4" /> Расстановка
-                        </button>
-                    )}
-                    {filteredForPublish.length > 0 && (
-                        <button onClick={openPublishModal} disabled={isProcessing} className="w-full sm:w-auto bg-emerald-500 text-white px-6 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                            <Send className="w-4 h-4" /> Опубликовать ({filteredForPublish.length})
                         </button>
                     )}
                 </div>
@@ -255,56 +202,6 @@ export default function Review() {
                 <div className="flex flex-col items-center justify-center p-12 bg-white dark:bg-gray-800 rounded-3xl border border-gray-100 dark:border-gray-700 shadow-sm">
                     <Search className="w-12 h-12 text-gray-300 dark:text-gray-600 mb-3" />
                     <p className="text-gray-500 dark:text-gray-400 font-medium">Активных заявок пока нет</p>
-                </div>
-            )}
-
-            {/* МОДАЛЬНОЕ ОКНО ПУБЛИКАЦИИ */}
-            {isPublishModalOpen && (
-                <div className="fixed inset-0 w-screen h-[100dvh] z-[120] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
-                    <div className="flex min-h-screen items-center justify-center p-4">
-                        <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden border border-gray-100 dark:border-gray-700">
-                            <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
-                                <h3 className="text-xl font-bold flex items-center gap-2 dark:text-white">
-                                    <Send className="w-5 h-5 text-emerald-500" /> Опубликовать заявки
-                                </h3>
-                                <button disabled={isProcessing} onClick={() => setPublishModalOpen(false)} className="text-gray-400 hover:text-red-500 disabled:opacity-50 transition-colors bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-sm border border-gray-100 dark:border-gray-700">
-                                    <X className="w-5 h-5" />
-                                </button>
-                            </div>
-
-                            <div className="p-6 space-y-5">
-                                <div>
-                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">Фильтр по дате:</label>
-                                    <div className="flex space-x-2">
-                                        <button disabled={isProcessing} onClick={() => setPublishDateFilter('')} className={`px-4 py-2.5 rounded-xl text-sm font-bold border transition-all active:scale-95 disabled:opacity-50 ${!publishDateFilter ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700'}`}>Все даты</button>
-                                        <input type="date" disabled={isProcessing} value={publishDateFilter} onChange={e => setPublishDateFilter(e.target.value)} className="flex-1 px-3 py-2.5 border rounded-xl dark:bg-gray-700 dark:border-gray-600 disabled:opacity-50 font-bold dark:text-white outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all shadow-inner" />
-                                    </div>
-                                </div>
-
-                                <div className="max-h-72 overflow-y-auto space-y-2 border border-gray-100 dark:border-gray-700 p-2.5 rounded-2xl bg-gray-50/80 dark:bg-gray-900/30 custom-scrollbar">
-                                    {filteredForPublish.map(app => (
-                                        <div key={app.id} onClick={() => togglePublishSelect(app.id)} className={`p-4 rounded-xl border cursor-pointer flex items-center transition-all active:scale-[0.99] ${isProcessing ? 'opacity-70 cursor-not-allowed' : ''} ${selectedToPublish.includes(app.id) ? 'bg-emerald-50/80 border-emerald-500 dark:bg-emerald-900/30 shadow-sm ring-1 ring-emerald-500' : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-gray-300'}`}>
-                                            <div className={`w-5 h-5 mr-3.5 rounded flex items-center justify-center border transition-colors ${selectedToPublish.includes(app.id) ? 'bg-emerald-500 border-emerald-500 text-white' : 'border-gray-300 dark:border-gray-600'}`}>
-                                                {selectedToPublish.includes(app.id) && <Check className="w-3.5 h-3.5" />}
-                                            </div>
-                                            <div className="flex-1">
-                                                <p className="font-bold text-sm dark:text-white leading-tight mb-1">{app.object_address}</p>
-                                                <p className="text-xs text-gray-500 flex items-center gap-1.5 font-medium"><Calendar className="w-3 h-3" /> {app.date_target}</p>
-                                            </div>
-                                        </div>
-                                    ))}
-                                    {filteredForPublish.length === 0 && <p className="text-center text-sm text-gray-500 py-6 italic flex flex-col items-center gap-2"><Search className="w-6 h-6 opacity-30" /> Нет заявок по этому фильтру</p>}
-                                </div>
-
-                                <div className="flex space-x-3 pt-4 border-t border-gray-100 dark:border-gray-700/80">
-                                    <button disabled={isProcessing} onClick={() => setPublishModalOpen(false)} className="w-1/3 bg-white border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:bg-gray-800 dark:hover:bg-gray-700 py-3.5 rounded-xl disabled:opacity-50 font-bold text-gray-700 dark:text-gray-300 transition-all active:scale-[0.98] shadow-sm">Отмена</button>
-                                    <button disabled={isProcessing || selectedToPublish.length === 0} onClick={handleExecutePublish} className="w-2/3 bg-emerald-500 text-white py-3.5 rounded-xl font-bold shadow-md hover:shadow-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center gap-2 transition-all active:scale-[0.98]">
-                                        {isProcessing ? '⏳ Обработка...' : <><Send className="w-4 h-4" /> Опубликовать ({selectedToPublish.length})</>}
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
                 </div>
             )}
 

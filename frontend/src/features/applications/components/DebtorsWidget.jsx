@@ -65,36 +65,29 @@ export default function DebtorsWidget({ debtors, tgId }) {
                         </div>
 
                         <div className="space-y-1 pl-2 border-l-2 border-red-200 dark:border-red-800">
-                            {group.smrs.map((s, j) => (
-                                <div key={j} className="flex justify-between items-center text-xs">
-                                    <div className="flex items-center gap-1.5 truncate mr-2">
-                                        {s.status === 'completed' ? (
-                                            <span
-                                                className="flex-shrink-0 w-2 h-2 rounded-full bg-red-500"
-                                                title="Завершён, СМР не заполнен"
-                                            />
-                                        ) : (
-                                            <span
-                                                className="flex-shrink-0 w-2 h-2 rounded-full bg-yellow-400"
-                                                title="В работе"
-                                            />
-                                        )}
-                                        <span className="text-red-600/80 dark:text-red-400/80 truncate">
-                                            {s.object_address}
-                                        </span>
+                            {group.smrs.map((s, j) => {
+                                const d = s.days_overdue || 0;
+                                const daysLabel = d === 1 ? '1 день' : d >= 2 && d <= 4 ? `${d} дня` : `${d} дней`;
+                                const daysColor = d >= 6 ? 'text-red-600 dark:text-red-400 font-bold' : d >= 3 ? 'text-orange-600 dark:text-orange-400 font-medium' : 'text-yellow-600 dark:text-yellow-400 font-medium';
+                                return (
+                                    <div key={j} className="flex justify-between items-center text-xs">
+                                        <div className="flex items-center gap-1.5 truncate mr-2">
+                                            {s.status === 'completed' ? (
+                                                <span className="flex-shrink-0 w-2 h-2 rounded-full bg-red-500" title="Завершён, СМР не заполнен" />
+                                            ) : (
+                                                <span className="flex-shrink-0 w-2 h-2 rounded-full bg-yellow-400" title="В работе" />
+                                            )}
+                                            <span className="text-red-600/80 dark:text-red-400/80 truncate">
+                                                {s.object_address}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center gap-2 flex-shrink-0">
+                                            {d > 0 && <span className={`text-[10px] ${daysColor}`}>{daysLabel}</span>}
+                                            <span className="text-red-400 dark:text-red-500">{s.date_target}</span>
+                                        </div>
                                     </div>
-                                    <div className="flex items-center gap-2 flex-shrink-0">
-                                        <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                                            s.status === 'completed'
-                                                ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400'
-                                                : 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400'
-                                        }`}>
-                                            {s.status === 'completed' ? 'Завершён' : 'В работе'}
-                                        </span>
-                                        <span className="text-red-400 dark:text-red-500">{s.date_target}</span>
-                                    </div>
-                                </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     </div>
                 ))}

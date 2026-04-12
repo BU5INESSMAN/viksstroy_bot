@@ -104,7 +104,11 @@
       "Bash(PYTHONIOENCODING=utf-8 python -m graphify.claude install)",
       "Bash(ls C:/Users/Admin/PycharmProjects/viksstroy_bot/frontend/public/*.png C:/Users/Admin/PycharmProjects/viksstroy_bot/frontend/public/*.svg C:/Users/Admin/PycharmProjects/viksstroy_bot/frontend/public/manifest.json)",
       "Bash(python -c \"from PIL import Image; [print\\(f'{f}: {Image.open\\(f\\).size}'\\) for f in ['main.png','apple-touch-icon.png','logo.png']]\")",
-      "Bash(identify main.png apple-touch-icon.png logo.png)"
+      "Bash(identify main.png apple-touch-icon.png logo.png)",
+      "Bash(mv graphify-out:*)",
+      "Bash(mv .graphify-out-bak graphify-out)",
+      "Bash(ren graphify-out:*)",
+      "Bash(ren .graphify-out-bak graphify-out)"
     ]
   }
 }

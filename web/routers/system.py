@@ -126,7 +126,9 @@ async def get_debtors(tg_id: int = 0):
     if tg_id:
         await verify_moderator_plus(tg_id)
 
-    today_str = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
+    today = datetime.now(TZ_BARNAUL).date()
+    today_str = today.strftime("%Y-%m-%d")
+    grace_str = (today - timedelta(days=1)).strftime("%Y-%m-%d")
     async with db.conn.execute(
         "SELECT id, foreman_id, foreman_name, object_address, date_target, status FROM applications "
         "WHERE status IN ('in_progress', 'completed') "
@@ -135,20 +137,27 @@ async def get_debtors(tg_id: int = 0):
         "AND (is_archived = 0 OR is_archived IS NULL) "
         "AND (kp_archived = 0 OR kp_archived IS NULL) "
         "ORDER BY foreman_name, date_target ASC",
-        (today_str,)
+        (grace_str,)
     ) as cur:
         rows = await cur.fetchall()
 
     grouped = {}
     for r in rows:
         fid = r[1]
+        date_target = r[4]
+        try:
+            dt = datetime.strptime(date_target, "%Y-%m-%d").date()
+            days_overdue = (today - dt).days
+        except (ValueError, TypeError):
+            days_overdue = 0
         if fid not in grouped:
             grouped[fid] = {"foreman_id": fid, "foreman_name": r[2] or "Неизвестный", "smrs": []}
         grouped[fid]["smrs"].append({
             "app_id": r[0],
             "object_address": r[3] or "—",
-            "date_target": r[4],
-            "status": r[5]
+            "date_target": date_target,
+            "status": r[5],
+            "days_overdue": days_overdue,
         })
 
     return list(grouped.values())
