@@ -1,6 +1,6 @@
 ================================================================================
                     VIKSSTROY BOT -- ARCHITECTURE MAP
-              (generated 2026-04-13, graphify 797 nodes / 820 edges / 128 communities)
+              (generated 2026-04-13, graphify 803 nodes / 834 edges / 126 communities)
 ================================================================================
 
 --- APP OVERVIEW ---
@@ -271,10 +271,12 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind + framer-moti
   6. PWA (Stage 6.7): manifest.json, sw.js service worker with cache-first
      for static + network-first for API, offline fallback to index.html.
 
-  7. TOKEN REDUCTION: graphify graph provides 186.4x fewer tokens per query
-     vs reading raw files. Best: "how are errors handled" = 2127.1x.
+  7. TOKEN REDUCTION: graphify graph provides 206.2x fewer tokens per query
+     vs reading raw files. Best: "how are errors handled" = 2352.3x.
 
-  8. OBSIDIAN VAULT: 925 notes in graphify-out/obsidian/ with graph.canvas.
-     Wiki: 128 articles in graphify-out/wiki/ with index.md.
+  8. OBSIDIAN VAULT: 929 notes in graphify-out/obsidian/ with graph.canvas.
+     Wiki: 126 articles in graphify-out/wiki/ with index.md.
+
+  9. GIT HISTORY: 177 commits across v1.0-v2.1. Full changelog in Updates.jsx.
 
 ================================================================================

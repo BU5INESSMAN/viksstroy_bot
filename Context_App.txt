@@ -10,7 +10,8 @@ equipment exchange, cost estimation) with dual-bot architecture (TG + MAX),
 React frontend, FastAPI backend, SQLite database.
 
 Stack: FastAPI + SQLite (WAL) | React + Vite + Tailwind + framer-motion | aiogram (TG) + maxapi (MAX)
-Graph: 797 nodes, 820 edges, 128 communities (graphify)
+Graph: 803 nodes, 834 edges, 126 communities (graphify)
+Git: 177 commits across v1.0-v2.1
 
 --- COMPLETED STAGES ---
 
@@ -52,49 +53,39 @@ Graph: 797 nodes, 820 edges, 128 communities (graphify)
     20 extracted components with shared selectors.
 
   Stage 6.4: Unified color system                                          [OK]
-    roleConfig.js: ROLE_ORDER, ROLE_NAMES, ROLE_COLORS, ROLE_ICON_COLORS.
-    statusConfig.js: STATUS_CONFIG + getStatusBadge() helper.
-    GlassCard shared component. Semantic Tailwind tokens (primary/success/
-    warning/danger/info). UIHelpers re-exports from shared modules.
+    roleConfig.js, statusConfig.js, GlassCard, semantic Tailwind tokens.
 
   Stage 6.5: Minimal animations (framer-motion)                            [OK]
-    Emil Kowalski principles: purposeful, subtle, fast (150-300ms).
-    animations.js shared variants. AnimatedModal wrapper.
-    10 framer-motion imports: 5 modals, kanban stagger, page transitions,
-    FAB micro-interaction, bottom sheet, collapsible sections.
+    10 imports: 5 modals, kanban stagger, page transitions, FAB, collapse.
     All respect prefers-reduced-motion.
 
   Stage 6.6: Desktop/mobile responsive adaptation                          [OK]
-    Content pages: max-w-7xl containers. Admin: max-w-5xl. Auth: max-w-md.
-    Equipment + Teams: added missing containers + lg:grid-cols-3.
-    BottomNav: max-w-5xl inner wrapper for desktop.
-    CreateApp/EditApp modals: sm:max-w-2xl + 2-column form grid.
-    All hover states verified across cards, tables, buttons.
+    max-w-7xl containers, 2-col forms, BottomNav max-w-5xl, lg:grid-cols-3.
 
   Stage 6.7: PWA Manifest                                                  [OK]
-    manifest.json: standalone, portrait, dark background, blue theme.
-    sw.js: cache-first static, network-first API, offline fallback.
-    index.html: theme-color + apple-mobile-web-app meta tags.
-    main.jsx: service worker registration.
+    manifest.json, sw.js, offline fallback, apple-mobile-web-app meta.
 
   Stage 6.8: Guide.jsx + Updates.jsx                                       [OK]
-    Guide.jsx (381 lines): 14 collapsible sections covering ALL features.
-    GlassCard + AnimatePresence, search, role hints, RoleTable component.
-    Updates.jsx (186 lines): 6 version blocks (v1.0-v2.0 + Fixes).
-    Color-coded badges (feat/fix/refactor), stagger animation.
+    Guide (381 lines, 14 sections). Updates (194 lines, 7 version blocks).
+    Full git history analyzed (177 commits), color-coded badges.
 
   Stage 6.9: Complete action logging (70 log points, retention setting)     [OK]
-    Audit all endpoints. target_type/target_id fields.
-    Log retention setting with auto-cleanup via APScheduler.
+    Audit all endpoints. target_type/target_id. Auto-cleanup via APScheduler.
 
-  SMR fixes: debtors persist until filled, remind button, KP archive       [OK]
-    Debtors widget shows until SMR submitted. Remind inline button.
-    KP archive/restore for moderators+.
+  SMR fixes                                                                [OK]
+    Debtors persist until filled, remind button, KP archive/restore.
+    24h grace period before debtors appear. Days overdue with color scale.
+
+  Final fixes (v2.1)                                                       [OK]
+    Removed "Publish" button and modal from Review.jsx (duplicated schedule).
+    Mobile layout: compact buttons, stacked inputs, viewport-fit=cover.
+    iPhone safe area: .pb-safe CSS utility for BottomNav.
+    BottomNav: icons only on mobile, text labels on sm+ screens.
 
 --- CURRENT STATUS ---
 
   ALL STAGES COMPLETE. Stage 6 (Global Polish) fully delivered:
-  6.1 through 6.9, all 9 substages done.
+  6.1 through 6.9, all 9 substages done. v2.1 fixes applied.
 
   No remaining stages.
 
@@ -109,7 +100,9 @@ Graph: 797 nodes, 820 edges, 128 communities (graphify)
     graphify-out/graph.html            -- Interactive graph (browser)
     graphify-out/GRAPH_REPORT.md       -- Audit report
     graphify-out/graph.json            -- Queryable graph data
-    graphify-out/obsidian/             -- Obsidian vault (925 notes + canvas)
-    graphify-out/wiki/                 -- Agent-crawlable wiki (128 articles)
+    graphify-out/obsidian/             -- Obsidian vault (929 notes + canvas)
+    graphify-out/wiki/                 -- Agent-crawlable wiki (126 articles)
+
+  Token reduction: 206.2x avg (best: 2352.3x for error handling queries)
 
 ================================================================================
