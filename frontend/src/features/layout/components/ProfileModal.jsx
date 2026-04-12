@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import useConfirm from '../../../hooks/useConfirm';
 
-const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
+import { ROLE_NAMES as roleNames } from '../../../utils/roleConfig';
 
 export default function ProfileModal({ profileData, setProfileData, editProfile, setEditProfile, setProfileModalOpen, canEditUsers, isMyProfile }) {
     const tgId = localStorage.getItem('tg_id');

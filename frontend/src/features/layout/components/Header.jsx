@@ -4,7 +4,7 @@ import {
     X, ShieldCheck
 } from 'lucide-react';
 
-const roleNames = { 'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор', 'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель', 'Гость': 'Гость' };
+import { ROLE_NAMES as roleNames } from '../../../utils/roleConfig';
 
 export default function Header({ isTMA, realRole, role, theme, toggleTheme, isMenuOpen, setIsMenuOpen }) {
     const navigate = useNavigate();
