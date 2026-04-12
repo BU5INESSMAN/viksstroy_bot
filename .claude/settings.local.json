@@ -92,7 +92,11 @@
       "Bash(cp -r ~/.claude/skills/emil-design-eng/* .claude/skills/emil-design-eng/)",
       "Bash(find . -type f \\\\\\( -name \"*.py\" -o -name \"*.jsx\" -o -name \"*.js\" \\\\\\) ! -path \"*/node_modules/*\" ! -path \"*/dist/*\" ! -path \"*/.git/*\" ! -path \"*/data/*\" ! -path \"*/graphify-out/*\" ! -path \"*/.claude/*\" -exec wc -l {} +)",
       "Bash(python -c \"from api_main import app; print\\('Import OK'\\)\")",
-      "Bash(where python:*)"
+      "Bash(where python:*)",
+      "Bash(python -c \"import graphify\")",
+      "Bash(python -m pip install graphifyy -q)",
+      "Bash(python -c \"import sys; open\\('graphify-out/.graphify_python', 'w'\\).write\\(sys.executable\\)\")",
+      "Bash(ls C:/Users/mikl2/PycharmProjects/viksstroy_bot/frontend/src/hooks/useConfirm*)"
     ]
   }
 }

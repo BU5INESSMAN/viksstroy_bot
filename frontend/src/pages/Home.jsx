@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, AlertTriangle, Send, Loader2, Bell } from 'lucide-react';
+import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, Send, Loader2 } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
 import ActiveApplicationsCard from '../features/applications/components/ActiveApplicationsCard';
@@ -12,6 +12,8 @@ import EditAppModal from '../features/applications/components/EditAppModal';
 import ConfirmFreeModal from '../features/applications/components/ConfirmFreeModal';
 import ViewAppModal from '../features/applications/components/ViewAppModal';
 import ArchiveModal from '../features/applications/components/ArchiveModal';
+import DebtorsWidget from '../features/applications/components/DebtorsWidget';
+import useAppForm from '../features/applications/hooks/useAppForm';
 import useConfirm from '../hooks/useConfirm';
 
 export default function Home() {
@@ -25,19 +27,9 @@ export default function Home() {
     const [objectsList, setObjectsList] = useState([]);
     const [myTeam, setMyTeam] = useState(null);
     const [loading, setLoading] = useState(true);
-    const [isSubmitting, setIsSubmitting] = useState(false);
-    const [teamMembers, setTeamMembers] = useState([]);
-    const [activeEqCategory, setActiveEqCategory] = useState(null);
-    const [isArchiveOpen, setArchiveOpen] = useState(false);
     const [debtors, setDebtors] = useState([]);
     const [publishingTomorrow, setPublishingTomorrow] = useState(false);
-    const [remindingForeman, setRemindingForeman] = useState(null);
-
-    const { confirm, ConfirmUI } = useConfirm();
-
-    const [appForm, setAppForm] = useState({
-        id: null, status: '', date_target: smartDates[1].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: []
-    });
+    const [isArchiveOpen, setArchiveOpen] = useState(false);
 
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, in_progress: false, completed: false });
     const [freeModal, setFreeModal] = useState({ isOpen: false, type: '', app: null, teamId: null, inputValue: '' });
@@ -45,21 +37,53 @@ export default function Home() {
     const [isEditModalOpen, setEditModalOpen] = useState(false);
     const [editApp, setEditApp] = useState(null);
 
-    const fetchData = () => {
+    const { confirm, ConfirmUI: PublishConfirmUI } = useConfirm();
+
+    // Form state + all handlers are managed by the custom hook
+    const {
+        appForm, setAppForm,
+        isSubmitting, setIsSubmitting,
+        teamMembers, activeEqCategory, setActiveEqCategory,
+        handleFormChange, handleObjectSelect, handleApplyDefaults,
+        toggleTeamSelection, toggleAppMember,
+        toggleEquipmentSelection, updateEquipmentTime,
+        checkTeamStatus, checkEquipStatus,
+        handleCreateApp, handleDeleteApp,
+        ConfirmUI: FormConfirmUI,
+    } = useAppForm({
+        tgId,
+        data,
+        objectsList,
+        smartDates,
+        setGlobalCreateAppOpen,
+        fetchData,
+        isGlobalCreateAppOpen,
+    });
+
+    function fetchData() {
         axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
-        axios.get(`/api/applications/active?tg_id=${tgId}`).then(res => { setActiveApps(res.data || []); setLoading(false); }).catch(() => { setActiveApps([]); setLoading(false); });
+        axios.get(`/api/applications/active?tg_id=${tgId}`)
+            .then(res => { setActiveApps(res.data || []); setLoading(false); })
+            .catch(() => { setActiveApps([]); setLoading(false); });
         if (['moderator', 'boss', 'superadmin'].includes(role)) {
             axios.get(`/api/system/debtors?tg_id=${tgId}`).then(res => setDebtors(res.data || [])).catch(() => {});
         }
-
         if (['worker', 'foreman', 'boss', 'superadmin'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {
                 if (res.data?.profile?.team_id) {
                     axios.get(`/api/teams/${res.data.profile.team_id}/details`).then(tRes => setMyTeam(tRes.data));
                 }
-            }).catch(()=>{});
+            }).catch(() => {});
         }
-    };
+    }
+
+    useEffect(() => { fetchData(); }, [tgId, role]);
+
+    useEffect(() => {
+        if (isGlobalCreateAppOpen) {
+            axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(() => {});
+        }
+    }, [isGlobalCreateAppOpen]);
 
     const publishTomorrow = async () => {
         const tomorrow = new Date();
@@ -73,268 +97,62 @@ export default function Home() {
                 const warningList = warnings.map(w => `  - ${w.object_address} (${w.foreman_name})`).join('\n');
                 const ok = await confirm(
                     `На ${tomorrowStr} есть неодобренные заявки:\n${warningList}\n\nОтправить расстановку только по одобренным?`,
-                    { title: "Неодобренные заявки", variant: "warning", confirmText: "Да, отправить" }
+                    { title: 'Неодобренные заявки', variant: 'warning', confirmText: 'Да, отправить' }
                 );
                 if (!ok) return;
             } else {
-                const ok = await confirm(`Отправить расстановку на ${tomorrowStr} в группу?`, { title: "Расстановка на завтра", variant: "info", confirmText: "Отправить" });
+                const ok = await confirm(`Отправить расстановку на ${tomorrowStr} в группу?`, {
+                    title: 'Расстановка на завтра', variant: 'info', confirmText: 'Отправить',
+                });
                 if (!ok) return;
             }
         } catch {
-            const ok = await confirm(`Отправить расстановку на ${tomorrowStr} в группу?`, { title: "Расстановка на завтра", variant: "info", confirmText: "Отправить" });
+            const ok = await confirm(`Отправить расстановку на ${tomorrowStr} в группу?`, {
+                title: 'Расстановка на завтра', variant: 'info', confirmText: 'Отправить',
+            });
             if (!ok) return;
         }
 
         setPublishingTomorrow(true);
         try {
-            const tomorrow = new Date();
-            tomorrow.setDate(tomorrow.getDate() + 1);
-            const dateStr = tomorrow.toISOString().split('T')[0];
+            const t = new Date();
+            t.setDate(t.getDate() + 1);
+            const dateStr = t.toISOString().split('T')[0];
             const fd = new FormData();
             fd.append('tg_id', tgId);
             fd.append('date', dateStr);
             await axios.post('/api/system/send_schedule_group', fd);
             toast.success('Расстановка на завтра отправляется...');
         } catch (err) {
-            toast.error(err.response?.data?.detail || "Ошибка отправки расстановки");
+            toast.error(err.response?.data?.detail || 'Ошибка отправки расстановки');
         } finally {
             setPublishingTomorrow(false);
         }
     };
 
-    useEffect(() => { fetchData(); }, [tgId, role]);
-
-    useEffect(() => {
-        if (isGlobalCreateAppOpen) {
-            axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(()=>{});
-            setAppForm({ id: null, status: '', date_target: smartDates[1].val, object_id: '', object_address: '', team_ids: [], team_name: '', members: [], members_data: [], equipment: [], comment: '', isViewOnly: false, foreman_id: null, foreman_name: '', is_team_freed: 0, freed_team_ids: [] });
-            setActiveEqCategory(null);
-            setTeamMembers([]);
-            setIsSubmitting(false);
-        }
-    }, [isGlobalCreateAppOpen]);
-
-    useEffect(() => {
-        if (appForm.team_ids && appForm.team_ids.length > 0) {
-            Promise.all(appForm.team_ids.map(id => axios.get(`/api/teams/${id}/details`)))
-                .then(responses => {
-                    const allMembers = responses.flatMap(res => res.data?.members || []);
-                    const uniqueMembers = Array.from(new Map(allMembers.map(m => [m.id, m])).values());
-                    setTeamMembers(uniqueMembers);
-                    if(!appForm.isViewOnly && !appForm.id) {
-                        setAppForm(prev => ({ ...prev, members: uniqueMembers.map(m => m.id) }));
-                    }
-                }).catch(() => setTeamMembers([]));
-        } else {
-            setTeamMembers([]);
-        }
-    }, [appForm.team_ids.join(',')]);
-
-    const handleFormChange = (field, value) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, [field]: value })); };
-
-    const handleApplyDefaults = async (type) => {
-        const selectedObj = objectsList.find(o => o.id === parseInt(appForm.object_id));
-        if (!selectedObj) return;
-
-        const targetTeams = type === 'teams' ? selectedObj.default_team_ids : "";
-        const targetEquips = type === 'equip' ? selectedObj.default_equip_ids : "";
-
-        if (!targetTeams && !targetEquips) {
-            toast.error("Для этого объекта не назначены ресурсы по умолчанию.");
-            return;
-        }
-
-        try {
-            const fd = new FormData();
-            fd.append('date_target', appForm.date_target);
-            fd.append('object_id', selectedObj.id);
-            fd.append('team_ids', type === 'teams' ? targetTeams : appForm.team_ids.join(','));
-
-            const equipDataForCheck = type === 'equip'
-                ? JSON.stringify(targetEquips.split(',').map(id => ({id: parseInt(id)})))
-                : JSON.stringify(appForm.equipment);
-            fd.append('equip_data', equipDataForCheck);
-
-            const res = await axios.post('/api/applications/check_availability', fd);
-
-            if (res.data.status === 'occupied') {
-                toast.error(`Ошибка занятости: ${res.data.message}`);
-            } else {
-                if (type === 'teams') {
-                    const ids = targetTeams.split(',').map(Number);
-                    setAppForm(prev => ({...prev, team_ids: ids}));
-                }
-                if (type === 'equip') {
-                    const ids = targetEquips.split(',').map(Number);
-                    const newEq = data.equipment.filter(e => ids.includes(e.id)).map(e => ({ id: e.id, name: e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`, time_start: '08', time_end: '17' }));
-                    setAppForm(prev => ({...prev, equipment: newEq}));
-                }
-                toast.success("Ресурсы успешно подставлены!");
-            }
-        } catch (e) {
-            toast.error("Ошибка связи с сервером при проверке занятости.");
-        }
-    };
-
-    const toggleTeamSelection = (id) => {
-        if(appForm.isViewOnly) return;
-        setAppForm(prev => {
-            const newIds = prev.team_ids.includes(id) ? prev.team_ids.filter(x => x !== id) : [...prev.team_ids, id];
-            return { ...prev, team_ids: newIds };
-        });
-    };
-
-    const toggleAppMember = (id) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, members: prev.members?.includes(id) ? prev.members.filter(m => m !== id) : [...(prev.members || []), id] })); };
-
-    const checkTeamStatus = (team_id) => {
-        if (data.kanban_apps) {
-            const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && !['rejected', 'cancelled', 'completed'].includes(a.status));
-            for (const a of appsOnDate) {
-                const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
-                if (tIds.includes(team_id) && appForm.id !== a.id) return { state: 'busy', message: `Эта бригада уже занята в этот день на объекте:\n📍 ${a.object_address}` };
-            }
-        }
-        return { state: 'free' };
-    };
-
-    const checkEquipStatus = (equip) => {
-        if (equip.status === 'repair') return { state: 'repair', message: 'Техника в ремонте.' };
-        if (data.kanban_apps) {
-            const appsOnDate = data.kanban_apps.filter(a => a.date_target === appForm.date_target && !['rejected', 'cancelled', 'completed'].includes(a.status));
-            for (const a of appsOnDate) {
-                try {
-                    const eqList = JSON.parse(a.equipment_data || '[]');
-                    if (eqList.some(eqq => eqq.id === equip.id) && appForm.id !== a.id) return { state: 'busy', message: `Занята на объекте:\n📍 ${a.object_address}` };
-                } catch(e) {}
-            }
-        }
-        return { state: 'free' };
-    };
-
-    const toggleEquipmentSelection = (equip) => {
-        if(appForm.isViewOnly) return;
-        setAppForm(prev => {
-            const exists = prev.equipment.find(e => e.id === equip.id);
-            if (exists) return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id) };
-            const displayName = equip.driver ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})` : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
-            return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: '08', time_end: '17' }] };
-        });
-    };
-    const updateEquipmentTime = (id, field, value) => { if(!appForm.isViewOnly) setAppForm(prev => ({ ...prev, equipment: prev.equipment.map(e => e.id === id ? { ...e, [field]: value } : e) })); };
-
-    const handleObjectSelect = async (objectId) => {
-        const selObj = objectsList.find(o => o.id === parseInt(objectId));
-        setAppForm(prev => ({...prev, object_id: objectId, object_address: selObj ? `${selObj.name} (${selObj.address})` : ''}));
-        // Update last used objects
-        if (objectId) {
-            try {
-                const fd = new FormData();
-                fd.append('object_id', objectId);
-                await axios.post(`/api/users/${tgId}/last_objects`, fd);
-            } catch(e) {}
-        }
-    };
-
-    const handleCreateApp = async (e) => {
-        e.preventDefault();
-        if(appForm.isViewOnly) { setGlobalCreateAppOpen(false); return; }
-        if (!appForm.object_id) return toast.error("Выберите объект!");
-        if (appForm.team_ids.length === 0 && appForm.equipment.length === 0 && !appForm.pendingExchange) return toast.error("Выберите бригаду или технику!");
-        if (appForm.team_ids.length === 0) {
-            const ok = await confirm("Создать заявку ТОЛЬКО на технику (без людей)?", { title: "Подтверждение", variant: "warning", confirmText: "Да, создать" });
-            if (!ok) return;
-        }
-        if (appForm.team_ids.length > 0 && appForm.members.length === 0) return toast.error("Выберите хотя бы одного рабочего из бригады!");
-
-        setIsSubmitting(true);
-        try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            fd.append('date_target', appForm.date_target);
-            fd.append('object_id', appForm.object_id);
-            fd.append('object_address', appForm.object_address);
-            fd.append('team_id', appForm.team_ids.join(',') || '0');
-            fd.append('comment', appForm.comment);
-            fd.append('selected_members', appForm.members.join(','));
-            fd.append('equipment_data', JSON.stringify(appForm.equipment));
-
-            if (appForm.id) {
-                await axios.post(`/api/applications/${appForm.id}/update`, fd);
-                toast.success("Заявка успешно обновлена!");
-            } else {
-                const createRes = await axios.post('/api/applications/create', fd);
-                toast.success("Успешно отправлено на модерацию!");
-
-                // Send deferred exchange request if pending
-                if (appForm.pendingExchange && createRes.data?.id) {
-                    try {
-                        const exRes = await axios.post('/api/exchange/request', {
-                            requester_tg_id: tgId,
-                            requester_app_id: createRes.data.id,
-                            requested_equip_id: appForm.pendingExchange.requested_equip_id,
-                            offered_equip_id: appForm.pendingExchange.offered_equip_id,
-                        });
-                        if (exRes.data.success) {
-                            toast.success('Запрос на обмен техники отправлен!');
-                        } else {
-                            toast.error(exRes.data.error || 'Ошибка отправки обмена');
-                        }
-                    } catch (exErr) {
-                        toast.error(exErr.response?.data?.error || 'Не удалось отправить запрос на обмен');
-                    }
-                }
-            }
-            setGlobalCreateAppOpen(false); fetchData();
-        } catch (err) {
-            toast.error(err.response?.data?.detail || "Ошибка сохранения");
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
-    const handleDeleteApp = async () => {
-        const ok = await confirm("ВНИМАНИЕ! Вы уверены, что хотите полностью УДАЛИТЬ эту заявку из системы? Это действие необратимо!", { title: "Удаление заявки", variant: "danger", confirmText: "Удалить" });
-        if (!ok) return;
-        setIsSubmitting(true);
-        try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            await axios.post(`/api/applications/${appForm.id}/delete`, fd);
-            toast.success("Заявка успешно удалена!");
-            setGlobalCreateAppOpen(false);
-            fetchData();
-        } catch (err) {
-            toast.error(err.response?.data?.detail || "Ошибка при удалении заявки.");
-        } finally {
-            setIsSubmitting(false);
-        }
-    };
-
     const handleArchiveApp = async (appId) => {
-        const ok = await confirm("Отправить эту заявку в архив?", { title: "Архивация", variant: "info", confirmText: "В архив" });
+        const ok = await confirm('Отправить эту заявку в архив?', { title: 'Архивация', variant: 'info', confirmText: 'В архив' });
         if (!ok) return;
         setIsSubmitting(true);
         try {
             const fd = new FormData();
             fd.append('tg_id', tgId);
             await axios.post(`/api/applications/${appId}/archive`, fd);
-            toast.success("Заявка отправлена в архив");
+            toast.success('Заявка отправлена в архив');
             fetchData();
         } catch (err) {
-            toast.error(err.response?.data?.detail || "Ошибка архивации");
+            toast.error(err.response?.data?.detail || 'Ошибка архивации');
         } finally {
             setIsSubmitting(false);
         }
     };
 
-    const openAppModalFromKanban = (app) => {
-        setViewApp(app);
-    };
+    const openAppModalFromKanban = (app) => setViewApp(app);
 
     const handleEditFromView = (app) => {
         setViewApp(null);
         setEditApp(app);
-        axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(()=>{});
+        axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(() => {});
         setEditModalOpen(true);
     };
 
@@ -365,16 +183,19 @@ export default function Home() {
             setFreeModal({ isOpen: false, type: '', app: null, teamId: null, inputValue: '' });
             fetchData();
             if (isGlobalCreateAppOpen) setGlobalCreateAppOpen(false);
-        } catch(e) {
-            toast.error(e.response?.data?.detail || "Ошибка при освобождении.");
+        } catch (e) {
+            toast.error(e.response?.data?.detail || 'Ошибка при освобождении.');
         } finally {
             setIsSubmitting(false);
         }
     };
 
+    // -------------------------------------------------------------------------
+    // Derived data
+    // -------------------------------------------------------------------------
+
     const todayYYYYMMDD = getTodayStr();
     const appsMap = { waiting: [], approved: [], in_progress: [], completed: [] };
-
     if (data.kanban_apps) {
         data.kanban_apps.forEach(a => {
             if (a.status === 'waiting') appsMap.waiting.push(a);
@@ -386,26 +207,12 @@ export default function Home() {
 
     const todayApps = activeApps.filter(a => a.date_target <= todayYYYYMMDD);
     const upcomingApps = activeApps.filter(a => a.date_target > todayYYYYMMDD);
-
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
     const canArchive = ['moderator', 'boss', 'superadmin'].includes(role);
-    const totalDebtorSMR = debtors.reduce((sum, g) => sum + g.smrs.length, 0);
 
-    const handleRemindSMR = async (group) => {
-        setRemindingForeman(group.foreman_id);
-        try {
-            await axios.post('/api/system/remind_smr', {
-                tg_id: parseInt(tgId),
-                foreman_id: group.foreman_id,
-                app_ids: group.smrs.map(s => s.app_id)
-            });
-            toast.success('Напоминание отправлено');
-        } catch {
-            toast.error('Ошибка отправки напоминания');
-        } finally {
-            setRemindingForeman(null);
-        }
-    };
+    // -------------------------------------------------------------------------
+    // Render
+    // -------------------------------------------------------------------------
 
     if (loading) return (
         <div className="flex flex-col items-center justify-center mt-32 text-gray-400">
@@ -428,57 +235,11 @@ export default function Home() {
                         openFreeModal={openFreeModal}
                     />
                 )}
-
                 {myTeam && <MyTeamCard myTeam={myTeam} />}
             </div>
 
-            {/* Debtors Widget — grouped by foreman */}
-            {!isWorkerOrDriver && debtors.length > 0 && (
-                <div className="bg-red-50/80 dark:bg-red-900/20 border border-red-200 dark:border-red-800/50 rounded-2xl p-5 shadow-sm">
-                    <div className="flex justify-between items-center mb-3">
-                        <h3 className="text-sm font-bold text-red-800 dark:text-red-400 flex items-center gap-2">
-                            <AlertTriangle className="w-4 h-4" /> Должники СМР
-                            <span className="bg-red-600 text-white text-xs font-bold px-2 py-0.5 rounded-full">{totalDebtorSMR}</span>
-                        </h3>
-                    </div>
-                    <div className="space-y-3">
-                        {debtors.map((group, i) => (
-                            <div key={i} className="bg-white/60 dark:bg-gray-800/40 rounded-xl px-4 py-3">
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <p className="font-semibold text-red-700 dark:text-red-300 text-sm">{group.foreman_name}</p>
-                                    <button
-                                        onClick={() => handleRemindSMR(group)}
-                                        disabled={remindingForeman === group.foreman_id}
-                                        className="flex items-center gap-1 text-xs font-medium text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/30 hover:bg-orange-100 dark:hover:bg-orange-900/50 px-2.5 py-1 rounded-lg border border-orange-200 dark:border-orange-800 transition-all disabled:opacity-50"
-                                    >
-                                        {remindingForeman === group.foreman_id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Bell className="w-3 h-3" />}
-                                        Напомнить
-                                    </button>
-                                </div>
-                                <div className="space-y-1 pl-2 border-l-2 border-red-200 dark:border-red-800">
-                                    {group.smrs.map((s, j) => (
-                                        <div key={j} className="flex justify-between items-center text-xs">
-                                            <div className="flex items-center gap-1.5 truncate mr-2">
-                                                {s.status === 'completed' ? (
-                                                    <span className="flex-shrink-0 w-2 h-2 rounded-full bg-red-500" title="Завершён, СМР не заполнен" />
-                                                ) : (
-                                                    <span className="flex-shrink-0 w-2 h-2 rounded-full bg-yellow-400" title="В работе" />
-                                                )}
-                                                <span className="text-red-600/80 dark:text-red-400/80 truncate">{s.object_address}</span>
-                                            </div>
-                                            <div className="flex items-center gap-2 flex-shrink-0">
-                                                <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${s.status === 'completed' ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400' : 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-400'}`}>
-                                                    {s.status === 'completed' ? 'Завершён' : 'В работе'}
-                                                </span>
-                                                <span className="text-red-400 dark:text-red-500">{s.date_target}</span>
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
+            {!isWorkerOrDriver && (
+                <DebtorsWidget debtors={debtors} tgId={tgId} />
             )}
 
             {!isWorkerOrDriver && (
@@ -489,13 +250,19 @@ export default function Home() {
                         </h2>
                         <div className="flex items-center gap-2">
                             {canArchive && (
-                                <button onClick={publishTomorrow} disabled={publishingTomorrow}
-                                    className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-4 py-2 rounded-xl border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm disabled:opacity-50">
+                                <button
+                                    onClick={publishTomorrow}
+                                    disabled={publishingTomorrow}
+                                    className="flex items-center gap-2 text-sm font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/40 px-4 py-2 rounded-xl border border-blue-200 dark:border-blue-800 transition-all active:scale-95 shadow-sm disabled:opacity-50"
+                                >
                                     {publishingTomorrow ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />} На завтра
                                 </button>
                             )}
                             {canArchive && (
-                                <button onClick={() => setArchiveOpen(true)} className="flex items-center gap-2 text-sm font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 px-4 py-2 rounded-xl border border-purple-200 dark:border-purple-800 transition-all active:scale-95 shadow-sm">
+                                <button
+                                    onClick={() => setArchiveOpen(true)}
+                                    className="flex items-center gap-2 text-sm font-bold text-purple-600 dark:text-purple-400 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/40 px-4 py-2 rounded-xl border border-purple-200 dark:border-purple-800 transition-all active:scale-95 shadow-sm"
+                                >
                                     <Archive className="w-4 h-4" /> Архив
                                 </button>
                             )}
@@ -503,10 +270,10 @@ export default function Home() {
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-                        <KanbanCol title="На модерации" icon={Clock} colorClass="bg-yellow-50/80 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 border-yellow-100 dark:border-yellow-900/50" apps={appsMap.waiting} isOpen={openKanban.waiting} toggleOpen={() => setOpenKanban({...openKanban, waiting: !openKanban.waiting})} onAppClick={openAppModalFromKanban} />
-                        <KanbanCol title="Одобрены" icon={CheckCircle} colorClass="bg-emerald-50/80 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50" apps={appsMap.approved} isOpen={openKanban.approved} toggleOpen={() => setOpenKanban({...openKanban, approved: !openKanban.approved})} onAppClick={openAppModalFromKanban} />
-                        <KanbanCol title="В работе" icon={HardHat} colorClass="bg-blue-50/80 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 border-blue-100 dark:border-blue-900/50" apps={appsMap.in_progress} isOpen={openKanban.in_progress} toggleOpen={() => setOpenKanban({...openKanban, in_progress: !openKanban.in_progress})} onAppClick={openAppModalFromKanban} />
-                        <KanbanCol title="Завершены" icon={Flag} colorClass="bg-gray-100/80 text-gray-800 dark:bg-gray-800/50 dark:text-gray-300 border-gray-200 dark:border-gray-700" apps={appsMap.completed} isOpen={openKanban.completed} toggleOpen={() => setOpenKanban({...openKanban, completed: !openKanban.completed})} onAppClick={openAppModalFromKanban} canArchive={canArchive} onArchive={handleArchiveApp} />
+                        <KanbanCol title="На модерации" icon={Clock} colorClass="bg-yellow-50/80 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 border-yellow-100 dark:border-yellow-900/50" apps={appsMap.waiting} isOpen={openKanban.waiting} toggleOpen={() => setOpenKanban({ ...openKanban, waiting: !openKanban.waiting })} onAppClick={openAppModalFromKanban} />
+                        <KanbanCol title="Одобрены" icon={CheckCircle} colorClass="bg-emerald-50/80 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50" apps={appsMap.approved} isOpen={openKanban.approved} toggleOpen={() => setOpenKanban({ ...openKanban, approved: !openKanban.approved })} onAppClick={openAppModalFromKanban} />
+                        <KanbanCol title="В работе" icon={HardHat} colorClass="bg-blue-50/80 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 border-blue-100 dark:border-blue-900/50" apps={appsMap.in_progress} isOpen={openKanban.in_progress} toggleOpen={() => setOpenKanban({ ...openKanban, in_progress: !openKanban.in_progress })} onAppClick={openAppModalFromKanban} />
+                        <KanbanCol title="Завершены" icon={Flag} colorClass="bg-gray-100/80 text-gray-800 dark:bg-gray-800/50 dark:text-gray-300 border-gray-200 dark:border-gray-700" apps={appsMap.completed} isOpen={openKanban.completed} toggleOpen={() => setOpenKanban({ ...openKanban, completed: !openKanban.completed })} onAppClick={openAppModalFromKanban} canArchive={canArchive} onArchive={handleArchiveApp} />
                     </div>
                 </div>
             )}
@@ -530,8 +297,8 @@ export default function Home() {
                             ['moderator', 'boss', 'superadmin'].includes(role) ||
                             (role === 'foreman' && String(viewApp.foreman_id) === String(tgId))
                         ))
-                        ? handleEditFromView
-                        : undefined
+                            ? handleEditFromView
+                            : undefined
                     }
                     onUpdate={() => { setViewApp(null); fetchData(); }}
                 />
@@ -582,7 +349,10 @@ export default function Home() {
             )}
 
             <ArchiveModal isOpen={isArchiveOpen} onClose={() => setArchiveOpen(false)} />
-            {ConfirmUI}
+
+            {/* Confirm dialog nodes from hook and page-level confirm */}
+            {FormConfirmUI}
+            {PublishConfirmUI}
         </main>
     );
 }

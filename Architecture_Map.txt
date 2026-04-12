@@ -1,6 +1,6 @@
 ================================================================================
                     VIKSSTROY BOT -- ARCHITECTURE MAP
-              (generated 2026-04-11, graphify 590 nodes / 728 edges)
+              (generated 2026-04-12, graphify 708 nodes / 807 edges)
 ================================================================================
 
 --- APP OVERVIEW ---
@@ -68,20 +68,21 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
   +--------------------------+--------------------------------------------------+
   | auth.py                  | Login via link codes, account linking (TG<->MAX), |
   |                          | FIO auto-match, TMA auth, MAX web auth            |
-  | users.py                 | User list, profiles, notifications, admin force-  |
-  |                          | link, determine primary account                   |
-  | applications.py          | Order CRUD, status transitions, publishing logic, |
-  |                          | resource availability check with time overlap      |
+  | users.py                 | Thin router: profiles, notifications. Delegates   |
+  |  (274 lines)             | to account_link_service + user_service             |
+  | applications.py          | Thin router: order endpoints. Delegates to         |
+  |  (333 lines)             | app_service + app_workflow                         |
   | teams.py                 | Team CRUD, invite generation, member management   |
   | equipment.py             | Equipment CRUD, time-slot availability, status    |
-  | exchange.py              | Equipment exchange requests between foremen       |
+  | exchange.py              | Thin router: exchange endpoints. Delegates to     |
+  |  (93 lines)              | exchange_service                                   |
   | objects.py               | Construction site CRUD, PDF upload, extra works   |
   | kp.py                    | KP items, dashboard, catalog upload/download,     |
   |                          | mass export to Excel                              |
   | dashboard.py             | Stats, daily report, cron jobs (start/end day,    |
   |                          | timeout checks)                                   |
-  | system.py                | Admin settings, logs, backups, schedule publish,   |
-  |                          | broadcast messages, delay publish                 |
+  | system.py                | Thin router: admin settings, logs, schedule.      |
+  |  (341 lines)             | Delegates to broadcast_service                     |
   +--------------------------+--------------------------------------------------+
 
   CORE SERVICES (web/)
@@ -89,13 +90,42 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
   | api_main.py              | FastAPI app factory, lifespan, CORS, exception    |
   |                          | handlers, router registration                     |
   | schedule_generator.py    | Renders daily schedule as PNG (Excel-like table)  |
-  |                          | via Pillow with font rendering                    |
+  |                          | via Pillow with font rendering (SACRED FILE)      |
   | scheduler.py             | APScheduler 3 jobs: daily publish, reminders,     |
   |                          | auto-start orders, equipment timeout checks       |
-  | utils.py                 | Shared helpers: image gen, font download, team    |
-  |                          | enrichment, app publishing, linked ID resolution  |
+  | utils.py                 | Thin helpers: resolve_id, get_all_linked_ids,     |
+  |                          | fetch_teams_dict, enrich_app_with_team_name,      |
+  |                          | verify_moderator_plus (~62 lines)                 |
   | database_deps.py         | FastAPI dependency injection for DB manager        |
-  | services/account_merge.py| Account merge logic: combine TG+MAX into one user |
+  +--------------------------+--------------------------------------------------+
+
+  SERVICE LAYER (web/services/) -- extracted Stage 6.3
+  +--------------------------+--------------------------------------------------+
+  | image_service.py         | Image gen: create_app_image, process_base64,      |
+  |  (204 lines)             | font download, text wrapping, strip_html          |
+  | max_api.py               | MAX messenger: bot singleton, DM chat lookup,     |
+  |  (107 lines)             | send_max_text, send_max_message, group ID         |
+  | notifications.py         | Multi-platform notify: notify_users, group chat,  |
+  |  (276 lines)             | schedule notifications, role conflict alerts       |
+  | publish_service.py       | App publishing: execute_app_publish with image    |
+  |  (141 lines)             | generation and dual-platform delivery              |
+  | schedule_helpers.py      | Smart scheduling: debtors, waiting apps, dates,   |
+  |  (130 lines)             | auto-publish prompt to moderators                 |
+  | exchange_service.py      | Equipment exchange lifecycle: create, respond,     |
+  |  (440 lines)             | cancel, notifications with inline buttons          |
+  | broadcast_service.py     | Group/DM broadcasts, test notification scenarios   |
+  |  (102 lines)             | (5 types: brigadier, resource, schedule, KP, err)  |
+  | app_service.py           | Application CRUD: create, update, delete, objects, |
+  |  (202 lines)             | member enrichment, last-used tracking              |
+  | app_workflow.py          | Order workflow: review, status transitions,        |
+  |  (375 lines)             | publish, free equipment/team, archive, remind      |
+  | account_link_service.py  | Account linking: validate, determine primary,      |
+  |  (164 lines)             | link via code, admin force-link                    |
+  | user_service.py          | User ops: delete cascade, unlink platform          |
+  |  (59 lines)              |                                                    |
+  | account_merge.py         | Account merge logic: combine TG+MAX into one user |
+  | pdf_parser.py            | SMR PDF parsing: extract works tables/text         |
+  | __init__.py              | Re-exports for backward compatibility              |
   +--------------------------+--------------------------------------------------+
 
   DATABASE (database/)
@@ -128,7 +158,6 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
 
   OTHER
   +--------------------------+--------------------------------------------------+
-  | services/pdf_parser.py   | SMR PDF parsing: extract works tables/text         |
   | requirements.txt         | Python deps: aiogram, fastapi, aiosqlite, pillow,  |
   |                          | maxapi, apscheduler, pandas, openpyxl, pdfplumber |
   +--------------------------+--------------------------------------------------+
@@ -281,68 +310,74 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
   9. verify_moderator_plus  (11 edges) -- web/utils.py
      Auth guard used across nearly all routers
 
- 10. web/utils.py           (high fan-out) -- shared helpers
-     Image generation, font download, app enrichment, linked ID resolution
+ 10. web/utils.py           (reduced) -- now ~62 lines
+     Auth guards + team enrichment only; domain logic moved to services/
 
 --- KEY CONNECTIONS (from graphify community analysis) ---
 
-  COMMUNITY CLUSTERS (38 total, major ones):
+  COMMUNITY CLUSTERS (65 total, major ones):
 
   Cluster                    | Cohesion | Key Insight
   ---------------------------+----------+-------------------------------------------
   Database & Account Merge   |  0.03    | Large cluster: DB manager + all repos +
-                             |          | account merge service. Low cohesion =
-                             |          | many loosely connected responsibilities
-  Utility Functions          |  0.08    | utils.py is a "god module" -- consider
-                             |          | splitting by domain
-  API Server & Dashboard     |  0.07    | api_main + scheduler + schedule_generator
+                             |          | account merge. Low cohesion = many
+                             |          | loosely connected responsibilities
+  System Router & Broadcast  |  0.04    | system.py endpoints + broadcast_service
+  TG Bot Entry & Lifecycle   |  0.06    | main.py: TMA, FSM, commands, broadcast
   Application Cards & Modals |  0.07    | Frontend order UI components
-  Objects & Extra Works API  |  0.06    | Backend object + extra works endpoints
-  App Layout & Navigation    |  0.07    | Shell, routing, nav components
-  Applications Backend       |  0.09    | Core order logic (CRUD, status, publish)
-  Equipment Forms            |  0.07    | Frontend equipment management
-  System Settings & Schedule |  0.10    | Admin panel + schedule publishing
-  Teams Repository           |  0.08    | Team data layer
-  Telegram Bot Entry         |  0.12    | main.py: TMA, FSM, commands
-  Users API & Data Models    |  0.10    | User endpoints + Pydantic models
-  Equipment Exchange Flow    |  0.29    | High cohesion: well-isolated feature
-  Auth & Account Linking     |  0.24    | Stage 5B: TG<->MAX identity merge
+  Objects Page & CRUD        |  0.06    | Backend object + extra works endpoints
+  App Shell & Navigation     |  0.07    | Shell, routing, nav, date utils
+  Account Link Service       |  0.08    | NEW: account_link_service.py domain
+  Equipment Exchange Service |  0.14    | exchange_service.py: well-isolated
+  Application Workflow Svc   |  0.10    | NEW: app_workflow.py (review, publish)
+  Application Data Service   |  0.14    | NEW: app_service.py (CRUD, enrichment)
+  Notification Service       |  0.24    | notify_users, group chat, conflict alerts
+  Auth & Web Codes           |  0.24    | FIO match, register, link codes
+  MAX Bot API                |  0.24    | max_api.py: bot singleton, messaging
   MAX Bot Entry              |  0.39    | main_max.py: webhook, handlers
   PDF SMR Parser             |  0.31    | Standalone parser, well-isolated
-  KP Cost Estimation         |  0.17    | KP router + catalog management
+  Schedule Helpers           |  0.25    | debtors, dates, smart publish prompt
+  Image Generation Service   |  0.32    | create_app_image, fonts, Pillow
+  Scheduler & Timeouts       |  0.12    | APScheduler + TG bot lifecycle
+  KP Cost Estimation UI      |  0.12    | KP router + catalog management
+  DB Manager Core            |  0.12    | Mixin composition documentation nodes
 
   HYPEREDGES (group relationships):
   - Order Lifecycle Flow: Kanban system + schedule publishing + core flow +
     scheduler triggers all participate in the order lifecycle
-  - Three-Phase Refactoring: rationale -> phase 1 (layout) -> phase 2
-    (equipment/teams/repos) -> phase 3 (deep Home decomposition) -> 7 mixins
+  - God Module Decomposition: utils.py analysis -> refactoring plan ->
+    services package creation (Stage 6.3 completed)
+  - DB Mixin Composition: DatabaseManager composes all 7 repo mixins
+  - Three-Phase Frontend Refactoring: layout -> equip/teams/repos -> deep Home
 
   SURPRISING CONNECTIONS:
-  - Telegram bot inline handlers directly use DatabaseManager (tight coupling)
+  - TG bot inline handlers directly use DatabaseManager (tight coupling)
   - Socks5Session (proxy) depends on DatabaseManager (unusual dependency)
   - RegState (FSM) depends on DatabaseManager (registration flow)
 
 --- ARCHITECTURAL INSIGHTS ---
 
-  1. GOD MODULE RISK: web/utils.py has high fan-out (11+ edges). It mixes
-     image generation, font management, team enrichment, app publishing,
-     and linked ID resolution. Consider domain-based splitting.
+  1. GOD MODULE RESOLVED: web/utils.py decomposed from 875 -> 62 lines.
+     11 service modules now in web/services/ with clear domain boundaries.
+     Routers are thin HTTP layers delegating to services.
 
-  2. LOW COHESION WARNING: The Database & Account Merge cluster (74 nodes,
-     cohesion 0.03) suggests DatabaseManager aggregates too many concerns.
-     The mixin pattern helps, but the manager itself is a single point of
-     coupling.
+  2. LOW COHESION WARNING: The Database & Account Merge cluster (88 nodes,
+     cohesion 0.03) remains the largest cluster. The mixin pattern helps,
+     but DatabaseManager is still a single coupling point.
 
-  3. WELL-ISOLATED FEATURES: Equipment Exchange (0.29), PDF Parser (0.31),
-     MAX Bot (0.39), Auth & Linking (0.24) are cleanly separated -- good
-     modular boundaries.
+  3. WELL-ISOLATED FEATURES: Equipment Exchange (0.14), PDF Parser (0.31),
+     MAX Bot (0.39), Auth & Linking (0.24), Notifications (0.24) are
+     cleanly separated -- good modular boundaries.
 
-  4. 112 ISOLATED NODES: Many functions have <=1 connection, suggesting
-     either missing documentation or truly standalone utilities. Consider
-     adding integration tests for these to verify they are still in use.
+  4. NEW SERVICE LAYER: Stage 6.3 created 11 service files (2200+ LOC)
+     extracted from routers and utils.py. Pattern: services return data,
+     routers fire asyncio.create_task for background notifications.
 
   5. DUAL-BOT ARCHITECTURE: main.py (Telegram) and main_max.py (MAX) share
      the same database but have independent event loops. Account linking
      (Stage 5B) bridges identities across both platforms via linked_user_id.
+
+  6. 177 ISOLATED NODES: Many functions have <=1 connection, suggesting
+     either missing documentation or truly standalone utilities.
 
 ================================================================================
