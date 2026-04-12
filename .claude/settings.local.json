@@ -98,7 +98,10 @@
       "Bash(python -c \"import sys; open\\('graphify-out/.graphify_python', 'w'\\).write\\(sys.executable\\)\")",
       "Bash(ls C:/Users/mikl2/PycharmProjects/viksstroy_bot/frontend/src/hooks/useConfirm*)",
       "Bash(graphify claude:*)",
-      "Bash(python -m py_compile web/api_main.py)"
+      "Bash(python -m py_compile web/api_main.py)",
+      "Bash(graphify --version)",
+      "Bash(python -c \"import sys; open\\('.graphify_python', 'w'\\).write\\(sys.executable\\)\")",
+      "Bash(PYTHONIOENCODING=utf-8 python -m graphify.claude install)"
     ]
   }
 }

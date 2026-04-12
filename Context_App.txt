@@ -1,0 +1,91 @@
+================================================================================
+                    VIKSSTROY BOT -- CONTEXT & STAGE TRACKER
+                              (updated 2026-04-12)
+================================================================================
+
+--- PROJECT SUMMARY ---
+
+Construction workforce management platform (Kanban orders, scheduling,
+equipment exchange, cost estimation) with dual-bot architecture (TG + MAX),
+React frontend, FastAPI backend, SQLite database.
+
+Stack: FastAPI + SQLite (WAL) | React + Vite + Tailwind | aiogram (TG) + maxapi (MAX)
+Graph: 745 nodes, 783 edges, 109 communities (graphify)
+
+--- COMPLETED STAGES ---
+
+  Stage 1-3: Foundation, Kanban, SMR, Privacy                              [OK]
+    Core platform: auth, orders, teams, equipment, KP, PDF parsing,
+    role-based access (7 roles), daily schedule image generation.
+
+  Stage 4: Smart scheduling, ScheduleModal, schedule_generator.py          [OK]
+    Time-based equipment scheduling with free-slot detection.
+    ScheduleModal UI for date/time selection. PNG schedule rendering.
+
+  Stage 4.1: Manual status management                                      [OK]
+    Foremen can manually change order status (in_progress -> completed).
+
+  Stage 5A: Equipment exchange (P2P)                                       [OK]
+    Foremen swap equipment between active orders via exchange requests.
+    Full lifecycle: create, respond (accept/reject), cancel.
+    equipment_exchanges table, exchange_service.py (440 lines).
+
+  Stage 5B: Account linking TG<->MAX (merge, FIO detect, admin force-link) [OK]
+    Cross-platform identity merge. FIO auto-match detects same person.
+    Admin can force-link in profile. linked_user_id + account_links table.
+    account_link_service.py + account_merge.py.
+
+  Stage 5.1: UI/UX skills + graphify installed                             [OK]
+    Skills: emil-design-eng, ui-ux-pro-max, graphify.
+    Obsidian vault (854 notes) + wiki (110 articles) generated.
+
+  Stage 6.1: Background notifications audit                                [OK]
+    All notification calls moved to asyncio.create_task background tasks.
+    Eliminated duplicate sends. Pattern: services return, routers fire.
+
+  Stage 6.2: Bot parity TG<->MAX                                          [OK]
+    /join + 4 callbacks in TG bot. FIO auto-detect + notifications in both.
+
+  Stage 6.3: Refactoring (utils.py decomposed, 11 services, 20 components)[OK]
+    God module web/utils.py: 875 -> 62 lines.
+    11 service modules in web/services/ (2200+ LOC extracted).
+    Frontend: Home 588->358, Objects 851->362, System 770->335.
+    20 extracted components with shared selectors.
+
+  Stage 6.9: Complete action logging (70 log points, retention setting)     [OK]
+    Audit all endpoints. target_type/target_id fields.
+    Log retention setting with auto-cleanup via APScheduler.
+
+  SMR fixes: debtors persist until filled, remind button, KP archive       [OK]
+    Debtors widget shows until SMR submitted. Remind inline button.
+    KP archive/restore for moderators+.
+
+--- CURRENT STAGE ---
+
+  Stage 6.4: Unified color system                                   [NEXT]
+    Centralize all hardcoded colors into CSS variables / Tailwind theme.
+    Single source of truth for brand palette across all components.
+
+--- REMAINING STAGES ---
+
+  Stage 6.4: Unified color system
+  Stage 6.5: Minimal animations (framer-motion)
+  Stage 6.6: Desktop/mobile adaptation
+  Stage 6.7: PWA Manifest
+  Stage 6.8: Guide.jsx + Updates.jsx
+
+--- TOOLING ---
+
+  Skills installed:
+    .claude/skills/emil-design-eng/    -- Emil Kowalski design philosophy
+    .claude/skills/ui-ux-pro-max/      -- UI/UX design intelligence (67 styles)
+    .claude/skills/graphify/           -- Knowledge graph generation
+
+  Graph outputs:
+    graphify-out/graph.html            -- Interactive graph (browser)
+    graphify-out/GRAPH_REPORT.md       -- Audit report
+    graphify-out/graph.json            -- Queryable graph data
+    graphify-out/obsidian/             -- Obsidian vault (854 notes + canvas)
+    graphify-out/wiki/                 -- Agent-crawlable wiki (110 articles)
+
+================================================================================

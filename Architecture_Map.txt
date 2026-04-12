@@ -1,6 +1,6 @@
 ================================================================================
                     VIKSSTROY BOT -- ARCHITECTURE MAP
-              (generated 2026-04-12, graphify 722 nodes / 826 edges)
+              (generated 2026-04-12, graphify 745 nodes / 783 edges / 109 communities)
 ================================================================================
 
 --- APP OVERVIEW ---
@@ -325,7 +325,7 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
 
 --- KEY CONNECTIONS (from graphify community analysis) ---
 
-  COMMUNITY CLUSTERS (76 total, major ones):
+  COMMUNITY CLUSTERS (109 total, major ones):
 
   Cluster                    | Cohesion | Key Insight
   ---------------------------+----------+-------------------------------------------
@@ -411,7 +411,10 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
      the same database but have independent event loops. Account linking
      (Stage 5B) bridges identities across both platforms via linked_user_id.
 
-  7. 173 ISOLATED NODES: Many functions have <=1 connection, suggesting
-     either missing documentation or truly standalone utilities.
+  7. TOKEN REDUCTION: graphify graph provides 84.3x fewer tokens per query
+     vs reading raw files. Best: "what connects data layer to API" = 225.8x.
+
+  8. OBSIDIAN VAULT: 854 notes in graphify-out/obsidian/ with graph.canvas
+     for visual community exploration. Wiki: 110 articles in graphify-out/wiki/.
 
 ================================================================================
