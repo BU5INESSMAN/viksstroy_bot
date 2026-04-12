@@ -1,129 +1,186 @@
-import { Rocket, Sparkles, MonitorSmartphone, Zap, Link, ShieldCheck, Paintbrush, BellRing, MessageSquare, Users } from 'lucide-react';
+import { motion } from 'framer-motion';
+import {
+    Rocket, Sparkles, ArrowRightLeft, Link2, Paintbrush,
+    BellRing, Shield, Smartphone, Wrench, Calendar,
+    LayoutGrid, FileText, Users, Bug, RefreshCw, Zap
+} from 'lucide-react';
+import GlassCard from '../components/ui/GlassCard';
+
+const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+const stagger = { animate: { transition: { staggerChildren: 0.06 } } };
+const fadeUp = { initial: { opacity: 0, y: 12 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.25 } };
+
+const badgeColors = {
+    feat: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400 border-emerald-200 dark:border-emerald-800/50',
+    fix: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800/50',
+    refactor: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800/50',
+};
+
+function Badge({ type, label }) {
+    return (
+        <span className={`inline-flex items-center px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider border ${badgeColors[type] || badgeColors.feat}`}>
+            {label}
+        </span>
+    );
+}
+
+function VersionBlock({ version, date, title, icon: Icon, iconColor, isCurrent, changes }) {
+    return (
+        <motion.div variants={prefersReducedMotion ? {} : fadeUp} transition={{ duration: 0.25 }}>
+            <GlassCard className={`p-6 sm:p-7 ${isCurrent ? 'ring-2 ring-blue-500/30 dark:ring-blue-400/20' : ''}`}>
+                <div className="flex items-start gap-4 mb-5">
+                    <div className={`p-2.5 rounded-xl flex-shrink-0 ${iconColor}`}>
+                        <Icon className="w-5 h-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex flex-wrap items-center gap-2 mb-1">
+                            <span className="text-lg font-extrabold text-gray-900 dark:text-white">{version}</span>
+                            {isCurrent && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-500 text-white">Текущая</span>
+                            )}
+                        </div>
+                        <h3 className="text-sm font-bold text-gray-700 dark:text-gray-300">{title}</h3>
+                        <p className="text-xs text-gray-400 dark:text-gray-500 font-medium mt-0.5">{date}</p>
+                    </div>
+                </div>
+                <div className="space-y-2.5">
+                    {changes.map((c, i) => (
+                        <div key={i} className="flex items-start gap-2.5 text-sm text-gray-600 dark:text-gray-300">
+                            <Badge type={c.type} label={c.type === 'feat' ? 'feat' : c.type === 'fix' ? 'fix' : 'refactor'} />
+                            <span className="leading-relaxed">{c.text}</span>
+                        </div>
+                    ))}
+                </div>
+            </GlassCard>
+        </motion.div>
+    );
+}
+
+const versions = [
+    {
+        version: 'v2.0',
+        date: 'Апрель 2026',
+        title: 'Глобальный лоск (Этап 6)',
+        icon: Paintbrush,
+        iconColor: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+        isCurrent: true,
+        changes: [
+            { type: 'feat', text: 'Аудит фоновых уведомлений: асинхронная отправка, без блокировки UI (6.1)' },
+            { type: 'feat', text: 'Паритет ботов TG ↔ MAX: команда /join, inline-кнопки, callbacks (6.2)' },
+            { type: 'refactor', text: 'Декомпозиция: 11 сервисов, 20+ frontend-компонентов (6.3)' },
+            { type: 'feat', text: 'Единая цветовая система: roleConfig.js, statusConfig.js, GlassCard (6.4)' },
+            { type: 'feat', text: 'Анимации framer-motion: модалки, канбан, переходы страниц, FAB (6.5)' },
+            { type: 'feat', text: 'Десктоп/мобильная адаптация: max-w-7xl, 2-колоночные формы (6.6)' },
+            { type: 'feat', text: 'PWA: manifest.json, service worker, офлайн-режим, установка на телефон (6.7)' },
+            { type: 'feat', text: 'Полное руководство и история обновлений (6.8)' },
+            { type: 'feat', text: 'Полное логирование: 70 точек логов, настройка хранения (6.9)' },
+        ],
+    },
+    {
+        version: 'v1.3',
+        date: 'Март 2026',
+        title: 'Синхронизация профилей (Этап 5B)',
+        icon: Link2,
+        iconColor: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
+        isCurrent: false,
+        changes: [
+            { type: 'feat', text: 'Привязка аккаунтов Telegram ↔ MAX с единым профилем' },
+            { type: 'feat', text: 'Автоопределение совпадений по ФИО при привязке' },
+            { type: 'feat', text: 'Объединение заявок и истории при связывании аккаунтов' },
+            { type: 'feat', text: 'Принудительная связка модератором из панели администрирования' },
+            { type: 'feat', text: 'Уведомления о конфликтах ролей при связывании' },
+        ],
+    },
+    {
+        version: 'v1.2',
+        date: 'Февраль 2026',
+        title: 'Биржа техники (Этап 5A)',
+        icon: ArrowRightLeft,
+        iconColor: 'bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400',
+        isCurrent: false,
+        changes: [
+            { type: 'feat', text: 'P2P обмен техникой между прорабами' },
+            { type: 'feat', text: 'Inline-кнопки в ботах: принять / отклонить обмен' },
+            { type: 'feat', text: 'Автоматический таймаут 30 минут на ответ' },
+            { type: 'feat', text: 'Модалка выбора: обмен или свободное время (тайм-слоты)' },
+        ],
+    },
+    {
+        version: 'v1.1',
+        date: 'Январь 2026',
+        title: 'Расстановки (Этап 4)',
+        icon: Calendar,
+        iconColor: 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400',
+        isCurrent: false,
+        changes: [
+            { type: 'feat', text: 'ScheduleModal с карточками дат для быстрого выбора' },
+            { type: 'feat', text: 'Генератор PNG-картинок расписания (Pillow)' },
+            { type: 'feat', text: 'Кнопка "На завтра" для мгновенной публикации' },
+            { type: 'feat', text: 'Ручное управление статусами заявок прорабами (4.1)' },
+        ],
+    },
+    {
+        version: 'v1.0',
+        date: 'Декабрь 2025',
+        title: 'Фундамент (Этап 1-3)',
+        icon: Rocket,
+        iconColor: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',
+        isCurrent: false,
+        changes: [
+            { type: 'feat', text: 'Авторизация и 7 уровней ролевого доступа' },
+            { type: 'feat', text: 'Канбан-доска заявок: 4 колонки со статусами' },
+            { type: 'feat', text: 'Управление бригадами и техникой: CRUD, приглашения, пароли' },
+            { type: 'feat', text: 'Управление объектами с загрузкой PDF-смет' },
+            { type: 'feat', text: 'Генерация расстановки (PNG) и автопубликация в группы' },
+            { type: 'feat', text: 'СМР: заполнение отчётов, проверка, экспорт в Excel' },
+            { type: 'feat', text: 'Приватность: ролевой доступ ко всем данным' },
+        ],
+    },
+    {
+        version: 'Fixes',
+        date: '2026',
+        title: 'Исправления и улучшения',
+        icon: Bug,
+        iconColor: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',
+        isCurrent: false,
+        changes: [
+            { type: 'fix', text: 'Должники СМР висят до заполнения (не исчезают при завершении наряда)' },
+            { type: 'fix', text: 'Кнопка "Напомнить" для модераторов по должникам СМР' },
+            { type: 'fix', text: 'Архивация и восстановление СМР-отчётов' },
+            { type: 'fix', text: 'Корректная работа кнопки "Свободен" при нескольких бригадах' },
+        ],
+    },
+];
 
 export default function Updates() {
     return (
         <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
-            <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 sm:p-8 border border-gray-100 dark:border-gray-700 transition-colors">
-                <div className="flex items-center mb-8 bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-gray-800 dark:to-gray-700 p-4 sm:p-6 rounded-2xl border border-blue-100 dark:border-gray-600">
-                    <Rocket className="w-10 h-10 sm:w-12 sm:h-12 text-blue-600 mr-4 flex-shrink-0" />
-                    <div>
-                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white tracking-tight">История обновлений</h2>
-                        <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mt-1">Список всех улучшений системы «ВИКС Расписание»</p>
-                    </div>
-                </div>
-
-                <div className="space-y-10 relative before:absolute before:inset-0 before:ml-[1.4rem] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-gray-200 dark:before:via-gray-700 before:to-transparent">
-
-                    {/* ВЕРСИЯ 1.4.0 */}
-                    <div className="relative flex items-start md:justify-between">
-                        <div className="hidden md:block w-[45%] text-right pr-6">
-                            <span className="text-gray-400 dark:text-gray-500 font-bold text-sm tracking-widest uppercase">Текущая версия</span>
-                        </div>
-                        <div className="absolute left-[1.4rem] -translate-x-1/2 md:left-1/2 w-6 h-6 rounded-full bg-blue-500 border-4 border-white dark:border-gray-800 shadow-md"></div>
-                        <div className="ml-12 md:ml-0 md:w-[45%] pl-0 md:pl-6">
-                            <h3 className="text-lg font-bold text-blue-600 dark:text-blue-400 flex items-center gap-2 mb-2">
-                                <BellRing className="w-5 h-5" /> Версия 1.4.0 (Умные уведомления)
-                            </h3>
-                            <p className="md:hidden text-xs text-gray-500 font-bold uppercase tracking-wider mb-4">Текущая версия</p>
-
-                            <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600 shadow-sm hover:shadow-md transition-shadow">
-                                    <b className="text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-                                        <MessageSquare className="w-4 h-4 text-indigo-500" /> Нативная привязка MAX:
-                                    </b>
-                                    <ul className="list-disc pl-5 space-y-1.5 marker:text-blue-500">
-                                        <li>Полностью переработан механизм команды <code>/join</code> в мессенджере MAX.</li>
-                                        <li>Теперь при переходе по ссылке-инвайту бот выдает удобные <b>Inline-кнопки прямо в чате</b> (со списком рабочих вашей бригады).</li>
-                                        <li>Больше никаких перебросов в браузер — аккаунт привязывается в один клик.</li>
-                                    </ul>
-                                </div>
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600 shadow-sm hover:shadow-md transition-shadow">
-                                    <b className="text-gray-900 dark:text-white mb-2 flex items-center gap-2">
-                                        <BellRing className="w-4 h-4 text-orange-500" /> Умная система рассылки:
-                                    </b>
-                                    <ul className="list-disc pl-5 space-y-1.5 marker:text-blue-500">
-                                        <li><b>Двухэтапные уведомления:</b> При модерации заявки рабочие получают PUSH-уведомление "Вас добавили в бронь". А при публикации наряда им приходит финальная карточка.</li>
-                                        <li><b>Анти-спам контроль:</b> В профиле появились тумблеры управления мессенджерами. Если вы привязали и MAX, и Telegram, вы можете отключить дублирование уведомлений в одном из них.</li>
-                                        <li>Встроенная защита: система не даст вам выключить оба мессенджера одновременно.</li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ВЕРСИЯ 1.3.0 */}
-                    <div className="relative flex items-start md:justify-between opacity-90">
-                        <div className="hidden md:block w-[45%] text-right pr-6">
-                            <span className="text-gray-400 dark:text-gray-500 font-bold text-sm tracking-widest uppercase">Ранее</span>
-                        </div>
-                        <div className="absolute left-[1.4rem] -translate-x-1/2 md:left-1/2 w-4 h-4 rounded-full bg-emerald-500 border-4 border-white dark:border-gray-800"></div>
-                        <div className="ml-12 md:ml-0 md:w-[45%] pl-0 md:pl-6">
-                            <h3 className="text-lg font-bold text-emerald-600 dark:text-emerald-400 flex items-center gap-2 mb-2">
-                                <Sparkles className="w-5 h-5" /> Версия 1.3.0 (UI/UX Pro Max)
-                            </h3>
-                            <p className="md:hidden text-xs text-gray-500 font-bold uppercase tracking-wider mb-4">Ранее</p>
-
-                            <div className="space-y-4 text-sm text-gray-700 dark:text-gray-300">
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600">
-                                    <b className="text-gray-900 dark:text-white mb-2 flex items-center gap-2"><Paintbrush className="w-4 h-4 text-pink-500" /> Визуальный рефакторинг:</b>
-                                    <ul className="list-disc pl-5 space-y-1.5 marker:text-emerald-500">
-                                        <li>Системные Emoji заменены на элегантные векторные иконки <b>Lucide React</b>.</li>
-                                        <li>Увеличены области нажатия (Touch Targets) для всех кнопок. Добавлены плавные анимации и эффекты нажатия.</li>
-                                    </ul>
-                                </div>
-                                <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600">
-                                    <b className="text-gray-900 dark:text-white mb-2 flex items-center gap-2"><Users className="w-4 h-4 text-emerald-500" /> Раздельные бригады:</b>
-                                    <ul className="list-disc pl-5 space-y-1.5 marker:text-emerald-500">
-                                        <li>Каждая бригада на объекте теперь отображается <b>с новой строки</b> в Канбане.</li>
-                                        <li>Статус "Свободна" (зачеркивание) работает индивидуально для каждой бригады.</li>
-                                    </ul>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ВЕРСИЯ 1.2.0 */}
-                    <div className="relative flex items-start md:justify-between opacity-80">
-                        <div className="hidden md:block w-[45%] text-right pr-6">
-                            <span className="text-gray-400 dark:text-gray-500 font-bold text-sm tracking-widest uppercase">Ранее</span>
-                        </div>
-                        <div className="absolute left-[1.4rem] -translate-x-1/2 md:left-1/2 w-4 h-4 rounded-full bg-indigo-400 border-4 border-white dark:border-gray-800"></div>
-                        <div className="ml-12 md:ml-0 md:w-[45%] pl-0 md:pl-6">
-                            <h3 className="text-lg font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-2 mb-2">
-                                <ShieldCheck className="w-5 h-5" /> Версия 1.2.0 (Связанность)
-                            </h3>
-                            <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-300">
-                                <ul className="list-disc pl-5 space-y-1.5 marker:text-indigo-400">
-                                    <li>Имена прорабов, рабочих и названия техники стали кликабельными ссылками на профили.</li>
-                                    <li>В профиле появилась прямая ссылка на диалог MAX.</li>
-                                    <li>Добавлена защита от случайных нажатий (ввод слова <code>СВОБОДЕН</code>).</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* ВЕРСИЯ 1.1.1 */}
-                    <div className="relative flex items-start md:justify-between opacity-70">
-                        <div className="hidden md:block w-[45%] text-right pr-6">
-                            <span className="text-gray-400 dark:text-gray-500 font-bold text-sm tracking-widest uppercase">Релиз</span>
-                        </div>
-                        <div className="absolute left-[1.4rem] -translate-x-1/2 md:left-1/2 w-4 h-4 rounded-full bg-gray-400 border-4 border-white dark:border-gray-800"></div>
-                        <div className="ml-12 md:ml-0 md:w-[45%] pl-0 md:pl-6">
-                            <h3 className="text-lg font-bold text-gray-600 dark:text-gray-400 flex items-center gap-2 mb-2">
-                                <MonitorSmartphone className="w-5 h-5" /> Версия 1.1.0 (Старт)
-                            </h3>
-                            <div className="p-4 bg-gray-50 dark:bg-gray-700/30 rounded-2xl border border-gray-100 dark:border-gray-600 text-sm text-gray-700 dark:text-gray-300">
-                                <ul className="list-disc pl-5 space-y-1.5 marker:text-gray-400">
-                                    <li>Запуск Telegram Mini App & MAX WebApp.</li>
-                                    <li>Система планировщика APScheduler.</li>
-                                    <li>Автоматическая генерация графических нарядов.</li>
-                                </ul>
-                            </div>
-                        </div>
-                    </div>
-
+            {/* Hero */}
+            <div className="bg-gradient-to-br from-violet-600 to-purple-800 rounded-3xl shadow-xl p-8 md:p-10 text-white relative overflow-hidden">
+                <div className="absolute -right-16 -top-16 w-56 h-56 bg-white opacity-10 rounded-full blur-3xl" />
+                <div className="absolute left-8 -bottom-16 w-36 h-36 bg-purple-400 opacity-20 rounded-full blur-2xl" />
+                <div className="relative z-10">
+                    <h1 className="text-3xl md:text-4xl font-extrabold mb-3 tracking-tight flex items-center gap-3">
+                        <Sparkles className="w-8 h-8 md:w-10 md:h-10" /> История обновлений
+                    </h1>
+                    <p className="text-purple-100 text-sm md:text-base font-medium max-w-xl leading-relaxed">
+                        Все улучшения платформы "ВИКС Расписание" — от первого релиза до текущей версии.
+                    </p>
                 </div>
             </div>
+
+            {/* Timeline */}
+            <motion.div
+                className="space-y-4"
+                initial="initial"
+                animate="animate"
+                variants={prefersReducedMotion ? {} : stagger}
+            >
+                {versions.map(v => (
+                    <VersionBlock key={v.version} {...v} />
+                ))}
+            </motion.div>
         </main>
     );
 }
