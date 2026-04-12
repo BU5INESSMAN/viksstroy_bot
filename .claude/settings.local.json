@@ -101,7 +101,10 @@
       "Bash(python -m py_compile web/api_main.py)",
       "Bash(graphify --version)",
       "Bash(python -c \"import sys; open\\('.graphify_python', 'w'\\).write\\(sys.executable\\)\")",
-      "Bash(PYTHONIOENCODING=utf-8 python -m graphify.claude install)"
+      "Bash(PYTHONIOENCODING=utf-8 python -m graphify.claude install)",
+      "Bash(ls C:/Users/Admin/PycharmProjects/viksstroy_bot/frontend/public/*.png C:/Users/Admin/PycharmProjects/viksstroy_bot/frontend/public/*.svg C:/Users/Admin/PycharmProjects/viksstroy_bot/frontend/public/manifest.json)",
+      "Bash(python -c \"from PIL import Image; [print\\(f'{f}: {Image.open\\(f\\).size}'\\) for f in ['main.png','apple-touch-icon.png','logo.png']]\")",
+      "Bash(identify main.png apple-touch-icon.png logo.png)"
     ]
   }
 }
