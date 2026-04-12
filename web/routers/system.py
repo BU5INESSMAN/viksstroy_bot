@@ -190,7 +190,8 @@ async def remind_smr(req: RemindSMRRequest):
                         if dm_chat_id:
                             await send_max_message(max_bot_token, dm_chat_id, strip_html(message))
             await db.add_log(real_id, user.get('fio'),
-                             f"Отправил напоминание СМР прорабу (ID: {req.foreman_id}, {len(req.app_ids)} заявок)")
+                             f"Напомнил о СМР прорабу (ID: {req.foreman_id}, {len(req.app_ids)} заявок)",
+                             target_type='smr')
         except Exception as e:
             logger.error(f"Remind SMR error: {e}")
 
@@ -256,7 +257,8 @@ async def api_send_schedule_group(tg_id: int = Form(0), date: str = Form("")):
             except:
                 pass
             await db.add_log(real_id, user_info.get('fio'),
-                             f"Отправил расстановку на {date} в группу ({count} нарядов)")
+                             f"Отправил расстановку на {date} в группу ({count} нарядов)",
+                             target_type='system')
         except Exception as e:
             logger.error(f"Error sending schedule group for {date}: {e}")
 
@@ -313,7 +315,8 @@ async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
                                            f"📋 Расстановка на {date}", filepath)
 
             await db.add_log(real_id, user_info.get('fio'),
-                             f"Запросил расстановку на {date} себе в ЛС")
+                             f"Запросил расстановку на {date} себе в ЛС",
+                             target_type='system')
         except Exception as e:
             logger.error(f"Error sending schedule self for {real_id}: {e}")
 
@@ -336,6 +339,6 @@ async def api_delay_publish(tg_id: int = Form(0)):
     await db.conn.commit()
 
     if tg_id:
-        await db.add_log(real_id, user_info.get('fio'), "Отложил авто-публикацию на 10 минут")
+        await db.add_log(real_id, user_info.get('fio'), "Отложил авто-публикацию на 10 минут", target_type='system')
 
     return {"status": "ok", "publish_at": new_time_str}

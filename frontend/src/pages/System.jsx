@@ -31,6 +31,7 @@ export default function System() {
         smr_unlock_time: '',
         equip_base_time_start: '08:00', equip_base_time_end: '18:00',
         exchange_enabled: true,
+        log_retention_days: '90',
     });
     const [testPlatform, setTestPlatform] = useState('all');
     const [userSearch, setUserSearch] = useState('');
@@ -66,6 +67,7 @@ export default function System() {
                     equip_base_time_start: res.data.equip_base_time_start || '08:00',
                     equip_base_time_end: res.data.equip_base_time_end || '18:00',
                     exchange_enabled: b('exchange_enabled'),
+                    log_retention_days: res.data.log_retention_days || '90',
                 });
             }).catch(() => {});
         }
@@ -94,6 +96,7 @@ export default function System() {
                 equip_base_time_start: settings.equip_base_time_start,
                 equip_base_time_end: settings.equip_base_time_end,
                 exchange_enabled: settings.exchange_enabled ? '1' : '0',
+                log_retention_days: settings.log_retention_days,
                 tg_id: tgId
             }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
             toast.success('Настройки успешно сохранены!');

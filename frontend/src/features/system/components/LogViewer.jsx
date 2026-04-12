@@ -15,6 +15,18 @@ export default function LogViewer({ logs, serverLogs, fetchServerLogs, serverLog
         } catch { return new Date(timestamp).toLocaleString('ru-RU'); }
     };
 
+    const TARGET_TYPE_LABELS = {
+        application: 'Заявка', user: 'Пользователь', equipment: 'Техника',
+        team: 'Бригада', object: 'Объект', smr: 'СМР',
+        exchange: 'Обмен', system: 'Система', settings: 'Настройки',
+    };
+
+    const formatContext = (log) => {
+        if (!log.target_type) return '—';
+        const label = TARGET_TYPE_LABELS[log.target_type] || log.target_type;
+        return log.target_id ? `${label} #${log.target_id}` : label;
+    };
+
     const displayedLogs = logsExpanded ? logs : logs.slice(0, 10);
 
     return (
@@ -44,7 +56,7 @@ export default function LogViewer({ logs, serverLogs, fetchServerLogs, serverLog
                                             {log.action}
                                         </td>
                                         <td className="px-4 py-3 text-[11px] font-mono text-gray-400">
-                                            {log.tg_id ? `#${log.tg_id}` : '—'}
+                                            {formatContext(log)}
                                         </td>
                                     </tr>
                                 );

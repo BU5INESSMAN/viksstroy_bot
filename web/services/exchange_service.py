@@ -190,6 +190,10 @@ async def create_exchange(requester_tg_id, requester_app_id, requested_equip_id,
     offered_equip_name = await _get_equip_name(offered_equip_id)
     object_address = req_app.get('object_address', '')
 
+    await db.add_log(real_tg_id, requester_name,
+                     f"Запросил обмен техники: {requested_equip_name} ↔ {offered_equip_name}",
+                     target_type='exchange', target_id=exchange_id)
+
     return {
         "success": True,
         "exchange_id": exchange_id,
@@ -245,6 +249,9 @@ async def respond_to_exchange(exchange_id: int, tg_id, action: str):
 
     if action == "reject":
         await db.resolve_exchange(exchange_id, 'rejected')
+        await db.add_log(real_tg_id, donor_name,
+                         f"Отклонил обмен техники №{exchange_id}",
+                         target_type='exchange', target_id=exchange_id)
         return {
             "success": True,
             "status": "rejected",
@@ -312,6 +319,9 @@ async def respond_to_exchange(exchange_id: int, tg_id, action: str):
             (json.dumps(req_eq_data, ensure_ascii=False), ex['requester_app_id']))
 
         await db.resolve_exchange(exchange_id, 'accepted')
+        await db.add_log(real_tg_id, donor_name,
+                         f"Принял обмен техники №{exchange_id}: {requested_equip_name} ↔ {offered_equip_name}",
+                         target_type='exchange', target_id=exchange_id)
 
     except Exception as e:
         logger.error(f"Exchange swap error: {e}")
@@ -373,6 +383,10 @@ async def cancel_exchange_request(exchange_id: int, tg_id):
 
     requester_name = await _get_user_fio(ex['requester_id'])
     requested_equip_name = await _get_equip_name(ex['requested_equip_id'])
+
+    await db.add_log(real_tg_id, requester_name,
+                     f"Отменил обмен техники №{exchange_id}",
+                     target_type='exchange', target_id=exchange_id)
 
     return {
         "success": True,

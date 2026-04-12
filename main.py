@@ -129,6 +129,8 @@ async def cmd_web(message: types.Message):
     expires = time.time() + 900  # 15 min
     await db.conn.execute("INSERT INTO link_codes (code, user_id, expires) VALUES (?, ?, ?)", (code, tg_id, expires))
     await db.conn.commit()
+    fio = dict(user).get('fio', '') if user else ''
+    await db.add_log(tg_id, fio, "Запросил код авторизации", target_type='system')
     await message.answer(
         f"Ваш код для привязки аккаунта: <code>{code}</code>\nДействителен 15 минут. Введите его в другом мессенджере или в профиле платформы.",
         parse_mode="html")
@@ -157,6 +159,8 @@ async def cmd_schedule(message: types.Message, command: CommandObject):
         target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%Y-%m-%d")
         label = "завтра"
 
+    fio = dict(user).get('fio', '') if user else ''
+    await db.add_log(tg_id, fio, f"Запросил расстановку через бота на {target_date}", target_type='system')
     await message.answer(f"⏳ Генерирую расстановку на {label} ({target_date})...")
 
     try:
@@ -222,7 +226,7 @@ async def process_fio(message: types.Message, state: FSMContext):
     raw_id = message.from_user.id
 
     await db.add_user(raw_id, fio, role)
-    await db.add_log(raw_id, fio, f"Зарегистрировался в боте (Роль: {role})")
+    await db.add_log(raw_id, fio, f"Зарегистрировался в боте (Роль: {role})", target_type='user', target_id=raw_id)
     await state.clear()
 
     await message.answer(

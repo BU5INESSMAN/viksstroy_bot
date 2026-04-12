@@ -150,6 +150,8 @@ async def update_profile(target_id: int, tg_id: int = Form(...), fio: str = Form
         await db.conn.rollback()
         raise HTTPException(500, f"Ошибка сохранения: {e}")
 
+    admin_fio = dict(user).get('fio', '') if user else ''
+    await db.add_log(admin_id, admin_fio, f"Обновил профиль пользователя {fio}", target_type='user', target_id=target_id)
     return {"status": "ok"}
 
 
@@ -270,5 +272,10 @@ async def set_user_role(user_id: int, role: str = Form(...), admin_id: int = For
 
     await db.conn.execute("UPDATE users SET role = ? WHERE user_id = ?", (role, user_id))
     await db.conn.commit()
+
+    if admin_id:
+        admin_user = await db.get_user(admin_id)
+        admin_fio = dict(admin_user).get('fio', 'Админ') if admin_user else 'Админ'
+        await db.add_log(admin_id, admin_fio, f"Изменил роль пользователя №{user_id}: {role}", target_type='user', target_id=user_id)
 
     return {"status": "ok", "user_id": user_id, "role": role}

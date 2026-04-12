@@ -57,12 +57,15 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
 
 @router.post("/api/teams/create")
 async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Form("Пользователь")):
-    await db.conn.execute("INSERT INTO teams (name) VALUES (?)", (name,))
+    cursor = await db.conn.execute("INSERT INTO teams (name) VALUES (?)", (name,))
+    new_team_id = cursor.lastrowid
     await db.conn.commit()
 
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "boss", "superadmin"],
                        f"🏗 <b>Новая бригада</b>\n👤 Создал: {fio}\n📍 Название: «{name}»\n🕒 Время: {now}", "teams", category="orders")
+    real_tg_id = await resolve_id(tg_id) if tg_id else 0
+    await db.add_log(real_tg_id, fio, f"Создал бригаду: {name}", target_type='team', target_id=new_team_id)
     return {"status": "ok"}
 
 
@@ -84,6 +87,10 @@ async def add_team_member(team_id: int, fio: str = Form(...), position: str = Fo
     await db.conn.execute("INSERT INTO team_members (team_id, fio, position, is_foreman) VALUES (?, ?, ?, ?)",
                           (team_id, fio, position, is_foreman))
     await db.conn.commit()
+    real_tg_id = await resolve_id(tg_id) if tg_id else 0
+    user = await db.get_user(real_tg_id) if real_tg_id else None
+    admin_fio = dict(user).get('fio', 'Система') if user else 'Система'
+    await db.add_log(real_tg_id, admin_fio, f"Добавил участника «{fio}» в бригаду №{team_id}", target_type='team', target_id=team_id)
     return {"status": "ok"}
 
 
@@ -126,8 +133,16 @@ async def unlink_team_member(member_id: int, tg_id: int = Form(0)):
 
 @router.post("/api/teams/members/{member_id}/delete")
 async def delete_team_member(member_id: int, tg_id: int = Form(0)):
+    async with db.conn.execute("SELECT team_id, fio FROM team_members WHERE id = ?", (member_id,)) as cur:
+        m_row = await cur.fetchone()
+    m_team_id = m_row[0] if m_row else 0
+    m_fio = m_row[1] if m_row else ''
     await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
     await db.conn.commit()
+    real_tg_id = await resolve_id(tg_id) if tg_id else 0
+    user = await db.get_user(real_tg_id) if real_tg_id else None
+    admin_fio = dict(user).get('fio', 'Система') if user else 'Система'
+    await db.add_log(real_tg_id, admin_fio, f"Удалил участника «{m_fio}» из бригады №{m_team_id}", target_type='team', target_id=m_team_id)
     return {"status": "ok"}
 
 
@@ -147,5 +162,5 @@ async def delete_entire_team(team_id: int, tg_id: int = Form(0)):
         await db.conn.commit()
     except:
         await db.conn.rollback()
-    await db.add_log(tg_id, dict(user).get('fio', 'Система'), f"Удалил бригаду «{t_name}»")
+    await db.add_log(tg_id, dict(user).get('fio', 'Система'), f"Удалил бригаду «{t_name}»", target_type='team', target_id=team_id)
     return {"status": "ok"}

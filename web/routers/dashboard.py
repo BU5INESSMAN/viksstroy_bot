@@ -102,6 +102,7 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
                           equip_base_time_start: str = Form("08:00"),
                           equip_base_time_end: str = Form("18:00"),
                           exchange_enabled: str = Form("1"),
+                          log_retention_days: str = Form("90"),
                           tg_id: int = Form(0)):
     user = await db.get_user(tg_id)
     if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403,
@@ -123,6 +124,7 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
             ('equip_base_time_start', equip_base_time_start),
             ('equip_base_time_end', equip_base_time_end),
             ('exchange_enabled', exchange_enabled),
+            ('log_retention_days', log_retention_days),
         ]:
             await db.conn.execute("UPDATE settings SET value = ? WHERE key = ?", (v, k))
             await db.conn.execute("INSERT INTO settings (key, value) SELECT ?, ? WHERE (SELECT Changes() = 0)", (k, v))
@@ -132,7 +134,7 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
         await db.conn.rollback()
         raise HTTPException(500, f"Database error: {e}")
 
-    await db.add_log(tg_id, dict(user).get('fio'), "Обновил системные настройки")
+    await db.add_log(tg_id, dict(user).get('fio'), "Обновил системные настройки", target_type='settings')
     return {"status": "ok"}
 
 

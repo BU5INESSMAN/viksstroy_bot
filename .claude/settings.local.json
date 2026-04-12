@@ -96,7 +96,9 @@
       "Bash(python -c \"import graphify\")",
       "Bash(python -m pip install graphifyy -q)",
       "Bash(python -c \"import sys; open\\('graphify-out/.graphify_python', 'w'\\).write\\(sys.executable\\)\")",
-      "Bash(ls C:/Users/mikl2/PycharmProjects/viksstroy_bot/frontend/src/hooks/useConfirm*)"
+      "Bash(ls C:/Users/mikl2/PycharmProjects/viksstroy_bot/frontend/src/hooks/useConfirm*)",
+      "Bash(graphify claude:*)",
+      "Bash(python -m py_compile web/api_main.py)"
     ]
   }
 }

@@ -31,7 +31,7 @@ async def set_equipment_free(tg_id: int = Form(...)):
     user = await db.get_user(real_tg_id)
     if user:
         fio = dict(user).get('fio', '')
-        await db.add_log(real_tg_id, fio, "Освободил свою технику")
+        await db.add_log(real_tg_id, fio, "Освободил свою технику", target_type='equipment')
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
         await notify_users(["report_group", "boss", "superadmin"],
@@ -210,6 +210,7 @@ async def add_equipment(name: str = Form(...), category: str = Form(...), driver
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "boss", "superadmin"],
                        f"🚜 <b>Новая техника</b>\n👤 Добавил: {fio}\n🚜 Название: {name}\n🕒 Время: {now}", "equipment", category="orders")
+    await db.add_log(tg_id, fio, f"Добавил технику: {name}", target_type='equipment')
     return {"status": "ok"}
 
 
@@ -234,6 +235,11 @@ async def bulk_add_equipment(request: Request):
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     await notify_users(["report_group", "boss", "superadmin"],
                        f"🚜 <b>Массовая загрузка техники</b>\n✅ Загружено единиц: {count}\n🕒 Время: {now}", "equipment", category="orders")
+    tg_id = data.get("tg_id", 0)
+    if tg_id:
+        user = await db.get_user(tg_id)
+        fio = dict(user).get('fio', 'Админ') if user else 'Админ'
+        await db.add_log(tg_id, fio, f"Массовая загрузка техники: {count} ед.", target_type='equipment')
     return {"status": "ok", "added": count}
 
 
@@ -273,6 +279,8 @@ async def edit_equipment(equip_id: int, request: Request):
         row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Техника не найдена")
+    admin_fio = dict(user).get('fio', 'Админ')
+    await db.add_log(data.get('tg_id', 0), admin_fio, f"Обновил технику №{equip_id}: {name}", target_type='equipment', target_id=equip_id)
     return dict(zip([c[0] for c in cur.description], row))
 
 
@@ -290,11 +298,20 @@ async def update_equipment(equip_id: int, name: str = Form(...), category: str =
 
 @router.post("/api/equipment/{equip_id}/delete")
 async def delete_equipment(equip_id: int, tg_id: int = Form(0)):
+    # Get name before delete
+    eq_name = f"№{equip_id}"
+    async with db.conn.execute("SELECT name FROM equipment WHERE id = ?", (equip_id,)) as cur:
+        row = await cur.fetchone()
+        if row: eq_name = row[0]
     try:
         await db.conn.execute("DELETE FROM equipment WHERE id = ?", (equip_id,))
         await db.conn.commit()
     except:
         await db.conn.rollback()
+    if tg_id:
+        user = await db.get_user(tg_id)
+        fio = dict(user).get('fio', 'Адм��н') if user else 'Админ'
+        await db.add_log(tg_id, fio, f"Удалил технику: {eq_name}", target_type='equipment', target_id=equip_id)
     return {"status": "ok"}
 
 

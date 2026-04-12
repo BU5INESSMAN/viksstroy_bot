@@ -57,7 +57,7 @@ async def check_and_run_tasks():
                 if await execute_app_publish(app_dict):
                     count += 1
             if count > 0:
-                await db.add_log(0, "Система", f"Авто-публикация: {count} нарядов")
+                await db.add_log(0, "Система", f"Авто-публикация: {count} нарядов", target_type='system')
 
         # =========================================================================
         # ТРИГГЕР 2: АВТО-СТАРТ НАРЯДОВ (перевод в in_progress)
@@ -109,7 +109,7 @@ async def check_and_run_tasks():
 
             await db.conn.commit()
             if started_count > 0:
-                await db.add_log(0, "Система", f"Авто-старт: {started_count} нарядов переведены в работу")
+                await db.add_log(0, "Система", f"Авто-старт: {started_count} нарядов переведены в работу", target_type='system')
 
         # =========================================================================
         # ТРИГГЕР 3: ЗАПРОС ОТЧЁТОВ (report_request_time)
@@ -202,7 +202,7 @@ async def check_and_run_tasks():
                 except Exception:
                     pass
                 if await publish_schedule_to_group(tomorrow_str):
-                    await db.add_log(0, "Система", f"Авто-публикация расстановки на {tomorrow_str}")
+                    await db.add_log(0, "Система", f"Авто-публикация расстановки на {tomorrow_str}", target_type='system')
 
         # =========================================================================
         # ТРИГГЕР 7: АВТО-АРХИВАЦИЯ ЗАВЕРШЁННЫХ НАРЯДОВ (через 48 часов)
@@ -261,7 +261,7 @@ async def check_and_run_tasks():
                             f"📋 Опубликовано нарядов: {count}",
                             "dashboard", category="orders")
                         await db.add_log(0, "Система",
-                                         f"Авто-публикация расстановки на завтра: {count} нарядов")
+                                         f"Авто-публикация расстановки на завтра: {count} нарядов", target_type='system')
         except Exception as e:
             logger.error(f"Ошибка проверки таймера авто-публикации: {e}")
 
@@ -315,8 +315,23 @@ async def check_and_run_tasks():
         logger.error(f"Ошибка в планировщике: {e}")
 
 
+async def cleanup_old_logs_job():
+    """Ежедневная очистка старых логов по настройке log_retention_days."""
+    try:
+        if db.conn is None:
+            await db.init_db()
+        async with db.conn.execute("SELECT value FROM settings WHERE key = 'log_retention_days'") as cur:
+            row = await cur.fetchone()
+        days = int(row[0]) if row and row[0] else 90
+        await db.cleanup_old_logs(days)
+        logger.info(f"🧹 Очистка логов: удалены записи старше {days} дней")
+    except Exception as e:
+        logger.error(f"Ошибка очистки логов: {e}")
+
+
 def start_scheduler():
     """Запускает проверку каждую минуту"""
     scheduler.add_job(check_and_run_tasks, 'cron', minute='*')
+    scheduler.add_job(cleanup_old_logs_job, 'cron', hour=3, minute=0, id='cleanup_logs')
     scheduler.start()
     logger.info("⏳ Планировщик задач успешно запущен (Часовой пояс: Азия/Барнаул)")

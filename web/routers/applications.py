@@ -280,7 +280,7 @@ async def publish_schedule(tg_id: int = Form(0), target_date: str = Form("")):
         raise HTTPException(500, "Не удалось опубликовать расстановку")
 
     fio = dict(user).get('fio', 'Модератор')
-    await db.add_log(real_tg_id, fio, f"Опубликовал расстановку на {target_date}")
+    await db.add_log(real_tg_id, fio, f"Опубликовал расстановку на {target_date}", target_type='system')
     return {"status": "ok", "date": target_date}
 
 

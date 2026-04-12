@@ -5,6 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File
 from typing import List
 from database_deps import db
+from utils import resolve_id
 import json
 import tempfile
 from datetime import datetime
@@ -23,25 +24,32 @@ async def api_create_object(name: str = Form(...), address: str = Form(...), tg_
         user = await db.get_user(tg_id)
         if user and dict(user).get('role') in ('foreman', 'brigadier'):
             raise HTTPException(status_code=403, detail="Нет прав на создание объектов")
-    await db.create_object(name, address)
+    obj_id = await db.create_object(name, address)
+    real_tg_id = await resolve_id(tg_id) if tg_id else 0
+    user = await db.get_user(real_tg_id) if real_tg_id else None
+    fio = dict(user).get('fio', 'Система') if user else 'Система'
+    await db.add_log(real_tg_id, fio, f"Создал объект: {name}", target_type='object', target_id=obj_id)
     return {"status": "ok"}
 
 @router.post("/api/objects/{obj_id}/update")
 async def api_update_object(obj_id: int, name: str = Form(...), address: str = Form(...), default_teams: str = Form(""), default_equip: str = Form("")):
     if db.conn is None: await db.init_db()
     await db.update_object(obj_id, name, address, default_teams, default_equip)
+    await db.add_log(0, "Система", f"Обновил объект №{obj_id}", target_type='object', target_id=obj_id)
     return {"status": "ok"}
 
 @router.post("/api/objects/{obj_id}/archive")
 async def api_archive_object(obj_id: int):
     if db.conn is None: await db.init_db()
     await db.archive_object(obj_id)
+    await db.add_log(0, "Система", f"Архивировал объект №{obj_id}", target_type='object', target_id=obj_id)
     return {"status": "ok"}
 
 @router.post("/api/objects/{obj_id}/restore")
 async def api_restore_object(obj_id: int):
     if db.conn is None: await db.init_db()
     await db.restore_object(obj_id)
+    await db.add_log(0, "Система", f"Восстановил объект №{obj_id}", target_type='object', target_id=obj_id)
     return {"status": "ok"}
 
 @router.get("/api/kp/catalog")
@@ -144,6 +152,10 @@ async def api_upload_object_pdf(obj_id: int, file: UploadFile = File(...), tg_id
     rel_path = f"/uploads/objects/{obj_id}/{safe_name}"
     await db.conn.execute("UPDATE objects SET pdf_file_path = ? WHERE id = ?", (rel_path, obj_id))
     await db.conn.commit()
+    if tg_id:
+        user = await db.get_user(real_tg_id)
+        fio = dict(user).get('fio', '') if user else ''
+        await db.add_log(real_tg_id, fio, f"Загрузил PDF для объекта №{obj_id}", target_type='object', target_id=obj_id)
     return {"status": "ok", "pdf_file_path": rel_path}
 
 
@@ -187,6 +199,7 @@ async def api_create_object_request(name: str = Form(...), address: str = Form("
         f"📍 <b>Запрос на новый объект</b>\n👤 От: {fio}\n🏗 Название: {name}\n📍 Адрес: {address or 'Не указан'}",
         "objects", category="orders"
     ))
+    await db.add_log(real_tg_id, fio, f"Отправил запрос на создание объекта: {name}", target_type='object')
     return {"status": "ok"}
 
 
@@ -243,6 +256,8 @@ async def api_review_object_request(req_id: int, action: str = Form(...), tg_id:
         ))
     else:
         raise HTTPException(400, "Неверное действие")
+    action_label = "одобрил" if action == 'approve' else "отклонил"
+    await db.add_log(real_tg_id, mod_fio, f"Рассмотрел запрос на объект №{req_id}: {action_label}", target_type='object', target_id=req_id)
     return {"status": "ok"}
 
 
@@ -273,6 +288,10 @@ async def api_create_extra_work(name: str = Form(...), unit: str = Form("шт"),
         (name, unit, salary, price)
     )
     await db.conn.commit()
+    if tg_id:
+        user = await db.get_user(real_tg_id)
+        fio = dict(user).get('fio', '') if user else ''
+        await db.add_log(real_tg_id, fio, f"Добавил доп. работу: {name}", target_type='object')
     return {"status": "ok"}
 
 

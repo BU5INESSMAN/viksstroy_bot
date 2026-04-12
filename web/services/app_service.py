@@ -90,6 +90,7 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
         (real_tg_id, fio, team_id, object_id, date_target, object_address, comment, selected_members, equipment_data))
     new_app_id = cursor.lastrowid
     await db.conn.commit()
+    await db.add_log(real_tg_id, fio, f"Создал заявку №{new_app_id} на {date_target}", target_type='application', target_id=new_app_id)
     return new_app_id, real_tg_id, fio
 
 
@@ -117,7 +118,7 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
         await db.conn.rollback()
 
     fio = dict(user).get('fio', 'Пользователь')
-    await db.add_log(real_tg_id, fio, f"Отредактировал заявку №{app_id}")
+    await db.add_log(real_tg_id, fio, f"Обновил заявку №{app_id}", target_type='application', target_id=app_id)
     return real_tg_id, fio
 
 
@@ -151,7 +152,8 @@ async def delete_application(app_id, tg_id):
 
         fio = dict(user).get('fio', 'Админ')
         await db.add_log(real_tg_id, fio,
-                         f"Полностью удалил заявку №{app_id} (Объект: {app_dict.get('object_address')})")
+                         f"Удалил заявку №{app_id} (Объект: {app_dict.get('object_address')})",
+                         target_type='application', target_id=app_id)
         return real_tg_id, fio, app_dict
     except Exception as e:
         await db.conn.rollback()

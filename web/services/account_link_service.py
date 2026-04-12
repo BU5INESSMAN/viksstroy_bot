@@ -123,6 +123,14 @@ async def link_account(current_user_id: int, link_code: str):
     except Exception:
         pass
 
+    user_fio = ''
+    u = await db.get_user(current_user_id)
+    if u:
+        user_fio = dict(u).get('fio', '')
+    await db.add_log(current_user_id, user_fio,
+                     f"Связал аккаунты {result['primary_id']} ↔ {result['secondary_id']}",
+                     target_type='user', target_id=result['primary_id'])
+
     return {
         "success": True,
         "primary_user_id": result["primary_id"],
@@ -155,6 +163,12 @@ async def admin_link_accounts(admin_id: int, user_id_1: int, user_id_2: int):
             primary_id, secondary_id,
             result["primary_role"], result["secondary_role"]
         )
+
+    admin_user = await db.get_user(admin_id)
+    admin_fio = dict(admin_user).get('fio', 'Админ') if admin_user else 'Админ'
+    await db.add_log(admin_id, admin_fio,
+                     f"Принудительно связал аккаунты {result['primary_id']} ↔ {result['secondary_id']}",
+                     target_type='user', target_id=result['primary_id'])
 
     return {
         "success": True,

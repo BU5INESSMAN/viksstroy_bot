@@ -8,8 +8,9 @@ class ObjectsRepoMixin:
 
     async def create_object(self, name: str, address: str):
         """Создает новый объект"""
-        await self.conn.execute("INSERT INTO objects (name, address) VALUES (?, ?)", (name, address))
+        cursor = await self.conn.execute("INSERT INTO objects (name, address) VALUES (?, ?)", (name, address))
         await self.conn.commit()
+        return cursor.lastrowid
 
     async def update_object(self, obj_id: int, name: str, address: str, default_teams: str, default_equip: str):
         """Обновляет информацию об объекте и ресурсы по умолчанию"""

@@ -111,6 +111,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_profiles()
         await self.upgrade_db_for_foreman()
         await self.upgrade_db_for_account_linking()
+        await self.upgrade_db_for_log_columns()
 
         # Инициализация справочника из последнего доступного файла
         latest_file = self.get_latest_catalog_path()
@@ -250,4 +251,24 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
                 await self.conn.execute(col_stmt)
             except Exception:
                 pass  # Колонка уже существует
+        await self.conn.commit()
+
+    async def upgrade_db_for_log_columns(self):
+        """Stage 6.9: Добавляет target_type/target_id в таблицу логов + настройку хранения"""
+        for col_stmt in [
+            "ALTER TABLE logs ADD COLUMN target_type TEXT DEFAULT NULL",
+            "ALTER TABLE logs ADD COLUMN target_id INTEGER DEFAULT NULL",
+        ]:
+            try:
+                await self.conn.execute(col_stmt)
+            except Exception:
+                pass
+        # Настройка хранения логов
+        try:
+            await self.conn.execute(
+                "INSERT INTO settings (key, value) SELECT 'log_retention_days', '90' "
+                "WHERE NOT EXISTS (SELECT 1 FROM settings WHERE key = 'log_retention_days')"
+            )
+        except Exception:
+            pass
         await self.conn.commit()

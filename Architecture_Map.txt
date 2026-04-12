@@ -1,6 +1,6 @@
 ================================================================================
                     VIKSSTROY BOT -- ARCHITECTURE MAP
-              (generated 2026-04-12, graphify 708 nodes / 807 edges)
+              (generated 2026-04-12, graphify 751 nodes / 853 edges)
 ================================================================================
 
 --- APP OVERVIEW ---
@@ -27,18 +27,18 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
 
   FRONTEND PAGES (frontend/src/pages/)
   +--------------------------+--------------------------------------------------+
-  | Home.jsx                 | Kanban board: Pending/Approved/Published/InProgress|
+  | Home.jsx (358 lines)     | Kanban board + useAppForm hook + DebtorsWidget   |
   | Review.jsx               | Admin order review: approve, reject, filter      |
   | MyApps.jsx               | Personal order history with date filters, archive |
   | Teams.jsx                | Brigade/team CRUD, invite members via codes       |
   | Equipment.jsx            | Equipment catalog: categories, individual/bulk add|
-  | Objects.jsx              | Construction site management and archival         |
+  | Objects.jsx (362 lines)  | Page shell: object cards + 5 extracted modals     |
   | KP.jsx                   | Cost estimate (KP) dashboard per order            |
   | Resources.jsx            | Unified view: teams + equipment management        |
   | Login.jsx                | Auth entry page                                   |
   | TMAAuth.jsx              | Telegram Mini App auth flow                       |
   | MAXAuth.jsx              | MAX messenger auth flow                           |
-  | System.jsx               | Admin panel: users, settings, logs, backups       |
+  | System.jsx (335 lines)   | Users table + 4 extracted admin panels            |
   | Guide.jsx                | User help / onboarding guide                      |
   | Updates.jsx              | Changelog / release notes page                    |
   | JoinTeam.jsx             | Team invite acceptance page                       |
@@ -49,19 +49,29 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
   +--------------------------+--------------------------------------------------+
   | components/Layout.jsx    | App shell: header, bottom nav, profile, session   |
   | components/ConfirmModal  | Reusable confirmation dialog                      |
-  | features/applications/   | CreateAppModal, EditAppModal, ViewAppModal,        |
-  |                          | ScheduleModal, KanbanCol, ActiveApplicationsCard, |
-  |                          | MyTeamCard, ArchiveModal, ConfirmFreeModal,        |
-  |                          | ExchangeDialog                                    |
-  | features/teams/          | TeamCard, CreateTeamModal, ManageTeamModal,        |
-  |                          | TeamInviteModal                                   |
+  | features/applications/   | CreateAppModal (381), EditAppModal (461),          |
+  |   components/            | ViewAppModal, ScheduleModal, KanbanCol,            |
+  |                          | ActiveApplicationsCard, MyTeamCard, ArchiveModal,  |
+  |                          | ConfirmFreeModal, ExchangeDialog                   |
+  |                          | ObjectSelector (75), EquipmentSelector (234),      |
+  |                          | TeamSelector (127), DebtorsWidget (104)            |
+  | features/applications/   | useAppForm (369) -- form state, handlers,          |
+  |   hooks/                 | equipment/team selection, submit/delete logic       |
+  | features/objects/        | ObjectEditModal (406), ObjectCreateModal (321),    |
+  |   components/            | ObjectStatsModal (174), ObjectRequestModal (85),   |
+  |                          | ObjectRequestsPanel (56)                           |
+  | features/system/         | SystemSettings (154), BroadcastPanel (129),        |
+  |   components/            | LogViewer (94), NotificationTesting (84),          |
+  |                          | UIHelpers (64) -- GlassCard, SectionHeader, Toggle |
+  | features/teams/          | TeamCard, CreateTeamModal, ManageTeamModal,         |
+  |                          | TeamInviteModal                                    |
   | features/equipment/      | EquipmentCard, AddEquipForm, BulkUploadForm,       |
-  |                          | EditEquipmentModal, EquipmentInviteModal           |
-  | features/layout/         | Header, BottomNav, ProfileModal, SessionModal      |
-  | hooks/useConfirm.jsx     | Confirmation dialog hook                          |
-  | utils/dateUtils.js       | Smart date calculations (today, tomorrow, week)   |
-  | utils/clipboard.js       | Copy-to-clipboard helper                          |
-  | utils/equipFormat.js     | Equipment name formatting                         |
+  |                          | EditEquipmentModal, EquipmentInviteModal            |
+  | features/layout/         | Header, BottomNav, ProfileModal, SessionModal       |
+  | hooks/useConfirm.jsx     | Confirmation dialog hook                           |
+  | utils/dateUtils.js       | Smart date calculations (today, tomorrow, week)    |
+  | utils/clipboard.js       | Copy-to-clipboard helper                           |
+  | utils/equipFormat.js     | Equipment name formatting                          |
   +--------------------------+--------------------------------------------------+
 
   BACKEND ROUTERS (web/routers/)
@@ -310,37 +320,51 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
   9. verify_moderator_plus  (11 edges) -- web/utils.py
      Auth guard used across nearly all routers
 
- 10. web/utils.py           (reduced) -- now ~62 lines
-     Auth guards + team enrichment only; domain logic moved to services/
+ 10. Viksstroy Bot Overview  (11 edges) -- Architecture_Map.txt
+     Documentation hub linking all major subsystems
 
 --- KEY CONNECTIONS (from graphify community analysis) ---
 
-  COMMUNITY CLUSTERS (65 total, major ones):
+  COMMUNITY CLUSTERS (74 total, major ones):
 
   Cluster                    | Cohesion | Key Insight
   ---------------------------+----------+-------------------------------------------
-  Database & Account Merge   |  0.03    | Large cluster: DB manager + all repos +
-                             |          | account merge. Low cohesion = many
-                             |          | loosely connected responsibilities
-  System Router & Broadcast  |  0.04    | system.py endpoints + broadcast_service
-  TG Bot Entry & Lifecycle   |  0.06    | main.py: TMA, FSM, commands, broadcast
-  Application Cards & Modals |  0.07    | Frontend order UI components
-  Objects Page & CRUD        |  0.06    | Backend object + extra works endpoints
-  App Shell & Navigation     |  0.07    | Shell, routing, nav, date utils
-  Account Link Service       |  0.08    | NEW: account_link_service.py domain
+  Database & Account Merge   |  0.03    | Large cluster (88 nodes): DB manager +
+                             |          | all repos + account merge. Low cohesion =
+                             |          | many loosely connected responsibilities
+  Application UI Components  |  0.04    | Frontend order UI: CreateApp, EditApp,
+                             |          | ObjectSelector, EquipmentSelector,
+                             |          | TeamSelector, DebtorsWidget, useAppForm
+  API Main & App Router      |  0.06    | api_main.py + applications.py endpoints
+  System Admin Panel         |  0.06    | System.jsx + SystemSettings, BroadcastPanel,
+                             |          | LogViewer, NotificationTesting, UIHelpers
+  Objects Management UI      |  0.05    | Objects.jsx + ObjectEditModal, ObjectCreate,
+                             |          | ObjectStats, ObjectRequest, RequestsPanel
+  Account Link Service       |  0.07    | account_link_service.py domain logic
+  Equipment UI & Formatting  |  0.06    | Equipment components + equipFormat.js
+  Architecture Documentation |  0.08    | Architecture_Map.txt + GRAPH_REPORT.md nodes
+  Teams Repository           |  0.08    | TeamsRepoMixin: CRUD, invites, linking
+  TG Bot Entry & Lifecycle   |  0.12    | main.py: TMA, FSM, commands, broadcast
+  Objects Repository         |  0.08    | ObjectsRepoMixin: CRUD, KP plan, archive
+  Teams & Resources UI       |  0.09    | Team/resource frontend components
   Equipment Exchange Service |  0.14    | exchange_service.py: well-isolated
-  Application Workflow Svc   |  0.10    | NEW: app_workflow.py (review, publish)
-  Application Data Service   |  0.14    | NEW: app_service.py (CRUD, enrichment)
+  Application Workflow Svc   |  0.10    | app_workflow.py (review, publish, archive)
+  KP Router & Dashboard      |  0.12    | KP router + catalog management
+  KP Repository              |  0.12    | KpRepoMixin: catalog, Excel import/export
+  Users Router & Linking     |  0.12    | users.py + link/unlink endpoints
+  Application Data Service   |  0.14    | app_service.py (CRUD, enrichment)
+  DB Mixin Composition       |  0.15    | DatabaseManager mixin architecture docs
+  App Shell & Navigation     |  0.17    | App.jsx, routing, BottomNav, Header
   Notification Service       |  0.24    | notify_users, group chat, conflict alerts
   Auth & Web Codes           |  0.24    | FIO match, register, link codes
   MAX Bot API                |  0.24    | max_api.py: bot singleton, messaging
-  MAX Bot Entry              |  0.39    | main_max.py: webhook, handlers
-  PDF SMR Parser             |  0.31    | Standalone parser, well-isolated
   Schedule Helpers           |  0.25    | debtors, dates, smart publish prompt
+  Broadcast Service          |  0.22    | Group/DM broadcasts, test notifications
+  PDF SMR Parser             |  0.31    | Standalone parser, well-isolated
   Image Generation Service   |  0.32    | create_app_image, fonts, Pillow
-  Scheduler & Timeouts       |  0.12    | APScheduler + TG bot lifecycle
-  KP Cost Estimation UI      |  0.12    | KP router + catalog management
-  DB Manager Core            |  0.12    | Mixin composition documentation nodes
+  MAX Bot Entry              |  0.39    | main_max.py: webhook, handlers
+  Exchange Router            |  0.40    | exchange.py: thin router to service
+  Service Layer Rationale    |  0.40    | Rationale docs: god module -> services
 
   HYPEREDGES (group relationships):
   - Order Lifecycle Flow: Kanban system + schedule publishing + core flow +
@@ -354,6 +378,7 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
   - TG bot inline handlers directly use DatabaseManager (tight coupling)
   - Socks5Session (proxy) depends on DatabaseManager (unusual dependency)
   - RegState (FSM) depends on DatabaseManager (registration flow)
+  - Application Workflow Service maps to Architecture_Map Core Flow (semantic)
 
 --- ARCHITECTURAL INSIGHTS ---
 
@@ -361,23 +386,32 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind | aiogram (TG
      11 service modules now in web/services/ with clear domain boundaries.
      Routers are thin HTTP layers delegating to services.
 
-  2. LOW COHESION WARNING: The Database & Account Merge cluster (88 nodes,
+  2. FRONTEND DECOMPOSED (Stage 6.3 Phase 6-9):
+     - Home.jsx 588 -> 358 lines: useAppForm hook (369) + DebtorsWidget (104)
+     - Objects.jsx 851 -> 362 lines: 5 modals extracted (ObjectEdit 406,
+       ObjectCreate 321, ObjectStats 174, ObjectRequest 85, RequestsPanel 56)
+     - System.jsx 770 -> 335 lines: 4 panels extracted (SystemSettings 154,
+       BroadcastPanel 129, LogViewer 94, NotificationTesting 84, UIHelpers 64)
+     - CreateAppModal 706 -> 381 lines: ObjectSelector (75),
+       EquipmentSelector (234), TeamSelector (127) shared with EditAppModal
+
+  3. LOW COHESION WARNING: The Database & Account Merge cluster (88 nodes,
      cohesion 0.03) remains the largest cluster. The mixin pattern helps,
      but DatabaseManager is still a single coupling point.
 
-  3. WELL-ISOLATED FEATURES: Equipment Exchange (0.14), PDF Parser (0.31),
+  4. WELL-ISOLATED FEATURES: Equipment Exchange (0.14), PDF Parser (0.31),
      MAX Bot (0.39), Auth & Linking (0.24), Notifications (0.24) are
      cleanly separated -- good modular boundaries.
 
-  4. NEW SERVICE LAYER: Stage 6.3 created 11 service files (2200+ LOC)
+  5. NEW SERVICE LAYER: Stage 6.3 created 11 service files (2200+ LOC)
      extracted from routers and utils.py. Pattern: services return data,
      routers fire asyncio.create_task for background notifications.
 
-  5. DUAL-BOT ARCHITECTURE: main.py (Telegram) and main_max.py (MAX) share
+  6. DUAL-BOT ARCHITECTURE: main.py (Telegram) and main_max.py (MAX) share
      the same database but have independent event loops. Account linking
      (Stage 5B) bridges identities across both platforms via linked_user_id.
 
-  6. 177 ISOLATED NODES: Many functions have <=1 connection, suggesting
+  7. 194 ISOLATED NODES: Many functions have <=1 connection, suggesting
      either missing documentation or truly standalone utilities.
 
 ================================================================================

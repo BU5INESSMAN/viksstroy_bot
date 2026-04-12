@@ -312,7 +312,7 @@ async def message_handler(event: MessageCreated):
         role = state_data.get("role", "worker")
         try:
             await db.add_user(pseudo_tg_id, fio, role)
-            await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался в боте MAX (Роль: {role})")
+            await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался в боте MAX (Роль: {role})", target_type='user', target_id=pseudo_tg_id)
             USER_STATES.pop(max_id_str, None)
             msg = f"🎉 Регистрация успешно завершена!\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇"
             await send_max_msg(event, msg, target_url=WEB_APP_URL)

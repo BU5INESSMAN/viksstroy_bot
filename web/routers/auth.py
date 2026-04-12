@@ -106,7 +106,7 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
     pseudo_tg_id = -int(max_id)
     fio = f"{last_name} {first_name}".strip() or f"Пользователь MAX {max_id}"
     await db.add_user(pseudo_tg_id, fio, role)
-    await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался через MAX (Роль: {role})")
+    await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался через MAX (Роль: {role})", target_type='user', target_id=pseudo_tg_id)
     await notify_users(["report_group", "moderator"], f"🆕 <b>Но��ая регистрация (MAX)</b>\n👤 {fio}\n💼 {role}", "system", category="new_users")
 
     # Stage 5B-1: Поиск совпадений ФИО на другой платформе
@@ -173,7 +173,7 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
     fio = f"{last_name} {first_name}".strip() or f"Пользователь {tg_id}"
     await db.add_user(tg_id, fio, role)
     if photo_url: await db.update_user_avatar(tg_id, photo_url)
-    await db.add_log(tg_id, fio, f"Зарегистрировался (Роль: {role})")
+    await db.add_log(tg_id, fio, f"Зарегистрировался (Роль: {role})", target_type='user', target_id=tg_id)
     await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация</b>\n👤 {fio}\n💼 {role}", "system", category="new_users")
 
     # Stage 5B-1: Поиск совпадений ФИО на другой платформе

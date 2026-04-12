@@ -92,6 +92,12 @@ async def review_application(app_id: int, new_status: str, reason: str, tg_id: i
     except:
         await db.conn.rollback()
 
+    action_label = "Одобрил" if new_status == 'approved' else ("Отклонил" if new_status == 'rejected' else "Завершил")
+    log_msg = f"{action_label} заявку №{app_id}"
+    if new_status == 'rejected' and reason:
+        log_msg += f": {reason}"
+    await db.add_log(real_tg_id, mod_fio, log_msg, target_type='application', target_id=app_id)
+
     return app_dict, mod_fio, real_tg_id, new_status, reason
 
 
@@ -185,7 +191,8 @@ async def change_application_status(app_id: int, new_status: str, tg_id: int):
         raise HTTPException(500, f"Ошибка обновления: {e}")
 
     await db.add_log(real_tg_id, mod_fio,
-                     f"Изменил статус заявки №{app_id} с '{current_status}' на '{new_status}'")
+                     f"Изменил статус заявки №{app_id}: {STATUS_LABELS.get(current_status, current_status)} → {STATUS_LABELS.get(new_status, new_status)}",
+                     target_type='application', target_id=app_id)
 
     return app_dict, mod_fio, real_tg_id
 
@@ -216,7 +223,7 @@ async def publish_applications(app_ids_str: str, tg_id: int):
 
     user = await db.get_user(tg_id)
     fio = dict(user).get('fio', 'Руководство') if user else "Руководство"
-    await db.add_log(tg_id, fio, f"Опубликовал {count} нарядов в группу")
+    await db.add_log(tg_id, fio, f"Опубликовал {count} нарядов в группу", target_type='application')
     return count, fio
 
 
@@ -257,7 +264,7 @@ async def free_equipment(app_id: int, tg_id: int):
     await db.conn.commit()
     fio = dict(user).get('fio', '')
     user_role = dict(user).get('role', 'Водитель')
-    await db.add_log(real_tg_id, fio, f"Освободил технику на объекте {obj_addr}")
+    await db.add_log(real_tg_id, fio, f"Освободил технику в заявке №{app_id}", target_type='application', target_id=app_id)
 
     async with db.conn.execute("SELECT name FROM equipment WHERE id = ?", (my_eq_id,)) as cur:
         eq_name_row = await cur.fetchone()
@@ -306,14 +313,14 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
             t_row = await cur.fetchone()
             t_name = t_row[0] if t_row else f"ID:{team_id}"
 
-        await db.add_log(real_tg_id, fio, f"Освободил бригаду '{t_name}' на объекте {obj_addr}")
+        await db.add_log(real_tg_id, fio, f"Освободил бригаду «{t_name}» в заявке №{app_id}", target_type='application', target_id=app_id)
         await notify_group_chat(f"Бригада «{t_name}» освобожден(а) {fio} ({role_label})", "dashboard")
 
     else:
         await db.conn.execute("UPDATE applications SET is_team_freed = 1, freed_team_ids = ? WHERE id = ?",
                               (all_team_ids_str, app_id))
         await db.conn.commit()
-        await db.add_log(real_tg_id, fio, f"Освободил все бригады на объекте {obj_addr}")
+        await db.add_log(real_tg_id, fio, f"Освободил все бригады в заявке №{app_id}", target_type='application', target_id=app_id)
         await notify_group_chat(f"Все бригады освобожден(а) {fio} ({role_label})", "dashboard")
 
 
@@ -336,7 +343,7 @@ async def archive_application(app_id: int, tg_id: int):
     await db.conn.commit()
 
     fio = dict(user).get('fio', 'Модератор')
-    await db.add_log(real_tg_id, fio, f"Архивировал заявку №{app_id}")
+    await db.add_log(real_tg_id, fio, f"Архивировал заявку №{app_id}", target_type='application', target_id=app_id)
 
 
 async def remind_foreman_smr(app_id: int, tg_id: int):
@@ -358,7 +365,7 @@ async def remind_foreman_smr(app_id: int, tg_id: int):
         raise HTTPException(400, "У заявки не указан прораб")
 
     mod_fio = dict(user).get('fio', 'Модератор')
-    await db.add_log(real_tg_id, mod_fio, f"Отправил напоминание о СМР по заявке №{app_id}")
+    await db.add_log(real_tg_id, mod_fio, f"Отправил напоминание прорабу по заявке №{app_id}", target_type='application', target_id=app_id)
 
     return app_dict
 

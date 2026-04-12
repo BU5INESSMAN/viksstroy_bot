@@ -12,7 +12,7 @@ async def broadcast_group(real_id: int, fio: str, message: str):
     text = f"📢 <b>Рассылка от {fio}:</b>\n\n{message}"
     try:
         await notify_group_chat(text, "dashboard")
-        await db.add_log(real_id, fio, f"Отправил рассылку в группу")
+        await db.add_log(real_id, fio, f"Отправил рассылку в группу", target_type='system')
     except Exception as e:
         logger.error(f"Broadcast group error: {e}")
 
@@ -22,7 +22,7 @@ async def broadcast_dm_roles(real_id: int, fio: str, message: str, roles: list):
     text = f"📢 <b>Рассылка от {fio}:</b>\n\n{message}"
     try:
         await notify_users(roles, text, "dashboard")
-        await db.add_log(real_id, fio, f"Отправил рассылку в ЛС (роли: {', '.join(roles)})")
+        await db.add_log(real_id, fio, f"Отправил рассылку в ЛС (роли: {', '.join(roles)})", target_type='system')
     except Exception as e:
         logger.error(f"Broadcast DM roles error: {e}")
 
@@ -32,7 +32,7 @@ async def broadcast_dm_users(real_id: int, fio: str, message: str, user_ids: lis
     text = f"📢 <b>Рассылка от {fio}:</b>\n\n{message}"
     try:
         await notify_users([], text, "dashboard", extra_tg_ids=user_ids)
-        await db.add_log(real_id, fio, f"Отправил рассылку в ЛС ({len(user_ids)} пользователей)")
+        await db.add_log(real_id, fio, f"Отправил рассылку в ЛС ({len(user_ids)} пользователей)", target_type='system')
     except Exception as e:
         logger.error(f"Broadcast DM users error: {e}")
 

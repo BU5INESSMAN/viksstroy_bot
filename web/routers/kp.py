@@ -64,6 +64,11 @@ async def submit_app_kp(app_id: int, request: Request):
                         raise HTTPException(403, "Нет прав для заполнения КП")
 
     await db.submit_kp_report(app_id, data.get('items', []), req_role)
+
+    if tg_id:
+        user = await db.get_user(real_tg_id)
+        fio = dict(user).get('fio', '') if user else ''
+        await db.add_log(real_tg_id, fio, f"Отправил отчёт СМР по заявке №{app_id}", target_type='smr', target_id=app_id)
     return {"status": "ok"}
 
 
@@ -75,7 +80,16 @@ async def review_app_kp(app_id: int, request: Request):
     items = data.get('items')
     if items and data.get('action') == 'approve':
         await db.update_kp_volumes_only(app_id, items)
-    await db.review_kp_report(app_id, data.get('action'))
+    action = data.get('action')
+    await db.review_kp_report(app_id, action)
+
+    tg_id = data.get('tg_id')
+    if tg_id:
+        real_tg_id = await resolve_id(int(tg_id))
+        user = await db.get_user(real_tg_id)
+        fio = dict(user).get('fio', '') if user else ''
+        action_label = "Одобрил" if action == 'approve' else "Отклонил"
+        await db.add_log(real_tg_id, fio, f"{action_label} СМР по заявке №{app_id}", target_type='smr', target_id=app_id)
     return {"status": "ok"}
 
 
@@ -120,7 +134,7 @@ async def archive_kp(app_id: int, request: Request):
     real_id, user = await _verify_office(data.get('tg_id', 0))
     await db.conn.execute("UPDATE applications SET kp_archived = 1 WHERE id = ?", (app_id,))
     await db.conn.commit()
-    await db.add_log(real_id, user.get('fio'), f"Архивировал СМР заявки №{app_id}")
+    await db.add_log(real_id, user.get('fio'), f"Архивировал СМР заявки №{app_id}", target_type='smr', target_id=app_id)
     return {"status": "ok"}
 
 
@@ -132,7 +146,7 @@ async def restore_kp(app_id: int, request: Request):
     real_id, user = await _verify_office(data.get('tg_id', 0))
     await db.conn.execute("UPDATE applications SET kp_archived = 0 WHERE id = ?", (app_id,))
     await db.conn.commit()
-    await db.add_log(real_id, user.get('fio'), f"Восстановил СМР заявки №{app_id} из архива")
+    await db.add_log(real_id, user.get('fio'), f"Восстановил СМР заявки №{app_id}", target_type='smr', target_id=app_id)
     return {"status": "ok"}
 
 
@@ -184,4 +198,5 @@ async def upload_kp_catalog(file: UploadFile = File(...)):
     if not success:
         raise HTTPException(500, "Ошибка при разборе файла. Проверьте структуру колонок.")
 
+    await db.add_log(0, "Система", f"Загрузил справочник КП: {os.path.basename(new_path)}", target_type='system')
     return {"status": "ok", "file": os.path.basename(new_path)}
