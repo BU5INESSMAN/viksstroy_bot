@@ -292,7 +292,7 @@ export default function EditAppModal({
         >
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                 <motion.div
-                    className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden"
+                    className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg sm:max-w-2xl shadow-2xl relative transition-colors overflow-hidden"
                     initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95, y: 20 }}
                     animate={{ opacity: 1, scale: 1, y: 0 }}
                     transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
@@ -315,8 +315,8 @@ export default function EditAppModal({
                         </button>
                     </div>
 
-                    <form onSubmit={handleSubmit} className="p-6 space-y-6 text-sm">
-                        <div className="space-y-5">
+                    <form onSubmit={handleSubmit} className="p-6 sm:p-8 space-y-6 text-sm">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
                             {/* Date */}
                             <div>
                                 <label className="flex items-center gap-1.5 text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
@@ -341,7 +341,7 @@ export default function EditAppModal({
                             </div>
 
                             {/* Object */}
-                            <div>
+                            <div className="sm:col-span-2">
                                 <label className="flex items-center gap-1.5 text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
                                     <MapPin className="w-4 h-4 text-red-500" /> Объект
                                 </label>

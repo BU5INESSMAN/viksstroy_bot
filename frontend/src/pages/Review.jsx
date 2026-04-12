@@ -216,7 +216,7 @@ export default function Review() {
     };
 
     return (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24 relative">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24 relative">
 
             {isProcessing && isPublishModalOpen && (
                 <div className="fixed inset-0 w-screen h-[100dvh] z-[200] bg-black/50 backdrop-blur-sm flex flex-col items-center justify-center transition-opacity">

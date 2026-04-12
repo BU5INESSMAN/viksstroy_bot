@@ -59,7 +59,7 @@ export default function MyApps() {
     );
 
     return (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
             <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 sm:p-8 border border-gray-100 dark:border-gray-700 transition-colors duration-200">
                 <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100 mb-6">
                     <FolderGit2 className="w-7 h-7 text-blue-500 mr-2.5" /> История моих работ

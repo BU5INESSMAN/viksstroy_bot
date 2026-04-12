@@ -115,7 +115,7 @@ export default function Teams() {
     const canDeleteTeam = ['moderator', 'boss', 'superadmin'].includes(role);
 
     return (
-        <div className="space-y-6">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
 
             {/* Кнопка создания теперь выровнена по правому краю */}
             {canManage && (
@@ -126,7 +126,7 @@ export default function Teams() {
                 </div>
             )}
 
-            <div className="grid gap-5 sm:grid-cols-2">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                 {teams.map(t => (
                     <TeamCard key={t.id} t={t} canDeleteTeam={canDeleteTeam} openManageModal={openManageModal} handleDeleteTeam={handleDeleteTeam} />
                 ))}

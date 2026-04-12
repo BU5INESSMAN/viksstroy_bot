@@ -21,7 +21,8 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
     return (
         <>
-            <div className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-100 dark:border-gray-700 z-40 flex justify-around items-end pb-safe shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors h-[60px] sm:h-[72px] px-1 sm:px-4">
+            <div className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-100 dark:border-gray-700 z-40 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors h-[60px] sm:h-[72px]">
+            <div className="max-w-5xl mx-auto flex justify-around items-end h-full pb-safe px-1 sm:px-4">
 
                 {/* 1. Главная */}
                 <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} />
@@ -72,6 +73,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                     <span className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wide mt-1 sm:mt-0">Меню</span>
                 </button>
 
+            </div>
             </div>
 
             {/* ВСПЛЫВАЮЩЕЕ МЕНЮ (BOTTOM SHEET) */}

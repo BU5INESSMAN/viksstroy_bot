@@ -8,7 +8,7 @@ export default function Resources() {
     const [activeTab, setActiveTab] = useState('teams');
 
     return (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
 
             {/* ВЕРХНИЕ ВКЛАДКИ ПЕРЕКЛЮЧЕНИЯ */}
             <div className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-2 border border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row gap-2 sticky top-2 z-30">

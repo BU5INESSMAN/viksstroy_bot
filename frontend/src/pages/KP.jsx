@@ -168,7 +168,7 @@ export default function KP() {
 
     if (!['superadmin', 'boss', 'moderator', 'foreman', 'brigadier'].includes(role)) {
         return (
-            <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24 flex flex-col items-center justify-center min-h-[60vh] text-gray-400 dark:text-gray-500">
+            <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24 flex flex-col items-center justify-center min-h-[60vh] text-gray-400 dark:text-gray-500">
                 <div className="bg-gray-100 dark:bg-gray-800 p-6 rounded-full mb-6 shadow-inner">
                     <Lock className="w-16 h-16 text-gray-300 dark:text-gray-600" />
                 </div>
@@ -181,7 +181,7 @@ export default function KP() {
     if (loading) return <div className="mt-32 text-center text-gray-400 font-bold animate-pulse">Загрузка...</div>;
 
     return (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
             <div className="flex flex-col md:flex-row justify-between md:items-center bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 border border-gray-100 dark:border-gray-700 gap-4">
                 <h2 className="text-2xl font-bold flex items-center text-gray-800 dark:text-gray-100">
                     <FileText className="w-8 h-8 text-emerald-500 mr-3" /> Выполненные работы

@@ -222,7 +222,7 @@ export default function Home() {
     );
 
     return (
-        <main className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 pb-24">
+        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-8 pb-24">
 
             <div className="space-y-6">
                 {['worker', 'driver', 'foreman'].includes(role) && (
