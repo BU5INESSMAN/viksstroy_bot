@@ -3,6 +3,9 @@ import {
     Calendar, MapPin, Users, Truck, HardHat, Flag,
     ClipboardList, CheckCircle, Clock, ChevronDown
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function AppCard({ a, role, tgId, openProfile, openFreeModal }) {
     let activeEquipList = [];
@@ -135,8 +138,16 @@ export default function ActiveApplicationsCard({ todayApps, upcomingApps, role, 
                     </h2>
                     <ChevronDown className={`w-5 h-5 text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300 transition-transform duration-200 ${collapsed ? '-rotate-90' : ''}`} />
                 </button>
+                <AnimatePresence>
                 {!collapsed && (
-                    <div className="flex gap-2">
+                    <motion.div
+                        className="flex gap-2"
+                        initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
+                        animate={{ height: 'auto', opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+                        style={{ overflow: 'hidden' }}
+                    >
                         <button
                             onClick={() => setTab('today')}
                             className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
@@ -169,13 +180,22 @@ export default function ActiveApplicationsCard({ todayApps, upcomingApps, role, 
                                 </span>
                             )}
                         </button>
-                    </div>
+                    </motion.div>
                 )}
+                </AnimatePresence>
             </div>
 
             {/* Content */}
+            <AnimatePresence>
             {!collapsed && (
-                <div className="px-6 pb-6">
+                <motion.div
+                    className="px-6 pb-6"
+                    initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
+                    animate={{ height: 'auto', opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+                    style={{ overflow: 'hidden' }}
+                >
                     {apps.length > 0 ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {apps.map(a => (
@@ -190,8 +210,9 @@ export default function ActiveApplicationsCard({ todayApps, upcomingApps, role, 
                             </p>
                         </div>
                     )}
-                </div>
+                </motion.div>
             )}
+            </AnimatePresence>
         </div>
     );
 }

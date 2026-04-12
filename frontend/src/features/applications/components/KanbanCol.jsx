@@ -3,6 +3,11 @@ import {
     Calendar, MapPin, Users, Truck,
     ChevronDown, ChevronUp, HardHat, CheckCircle, Search, Archive
 } from 'lucide-react';
+import { motion } from 'framer-motion';
+
+const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const staggerContainer = { animate: { transition: { staggerChildren: 0.04 } } };
+const staggerItem = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 } };
 
 export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen, toggleOpen, onAppClick, canArchive, onArchive }) {
     const [showAll, setShowAll] = useState(false);
@@ -21,6 +26,7 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                 </span>
             </button>
             <div className={`p-3 space-y-3 bg-gray-50/50 dark:bg-gray-900/20 min-h-[100px] transition-all duration-300 ${isOpen ? 'block' : 'hidden lg:block'}`}>
+                <motion.div initial="initial" animate="animate" variants={prefersReducedMotion ? {} : staggerContainer} className="space-y-3">
                 {displayedApps.map(a => {
                     let equipList = [];
                     if (a.equipment_data) {
@@ -37,7 +43,7 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                     const freedTeamIds = a.freed_team_ids ? String(a.freed_team_ids).split(',').map(Number) : [];
 
                     return (
-                        <div key={a.id} onClick={() => onAppClick(a)} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500 text-sm cursor-pointer transition-all duration-200 group active:scale-[0.98]">
+                        <motion.div key={a.id} variants={prefersReducedMotion ? {} : staggerItem} transition={{ duration: 0.2 }} onClick={() => onAppClick(a)} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500 text-sm cursor-pointer transition-all duration-200 group active:scale-[0.98]">
                             <p className="font-bold text-gray-800 dark:text-gray-100 mb-1.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-start gap-1.5 leading-tight">
                                 <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-500" />
                                 <span>{a.object_address}</span>
@@ -99,9 +105,10 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                                     <Archive className="w-3.5 h-3.5" /> В архив
                                 </button>
                             )}
-                        </div>
+                        </motion.div>
                     );
                 })}
+                </motion.div>
                 {apps.length === 0 && (
                     <div className="flex flex-col items-center justify-center py-6 text-gray-400">
                         <Search className="w-8 h-8 mb-2 opacity-20" />

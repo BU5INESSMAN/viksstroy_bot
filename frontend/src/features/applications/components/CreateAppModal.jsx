@@ -6,10 +6,13 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
+import { motion } from 'framer-motion';
 import ExchangeDialog from './ExchangeDialog';
 import ObjectSelector from './ObjectSelector';
 import EquipmentSelector from './EquipmentSelector';
 import TeamSelector from './TeamSelector';
+
+const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function CreateAppModal({
     appForm, setAppForm, isSubmitting, setGlobalCreateAppOpen,
@@ -143,9 +146,19 @@ export default function CreateAppModal({
     ];
 
     return (
-        <div className="!fixed !inset-0 !top-0 !left-0 !w-screen !h-[100dvh] z-[99990] bg-black/50 m-0 p-0 overflow-y-auto">
+        <motion.div
+            className="!fixed !inset-0 !top-0 !left-0 !w-screen !h-[100dvh] z-[99990] bg-black/50 m-0 p-0 overflow-y-auto"
+            initial={prefersReducedMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+        >
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
-                <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden">
+                <motion.div
+                    className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative transition-colors overflow-hidden"
+                    initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+                >
 
                     {/* Экран загрузки поверх модалки */}
                     {isSubmitting && (
@@ -361,7 +374,7 @@ export default function CreateAppModal({
                             )}
                         </div>
                     </form>
-                </div>
+                </motion.div>
             </div>
             {exchangeDialog && createPortal(
                 <ExchangeDialog
@@ -376,6 +389,6 @@ export default function CreateAppModal({
                 />,
                 document.body
             )}
-        </div>
+        </motion.div>
     );
 }

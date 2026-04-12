@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { useLocation, Outlet } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { motion } from 'framer-motion';
+
+const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 import Header from '../features/layout/components/Header';
 import BottomNav from '../features/layout/components/BottomNav';
 import ProfileModal from '../features/layout/components/ProfileModal';
@@ -106,7 +109,14 @@ export default function Layout() {
                 setIsMenuOpen={setIsMenuOpen}
             />
 
-            <Outlet context={{ openProfile, isGlobalCreateAppOpen, setGlobalCreateAppOpen }} />
+            <motion.div
+                key={location.pathname}
+                initial={prefersReducedMotion ? false : { opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.15 }}
+            >
+                <Outlet context={{ openProfile, isGlobalCreateAppOpen, setGlobalCreateAppOpen }} />
+            </motion.div>
 
             <BottomNav
                 role={role}

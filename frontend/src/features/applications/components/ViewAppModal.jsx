@@ -7,6 +7,9 @@ import {
     X, User, ChevronLeft, ChevronRight, Image, Crown
 } from 'lucide-react';
 import { getStatusBadge } from '../../../utils/statusConfig';
+import { motion } from 'framer-motion';
+
+const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ─── Photo Slider ─── */
 function PhotoSlider({ photos }) {
@@ -179,9 +182,17 @@ export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
     ];
 
     return (
-        <div className="!fixed !inset-0 !top-0 !left-0 !w-screen !h-[100dvh] z-[99990] bg-black/50 m-0 p-0 overflow-y-auto flex items-start sm:items-center justify-center pt-8 sm:pt-4">
-            <div
+        <motion.div
+            className="!fixed !inset-0 !top-0 !left-0 !w-screen !h-[100dvh] z-[99990] bg-black/50 m-0 p-0 overflow-y-auto flex items-start sm:items-center justify-center pt-8 sm:pt-4"
+            initial={prefersReducedMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+        >
+            <motion.div
                 className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-3xl shadow-2xl relative overflow-hidden"
+                initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95, y: 20 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
                 onClick={e => e.stopPropagation()}
             >
                 {/* ── Header ── */}
@@ -455,7 +466,7 @@ export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
                         </button>
                     )}
                 </div>
-            </div>
-        </div>
+            </motion.div>
+        </motion.div>
     );
 }

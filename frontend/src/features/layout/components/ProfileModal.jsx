@@ -8,6 +8,9 @@ import {
 import useConfirm from '../../../hooks/useConfirm';
 
 import { ROLE_NAMES as roleNames } from '../../../utils/roleConfig';
+import { motion } from 'framer-motion';
+
+const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function ProfileModal({ profileData, setProfileData, editProfile, setEditProfile, setProfileModalOpen, canEditUsers, isMyProfile }) {
     const tgId = localStorage.getItem('tg_id');
@@ -163,9 +166,19 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
     };
 
     return (
-        <><div className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
+        <><motion.div
+            className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm"
+            initial={prefersReducedMotion ? false : { opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ duration: 0.2 }}
+        >
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
-                <div className="bg-white dark:bg-gray-800 rounded-[2rem] w-full max-w-xl shadow-2xl overflow-hidden transition-colors border border-gray-100 dark:border-gray-700">
+                <motion.div
+                    className="bg-white dark:bg-gray-800 rounded-[2rem] w-full max-w-xl shadow-2xl overflow-hidden transition-colors border border-gray-100 dark:border-gray-700"
+                    initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95, y: 20 }}
+                    animate={{ opacity: 1, scale: 1, y: 0 }}
+                    transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+                >
 
                     <div className="bg-gradient-to-br from-blue-600 to-indigo-800 dark:from-gray-800 dark:to-gray-900 px-6 py-10 text-white relative">
                         <button onClick={() => setProfileModalOpen(false)} className="absolute top-5 right-5 text-white/70 hover:text-white transition-colors bg-black/20 hover:bg-black/40 rounded-full p-2 backdrop-blur-sm active:scale-95">
@@ -421,8 +434,8 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                             )}
                         </div>
                     )}
-                </div>
+                </motion.div>
             </div>
-        </div>{ConfirmUI}</>
+        </motion.div>{ConfirmUI}</>
     );
 }

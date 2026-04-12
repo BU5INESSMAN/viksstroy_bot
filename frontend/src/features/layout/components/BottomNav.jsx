@@ -3,6 +3,9 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Home, ClipboardList, Briefcase, Settings as SettingsIcon, User, Plus, MapPin, FileText, Menu, X
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+
+const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile, setGlobalCreateAppOpen }) {
     const navigate = useNavigate();
@@ -36,9 +39,15 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                 {/* 4. Центральная кнопка СОЗДАТЬ */}
                 {canCreateApp && (
                     <div className="relative w-full flex flex-col justify-center items-center sm:justify-end sm:pb-2.5 h-full">
-                        <button onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }} className="absolute -top-4 sm:-top-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] border-4 border-white dark:border-gray-800 transition-all active:scale-95 z-50">
+                        <motion.button
+                            onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
+                            className="absolute -top-4 sm:-top-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] border-4 border-white dark:border-gray-800 transition-colors z-50"
+                            whileHover={prefersReducedMotion ? {} : { scale: 1.08 }}
+                            whileTap={prefersReducedMotion ? {} : { scale: 0.92 }}
+                            transition={{ duration: 0.15 }}
+                        >
                             <Plus className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={2.5} />
-                        </button>
+                        </motion.button>
                         <span className="hidden sm:block text-[10px] font-extrabold text-blue-600 dark:text-blue-400 uppercase tracking-wide mt-7 sm:mt-0">Создать</span>
                     </div>
                 )}
@@ -66,9 +75,24 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
             </div>
 
             {/* ВСПЛЫВАЮЩЕЕ МЕНЮ (BOTTOM SHEET) */}
+            <AnimatePresence>
             {isMenuOpen && (
-                <div className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 flex items-end sm:items-center justify-center sm:p-4 transition-opacity" onClick={() => setIsMenuOpen(false)}>
-                    <div className="bg-white dark:bg-gray-800 w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 sm:slide-in-from-bottom-0" onClick={e => e.stopPropagation()}>
+                <motion.div
+                    className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 flex items-end sm:items-center justify-center sm:p-4"
+                    initial={prefersReducedMotion ? false : { opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2 }}
+                    onClick={() => setIsMenuOpen(false)}
+                >
+                    <motion.div
+                        className="bg-white dark:bg-gray-800 w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl p-6 shadow-2xl"
+                        initial={prefersReducedMotion ? false : { opacity: 0, y: 40 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 40 }}
+                        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+                        onClick={e => e.stopPropagation()}
+                    >
                         <div className="flex justify-between items-center mb-6">
                             <h3 className="text-xl font-bold dark:text-white">Дополнительно</h3>
                             <button onClick={() => setIsMenuOpen(false)} className="p-1 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500 hover:text-red-500">
@@ -92,9 +116,10 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                                 Мой Профиль
                             </button>
                         </div>
-                    </div>
-                </div>
+                    </motion.div>
+                </motion.div>
             )}
+            </AnimatePresence>
         </>
     );
 }
