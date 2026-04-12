@@ -1,3 +1,4 @@
+import asyncio
 import time
 import logging
 
@@ -110,10 +111,16 @@ async def link_account(current_user_id: int, link_code: str):
 
     # Уведомление о конфликте ролей
     if result.get("role_conflict"):
-        await notify_role_conflict(
-            primary_id, secondary_id,
-            result["primary_role"], result["secondary_role"]
-        )
+        async def _send_role_conflict_notification():
+            try:
+                await notify_role_conflict(
+                    primary_id, secondary_id,
+                    result["primary_role"], result["secondary_role"]
+                )
+            except Exception as e:
+                logger.error(f"Role conflict notification error: {e}")
+
+        asyncio.create_task(_send_role_conflict_notification())
 
     # 5. Удаляем использованный код
     try:
@@ -159,10 +166,16 @@ async def admin_link_accounts(admin_id: int, user_id_1: int, user_id_2: int):
         raise HTTPException(500, f"Ошибка слияния аккаунтов: {e}")
 
     if result.get("role_conflict"):
-        await notify_role_conflict(
-            primary_id, secondary_id,
-            result["primary_role"], result["secondary_role"]
-        )
+        async def _send_admin_role_conflict():
+            try:
+                await notify_role_conflict(
+                    primary_id, secondary_id,
+                    result["primary_role"], result["secondary_role"]
+                )
+            except Exception as e:
+                logger.error(f"Admin role conflict notification error: {e}")
+
+        asyncio.create_task(_send_admin_role_conflict())
 
     admin_user = await db.get_user(admin_id)
     admin_fio = dict(admin_user).get('fio', 'Админ') if admin_user else 'Админ'

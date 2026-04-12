@@ -4,11 +4,15 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Form, HTTPException
+import asyncio
+import logging
 from database_deps import db, TZ_BARNAUL
 from datetime import datetime
 from utils import resolve_id, fetch_teams_dict, enrich_app_with_team_name
 from services.notifications import notify_users
 from services.publish_service import execute_app_publish
+
+logger = logging.getLogger(__name__)
 from routers.applications import enrich_app_with_members_data
 
 router = APIRouter(tags=["Dashboard"])
@@ -203,12 +207,6 @@ async def test_notification(tg_id: int = Form(...), platform: str = Form("all"))
     fio = dict(user).get('fio', 'Супер-Админ')
     platform_name = "MAX" if platform == "max" else "Telegram"
 
-    await notify_users([], f"🧪 <b>Тестовое уведомление:</b> Вас добавили в наряд! ({platform_name})", "my-apps",
-                       [real_tg_id], target_platform=platform)
-    await notify_users(["moderator"],
-                       f"📝 <b>Тестовая заявка ({platform_name}):</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: Проверка уведомлений",
-                       "review", [real_tg_id], target_platform=platform)
-
     fake_app = {
         'id': 9999,
         'date_target': datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d"),
@@ -222,6 +220,17 @@ async def test_notification(tg_id: int = Form(...), platform: str = Form("all"))
         'approved_by': 'Автоматика',
         'approved_by_id': real_tg_id
     }
-    await execute_app_publish(fake_app, target_platform=platform)
 
+    async def _send_test_notifications():
+        try:
+            await notify_users([], f"🧪 <b>Тестовое уведомление:</b> Вас добавили в наряд! ({platform_name})", "my-apps",
+                               [real_tg_id], target_platform=platform)
+            await notify_users(["moderator"],
+                               f"📝 <b>Тестовая заявка ({platform_name}):</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: Проверка уведомлений",
+                               "review", [real_tg_id], target_platform=platform)
+            await execute_app_publish(fake_app, target_platform=platform)
+        except Exception as e:
+            logger.error(f"Test notification error: {e}")
+
+    asyncio.create_task(_send_test_notifications())
     return {"status": "ok"}

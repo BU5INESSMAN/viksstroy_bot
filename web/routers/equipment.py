@@ -5,6 +5,7 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Form, HTTPException, Request, Query
+import asyncio
 import uuid
 import random
 import json
@@ -34,8 +35,15 @@ async def set_equipment_free(tg_id: int = Form(...)):
         await db.add_log(real_tg_id, fio, "Освободил свою технику", target_type='equipment')
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-        await notify_users(["report_group", "boss", "superadmin"],
-                           f"🟢 <b>Техника освобождена</b>\n👤 Водитель: {fio}\n🕒 Время: {now}", "equipment", category="orders")
+
+        async def _send_free_notification():
+            try:
+                await notify_users(["report_group", "boss", "superadmin"],
+                                   f"🟢 <b>Техника освобождена</b>\n👤 Водитель: {fio}\n🕒 Время: {now}", "equipment", category="orders")
+            except Exception as e:
+                logger.error(f"Equipment free notification error: {e}")
+
+        asyncio.create_task(_send_free_notification())
     return {"status": "ok"}
 
 
@@ -208,8 +216,15 @@ async def add_equipment(name: str = Form(...), category: str = Form(...), driver
     admin = await db.get_user(tg_id)
     fio = dict(admin).get('fio', 'Админ') if admin else 'Админ'
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["report_group", "boss", "superadmin"],
-                       f"🚜 <b>Новая техника</b>\n👤 Добавил: {fio}\n🚜 Название: {name}\n🕒 Время: {now}", "equipment", category="orders")
+
+    async def _send_add_equip_notification():
+        try:
+            await notify_users(["report_group", "boss", "superadmin"],
+                               f"🚜 <b>Новая техника</b>\n👤 Добавил: {fio}\n🚜 Название: {name}\n🕒 Время: {now}", "equipment", category="orders")
+        except Exception as e:
+            logger.error(f"Equipment add notification error: {e}")
+
+    asyncio.create_task(_send_add_equip_notification())
     await db.add_log(tg_id, fio, f"Добавил технику: {name}", target_type='equipment')
     return {"status": "ok"}
 
@@ -233,8 +248,15 @@ async def bulk_add_equipment(request: Request):
         await db.conn.rollback()
 
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["report_group", "boss", "superadmin"],
-                       f"🚜 <b>Массовая загрузка техники</b>\n✅ Загружено единиц: {count}\n🕒 Время: {now}", "equipment", category="orders")
+
+    async def _send_bulk_equip_notification():
+        try:
+            await notify_users(["report_group", "boss", "superadmin"],
+                               f"🚜 <b>Массовая загрузка техники</b>\n✅ Загружено единиц: {count}\n🕒 Время: {now}", "equipment", category="orders")
+        except Exception as e:
+            logger.error(f"Equipment bulk add notification error: {e}")
+
+    asyncio.create_task(_send_bulk_equip_notification())
     tg_id = data.get("tg_id", 0)
     if tg_id:
         user = await db.get_user(tg_id)
@@ -364,9 +386,16 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
         await db.conn.rollback()
 
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["report_group", "boss", "superadmin"],
-                       f"🔗 <b>Привязка аккаунта (Техника)</b>\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{eq_row[1]}»\n🕒 Время: {now}",
-                       "equipment", category="new_users")
+
+    async def _send_equip_join_notification():
+        try:
+            await notify_users(["report_group", "boss", "superadmin"],
+                               f"🔗 <b>Привязка аккаунта (Техника)</b>\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{eq_row[1]}»\n🕒 Время: {now}",
+                               "equipment", category="new_users")
+        except Exception as e:
+            logger.error(f"Equipment join notification error: {e}")
+
+    asyncio.create_task(_send_equip_join_notification())
     return {"status": "ok"}
 
 

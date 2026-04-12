@@ -1,3 +1,4 @@
+import asyncio
 import json
 import logging
 
@@ -271,7 +272,14 @@ async def free_equipment(app_id: int, tg_id: int):
     eq_name = eq_name_row[0] if eq_name_row else "Техника"
 
     role_label = ROLE_NAMES.get(user_role, user_role)
-    await notify_group_chat(f"{eq_name} освобожден(а) {fio} ({role_label})", "equipment")
+
+    async def _send_free_equip_notification():
+        try:
+            await notify_group_chat(f"{eq_name} освобожден(а) {fio} ({role_label})", "equipment")
+        except Exception as e:
+            logger.error(f"Free equipment notification error: {e}")
+
+    asyncio.create_task(_send_free_equip_notification())
 
 
 async def free_team(app_id: int, tg_id: int, team_id: int):
@@ -314,14 +322,28 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
             t_name = t_row[0] if t_row else f"ID:{team_id}"
 
         await db.add_log(real_tg_id, fio, f"Освободил бригаду «{t_name}» в заявке №{app_id}", target_type='application', target_id=app_id)
-        await notify_group_chat(f"Бригада «{t_name}» освобожден(а) {fio} ({role_label})", "dashboard")
+
+        async def _send_free_team_notification():
+            try:
+                await notify_group_chat(f"Бригада «{t_name}» освобожден(а) {fio} ({role_label})", "dashboard")
+            except Exception as e:
+                logger.error(f"Free team notification error: {e}")
+
+        asyncio.create_task(_send_free_team_notification())
 
     else:
         await db.conn.execute("UPDATE applications SET is_team_freed = 1, freed_team_ids = ? WHERE id = ?",
                               (all_team_ids_str, app_id))
         await db.conn.commit()
         await db.add_log(real_tg_id, fio, f"Освободил все бригады в заявке №{app_id}", target_type='application', target_id=app_id)
-        await notify_group_chat(f"Все бригады освобожден(а) {fio} ({role_label})", "dashboard")
+
+        async def _send_free_all_teams_notification():
+            try:
+                await notify_group_chat(f"Все бригады освобожден(а) {fio} ({role_label})", "dashboard")
+            except Exception as e:
+                logger.error(f"Free all teams notification error: {e}")
+
+        asyncio.create_task(_send_free_all_teams_notification())
 
 
 async def archive_application(app_id: int, tg_id: int):

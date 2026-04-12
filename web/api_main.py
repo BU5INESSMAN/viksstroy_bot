@@ -47,10 +47,18 @@ app.include_router(exchange.router)
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     try:
+        import asyncio
         last_action = str(request.url)
         last_user = "Неизвестно"
         err_msg = f"🚨 <b>ОШИБКА СИСТЕМЫ (500)</b>\n\n👤 <b>Юзер:</b> {last_user}\n👣 <b>Действие:</b> {last_action}\n❌ <b>Ошибка:</b> {str(exc)}"
-        await notify_users(["report_group", "superadmin"], err_msg, "system", category="errors")
+
+        async def _send_error_notification():
+            try:
+                await notify_users(["report_group", "superadmin"], err_msg, "system", category="errors")
+            except Exception:
+                pass
+
+        asyncio.create_task(_send_error_notification())
     except: pass
     return JSONResponse(status_code=500, content={"detail": f"Внутренняя ошибка сервера"})
 

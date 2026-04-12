@@ -105,9 +105,16 @@ async def test_notification_extended(tg_id: int = Form(...), test_type: str = Fo
         raise HTTPException(403, "Нет прав")
 
     fio = dict(user).get('fio', 'Супер-Админ')
-    success, error = await run_test_notification(real_tg_id, fio, test_type, platform)
-    if not success:
-        raise HTTPException(400, error)
+
+    async def _run_test():
+        try:
+            success, error = await run_test_notification(real_tg_id, fio, test_type, platform)
+            if not success:
+                logger.error(f"Test notification failed: {error}")
+        except Exception as e:
+            logger.error(f"Test notification error: {e}")
+
+    asyncio.create_task(_run_test())
     return {"status": "ok", "test_type": test_type}
 
 

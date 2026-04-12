@@ -5,10 +5,14 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Form, HTTPException
+import asyncio
+import logging
 from datetime import datetime
 from database_deps import db, TZ_BARNAUL
 from utils import resolve_id
 from services.notifications import notify_users
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Teams"])
 
@@ -49,9 +53,16 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
     await db.conn.commit()
 
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["report_group", "boss", "superadmin"],
-                       f"🔗 <b>Привязка аккаунта (Бригада)</b>\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team['name']}»\n🕒 Время: {now}",
-                       "teams", category="new_users")
+
+    async def _send_join_notification():
+        try:
+            await notify_users(["report_group", "boss", "superadmin"],
+                               f"🔗 <b>Привязка аккаунта (Бригада)</b>\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team['name']}»\n🕒 Время: {now}",
+                               "teams", category="new_users")
+        except Exception as e:
+            logger.error(f"Team join notification error: {e}")
+
+    asyncio.create_task(_send_join_notification())
     return {"status": "ok"}
 
 
@@ -62,8 +73,15 @@ async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Fo
     await db.conn.commit()
 
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    await notify_users(["report_group", "boss", "superadmin"],
-                       f"🏗 <b>Новая бригада</b>\n👤 Создал: {fio}\n📍 Название: «{name}»\n🕒 Время: {now}", "teams", category="orders")
+
+    async def _send_create_team_notification():
+        try:
+            await notify_users(["report_group", "boss", "superadmin"],
+                               f"🏗 <b>Новая бригада</b>\n👤 Создал: {fio}\n📍 Название: «{name}»\n🕒 Время: {now}", "teams", category="orders")
+        except Exception as e:
+            logger.error(f"Team create notification error: {e}")
+
+    asyncio.create_task(_send_create_team_notification())
     real_tg_id = await resolve_id(tg_id) if tg_id else 0
     await db.add_log(real_tg_id, fio, f"Создал бригаду: {name}", target_type='team', target_id=new_team_id)
     return {"status": "ok"}

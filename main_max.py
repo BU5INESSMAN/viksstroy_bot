@@ -474,9 +474,16 @@ async def message_callback(event: MessageCallback):
         await send_max_msg(event, f"✅ Успешно!\nВы привязаны как {fio} в бригаде «{team_name}».")
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-        await notify_users(["report_group", "boss", "superadmin"],
-                           f"🔗 Привязка аккаунта (Бригада) MAX\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team_name}»\n🕒 Время: {now}",
-                           "teams")
+
+        async def _send_team_link_notification():
+            try:
+                await notify_users(["report_group", "boss", "superadmin"],
+                                   f"🔗 Привязка аккаунта (Бригада) MAX\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team_name}»\n🕒 Время: {now}",
+                                   "teams")
+            except Exception as e:
+                logger.error(f"MAX team link notification error: {e}")
+
+        asyncio.create_task(_send_team_link_notification())
 
     # ---------------- ПОДТВЕРЖДЕНИЕ ПРИВЯЗКИ (ТЕХНИКА) ----------------
     if payload.startswith("equip_yes|"):
@@ -505,9 +512,16 @@ async def message_callback(event: MessageCallback):
         await send_max_msg(event, f"✅ Успешно!\nВы привязаны как водитель для: {equip_name}.")
 
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-        await notify_users(["report_group", "boss", "superadmin"],
-                           f"🔗 Привязка аккаунта (Техника) MAX\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{equip_name}»\n🕒 Время: {now}",
-                           "equipment")
+
+        async def _send_equip_link_notification():
+            try:
+                await notify_users(["report_group", "boss", "superadmin"],
+                                   f"🔗 Привязка аккаунта (Техника) MAX\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{equip_name}»\n🕒 Время: {now}",
+                                   "equipment")
+            except Exception as e:
+                logger.error(f"MAX equip link notification error: {e}")
+
+        asyncio.create_task(_send_equip_link_notification())
 
 
 async def clear_webhook():

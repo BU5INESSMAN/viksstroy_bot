@@ -5,13 +5,17 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Form, HTTPException
+import asyncio
 import time
 import hashlib
 import hmac
 import os
+import logging
 from database_deps import db
 from utils import resolve_id
 from services.notifications import notify_users, notify_fio_match
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Auth"])
 
@@ -24,10 +28,8 @@ async def _check_fio_match(new_user_id: int, new_fio: str):
     try:
         # Определяем платформу нового пользователя
         if new_user_id > 0:
-            # TG — ищем MAX (user_id < 0)
             platform_filter = "user_id < 0"
         else:
-            # MAX — ищем TG (user_id > 0)
             platform_filter = "user_id > 0"
 
         async with db.conn.execute(
@@ -39,7 +41,13 @@ async def _check_fio_match(new_user_id: int, new_fio: str):
             matches = await cur.fetchall()
 
         for match in matches:
-            await notify_fio_match(new_user_id, new_fio, match[0], match[1])
+            async def _send_fio_match(m=match):
+                try:
+                    await notify_fio_match(new_user_id, new_fio, m[0], m[1])
+                except Exception as e:
+                    logger.error(f"FIO match notification error: {e}")
+
+            asyncio.create_task(_send_fio_match())
     except Exception:
         pass  # Не ломаем регистрацию из-за ошибки поиска
 
@@ -107,7 +115,14 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
     fio = f"{last_name} {first_name}".strip() or f"Пользователь MAX {max_id}"
     await db.add_user(pseudo_tg_id, fio, role)
     await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался через MAX (Роль: {role})", target_type='user', target_id=pseudo_tg_id)
-    await notify_users(["report_group", "moderator"], f"🆕 <b>Но��ая регистрация (MAX)</b>\n👤 {fio}\n💼 {role}", "system", category="new_users")
+
+    async def _send_register_max_notifications():
+        try:
+            await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация (MAX)</b>\n👤 {fio}\n💼 {role}", "system", category="new_users")
+        except Exception as e:
+            logger.error(f"Registration notification error: {e}")
+
+    asyncio.create_task(_send_register_max_notifications())
 
     # Stage 5B-1: Поиск совпадений ФИО на другой платформе
     await _check_fio_match(pseudo_tg_id, fio)
@@ -174,7 +189,14 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
     await db.add_user(tg_id, fio, role)
     if photo_url: await db.update_user_avatar(tg_id, photo_url)
     await db.add_log(tg_id, fio, f"Зарегистрировался (Роль: {role})", target_type='user', target_id=tg_id)
-    await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация</b>\n👤 {fio}\n💼 {role}", "system", category="new_users")
+
+    async def _send_register_tg_notifications():
+        try:
+            await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация</b>\n👤 {fio}\n💼 {role}", "system", category="new_users")
+        except Exception as e:
+            logger.error(f"Registration notification error: {e}")
+
+    asyncio.create_task(_send_register_tg_notifications())
 
     # Stage 5B-1: Поиск совпадений ФИО на другой платформе
     await _check_fio_match(tg_id, fio)
