@@ -70,7 +70,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                 {/* 7. Меню (Сэндвич) */}
                 <button onClick={() => setIsMenuOpen(true)} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
                     <Menu className="w-5 h-5 sm:w-6 sm:h-6 sm:mb-1" strokeWidth={2.5} />
-                    <span className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wide mt-1 sm:mt-0">Меню</span>
+                    <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Меню</span>
                 </button>
 
             </div>
@@ -132,7 +132,7 @@ function NavBtn({ icon: Icon, label, path, current, onClick }) {
     return (
         <button onClick={onClick} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
             <Icon className="w-5 h-5 sm:w-6 sm:h-6 sm:mb-1" strokeWidth={isActive ? 3 : 2.5} />
-            <span className="text-[9px] sm:text-[10px] font-extrabold uppercase tracking-wide mt-1 sm:mt-0">{label}</span>
+            <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">{label}</span>
         </button>
     );
 }
