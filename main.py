@@ -23,7 +23,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 web_dir = os.path.join(current_dir, "web")
 sys.path.append(web_dir)
 
-from database_deps import db
+from database_deps import db, TZ_BARNAUL
+from services.notifications import notify_users, notify_fio_match
 load_dotenv()
 
 API_URL = os.getenv("API_URL", "http://api:8000")
@@ -179,6 +180,176 @@ async def cmd_schedule(message: types.Message, command: CommandObject):
         await message.answer(f"❌ Ошибка: {str(e)}")
 
 
+@dp.message(Command("join"))
+async def cmd_join(message: types.Message, command: CommandObject):
+    raw_id = message.from_user.id
+    tg_id = await resolve_id(raw_id)
+
+    code = command.args.strip() if command.args else ""
+    if not code:
+        return await message.answer("❌ Укажите код приглашения. Пример: /join 123456")
+
+    # 1. Проверяем, код от бригады?
+    async with db.conn.execute("SELECT id, name FROM teams WHERE invite_code = ? OR join_password = ?",
+                               (code, code)) as cur:
+        t_row = await cur.fetchone()
+
+    if t_row:
+        team_id, team_name = t_row
+        unclaimed = await db.get_unclaimed_workers(team_id)
+
+        if not unclaimed:
+            return await message.answer(
+                f"В бригаде «{team_name}» нет свободных мест или все участники уже привязали аккаунты.")
+
+        buttons = []
+        for w in unclaimed:
+            buttons.append([InlineKeyboardButton(
+                text=f"👤 {w['fio']} ({w['position']})",
+                callback_data=f"team_ask|{w['id']}|{code}")])
+        kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+        return await message.answer(
+            f"👷‍♂️ Бригада: {team_name}\n\nВыберите ваш профиль из списка ниже:",
+            reply_markup=kb)
+
+    # 2. Проверяем, код от техники?
+    async with db.conn.execute("SELECT id, name FROM equipment WHERE invite_code = ?", (code,)) as cur:
+        e_row = await cur.fetchone()
+
+    if e_row:
+        equip_id, equip_name = e_row
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Да, это я", callback_data=f"equip_yes|{equip_id}|{code}")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="join_cancel")]
+        ])
+        return await message.answer(
+            f"🚜 Привязка техники\nМашина: {equip_name}\n\nПодтверждаете привязку вашего аккаунта?",
+            reply_markup=kb)
+
+    await message.answer("❌ Неверный код приглашения. Проверьте правильность ввода.")
+
+
+@dp.callback_query(F.data.startswith("team_ask|"))
+async def handle_team_ask(callback: types.CallbackQuery):
+    parts = callback.data.split("|")
+    if len(parts) != 3:
+        return await callback.answer("Ошибка данных", show_alert=True)
+    _, worker_id, code = parts
+
+    async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
+        w_row = await cur.fetchone()
+    if not w_row:
+        return await callback.answer("❌ Профиль не найден.", show_alert=True)
+
+    fio = w_row[0]
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ Да, привязать", callback_data=f"team_yes|{worker_id}|{code}")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="join_cancel")]
+    ])
+    await callback.message.edit_text(f"Привязать ваш мессенджер к профилю:\n👤 {fio}?", reply_markup=kb)
+    await callback.answer()
+
+
+@dp.callback_query(F.data.startswith("team_yes|"))
+async def handle_team_yes(callback: types.CallbackQuery):
+    parts = callback.data.split("|")
+    if len(parts) != 3:
+        return await callback.answer("Ошибка данных", show_alert=True)
+    _, worker_id, code = parts
+
+    raw_id = callback.from_user.id
+    tg_id = await resolve_id(raw_id)
+
+    async with db.conn.execute("SELECT name FROM teams WHERE invite_code = ? OR join_password = ?",
+                               (code, code)) as cur:
+        t_row = await cur.fetchone()
+    async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
+        w_row = await cur.fetchone()
+
+    if not t_row or not w_row:
+        return await callback.answer("❌ Данные не найдены.", show_alert=True)
+
+    team_name, fio = t_row[0], w_row[0]
+
+    await db.conn.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (tg_id, worker_id))
+
+    user = await db.get_user(tg_id)
+    if not user:
+        await db.add_user(tg_id, fio, "worker")
+    elif dict(user).get('role') not in ('foreman', 'moderator', 'boss', 'superadmin'):
+        await db.update_user_role(tg_id, "worker")
+
+    await db.conn.commit()
+
+    await callback.message.edit_text(
+        f"✅ Успешно!\nВы привязаны как {fio} в бригаде «{team_name}».", reply_markup=None)
+    await callback.answer()
+
+    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+
+    async def _send_team_link_notification():
+        try:
+            await notify_users(["report_group", "boss", "superadmin"],
+                               f"🔗 Привязка аккаунта (Бригада) TG\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team_name}»\n🕒 Время: {now}",
+                               "teams")
+        except Exception as e:
+            logger.error(f"TG team link notification error: {e}")
+
+    asyncio.create_task(_send_team_link_notification())
+
+
+@dp.callback_query(F.data.startswith("equip_yes|"))
+async def handle_equip_yes(callback: types.CallbackQuery):
+    parts = callback.data.split("|")
+    if len(parts) != 3:
+        return await callback.answer("Ошибка данных", show_alert=True)
+    _, equip_id, code = parts
+
+    raw_id = callback.from_user.id
+    tg_id = await resolve_id(raw_id)
+
+    async with db.conn.execute("SELECT name FROM equipment WHERE id = ?", (equip_id,)) as cur:
+        e_row = await cur.fetchone()
+    if not e_row:
+        return await callback.answer("❌ Техника не найдена.", show_alert=True)
+
+    equip_name = e_row[0]
+
+    await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (tg_id, equip_id))
+
+    user = await db.get_user(tg_id)
+    fio = dict(user).get('fio', f"Пользователь {tg_id}") if user else f"Пользователь {tg_id}"
+
+    if not user:
+        await db.add_user(tg_id, fio, "driver")
+    elif dict(user).get('role') not in ('foreman', 'moderator', 'boss', 'superadmin'):
+        await db.update_user_role(tg_id, "driver")
+
+    await db.conn.commit()
+
+    await callback.message.edit_text(
+        f"✅ Успешно!\nВы привязаны как водитель для: {equip_name}.", reply_markup=None)
+    await callback.answer()
+
+    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+
+    async def _send_equip_link_notification():
+        try:
+            await notify_users(["report_group", "boss", "superadmin"],
+                               f"🔗 Привязка аккаунта (Техника) TG\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{equip_name}»\n🕒 Время: {now}",
+                               "equipment")
+        except Exception as e:
+            logger.error(f"TG equip link notification error: {e}")
+
+    asyncio.create_task(_send_equip_link_notification())
+
+
+@dp.callback_query(F.data == "join_cancel")
+async def handle_join_cancel(callback: types.CallbackQuery):
+    await callback.message.edit_text("🛑 Действие отменено.", reply_markup=None)
+    await callback.answer()
+
+
 @dp.message(RegState.waiting_for_password)
 async def process_password(message: types.Message, state: FSMContext):
     text = message.text.strip()
@@ -232,6 +403,36 @@ async def process_fio(message: types.Message, state: FSMContext):
     await message.answer(
         f"🎉 <b>Регистрация успешно завершена!</b>\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇",
         reply_markup=get_webapp_keyboard(), parse_mode="html")
+
+    # Уведомление о новой регистрации + проверка совпадения ФИО
+    async def _send_new_user_notification():
+        try:
+            await notify_users(["report_group", "superadmin"],
+                               f"👤 Новая регистрация (TG)\n📝 ФИО: {fio}\n💼 Роль: {role}\n🆔 ID: {raw_id}",
+                               "system")
+        except Exception as e:
+            logger.error(f"New user notification error: {e}")
+
+    asyncio.create_task(_send_new_user_notification())
+
+    async def _check_fio_and_notify():
+        try:
+            if not fio or fio.startswith("Пользователь"):
+                return
+            platform_filter = "user_id < 0" if raw_id > 0 else "user_id > 0"
+            async with db.conn.execute(
+                f"SELECT user_id, fio FROM users "
+                f"WHERE {platform_filter} AND linked_user_id IS NULL "
+                f"AND user_id != ? AND LOWER(TRIM(fio)) = LOWER(TRIM(?))",
+                (raw_id, fio)
+            ) as cur:
+                matches = await cur.fetchall()
+            for match in matches:
+                await notify_fio_match(raw_id, fio, match[0], match[1])
+        except Exception as e:
+            logger.error(f"FIO match check error: {e}")
+
+    asyncio.create_task(_check_fio_and_notify())
 
 
 @dp.callback_query(F.data.startswith("smart_publish"))

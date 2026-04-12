@@ -23,7 +23,7 @@ web_dir = os.path.join(current_dir, "web")
 sys.path.append(web_dir)
 
 from database_deps import db, TZ_BARNAUL
-from services.notifications import notify_users
+from services.notifications import notify_users, notify_fio_match
 
 load_dotenv()
 
@@ -176,6 +176,8 @@ async def message_handler(event: MessageCreated):
             await db.conn.execute("INSERT INTO link_codes (code, user_id, expires) VALUES (?, ?, ?)",
                                   (code, real_tg_id, expires))
             await db.conn.commit()
+            fio = dict(user).get('fio', '') if user else ''
+            await db.add_log(real_tg_id, fio, "Запросил код авторизации (MAX)", target_type='system')
             await send_max_msg(event, f"Ваш код для привязки аккаунта: {code}\nДействителен 15 минут. Введите его в другом мессенджере или в профиле платформы.")
         except Exception:
             await send_max_msg(event, "Ошибка генерации кода.")
@@ -242,6 +244,8 @@ async def message_handler(event: MessageCreated):
         else:
             target_date = (datetime.now(tz) + timedelta(days=1)).strftime("%Y-%m-%d")
             label = "завтра"
+        fio = dict(user).get('fio', '') if user else ''
+        await db.add_log(real_tg_id, fio, f"Запросил расстановку через бота MAX на {target_date}", target_type='system')
         await send_max_msg(event, f"⏳ Генерирую расстановку на {label} ({target_date})...")
         try:
             async with aiohttp.ClientSession() as session:
@@ -316,6 +320,36 @@ async def message_handler(event: MessageCreated):
             USER_STATES.pop(max_id_str, None)
             msg = f"🎉 Регистрация успешно завершена!\n\n👤 ФИО: {fio}\n💼 Роль: {role}\n\nТеперь вы можете открыть рабочую платформу 👇"
             await send_max_msg(event, msg, target_url=WEB_APP_URL)
+
+            # Уведомление о новой регистрации + проверка совпадения ФИО
+            async def _send_new_user_notification():
+                try:
+                    await notify_users(["report_group", "superadmin"],
+                                       f"👤 Новая регистрация (MAX)\n📝 ФИО: {fio}\n💼 Роль: {role}\n🆔 ID: {pseudo_tg_id}",
+                                       "system")
+                except Exception as e:
+                    logger.error(f"New user notification error: {e}")
+
+            asyncio.create_task(_send_new_user_notification())
+
+            async def _check_fio_and_notify():
+                try:
+                    if not fio or fio.startswith("Пользователь"):
+                        return
+                    platform_filter = "user_id > 0" if pseudo_tg_id < 0 else "user_id < 0"
+                    async with db.conn.execute(
+                        f"SELECT user_id, fio FROM users "
+                        f"WHERE {platform_filter} AND linked_user_id IS NULL "
+                        f"AND user_id != ? AND LOWER(TRIM(fio)) = LOWER(TRIM(?))",
+                        (pseudo_tg_id, fio)
+                    ) as cur:
+                        matches = await cur.fetchall()
+                    for match in matches:
+                        await notify_fio_match(pseudo_tg_id, fio, match[0], match[1])
+                except Exception as e:
+                    logger.error(f"FIO match check error: {e}")
+
+            asyncio.create_task(_check_fio_and_notify())
         except Exception as e:
             logger.error(f"Ошибка БД при регистрации ФИО: {e}")
             await send_max_msg(event, "❌ Произошла ошибка при сохранении данных.")
