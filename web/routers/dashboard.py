@@ -93,6 +93,18 @@ async def get_settings():
     return {r[0]: r[1] for r in rows}
 
 
+@router.get("/api/settings/support")
+async def get_support_settings():
+    """Public endpoint — returns support messenger links (no auth required)."""
+    result = {"support_tg_link": "", "support_max_link": ""}
+    async with db.conn.execute(
+        "SELECT key, value FROM settings WHERE key IN ('support_tg_link', 'support_max_link')"
+    ) as cur:
+        for row in await cur.fetchall():
+            result[row[0]] = row[1]
+    return result
+
+
 @router.post("/api/settings/update")
 async def update_settings(auto_publish_time: str = Form(""), auto_publish_enabled: str = Form("0"),
                           auto_start_orders_time: str = Form(""),
@@ -107,29 +119,42 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
                           equip_base_time_end: str = Form("18:00"),
                           exchange_enabled: str = Form("1"),
                           log_retention_days: str = Form("90"),
+                          support_tg_link: str = Form(""),
+                          support_max_link: str = Form(""),
+                          gemini_api_key: str = Form(""),
                           tg_id: int = Form(0)):
     user = await db.get_user(tg_id)
     if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403,
                                                                                                           "Нет прав")
 
+    pairs = [
+        ('auto_publish_time', auto_publish_time),
+        ('auto_publish_enabled', auto_publish_enabled),
+        ('auto_start_orders_time', auto_start_orders_time),
+        ('report_request_time', report_request_time),
+        ('foreman_reminder_time', foreman_reminder_time),
+        ('foreman_reminder_weekends', foreman_reminder_weekends),
+        ('auto_complete_time', auto_complete_time),
+        ('auto_backup_enabled', auto_backup_enabled),
+        ('office_reminder_enabled', office_reminder_enabled),
+        ('office_reminder_time', office_reminder_time),
+        ('smr_unlock_time', smr_unlock_time),
+        ('equip_base_time_start', equip_base_time_start),
+        ('equip_base_time_end', equip_base_time_end),
+        ('exchange_enabled', exchange_enabled),
+        ('log_retention_days', log_retention_days),
+    ]
+
+    # Support settings — superadmin only
+    if dict(user).get('role') == 'superadmin':
+        pairs.extend([
+            ('support_tg_link', support_tg_link),
+            ('support_max_link', support_max_link),
+            ('gemini_api_key', gemini_api_key),
+        ])
+
     try:
-        for k, v in [
-            ('auto_publish_time', auto_publish_time),
-            ('auto_publish_enabled', auto_publish_enabled),
-            ('auto_start_orders_time', auto_start_orders_time),
-            ('report_request_time', report_request_time),
-            ('foreman_reminder_time', foreman_reminder_time),
-            ('foreman_reminder_weekends', foreman_reminder_weekends),
-            ('auto_complete_time', auto_complete_time),
-            ('auto_backup_enabled', auto_backup_enabled),
-            ('office_reminder_enabled', office_reminder_enabled),
-            ('office_reminder_time', office_reminder_time),
-            ('smr_unlock_time', smr_unlock_time),
-            ('equip_base_time_start', equip_base_time_start),
-            ('equip_base_time_end', equip_base_time_end),
-            ('exchange_enabled', exchange_enabled),
-            ('log_retention_days', log_retention_days),
-        ]:
+        for k, v in pairs:
             await db.conn.execute("UPDATE settings SET value = ? WHERE key = ?", (v, k))
             await db.conn.execute("INSERT INTO settings (key, value) SELECT ?, ? WHERE (SELECT Changes() = 0)", (k, v))
 

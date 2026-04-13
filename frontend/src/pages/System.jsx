@@ -32,6 +32,9 @@ export default function System() {
         equip_base_time_start: '08:00', equip_base_time_end: '18:00',
         exchange_enabled: true,
         log_retention_days: '90',
+        support_tg_link: '',
+        support_max_link: '',
+        gemini_api_key: '',
     });
     const [testPlatform, setTestPlatform] = useState('all');
     const [userSearch, setUserSearch] = useState('');
@@ -68,6 +71,9 @@ export default function System() {
                     equip_base_time_end: res.data.equip_base_time_end || '18:00',
                     exchange_enabled: b('exchange_enabled'),
                     log_retention_days: res.data.log_retention_days || '90',
+                    support_tg_link: res.data.support_tg_link || '',
+                    support_max_link: res.data.support_max_link || '',
+                    gemini_api_key: res.data.gemini_api_key || '',
                 });
             }).catch(() => {});
         }
@@ -97,6 +103,9 @@ export default function System() {
                 equip_base_time_end: settings.equip_base_time_end,
                 exchange_enabled: settings.exchange_enabled ? '1' : '0',
                 log_retention_days: settings.log_retention_days,
+                support_tg_link: settings.support_tg_link,
+                support_max_link: settings.support_max_link,
+                gemini_api_key: settings.gemini_api_key,
                 tg_id: tgId
             }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
             toast.success('Настройки успешно сохранены!');
@@ -221,6 +230,7 @@ export default function System() {
                     settings={settings}
                     handleSettingChange={handleSettingChange}
                     saveSettings={saveSettings}
+                    role={role}
                 />
             )}
 

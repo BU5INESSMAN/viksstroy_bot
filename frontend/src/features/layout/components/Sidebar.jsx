@@ -41,7 +41,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
     const secondaryNav = [
         { icon: BookOpen, label: 'Гайд', action: () => navigate('/guide') },
         { icon: Rocket, label: 'Обновления', action: () => navigate('/updates') },
-        { icon: MessageCircle, label: 'Поддержка', action: () => window.open('https://t.me/BU5INESSMAN', '_blank') },
+        { icon: MessageCircle, label: 'Поддержка', action: () => navigate('/support'), path: '/support' },
     ];
 
     const w = collapsed ? 64 : 256;
@@ -117,7 +117,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                             icon={item.icon}
                             label={item.label}
                             collapsed={collapsed}
-                            isActive={false}
+                            isActive={item.path ? location.pathname === item.path : false}
                             onClick={item.action}
                             secondary
                         />

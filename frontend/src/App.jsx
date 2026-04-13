@@ -19,6 +19,7 @@ const KP = lazy(() => import('./pages/KP'));
 const JoinTeam = lazy(() => import('./pages/JoinTeam'));
 const JoinEquipment = lazy(() => import('./pages/JoinEquipment'));
 const AuthRedirect = lazy(() => import('./pages/AuthRedirect'));
+const Support = lazy(() => import('./pages/Support'));
 
 function ProtectedRoute({ children }) {
   const isAuth = localStorage.getItem('user_role');
@@ -97,6 +98,7 @@ export default function App() {
             {/* Этап 2: Новые страницы */}
             <Route path="/objects" element={<Objects />} />
             <Route path="/kp" element={<KP />} />
+            <Route path="/support" element={<Support />} />
           </Route>
         </Routes>
       </Suspense>

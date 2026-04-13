@@ -1,10 +1,11 @@
 import {
     Settings, Save, Mail, Rocket, Zap, ClipboardCheck,
-    CheckCircle, Database, Bell, Lock, RefreshCw, Truck, Trash2
+    CheckCircle, Database, Bell, Lock, RefreshCw, Truck, Trash2,
+    Headphones, Key
 } from 'lucide-react';
 import { GlassCard, SectionHeader, Toggle } from './UIHelpers';
 
-export default function SystemSettings({ settings, handleSettingChange, saveSettings }) {
+export default function SystemSettings({ settings, handleSettingChange, saveSettings, role }) {
     return (
         <GlassCard className="p-6 sm:p-8">
             <SectionHeader icon={Settings} iconColor="text-blue-500 bg-blue-500" title="Настройки автоматизации" />
@@ -154,6 +155,38 @@ export default function SystemSettings({ settings, handleSettingChange, saveSett
                         min="7" max="365"
                         className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-red-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
                 </div>
+
+                {/* Support settings — superadmin only */}
+                {role === 'superadmin' && (
+                    <div className="p-5 rounded-xl border border-violet-200 dark:border-violet-800/50 bg-violet-50/50 dark:bg-violet-900/10">
+                        <h3 className="text-sm font-bold text-gray-900 dark:text-white mb-1 flex items-center gap-1.5">
+                            <Headphones className="w-4 h-4 text-violet-500" /> Настройки поддержки
+                        </h3>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mb-4 font-medium">Только Супер-Админ. Ссылки на мессенджеры и ключ ИИ-ассистента.</p>
+                        <div className="space-y-3">
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest">Ссылка на TG поддержку</label>
+                                <input type="text" name="support_tg_link" value={settings.support_tg_link || ''} onChange={handleSettingChange}
+                                    placeholder="https://t.me/username"
+                                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-violet-500 block w-full p-3 dark:text-white shadow-sm outline-none" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest">Ссылка на MAX поддержку</label>
+                                <input type="text" name="support_max_link" value={settings.support_max_link || ''} onChange={handleSettingChange}
+                                    placeholder="https://max.ru/..."
+                                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-violet-500 block w-full p-3 dark:text-white shadow-sm outline-none" />
+                            </div>
+                            <div>
+                                <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest flex items-center gap-1">
+                                    <Key className="w-3 h-3" /> Gemini API ключ
+                                </label>
+                                <input type="password" name="gemini_api_key" value={settings.gemini_api_key || ''} onChange={handleSettingChange}
+                                    placeholder="AIza..."
+                                    className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-violet-500 block w-full p-3 dark:text-white shadow-sm outline-none" />
+                            </div>
+                        </div>
+                    </div>
+                )}
 
                 <button onClick={saveSettings}
                     className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-bold rounded-xl text-sm py-3.5 transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-md hover:shadow-lg">

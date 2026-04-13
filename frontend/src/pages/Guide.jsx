@@ -4,7 +4,7 @@ import {
     KeyRound, UserCircle, ClipboardList, Truck, Calendar, LayoutGrid,
     Settings, Smartphone, Search, BellRing, Link2, Users, MapPin,
     ArrowRightLeft, FileText, Shield, Bot, ChevronDown, Wrench,
-    HardHat, CheckCircle, Send, MessageCircle, BookOpen
+    HardHat, CheckCircle, Send, MessageCircle, BookOpen, Headphones
 } from 'lucide-react';
 import GlassCard from '../components/ui/GlassCard';
 import { ROLE_NAMES } from '../utils/roleConfig';
@@ -299,8 +299,22 @@ export default function Guide() {
             ),
         },
         {
+            id: 'support', icon: Headphones, iconColor: 'bg-violet-100 dark:bg-violet-900/30 text-violet-600 dark:text-violet-400',
+            title: '14. Тех. поддержка', roleHint: 'Все роли',
+            keywords: 'поддержка чат ии ассистент gemini вопрос помощь мессенджер telegram max',
+            content: (
+                <>
+                    <p><b>ИИ-ассистент:</b> На странице "Поддержка" доступен чат с ИИ-ассистентом, который знает функции платформы и может ответить на вопросы.</p>
+                    <p><b>История чата:</b> Все сообщения сохраняются — при повторном входе вы увидите предыдущую переписку.</p>
+                    <p><b>Мессенджеры:</b> Если ИИ не смог помочь, внизу страницы есть кнопки для связи с человеком через Telegram или MAX.</p>
+                    <p><b>Уведомления:</b> При каждом обращении в поддержку супер-администраторы получают уведомление.</p>
+                    <Tip>Ссылки на мессенджеры поддержки и API-ключ Gemini настраиваются в разделе "Система" (только Супер-Админ).</Tip>
+                </>
+            ),
+        },
+        {
             id: 'pwa', icon: Smartphone, iconColor: 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
-            title: '14. Установка на телефон (PWA)', roleHint: 'Все роли',
+            title: '15. Установка на телефон (PWA)', roleHint: 'Все роли',
             keywords: 'установка телефон приложение pwa ios android iphone скачать домой экран',
             content: (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -340,7 +354,7 @@ export default function Guide() {
                         <BookOpen className="w-8 h-8 md:w-10 md:h-10" /> База знаний
                     </h1>
                     <p className="text-blue-100 text-sm md:text-base font-medium mb-8 leading-relaxed max-w-xl">
-                        Полное руководство по платформе. 14 разделов, все функции от регистрации до администрирования.
+                        Полное руководство по платформе. 15 разделов, все функции от регистрации до администрирования.
                     </p>
                     <div className="relative max-w-xl">
                         <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">

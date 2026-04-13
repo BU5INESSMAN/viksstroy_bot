@@ -13,7 +13,7 @@ import asyncio
 from database_deps import db, TZ_BARNAUL
 from services.notifications import notify_users
 from services.publish_service import execute_app_publish
-from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system, exchange
+from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system, exchange, support
 from scheduler import start_scheduler
 
 # --- File-based logging for server-logs endpoint ---
@@ -42,6 +42,7 @@ app.include_router(objects.router)
 app.include_router(kp.router)
 app.include_router(system.router)
 app.include_router(exchange.router)
+app.include_router(support.router)
 
 
 @app.exception_handler(Exception)
@@ -85,6 +86,13 @@ async def startup():
         except: pass
         try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_exchange INTEGER DEFAULT 1")
         except: pass
+        await db.conn.execute("""CREATE TABLE IF NOT EXISTS support_chats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            role TEXT NOT NULL DEFAULT 'user',
+            message TEXT NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )""")
         await db.conn.commit()
     except Exception as e:
         print("Ошибка создания таблиц:", e)
@@ -96,6 +104,9 @@ async def startup():
         ('office_reminder_time', ''),
         ('auto_start_orders_time', ''),
         ('report_request_time', ''),
+        ('support_tg_link', ''),
+        ('support_max_link', ''),
+        ('gemini_api_key', ''),
     ]:
         try:
             await db.conn.execute(

@@ -111,7 +111,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                         <div className="grid grid-cols-2 gap-2">
                             <GridItem icon={BookOpen} color="indigo" label="Гайд" onClick={() => { setIsMenuOpen(false); navigate('/guide'); }} />
                             <GridItem icon={Rocket} color="emerald" label="Обновления" onClick={() => { setIsMenuOpen(false); navigate('/updates'); }} />
-                            <GridItem icon={MessageCircle} color="blue" label="Поддержка" onClick={() => { setIsMenuOpen(false); window.open('https://t.me/BU5INESSMAN', '_blank'); }} />
+                            <GridItem icon={MessageCircle} color="blue" label="Техподдержка" onClick={() => { setIsMenuOpen(false); navigate('/support'); }} />
                             <GridItem icon={ThemeIcon} color="gray" label={themeLabel} onClick={() => { toggleTheme(); }} />
                         </div>
                     </motion.div>
