@@ -18,6 +18,7 @@ const Objects = lazy(() => import('./pages/Objects'));
 const KP = lazy(() => import('./pages/KP'));
 const JoinTeam = lazy(() => import('./pages/JoinTeam'));
 const JoinEquipment = lazy(() => import('./pages/JoinEquipment'));
+const AuthRedirect = lazy(() => import('./pages/AuthRedirect'));
 
 function ProtectedRoute({ children }) {
   const isAuth = localStorage.getItem('user_role');
@@ -76,6 +77,7 @@ export default function App() {
       <Suspense fallback={SuspenseFallback}>
         <Routes>
           <Route path="/" element={<Login />} />
+          <Route path="/auth" element={<AuthRedirect />} />
           <Route path="/tma" element={<TMAAuth />} />
           <Route path="/max" element={<MAXAuth />} />
 

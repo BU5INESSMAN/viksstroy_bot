@@ -1,4 +1,5 @@
 import os
+import secrets
 import aiohttp
 
 from maxapi.types import ButtonsPayload, LinkButton, CallbackButton
@@ -11,6 +12,35 @@ from services.tg_session import get_tg_session
 
 from datetime import datetime, timedelta
 from database_deps import TZ_BARNAUL
+
+BASE_URL = os.getenv("WEB_APP_URL", "https://miniapp.viks22.ru")
+
+# url_path → frontend route mapping
+_URL_PATH_MAP = {
+    "review": "/review",
+    "my-apps": "/dashboard",
+    "dashboard": "/dashboard",
+    "kp": "/kp",
+    "teams": "/resources",
+    "equipment": "/resources",
+    "objects": "/objects",
+    "system": "/system",
+}
+
+
+async def _generate_auth_url(user_id: int, url_path: str = "dashboard") -> str:
+    """Generate a short-lived auth URL with embedded session token."""
+    redirect = _URL_PATH_MAP.get(url_path, f"/{url_path}")
+    token = secrets.token_urlsafe(16)
+    try:
+        await db.conn.execute(
+            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+5 minutes'))",
+            (token, user_id)
+        )
+        await db.conn.commit()
+    except Exception:
+        return f"{BASE_URL}{redirect}"
+    return f"{BASE_URL}/auth?token={token}&redirect={redirect}"
 
 
 # Маппинг категорий уведомлений на колонки в БД
@@ -31,8 +61,9 @@ async def notify_group_chat(text: str, url_path: str = "dashboard", target_platf
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
     max_group_id = await get_max_group_id()
 
+    redirect = _URL_PATH_MAP.get(url_path, f"/{url_path}")
     markup = {"inline_keyboard": [
-        [{"text": "📱 Открыть платформу", "web_app": {"url": f"https://miniapp.viks22.ru/{url_path}"}}]]}
+        [{"text": "📱 Открыть платформу", "web_app": {"url": f"{BASE_URL}/{url_path}"}}]]}
 
     if target_platform in ["all", "tg"] and bot_token and group_id:
         try:
@@ -46,7 +77,7 @@ async def notify_group_chat(text: str, url_path: str = "dashboard", target_platf
 
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
         max_plain_text = strip_html(text)
-        max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"https://miniapp.viks22.ru/{url_path}")]]
+        max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"{BASE_URL}{redirect}")]]
         max_payload = ButtonsPayload(buttons=max_buttons).pack()
         await send_max_text(max_bot_token, max_group_id, max_plain_text, attachments=[max_payload])
 
@@ -112,14 +143,9 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
                 final_max_ids.add(abs(lid))
 
     markup = tg_reply_markup or {"inline_keyboard": [
-        [{"text": "📱 Открыть платформу", "web_app": {"url": f"https://miniapp.viks22.ru/{url_path}"}}]]}
+        [{"text": "📱 Открыть платформу", "web_app": {"url": f"{BASE_URL}/{url_path}"}}]]}
 
     max_plain_text = strip_html(text)
-    if max_attachments is None:
-        max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"https://miniapp.viks22.ru/{url_path}")]]
-        max_payload = ButtonsPayload(buttons=max_buttons).pack()
-    else:
-        max_payload = None
 
     # Групповой чат — только если явно указан "report_group"
     if "report_group" in target_roles:
@@ -133,12 +159,16 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             except:
                 pass
 
-    # Личные сообщения — DM
+    # Личные сообщения — MAX DM (с персональными auth-токенами)
     if target_platform in ["all", "max"] and max_bot_token:
         for mid in final_max_ids:
             dm_chat_id = await get_max_dm_chat_id(str(mid))
-            print(f"🔄 MAX ЛС: Отправка уведомления пользователю {mid} в диалог {dm_chat_id}")
-            att = max_attachments if max_attachments is not None else [max_payload]
+            if max_attachments is not None:
+                att = max_attachments
+            else:
+                auth_url = await _generate_auth_url(-int(mid), url_path)
+                max_btn = [[LinkButton(text="📱 Открыть платформу", url=auth_url)]]
+                att = [ButtonsPayload(buttons=max_btn).pack()]
             await send_max_text(max_bot_token, dm_chat_id, max_plain_text, attachments=att)
 
     if target_platform in ["all", "tg"] and bot_token:

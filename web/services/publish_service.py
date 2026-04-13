@@ -125,7 +125,8 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     published_max = False
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
         max_text = strip_html(max_caption)
-        max_buttons = [[LinkButton(text="📱 Открыть платформу", url="https://miniapp.viks22.ru/dashboard")]]
+        base_url = os.getenv("WEB_APP_URL", "https://miniapp.viks22.ru")
+        max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"{base_url}/dashboard")]]
         max_payload = ButtonsPayload(buttons=max_buttons).pack()
 
         published_max = await send_max_message(

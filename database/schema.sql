@@ -14,7 +14,9 @@ CREATE TABLE IF NOT EXISTS users (
     notify_errors INTEGER DEFAULT 1,
     notify_exchange INTEGER DEFAULT 1,
     avatar_url TEXT,
-    last_used_objects TEXT DEFAULT '[]'
+    last_used_objects TEXT DEFAULT '[]',
+    linked_user_id INTEGER DEFAULT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Таблица бригад
