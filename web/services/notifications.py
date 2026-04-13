@@ -34,7 +34,7 @@ async def _generate_auth_url(user_id: int, url_path: str = "dashboard") -> str:
     token = secrets.token_urlsafe(16)
     try:
         await db.conn.execute(
-            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+5 minutes'))",
+            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+24 hours'))",
             (token, user_id)
         )
         await db.conn.commit()

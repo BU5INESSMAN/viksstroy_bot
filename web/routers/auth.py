@@ -25,11 +25,10 @@ router = APIRouter(tags=["Auth"])
 async def _create_session(user_id: int) -> str:
     """Generate a session token and store it in DB with 30-day expiry."""
     token = secrets.token_urlsafe(32)
-    expires = datetime.utcnow() + timedelta(days=30)
     try:
         await db.conn.execute(
-            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
-            (token, user_id, expires.isoformat())
+            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+30 days'))",
+            (token, user_id)
         )
         await db.conn.commit()
     except Exception:
@@ -233,18 +232,20 @@ async def validate_session(token: str = Query(...)):
     """Validate a browser session token."""
     if db.conn is None:
         await db.init_db()
-    async with db.conn.execute("SELECT user_id, expires_at FROM sessions WHERE token = ?", (token,)) as cur:
+    async with db.conn.execute(
+        "SELECT user_id FROM sessions WHERE token = ? AND expires_at > datetime('now')",
+        (token,)
+    ) as cur:
         row = await cur.fetchone()
     if not row:
-        raise HTTPException(status_code=401, detail="Сессия не найдена")
-    user_id, expires_at = row
-    if datetime.fromisoformat(expires_at) < datetime.utcnow():
+        # Clean up expired token if it exists
         try:
             await db.conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
             await db.conn.commit()
         except Exception:
             pass
-        raise HTTPException(status_code=401, detail="Сессия истекла")
+        raise HTTPException(status_code=401, detail="Сессия не найдена или истекла")
+    user_id = row[0]
     user = await db.get_user(user_id)
     if not user:
         raise HTTPException(status_code=401, detail="Пользователь не найден")
