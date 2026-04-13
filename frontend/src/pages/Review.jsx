@@ -180,9 +180,9 @@ export default function Review() {
     return (
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24 relative">
 
-            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white dark:bg-gray-800 rounded-2xl shadow-sm p-5 border border-gray-100 dark:border-gray-700 gap-4">
-                <h2 className="text-xl font-bold flex items-center text-gray-800 dark:text-gray-100">
-                    <ClipboardList className="w-7 h-7 text-blue-500 mr-2.5" /> Управление заявками
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center pt-6 gap-4">
+                <h2 className="text-2xl font-bold flex items-center text-gray-800 dark:text-gray-100">
+                    <ClipboardList className="w-7 h-7 text-blue-500 mr-2" /> Управление заявками
                 </h2>
                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     {isModOrBoss && (

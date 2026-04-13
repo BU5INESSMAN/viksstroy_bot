@@ -2,7 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Lock, Users, Search, X } from 'lucide-react';
+import { Lock, Users, Search, X, Settings } from 'lucide-react';
 
 import { GlassCard, SectionHeader, ROLE_ORDER, ROLE_NAMES, ROLE_COLORS } from '../features/system/components/UIHelpers';
 import SystemSettings from '../features/system/components/SystemSettings';
@@ -207,6 +207,13 @@ export default function System() {
     // ============================================================
     return (
         <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-6 pb-24">
+
+            {/* Header */}
+            <div className="flex justify-between items-center pt-6">
+                <h2 className="text-2xl font-bold flex items-center text-gray-800 dark:text-gray-100">
+                    <Settings className="w-7 h-7 text-blue-500 mr-2" /> Система
+                </h2>
+            </div>
 
             {/* Automation Settings — hidden from moderators */}
             {role !== 'moderator' && (

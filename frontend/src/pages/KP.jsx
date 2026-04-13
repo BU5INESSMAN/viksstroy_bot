@@ -182,9 +182,9 @@ export default function KP() {
 
     return (
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
-            <div className="flex flex-col md:flex-row justify-between md:items-center bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 border border-gray-100 dark:border-gray-700 gap-4">
+            <div className="flex flex-col md:flex-row justify-between md:items-center pt-6 gap-4">
                 <h2 className="text-2xl font-bold flex items-center text-gray-800 dark:text-gray-100">
-                    <FileText className="w-8 h-8 text-emerald-500 mr-3" /> Выполненные работы
+                    <FileText className="w-7 h-7 text-emerald-500 mr-2" /> Выполненные работы
                 </h2>
 
                 {isOffice && (

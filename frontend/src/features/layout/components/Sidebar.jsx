@@ -79,54 +79,54 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                 )}
             </div>
 
-            {/* Main navigation */}
-            <nav className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
-                {canCreateApp && collapsed && (
+            {/* Main navigation — top section */}
+            <nav className="flex-1 flex flex-col overflow-y-auto py-3 px-2">
+                <div className="space-y-1">
+                    {canCreateApp && collapsed && (
+                        <SidebarItem
+                            icon={Plus} label="Создать" collapsed={collapsed} isActive={false}
+                            onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
+                            accent
+                        />
+                    )}
+                    {mainNav.map(item => (
+                        <SidebarItem
+                            key={item.path}
+                            icon={item.icon}
+                            label={item.label}
+                            collapsed={collapsed}
+                            isActive={location.pathname === item.path}
+                            onClick={() => navigate(item.path)}
+                        />
+                    ))}
                     <SidebarItem
-                        icon={Plus} label="Создать" collapsed={collapsed} isActive={false}
-                        onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
-                        accent
-                    />
-                )}
-                {mainNav.map(item => (
-                    <SidebarItem
-                        key={item.path}
-                        icon={item.icon}
-                        label={item.label}
-                        collapsed={collapsed}
-                        isActive={location.pathname === item.path}
-                        onClick={() => navigate(item.path)}
-                    />
-                ))}
-
-                {/* Profile */}
-                <SidebarItem
-                    icon={User} label="Профиль" collapsed={collapsed}
-                    isActive={false}
-                    onClick={() => openProfile(tgId)}
-                />
-
-                {/* Separator */}
-                <div className="h-px bg-gray-100 dark:bg-gray-800 my-3 mx-1" />
-
-                {/* Secondary nav */}
-                {secondaryNav.map(item => (
-                    <SidebarItem
-                        key={item.label}
-                        icon={item.icon}
-                        label={item.label}
-                        collapsed={collapsed}
+                        icon={User} label="Профиль" collapsed={collapsed}
                         isActive={false}
-                        onClick={item.action}
-                        secondary
+                        onClick={() => openProfile(tgId)}
                     />
-                ))}
+                </div>
 
-                {/* Theme toggle */}
-                <SidebarItem
-                    icon={ThemeIcon} label="Тема" collapsed={collapsed}
-                    isActive={false} onClick={toggleTheme} secondary
-                />
+                {/* Spacer pushes secondary nav to bottom */}
+                <div className="flex-1" />
+
+                {/* Secondary nav — bottom section */}
+                <div className="space-y-1 pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
+                    {secondaryNav.map(item => (
+                        <SidebarItem
+                            key={item.label}
+                            icon={item.icon}
+                            label={item.label}
+                            collapsed={collapsed}
+                            isActive={false}
+                            onClick={item.action}
+                            secondary
+                        />
+                    ))}
+                    <SidebarItem
+                        icon={ThemeIcon} label="Тема" collapsed={collapsed}
+                        isActive={false} onClick={toggleTheme} secondary
+                    />
+                </div>
             </nav>
 
             {/* Collapse toggle */}

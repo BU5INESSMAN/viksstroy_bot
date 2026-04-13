@@ -262,10 +262,6 @@ export default function Layout() {
                         isTMA={isTMA}
                         realRole={realRole}
                         role={role}
-                        theme={theme}
-                        toggleTheme={toggleTheme}
-                        isMenuOpen={isMenuOpen}
-                        setIsMenuOpen={setIsMenuOpen}
                     />
                 </div>
 
@@ -289,6 +285,8 @@ export default function Layout() {
                 isProfileModalOpen={isProfileModalOpen}
                 openProfile={openProfile}
                 setGlobalCreateAppOpen={setGlobalCreateAppOpen}
+                theme={theme}
+                toggleTheme={toggleTheme}
             />
 
             {isSessionModalOpen && <SessionModal />}

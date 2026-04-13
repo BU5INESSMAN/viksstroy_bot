@@ -28,7 +28,17 @@ const versionColor = (v) => {
 
 const CHANGELOG = [
     {
-        version: '2.1.0', date: '2026-04-13', title: 'Исправления и улучшения', current: true,
+        version: '2.1.1', date: '2026-04-13', title: 'Навигация и единое оформление', current: true,
+        commits: 4,
+        changes: [
+            { type: 'fix', text: 'Единое оформление заголовков страниц — убраны рамки, добавлены иконки и отступы' },
+            { type: 'fix', text: 'Навигация Sidebar — Гайд, Обновления, Поддержка, Тема перемещены вниз' },
+            { type: 'fix', text: 'Мобильный Header — логотип по центру, без смещения кнопками' },
+            { type: 'feat', text: 'Переключение темы в мобильном меню (бургер 2×2 сетка)' },
+        ],
+    },
+    {
+        version: '2.1.0', date: '2026-04-13', title: 'Исправления и улучшения',
         commits: 4,
         changes: [
             { type: 'fix', text: 'Исправлена ошибка создания техники (405 Method Not Allowed)' },
@@ -231,7 +241,7 @@ export default function Updates() {
         : CHANGELOG;
 
     return (
-        <div className="max-w-3xl mx-auto px-4 py-6 sm:py-8 space-y-6">
+        <div className="max-w-3xl mx-auto px-4 pt-6 sm:pt-8 pb-24 space-y-6">
             {/* Hero */}
             <motion.div
                 initial={prefersReducedMotion ? false : { opacity: 0, y: -10 }}

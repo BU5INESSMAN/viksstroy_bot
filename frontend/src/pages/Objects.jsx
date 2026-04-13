@@ -176,9 +176,9 @@ export default function Objects() {
         <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
 
             {/* Header */}
-            <div className="flex flex-col sm:flex-row justify-between sm:items-center bg-white dark:bg-gray-800 rounded-3xl shadow-sm p-6 border border-gray-100 dark:border-gray-700 gap-4">
+            <div className="flex flex-col sm:flex-row justify-between sm:items-center pt-6 gap-4">
                 <h2 className="text-2xl font-bold flex items-center text-gray-800 dark:text-gray-100">
-                    <MapPin className="w-8 h-8 text-blue-500 mr-3" /> Объекты
+                    <MapPin className="w-7 h-7 text-blue-500 mr-2" /> Объекты
                 </h2>
                 <div className="flex gap-2 flex-wrap">
                     {canManage && (

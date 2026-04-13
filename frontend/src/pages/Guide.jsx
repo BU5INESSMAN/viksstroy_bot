@@ -330,7 +330,7 @@ export default function Guide() {
         : sections;
 
     return (
-        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
+        <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24 pt-6">
             {/* Hero + Search */}
             <div className="bg-gradient-to-br from-blue-600 to-indigo-800 rounded-3xl shadow-xl p-8 md:p-10 text-white relative overflow-hidden">
                 <div className="absolute -right-20 -top-20 w-64 h-64 bg-white opacity-10 rounded-full blur-3xl" />
