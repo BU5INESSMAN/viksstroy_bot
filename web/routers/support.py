@@ -16,6 +16,9 @@ MODELS = [
     "google/gemma-3-27b-it:free",
     "google/gemma-3-12b-it:free",
     "meta-llama/llama-3.2-3b-instruct:free",
+    "google/gemma-3-4b-it:free",
+    "google/gemma-3n-e4b-it:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
 ]
 
 _knowledge_cache = None
