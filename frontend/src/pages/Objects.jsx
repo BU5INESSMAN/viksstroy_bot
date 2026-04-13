@@ -173,7 +173,7 @@ export default function Objects() {
     }
 
     return (
-        <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
+        <main className="px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
 
             {/* Header */}
             <div className="flex flex-col sm:flex-row justify-between sm:items-center pt-6 gap-4">

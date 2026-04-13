@@ -215,7 +215,7 @@ export default function System() {
     // RENDER
     // ============================================================
     return (
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 space-y-6 pb-24">
+        <div className="px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
 
             {/* Header */}
             <div className="flex justify-between items-center pt-6">

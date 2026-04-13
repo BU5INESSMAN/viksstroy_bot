@@ -128,7 +128,7 @@ export default function Equipment() {
     );
 
     return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+        <div className="px-4 sm:px-6 lg:px-8 space-y-6">
 
             {/* Кнопки управления теперь выровнены по правому краю */}
             {canManageEquipment && (

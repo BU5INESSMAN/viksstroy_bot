@@ -156,6 +156,20 @@ async def support_chat(request: Request):
     )
     await db.conn.commit()
 
+    # Log every support message
+    try:
+        user_obj = await db.get_user(resolved_user_id)
+        fio = dict(user_obj).get('fio', 'Неизвестный') if user_obj else 'Неизвестный'
+        await db.add_log(
+            resolved_user_id,
+            fio,
+            f"Сообщение в поддержку: {user_message[:150]}",
+            target_type='support',
+            target_id=resolved_user_id
+        )
+    except Exception:
+        fio = 'Неизвестный'
+
     # Smart notification: only notify on new conversations (>30 min gap)
     should_notify = await _should_notify(resolved_user_id)
 
@@ -164,16 +178,12 @@ async def support_chat(request: Request):
 
         async def _notify_support_request():
             try:
-                u = await db.get_user(resolved_user_id)
-                fio = dict(u).get('fio', 'Неизвестный') if u else 'Неизвестный'
                 await notify_users(
                     ["superadmin", "boss"],
                     f"\U0001f3a7 <b>Новое обращение в поддержку</b>\n\U0001f464 {fio}\n\U0001f4ac {user_message[:200]}",
                     "system",
                     category="new_users"
                 )
-                # Log new support conversation
-                await db.add_log(resolved_user_id, fio, "Обратился в тех. поддержку", target_type="support")
             except Exception:
                 pass
 

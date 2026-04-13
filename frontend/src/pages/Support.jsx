@@ -367,7 +367,7 @@ export default function Support() {
     /* ───── Regular user: simple chat ───── */
     if (!isBoss) {
         return (
-            <div className="max-w-3xl mx-auto flex flex-col h-[calc(100dvh-80px)] lg:h-[calc(100dvh-16px)]">
+            <div className="flex flex-col h-[calc(100dvh-80px)] lg:h-[calc(100dvh-16px)]">
                 {chatPanel}
             </div>
         );
@@ -375,7 +375,7 @@ export default function Support() {
 
     /* ───── Boss/Superadmin: split layout ───── */
     return (
-        <div className="flex h-[calc(100dvh-80px)] lg:h-[calc(100dvh-16px)] max-w-6xl mx-auto">
+        <div className="flex h-[calc(100dvh-80px)] lg:h-[calc(100dvh-16px)]">
             {/* Sidebar — always visible on desktop, toggleable on mobile */}
             <div className={`${showSidebar ? 'flex' : 'hidden'} lg:flex flex-col w-full lg:w-80 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900`}>
                 <div className="flex items-center gap-3 px-4 pt-4 lg:pt-6 pb-3 border-b border-gray-100 dark:border-gray-800">

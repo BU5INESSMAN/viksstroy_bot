@@ -115,7 +115,7 @@ export default function Teams() {
     const canDeleteTeam = ['moderator', 'boss', 'superadmin'].includes(role);
 
     return (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 space-y-6">
+        <div className="px-4 sm:px-6 lg:px-8 space-y-6">
 
             {/* Кнопка создания теперь выровнена по правому краю */}
             {canManage && (

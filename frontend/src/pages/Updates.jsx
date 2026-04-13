@@ -28,7 +28,15 @@ const versionColor = (v) => {
 
 const CHANGELOG = [
     {
-        version: '2.3.0', date: '2026-04-13', title: 'Поддержка: просмотр диалогов и Gemma 3', current: true,
+        version: '2.3.1', date: '2026-04-13', title: 'Полная ширина и лог поддержки', current: true,
+        commits: 1,
+        changes: [
+            { type: 'fix', text: 'Интерфейс растянут на всю ширину экрана' },
+            { type: 'feat', text: 'Все сообщения в поддержку записываются в журнал действий' },
+        ],
+    },
+    {
+        version: '2.3.0', date: '2026-04-13', title: 'Поддержка: просмотр диалогов и Gemma 3',
         commits: 4,
         changes: [
             { type: 'feat', text: 'Руководители и Супер-Админы могут просматривать все диалоги поддержки' },
@@ -279,7 +287,7 @@ export default function Updates() {
         : CHANGELOG;
 
     return (
-        <div className="max-w-3xl mx-auto px-4 pt-6 sm:pt-8 pb-24 space-y-6">
+        <div className="px-4 sm:px-6 lg:px-8 pt-6 sm:pt-8 pb-24 space-y-6">
             {/* Hero */}
             <motion.div
                 initial={prefersReducedMotion ? false : { opacity: 0, y: -10 }}
