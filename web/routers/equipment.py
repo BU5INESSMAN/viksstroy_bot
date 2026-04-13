@@ -204,6 +204,7 @@ async def equipment_availability(date: str = Query(...)):
     return result
 
 
+@router.post("/api/equipment/create")
 @router.post("/api/equipment/add")
 async def add_equipment(name: str = Form(...), category: str = Form(...), driver: str = Form(""), tg_id: int = Form(0), license_plate: str = Form("")):
     try:
