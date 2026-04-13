@@ -28,7 +28,14 @@ const versionColor = (v) => {
 
 const CHANGELOG = [
     {
-        version: '2.1.2', date: '2026-04-13', title: 'Архив заявок и долги СМР', current: true,
+        version: '2.1.3', date: '2026-04-13', title: 'Статичные приглашения', current: true,
+        commits: 1,
+        changes: [
+            { type: 'feat', text: 'Статичные ссылки приглашения для бригад и техники — не меняются после создания' },
+        ],
+    },
+    {
+        version: '2.1.2', date: '2026-04-13', title: 'Архив заявок и долги СМР',
         commits: 2,
         changes: [
             { type: 'feat', text: 'Восстановление заявок из архива — кнопка "Восстановить" в модалке архива' },

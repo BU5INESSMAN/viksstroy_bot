@@ -340,17 +340,7 @@ async def delete_equipment(equip_id: int, tg_id: int = Form(0)):
 
 @router.post("/api/equipment/{equip_id}/generate_invite")
 async def generate_equip_invite(equip_id: int):
-    async with db.conn.execute("SELECT invite_code FROM equipment WHERE id = ?", (equip_id,)) as cursor:
-        row = await cursor.fetchone()
-        if row and row[0]:
-            code = row[0]
-        else:
-            code = str(random.randint(100000, 999999))
-            try:
-                await db.conn.execute("UPDATE equipment SET invite_code = ? WHERE id = ?", (code, equip_id))
-                await db.conn.commit()
-            except:
-                await db.conn.rollback()
+    code = await db.get_or_create_equip_invite(equip_id)
     return {
         "invite_link": f"https://miniapp.viks22.ru/equip-invite/{code}",
         "tg_bot_link": f"https://t.me/viksstroy_bot?start=equip_{code}",

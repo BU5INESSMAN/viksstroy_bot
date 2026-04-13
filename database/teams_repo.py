@@ -51,26 +51,17 @@ class TeamsRepoMixin:
         await self.conn.commit()
 
     async def get_or_create_team_invite(self, team_id: int):
-        """Возвращает существующий код бригады или создает новый (статичные ссылки)"""
-        # Проверяем, есть ли уже код у этой бригады
-        async with self.conn.execute("SELECT invite_code FROM teams WHERE id = ?", (team_id,)) as cursor:
+        """Возвращает существующий код и пароль бригады или создает новые (статичные ссылки)"""
+        async with self.conn.execute(
+            "SELECT invite_code, join_password FROM teams WHERE id = ?", (team_id,)
+        ) as cursor:
             row = await cursor.fetchone()
-            if row and row[0]:
-                return row[0]  # Возвращаем старый код
+            if row and row[0] and row[1]:
+                return row[0], row[1]
 
-        # Если кода нет - генерируем один раз и навсегда
-        invite_code = str(uuid.uuid4())[:8]
-        await self.conn.execute(
-            "UPDATE teams SET invite_code = ? WHERE id = ?",
-            (invite_code, team_id)
-        )
-        await self.conn.commit()
-        return invite_code
-
-    async def generate_team_invite(self, team_id: int):
-        """Генерирует уникальную ссылку и 6-значный пароль для бригады"""
-        invite_code = str(uuid.uuid4())[:8]  # Короткий уникальный код
-        join_password = ''.join(random.choices(string.digits, k=6))
+        # Generate only missing codes
+        invite_code = row[0] if (row and row[0]) else str(uuid.uuid4())[:8]
+        join_password = row[1] if (row and row[1]) else ''.join(random.choices(string.digits, k=6))
 
         await self.conn.execute(
             "UPDATE teams SET invite_code = ?, join_password = ? WHERE id = ?",
@@ -78,6 +69,10 @@ class TeamsRepoMixin:
         )
         await self.conn.commit()
         return invite_code, join_password
+
+    async def generate_team_invite(self, team_id: int):
+        """Возвращает существующий код бригады или создает новый (статичные ссылки, не перегенерируются)"""
+        return await self.get_or_create_team_invite(team_id)
 
     async def get_team_by_invite(self, invite_code: str):
         """Ищет бригаду по коду ссылки"""

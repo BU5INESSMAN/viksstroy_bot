@@ -53,3 +53,21 @@ class EquipmentRepoMixin:
     async def toggle_equipment_status(self, equip_id: int, is_active: int):
         await self.conn.execute("UPDATE equipment SET is_active = ? WHERE id = ?", (is_active, equip_id))
         await self.conn.commit()
+
+    async def get_or_create_equip_invite(self, equip_id: int):
+        """Возвращает существующий код техники или создает новый (статичные ссылки)"""
+        import uuid
+        async with self.conn.execute(
+            "SELECT invite_code FROM equipment WHERE id = ?", (equip_id,)
+        ) as cursor:
+            row = await cursor.fetchone()
+            if row and row[0]:
+                return row[0]
+
+        invite_code = str(uuid.uuid4())[:8]
+        await self.conn.execute(
+            "UPDATE equipment SET invite_code = ? WHERE id = ?",
+            (invite_code, equip_id)
+        )
+        await self.conn.commit()
+        return invite_code
