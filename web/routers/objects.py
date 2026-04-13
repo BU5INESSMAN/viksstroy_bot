@@ -18,18 +18,33 @@ async def api_get_objects(archived: int = 0):
     return await db.get_objects(include_archived=bool(archived))
 
 @router.post("/api/objects/create")
-async def api_create_object(name: str = Form(...), address: str = Form(...), tg_id: int = Form(0)):
+async def api_create_object(request: Request):
     if db.conn is None: await db.init_db()
+    data = await request.json()
+    name = data.get("name", "")
+    address = data.get("address", "")
+    tg_id = data.get("tg_id", 0)
+    kp_ids = data.get("kp_ids", [])
+    target_volumes = data.get("target_volumes", {})
+
+    if not name:
+        raise HTTPException(400, "Название обязательно")
+    if not kp_ids:
+        raise HTTPException(400, "КП обязательна при создании объекта")
+
     if tg_id:
         user = await db.get_user(tg_id)
         if user and dict(user).get('role') in ('foreman', 'brigadier'):
             raise HTTPException(status_code=403, detail="Нет прав на создание объектов")
+
     obj_id = await db.create_object(name, address)
+    await db.add_kp_to_object(obj_id, kp_ids, target_volumes)
+
     real_tg_id = await resolve_id(tg_id) if tg_id else 0
     user = await db.get_user(real_tg_id) if real_tg_id else None
     fio = dict(user).get('fio', 'Система') if user else 'Система'
     await db.add_log(real_tg_id, fio, f"Создал объект: {name}", target_type='object', target_id=obj_id)
-    return {"status": "ok"}
+    return {"status": "ok", "id": obj_id}
 
 @router.post("/api/objects/{obj_id}/update")
 async def api_update_object(obj_id: int, name: str = Form(...), address: str = Form(...), default_teams: str = Form(""), default_equip: str = Form("")):
@@ -214,12 +229,17 @@ async def api_get_object_requests(status: str = "pending"):
 
 
 @router.post("/api/object_requests/{req_id}/review")
-async def api_review_object_request(req_id: int, action: str = Form(...), tg_id: int = Form(0)):
-    """Модератор одобряет или отклоняет запрос на объект."""
+async def api_review_object_request(req_id: int, request: Request):
+    """Модератор одобряет или отклоняет запрос на объект. Approve accepts JSON with full object data + KP."""
     if db.conn is None: await db.init_db()
     from utils import resolve_id
     from services.notifications import notify_users
     import asyncio
+
+    data = await request.json()
+    action = data.get("action", "")
+    tg_id = data.get("tg_id", 0)
+
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     if not user or dict(user).get('role') not in ('moderator', 'boss', 'superadmin'):
@@ -233,15 +253,24 @@ async def api_review_object_request(req_id: int, action: str = Form(...), tg_id:
     req_dict = dict(req_row)
 
     if action == 'approve':
-        # Создаем объект
-        await db.create_object(req_dict['name'], req_dict['address'] or '')
+        name = data.get("name", req_dict['name'])
+        address = data.get("address", req_dict['address'] or '')
+        kp_ids = data.get("kp_ids", [])
+        target_volumes = data.get("target_volumes", {})
+
+        if not kp_ids:
+            raise HTTPException(400, "КП обязательна при создании объекта")
+
+        obj_id = await db.create_object(name, address)
+        await db.add_kp_to_object(obj_id, kp_ids, target_volumes)
+
         await db.conn.execute(
             "UPDATE object_requests SET status = 'approved', reviewed_by = ?, reviewed_by_name = ?, reviewed_at = CURRENT_TIMESTAMP WHERE id = ?",
             (real_tg_id, mod_fio, req_id)
         )
         await db.conn.commit()
         asyncio.create_task(notify_users(
-            [], f"✅ <b>Ваш запрос на объект одобрен!</b>\n🏗 {req_dict['name']}",
+            [], f"✅ <b>Ваш запрос на объект одобрен!</b>\n🏗 {name}",
             "objects", extra_tg_ids=[req_dict['requested_by']], category="orders"
         ))
     elif action == 'reject':

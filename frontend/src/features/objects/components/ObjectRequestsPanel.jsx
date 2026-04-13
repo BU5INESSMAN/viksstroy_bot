@@ -1,6 +1,6 @@
 import { Bell, MapPin, CheckCircle, XCircle, X } from 'lucide-react';
 
-export default function ObjectRequestsPanel({ objectRequests, onReview, onClose }) {
+export default function ObjectRequestsPanel({ objectRequests, onApprove, onReject, onClose }) {
     return (
         <div className="fixed inset-0 w-screen h-[100dvh] z-[99990] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative">
@@ -35,13 +35,13 @@ export default function ObjectRequestsPanel({ objectRequests, onReview, onClose 
                             </p>
                             <div className="flex gap-2">
                                 <button
-                                    onClick={() => onReview(req.id, 'approve')}
+                                    onClick={() => onApprove(req)}
                                     className="flex-1 bg-emerald-500 text-white py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 hover:bg-emerald-600 active:scale-95 transition-all"
                                 >
                                     <CheckCircle className="w-4 h-4" /> Одобрить
                                 </button>
                                 <button
-                                    onClick={() => onReview(req.id, 'reject')}
+                                    onClick={() => onReject(req.id)}
                                     className="flex-1 bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400 py-2.5 rounded-xl text-sm font-bold flex items-center justify-center gap-1.5 hover:bg-red-100 active:scale-95 transition-all border border-red-200 dark:border-red-800/50"
                                 >
                                     <XCircle className="w-4 h-4" /> Отклонить

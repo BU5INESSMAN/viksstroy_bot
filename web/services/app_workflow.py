@@ -25,7 +25,7 @@ STATUS_LABELS = {
 
 ROLE_NAMES = {
     'superadmin': 'Супер-Админ', 'boss': 'Руководитель', 'moderator': 'Модератор',
-    'foreman': 'Прораб', 'worker': 'Рабочий', 'driver': 'Водитель',
+    'foreman': 'Прораб', 'brigadier': 'Бригадир', 'worker': 'Рабочий', 'driver': 'Водитель',
 }
 
 

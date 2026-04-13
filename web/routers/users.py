@@ -266,7 +266,7 @@ async def set_user_role(user_id: int, role: str = Form(...), admin_id: int = For
         if not admin or dict(admin).get('role') not in ['superadmin', 'boss', 'moderator']:
             raise HTTPException(403, "Недостаточно прав")
 
-    valid_roles = ['superadmin', 'boss', 'moderator', 'foreman', 'worker', 'viewer']
+    valid_roles = ['superadmin', 'boss', 'moderator', 'foreman', 'brigadier', 'worker', 'driver', 'viewer']
     if role not in valid_roles:
         raise HTTPException(400, f"Недопустимая роль: {role}")
 

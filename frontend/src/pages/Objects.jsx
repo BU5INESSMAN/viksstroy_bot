@@ -72,18 +72,30 @@ export default function Objects() {
         }
     }, []);
 
-    const handleReviewRequest = async (reqId, action) => {
+    // Request approval: open create modal with pre-filled data
+    const [approveRequest, setApproveRequest] = useState(null);
+
+    const handleApproveRequest = (req) => {
+        setShowRequests(false);
+        setApproveRequest(req);
+    };
+
+    const handleRejectRequest = async (reqId) => {
         try {
-            const fd = new FormData();
-            fd.append('action', action);
-            fd.append('tg_id', tgId);
-            await axios.post(`/api/object_requests/${reqId}/review`, fd);
-            toast.success(action === 'approve' ? 'Объект создан!' : 'Запрос отклонён');
+            await axios.post(`/api/object_requests/${reqId}/review`, {
+                action: 'reject',
+                tg_id: parseInt(tgId),
+            });
+            toast.success('Запрос отклонён');
             setObjectRequests(prev => prev.filter(r => r.id !== reqId));
-            if (action === 'approve') fetchObjects();
         } catch (e) {
             toast.error('Ошибка обработки запроса');
         }
+    };
+
+    const handleRequestApproved = (reqId) => {
+        setObjectRequests(prev => prev.filter(r => r.id !== reqId));
+        setApproveRequest(null);
     };
 
     const handleUploadPdf = async (objId, e) => {
@@ -342,8 +354,19 @@ export default function Objects() {
             {showRequests && objectRequests.length > 0 && (
                 <ObjectRequestsPanel
                     objectRequests={objectRequests}
-                    onReview={handleReviewRequest}
+                    onApprove={handleApproveRequest}
+                    onReject={handleRejectRequest}
                     onClose={() => setShowRequests(false)}
+                />
+            )}
+
+            {/* APPROVAL CREATE MODAL (from request) */}
+            {approveRequest && (
+                <ObjectCreateModal
+                    onClose={() => setApproveRequest(null)}
+                    onCreated={fetchObjects}
+                    requestData={approveRequest}
+                    onRequestApproved={handleRequestApproved}
                 />
             )}
 
