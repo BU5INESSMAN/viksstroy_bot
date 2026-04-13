@@ -245,7 +245,8 @@ async def validate_session(token: str = Query(...)):
         except Exception:
             pass
         raise HTTPException(status_code=401, detail="Сессия не найдена или истекла")
-    user_id = row[0]
+    raw_user_id = row[0]
+    user_id = await resolve_id(raw_user_id)
     user = await db.get_user(user_id)
     if not user:
         raise HTTPException(status_code=401, detail="Пользователь не найден")

@@ -5,7 +5,7 @@ import aiohttp
 from maxapi.types import ButtonsPayload, LinkButton, CallbackButton
 
 from database_deps import db
-from utils import get_all_linked_ids
+from utils import get_all_linked_ids, resolve_id
 from services.image_service import strip_html
 from services.max_api import get_max_group_id, send_max_text, get_max_dm_chat_id
 from services.tg_session import get_tg_session
@@ -31,11 +31,12 @@ _URL_PATH_MAP = {
 async def _generate_auth_url(user_id: int, url_path: str = "dashboard") -> str:
     """Generate a short-lived auth URL with embedded session token."""
     redirect = _URL_PATH_MAP.get(url_path, f"/{url_path}")
+    resolved_user_id = await resolve_id(user_id)
     token = secrets.token_urlsafe(16)
     try:
         await db.conn.execute(
             "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, datetime('now', '+24 hours'))",
-            (token, user_id)
+            (token, resolved_user_id)
         )
         await db.conn.commit()
     except Exception:
