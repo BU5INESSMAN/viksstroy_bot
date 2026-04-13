@@ -1,8 +1,5 @@
-const CACHE_NAME = 'viks-v1';
-const STATIC_ASSETS = [
-  '/',
-  '/index.html',
-];
+const CACHE_VERSION = Date.now();
+const CACHE_NAME = 'viks-cache-' + CACHE_VERSION;
 
 const MAINTENANCE_HTML = `
 <!DOCTYPE html>
@@ -67,51 +64,81 @@ const MAINTENANCE_HTML = `
 </html>
 `;
 
+// Install: cache maintenance page, skip waiting immediately
 self.addEventListener('install', (event) => {
   event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) => {
+    caches.open(CACHE_NAME).then((cache) =>
       cache.put(
         new Request('offline-page'),
         new Response(MAINTENANCE_HTML, {
           headers: { 'Content-Type': 'text/html; charset=utf-8' }
         })
-      );
-      return cache.addAll(STATIC_ASSETS);
-    })
+      )
+    )
   );
   self.skipWaiting();
 });
 
+// Activate: delete ALL old caches, claim clients
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
-    )
+    ).then(() => self.clients.claim())
   );
-  self.clients.claim();
+});
+
+// Message listener for frontend-triggered actions
+self.addEventListener('message', (event) => {
+  if (event.data === 'skipWaiting') {
+    self.skipWaiting();
+  }
+  if (event.data === 'clearCache') {
+    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+  }
 });
 
 self.addEventListener('fetch', (event) => {
-  // Network-first for API calls — no caching
-  if (event.request.url.includes('/api/')) {
+  const url = new URL(event.request.url);
+
+  // API calls: NETWORK ONLY — never cache
+  if (url.pathname.startsWith('/api/')) {
     return;
   }
 
-  // Cache-first for static assets, maintenance fallback for navigation
+  // Hashed assets (/assets/*): CACHE FIRST — safe to cache forever
+  if (url.pathname.startsWith('/assets/')) {
+    event.respondWith(
+      caches.match(event.request).then((cached) => {
+        if (cached) return cached;
+        return fetch(event.request).then((response) => {
+          if (response.status === 200) {
+            const clone = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
+          }
+          return response;
+        });
+      }).catch(() => {})
+    );
+    return;
+  }
+
+  // Navigation (HTML pages): NETWORK FIRST — fall back to maintenance page
+  if (event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match('offline-page'))
+    );
+    return;
+  }
+
+  // Everything else (icons, manifest, etc.): NETWORK FIRST with cache fallback
   event.respondWith(
-    caches.match(event.request).then((cached) => {
-      return cached || fetch(event.request).then((response) => {
-        if (response.status === 200) {
-          const clone = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-        }
-        return response;
-      });
-    }).catch(() => {
-      // Offline fallback — show maintenance page for navigation requests
-      if (event.request.mode === 'navigate') {
-        return caches.match('offline-page');
+    fetch(event.request).then((response) => {
+      if (response.status === 200) {
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
       }
-    })
+      return response;
+    }).catch(() => caches.match(event.request))
   );
 });
