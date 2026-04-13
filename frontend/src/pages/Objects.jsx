@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
@@ -14,6 +15,7 @@ import ObjectRequestModal from '../features/objects/components/ObjectRequestModa
 import ObjectRequestsPanel from '../features/objects/components/ObjectRequestsPanel';
 
 export default function Objects() {
+    const [searchParams, setSearchParams] = useSearchParams();
     const role = localStorage.getItem('user_role') || 'Гость';
     const canManage = ['moderator', 'boss', 'superadmin', 'foreman'].includes(role);
     const canCreate = ['moderator', 'boss', 'superadmin'].includes(role);
@@ -26,6 +28,16 @@ export default function Objects() {
 
     // Create modal
     const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+
+    // Handle URL params from sidebar
+    useEffect(() => {
+        const action = searchParams.get('action');
+        const tab = searchParams.get('tab');
+        if (action === 'create' && canCreate) setCreateModalOpen(true);
+        if (tab === 'archive') setShowArchived(true);
+        if (tab === 'requests') setShowRequests(true);
+        if (action || tab) setSearchParams({}, { replace: true });
+    }, [searchParams]);
 
     // Edit modal
     const [isEditModalOpen, setEditModalOpen] = useState(false);

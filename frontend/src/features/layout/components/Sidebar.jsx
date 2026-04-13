@@ -1,151 +1,228 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Home, MapPin, Briefcase, ClipboardList, FileText,
     Settings as SettingsIcon, User, BookOpen, Rocket,
-    MessageCircle, Plus, PanelLeftClose, PanelLeft,
-    Sun, Moon, Monitor
+    MessageCircle, Plus, ChevronLeft, ChevronDown,
+    Sun, Moon, Monitor, Headphones
 } from 'lucide-react';
+import axios from 'axios';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const anim = (props) => prefersReducedMotion ? {} : props;
 
 export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, theme, toggleTheme }) {
     const navigate = useNavigate();
     const location = useLocation();
-    const tgId = localStorage.getItem('tg_id');
+    const tgId = localStorage.getItem('tg_id') || '0';
 
     const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === 'true');
+    const [openMenus, setOpenMenus] = useState({});
+    const [counts, setCounts] = useState({});
+
+    useEffect(() => { localStorage.setItem('sidebar_collapsed', collapsed); }, [collapsed]);
+
+    // Fetch sidebar counts
+    const fetchCounts = useCallback(() => {
+        axios.get(`/api/dashboard/sidebar_counts?tg_id=${tgId}`)
+            .then(r => setCounts(r.data || {}))
+            .catch(() => {});
+    }, [tgId]);
 
     useEffect(() => {
-        localStorage.setItem('sidebar_collapsed', collapsed);
-    }, [collapsed]);
+        fetchCounts();
+        const iv = setInterval(fetchCounts, 60000);
+        return () => clearInterval(iv);
+    }, [fetchCounts]);
 
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
     const canCreateApp = ['foreman', 'boss', 'superadmin'].includes(role);
-    const canSeeObjectsKP = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canSeeObjects = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeKP = ['brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
 
     const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Monitor;
 
-    const mainNav = [
-        { icon: Home, label: 'Главная', path: '/dashboard', visible: true },
-        { icon: MapPin, label: 'Объекты', path: '/objects', visible: canSeeObjectsKP },
-        { icon: Briefcase, label: 'Ресурсы', path: '/resources', visible: canSeeObjectsKP },
-        { icon: ClipboardList, label: 'Заявки', path: isWorkerOrDriver ? '/my-apps' : '/review', visible: true },
-        { icon: FileText, label: 'СМР', path: '/kp', visible: canSeeKP },
-        { icon: SettingsIcon, label: 'Настройки', path: '/system', visible: isModOrBoss },
+    const toggleMenu = (id) => setOpenMenus(p => ({ ...p, [id]: !p[id] }));
+
+    const navItems = [
+        { id: 'home', icon: Home, label: 'Главная', path: '/dashboard', visible: true },
+        {
+            id: 'objects', icon: MapPin, label: 'Объекты', path: '/objects', visible: canSeeObjects,
+            subItems: [
+                ...(isModOrBoss ? [{ label: 'Создать объект', nav: '/objects?action=create' }] : []),
+                { label: 'Архив', nav: '/objects?tab=archive' },
+                ...(isModOrBoss ? [{ label: 'Заявки', nav: '/objects?tab=requests', countKey: 'object_requests' }] : []),
+            ],
+        },
+        {
+            id: 'resources', icon: Briefcase, label: 'Ресурсы', path: '/resources', visible: canSeeObjects,
+            subItems: [
+                { label: 'Бригады', nav: '/resources?tab=teams' },
+                { label: 'Автопарк', nav: '/resources?tab=equipment' },
+            ],
+        },
+        {
+            id: 'review', icon: ClipboardList, label: 'Заявки', path: isWorkerOrDriver ? '/my-apps' : '/review', visible: true,
+            subItems: isWorkerOrDriver ? [] : [
+                { label: 'Одобренные', nav: '/review?filter=approved', countKey: 'approved_apps' },
+            ],
+        },
+        {
+            id: 'kp', icon: FileText, label: 'СМР', path: '/kp', visible: canSeeKP,
+            subItems: [
+                { label: 'К заполнению', nav: '/kp?tab=to_fill', countKey: 'kp_to_fill' },
+                { label: 'На проверку', nav: '/kp?tab=pending_review', countKey: 'kp_to_review' },
+                { label: 'Готовые', nav: '/kp?tab=approved', countKey: 'kp_done' },
+            ],
+        },
+        {
+            id: 'system', icon: SettingsIcon, label: 'Настройки', path: '/system', visible: isModOrBoss,
+            subItems: [
+                { label: 'Пользователи', nav: '/system?section=users' },
+                { label: 'Рассылка', nav: '/system?section=broadcast' },
+                { label: 'Журнал', nav: '/system?section=logs' },
+            ],
+        },
     ].filter(i => i.visible);
 
     const secondaryNav = [
-        { icon: BookOpen, label: 'Гайд', action: () => navigate('/guide') },
-        { icon: Rocket, label: 'Обновления', action: () => navigate('/updates') },
-        { icon: MessageCircle, label: 'Поддержка', action: () => navigate('/support'), path: '/support' },
+        { icon: BookOpen, label: 'Гайд', path: '/guide' },
+        { icon: Rocket, label: 'Обновления', path: '/updates' },
+        { icon: Headphones, label: 'Поддержка', path: '/support' },
     ];
 
     const w = collapsed ? 64 : 256;
 
     return (
-        <motion.aside
-            className="fixed top-0 left-0 h-screen bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 z-50 flex flex-col select-none"
-            animate={{ width: w }}
-            transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
-        >
-            {/* Logo + Create */}
-            <div className={`flex items-center ${collapsed ? 'justify-center px-2' : 'justify-between px-4'} h-16 border-b border-gray-100 dark:border-gray-800 flex-shrink-0`}>
-                {!collapsed && (
-                    <div className="w-28 h-8 bg-blue-600 dark:bg-blue-500 flex-shrink-0" style={{
-                        WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
-                        WebkitMaskSize: 'contain', maskSize: 'contain',
-                        WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
-                        WebkitMaskPosition: 'left center', maskPosition: 'left center'
-                    }} />
-                )}
-                {collapsed && (
-                    <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                        <span className="text-white font-extrabold text-sm">В</span>
-                    </div>
-                )}
-                {!collapsed && canCreateApp && (
-                    <motion.button
-                        onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
-                        className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1 transition-colors"
-                        whileHover={prefersReducedMotion ? {} : { scale: 1.03 }}
-                        whileTap={prefersReducedMotion ? {} : { scale: 0.97 }}
-                    >
-                        <Plus className="w-3.5 h-3.5" strokeWidth={3} /> Создать
-                    </motion.button>
-                )}
-            </div>
-
-            {/* Main navigation — top section */}
-            <nav className="flex-1 flex flex-col overflow-y-auto py-3 px-2">
-                <div className="space-y-1">
-                    {canCreateApp && collapsed && (
-                        <SidebarItem
-                            icon={Plus} label="Создать" collapsed={collapsed} isActive={false}
-                            onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
-                            accent
-                        />
-                    )}
-                    {mainNav.map(item => (
-                        <SidebarItem
-                            key={item.path}
-                            icon={item.icon}
-                            label={item.label}
-                            collapsed={collapsed}
-                            isActive={location.pathname === item.path}
-                            onClick={() => navigate(item.path)}
-                        />
-                    ))}
-                    <SidebarItem
-                        icon={User} label="Профиль" collapsed={collapsed}
-                        isActive={false}
-                        onClick={() => openProfile(tgId)}
-                    />
-                </div>
-
-                {/* Spacer pushes secondary nav to bottom */}
-                <div className="flex-1" />
-
-                {/* Secondary nav — bottom section */}
-                <div className="space-y-1 pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
-                    {secondaryNav.map(item => (
-                        <SidebarItem
-                            key={item.label}
-                            icon={item.icon}
-                            label={item.label}
-                            collapsed={collapsed}
-                            isActive={item.path ? location.pathname === item.path : false}
-                            onClick={item.action}
-                            secondary
-                        />
-                    ))}
-                    <SidebarItem
-                        icon={ThemeIcon} label="Тема" collapsed={collapsed}
-                        isActive={false} onClick={toggleTheme} secondary
-                    />
-                </div>
-            </nav>
-
-            {/* Collapse toggle */}
-            <button
-                onClick={() => setCollapsed(!collapsed)}
-                className="flex items-center gap-3 px-4 py-3 border-t border-gray-100 dark:border-gray-800 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors flex-shrink-0"
+        <>
+            <motion.aside
+                className="fixed top-0 left-0 h-screen bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 z-50 flex flex-col select-none"
+                animate={{ width: w }}
+                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             >
-                {collapsed ? <PanelLeft className="w-5 h-5 mx-auto" /> : (
-                    <>
-                        <PanelLeftClose className="w-5 h-5" />
-                        <span className="text-xs font-semibold">Свернуть</span>
-                    </>
-                )}
-            </button>
-        </motion.aside>
+                {/* Logo + Create */}
+                <div className={`flex items-center ${collapsed ? 'justify-center px-2' : 'justify-between px-4'} h-16 border-b border-gray-100 dark:border-gray-800 flex-shrink-0`}>
+                    {!collapsed && (
+                        <div className="w-28 h-8 bg-blue-600 dark:bg-blue-500 flex-shrink-0" style={{
+                            WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
+                            WebkitMaskSize: 'contain', maskSize: 'contain',
+                            WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
+                            WebkitMaskPosition: 'left center', maskPosition: 'left center'
+                        }} />
+                    )}
+                    {collapsed && (
+                        <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                            <span className="text-white font-extrabold text-sm">В</span>
+                        </div>
+                    )}
+                    {!collapsed && canCreateApp && (
+                        <motion.button
+                            onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
+                            className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1 transition-colors"
+                            whileHover={anim({ scale: 1.03 })}
+                            whileTap={anim({ scale: 0.97 })}
+                        >
+                            <Plus className="w-3.5 h-3.5" strokeWidth={3} /> Создать
+                        </motion.button>
+                    )}
+                </div>
+
+                {/* Main nav */}
+                <nav className="flex-1 flex flex-col overflow-y-auto py-3 px-2 scrollbar-thin">
+                    <div className="space-y-0.5">
+                        {canCreateApp && collapsed && (
+                            <NavItem icon={Plus} label="Создать" collapsed={collapsed} isActive={false}
+                                onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }} accent />
+                        )}
+                        {navItems.map(item => (
+                            <div key={item.id}>
+                                <NavItem
+                                    icon={item.icon}
+                                    label={item.label}
+                                    collapsed={collapsed}
+                                    isActive={location.pathname === item.path || location.pathname.startsWith(item.path + '/')}
+                                    hasSubItems={!collapsed && item.subItems?.length > 0}
+                                    isOpen={openMenus[item.id]}
+                                    onToggle={() => toggleMenu(item.id)}
+                                    onClick={() => navigate(item.path)}
+                                />
+                                {/* Sub-items */}
+                                {!collapsed && item.subItems?.length > 0 && (
+                                    <AnimatePresence initial={false}>
+                                        {openMenus[item.id] && (
+                                            <motion.div
+                                                initial={{ height: 0, opacity: 0 }}
+                                                animate={{ height: 'auto', opacity: 1 }}
+                                                exit={{ height: 0, opacity: 0 }}
+                                                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: 'easeOut' }}
+                                                className="overflow-hidden"
+                                            >
+                                                <div className="ml-5 pl-3 border-l-2 border-gray-100 dark:border-gray-800 space-y-0.5 py-1">
+                                                    {item.subItems.map(sub => (
+                                                        <SubItem
+                                                            key={sub.label}
+                                                            label={sub.label}
+                                                            count={sub.countKey ? counts[sub.countKey] : undefined}
+                                                            isActive={location.search && sub.nav?.includes(location.search)}
+                                                            onClick={() => navigate(sub.nav)}
+                                                        />
+                                                    ))}
+                                                </div>
+                                            </motion.div>
+                                        )}
+                                    </AnimatePresence>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+
+                    <div className="flex-1" />
+
+                    {/* Secondary nav */}
+                    <div className="space-y-0.5 pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
+                        {secondaryNav.map(item => (
+                            <NavItem
+                                key={item.label}
+                                icon={item.icon}
+                                label={item.label}
+                                collapsed={collapsed}
+                                isActive={location.pathname === item.path}
+                                onClick={() => navigate(item.path)}
+                                secondary
+                            />
+                        ))}
+                        <NavItem icon={ThemeIcon} label="Тема" collapsed={collapsed}
+                            isActive={false} onClick={toggleTheme} secondary />
+
+                        {/* Profile — bottom */}
+                        <NavItem icon={User} label="Профиль" collapsed={collapsed}
+                            isActive={false} onClick={() => openProfile(tgId)} secondary />
+                    </div>
+                </nav>
+            </motion.aside>
+
+            {/* Collapse button — outside sidebar */}
+            <motion.button
+                onClick={() => setCollapsed(!collapsed)}
+                className="fixed bottom-4 z-50 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 p-2 rounded-r-xl shadow-md border border-l-0 border-gray-200 dark:border-gray-700 transition-colors"
+                animate={{ left: collapsed ? 64 : 256 }}
+                transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+            >
+                <motion.div
+                    animate={{ rotate: collapsed ? 180 : 0 }}
+                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2 }}
+                >
+                    <ChevronLeft className="w-4 h-4" />
+                </motion.div>
+            </motion.button>
+        </>
     );
 }
 
-function SidebarItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, accent }) {
+/* ───── Nav item ───── */
+function NavItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, accent, hasSubItems, isOpen, onToggle }) {
     const base = accent
         ? 'bg-blue-600 text-white hover:bg-blue-700'
         : isActive
@@ -155,11 +232,11 @@ function SidebarItem({ icon: Icon, label, collapsed, isActive, onClick, secondar
                 : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200';
 
     return (
-        <motion.button
-            onClick={onClick}
+        <motion.div
             className={`relative w-full flex items-center gap-3 rounded-xl transition-colors cursor-pointer ${collapsed ? 'justify-center px-2 py-2.5' : 'px-3 py-2.5'} ${base}`}
-            whileTap={prefersReducedMotion ? {} : { scale: 0.97 }}
+            whileTap={anim({ scale: 0.97 })}
             title={collapsed ? label : undefined}
+            onClick={onClick}
         >
             {isActive && !accent && (
                 <motion.div
@@ -172,7 +249,7 @@ function SidebarItem({ icon: Icon, label, collapsed, isActive, onClick, secondar
             <AnimatePresence>
                 {!collapsed && (
                     <motion.span
-                        className={`text-sm font-semibold whitespace-nowrap overflow-hidden ${secondary ? 'text-xs' : ''}`}
+                        className={`text-sm font-semibold whitespace-nowrap overflow-hidden flex-1 ${secondary ? 'text-xs' : ''}`}
                         initial={prefersReducedMotion ? false : { opacity: 0, width: 0 }}
                         animate={{ opacity: 1, width: 'auto' }}
                         exit={{ opacity: 0, width: 0 }}
@@ -182,6 +259,43 @@ function SidebarItem({ icon: Icon, label, collapsed, isActive, onClick, secondar
                     </motion.span>
                 )}
             </AnimatePresence>
+            {hasSubItems && !collapsed && (
+                <motion.div
+                    onClick={(e) => { e.stopPropagation(); onToggle(); }}
+                    className="p-1 rounded-md hover:bg-gray-200/60 dark:hover:bg-gray-700/60 transition-colors"
+                    animate={{ rotate: isOpen ? 180 : 0 }}
+                    transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2 }}
+                >
+                    <ChevronDown className="w-3.5 h-3.5" />
+                </motion.div>
+            )}
+        </motion.div>
+    );
+}
+
+/* ───── Sub-item ───── */
+function SubItem({ label, count, isActive, onClick }) {
+    return (
+        <motion.button
+            onClick={onClick}
+            className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-semibold transition-colors ${
+                isActive
+                    ? 'text-blue-600 dark:text-blue-400 bg-blue-50/50 dark:bg-blue-900/10'
+                    : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-800/50'
+            }`}
+            whileTap={anim({ scale: 0.98 })}
+        >
+            <span>{label}</span>
+            {count > 0 && (
+                <motion.span
+                    className="min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 text-[10px] font-bold"
+                    initial={anim({ scale: 0.5, opacity: 0 })}
+                    animate={{ scale: 1, opacity: 1 }}
+                    key={count}
+                >
+                    {count}
+                </motion.span>
+            )}
         </motion.button>
     );
 }

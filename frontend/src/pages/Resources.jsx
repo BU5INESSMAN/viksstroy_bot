@@ -1,11 +1,20 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Briefcase, Users, Truck } from 'lucide-react';
 import Teams from './Teams';
 import Equipment from './Equipment';
 
 export default function Resources() {
-    // Вкладка по умолчанию - Бригады
-    const [activeTab, setActiveTab] = useState('teams');
+    const [searchParams, setSearchParams] = useSearchParams();
+    const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'teams');
+
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab && ['teams', 'equipment'].includes(tab)) {
+            setActiveTab(tab);
+            setSearchParams({}, { replace: true });
+        }
+    }, [searchParams]);
 
     return (
         <main className="px-4 sm:px-6 lg:px-8 space-y-6 pb-24">

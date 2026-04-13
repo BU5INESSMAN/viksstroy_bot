@@ -259,3 +259,61 @@ async def test_notification(tg_id: int = Form(...), platform: str = Form("all"))
 
     asyncio.create_task(_send_test_notifications())
     return {"status": "ok"}
+
+
+@router.get("/api/dashboard/sidebar_counts")
+async def sidebar_counts(tg_id: int = 0):
+    """Counts for sidebar badges."""
+    if db.conn is None:
+        await db.init_db()
+
+    counts = {
+        "object_requests": 0,
+        "approved_apps": 0,
+        "kp_to_fill": 0,
+        "kp_to_review": 0,
+        "kp_done": 0,
+    }
+
+    try:
+        async with db.conn.execute("SELECT COUNT(*) FROM object_requests WHERE status = 'pending'") as cur:
+            row = await cur.fetchone()
+            counts["object_requests"] = row[0] if row else 0
+    except Exception:
+        pass
+
+    try:
+        async with db.conn.execute("SELECT COUNT(*) FROM applications WHERE status = 'approved' AND is_archived = 0") as cur:
+            row = await cur.fetchone()
+            counts["approved_apps"] = row[0] if row else 0
+    except Exception:
+        pass
+
+    try:
+        async with db.conn.execute(
+            "SELECT COUNT(*) FROM applications WHERE status IN ('in_progress', 'completed') AND kp_status NOT IN ('approved', 'submitted') AND kp_archived = 0 AND is_archived = 0"
+        ) as cur:
+            row = await cur.fetchone()
+            counts["kp_to_fill"] = row[0] if row else 0
+    except Exception:
+        pass
+
+    try:
+        async with db.conn.execute(
+            "SELECT COUNT(*) FROM applications WHERE kp_status = 'submitted' AND kp_archived = 0 AND is_archived = 0"
+        ) as cur:
+            row = await cur.fetchone()
+            counts["kp_to_review"] = row[0] if row else 0
+    except Exception:
+        pass
+
+    try:
+        async with db.conn.execute(
+            "SELECT COUNT(*) FROM applications WHERE kp_status = 'approved' AND kp_archived = 0 AND is_archived = 0"
+        ) as cur:
+            row = await cur.fetchone()
+            counts["kp_done"] = row[0] if row else 0
+    except Exception:
+        pass
+
+    return counts

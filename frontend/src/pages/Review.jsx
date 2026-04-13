@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useEffect, useState, useRef } from 'react';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
@@ -37,6 +37,7 @@ const ReviewSection = ({ title, icon: Icon, colorClass, titleColorClass, apps, s
 };
 
 export default function Review() {
+    const [searchParams, setSearchParams] = useSearchParams();
     const tgId = localStorage.getItem('tg_id') || '0';
     const role = localStorage.getItem('user_role') || 'Гость';
     const { openProfile } = useOutletContext();
@@ -46,12 +47,22 @@ export default function Review() {
     const [isProcessing, setIsProcessing] = useState(false);
     const [isScheduleOpen, setScheduleOpen] = useState(false);
     const { confirm, prompt, ConfirmUI } = useConfirm();
+    const approvedRef = useRef(null);
 
     const fetchData = () => {
         axios.get(`/api/applications/review?tg_id=${tgId}`).then(res => setReviewApps(res.data || [])).catch(() => {});
     };
 
     useEffect(() => { fetchData(); }, []);
+
+    // Handle URL params from sidebar
+    useEffect(() => {
+        const filter = searchParams.get('filter');
+        if (filter === 'approved' && approvedRef.current) {
+            approvedRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            setSearchParams({}, { replace: true });
+        }
+    }, [searchParams, reviewApps]);
 
     const handleReviewAction = async (status) => {
         let reason = '';
@@ -194,7 +205,9 @@ export default function Review() {
             </div>
 
             <ReviewSection title="Требуют проверки" icon={Clock} colorClass="border-yellow-200 dark:border-yellow-900/30" titleColorClass="text-yellow-700 dark:text-yellow-500" apps={waitingApps} statusType="waiting" renderAppCard={renderAppCard} />
-            <ReviewSection title="Одобрены (ожидают начала)" icon={CheckCircle} colorClass="border-emerald-200 dark:border-emerald-900/30" titleColorClass="text-emerald-700 dark:text-emerald-500" apps={approvedApps} statusType="approved" renderAppCard={renderAppCard} />
+            <div ref={approvedRef}>
+                <ReviewSection title="Одобрены (ожидают начала)" icon={CheckCircle} colorClass="border-emerald-200 dark:border-emerald-900/30" titleColorClass="text-emerald-700 dark:text-emerald-500" apps={approvedApps} statusType="approved" renderAppCard={renderAppCard} />
+            </div>
             <ReviewSection title="В работе" icon={HardHat} colorClass="border-blue-200 dark:border-blue-900/30" titleColorClass="text-blue-700 dark:text-blue-500" apps={inProgressApps} statusType="published" renderAppCard={renderAppCard} />
             <ReviewSection title="Завершены" icon={Flag} colorClass="border-gray-200 dark:border-gray-700" titleColorClass="text-gray-600 dark:text-gray-400" apps={completedApps} statusType="completed" renderAppCard={renderAppCard} />
 

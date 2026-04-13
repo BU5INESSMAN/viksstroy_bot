@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { Lock, Users, Search, X, Settings } from 'lucide-react';
@@ -11,9 +11,20 @@ import BroadcastPanel from '../features/system/components/BroadcastPanel';
 import LogViewer from '../features/system/components/LogViewer';
 
 export default function System() {
+    const [searchParams, setSearchParams] = useSearchParams();
     const { openProfile } = useOutletContext();
     const role = localStorage.getItem('user_role') || 'Гость';
     const tgId = localStorage.getItem('tg_id') || '0';
+
+    // Handle URL params from sidebar
+    useEffect(() => {
+        const section = searchParams.get('section');
+        if (section) {
+            const el = document.getElementById(`system-${section}`);
+            if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+            setSearchParams({}, { replace: true });
+        }
+    }, [searchParams]);
 
     // --- State ---
     const [users, setUsers] = useState([]);
@@ -248,6 +259,7 @@ export default function System() {
             )}
 
             {/* Broadcast */}
+            <div id="system-broadcast" />
             <BroadcastPanel
                 users={users}
                 broadcastText={broadcastText}
@@ -266,7 +278,7 @@ export default function System() {
             />
 
             {/* Users Table (Grouped by Role) */}
-            <GlassCard className="p-6 sm:p-8 overflow-hidden">
+            <GlassCard id="system-users" className="p-6 sm:p-8 overflow-hidden">
                 <SectionHeader icon={Users} iconColor="text-emerald-500 bg-emerald-500" title="Пользователи"
                     subtitle="Нажмите на пользователя для редактирования." />
 
@@ -342,14 +354,15 @@ export default function System() {
             </GlassCard>
 
             {/* Logs — hidden from moderators */}
-            {role !== 'moderator' && (
+            {role !== 'moderator' && (<>
+                <div id="system-logs" />
                 <LogViewer
                     logs={logs}
                     serverLogs={serverLogs}
                     fetchServerLogs={fetchServerLogs}
                     serverLogsLoading={serverLogsLoading}
                 />
-            )}
+            </>)}
         </div>
     );
 }

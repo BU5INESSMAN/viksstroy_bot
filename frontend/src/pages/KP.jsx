@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
@@ -7,6 +8,7 @@ import {
 } from 'lucide-react';
 
 export default function KP() {
+    const [searchParams, setSearchParams] = useSearchParams();
     const role = localStorage.getItem('user_role') || 'worker';
     const tgId = localStorage.getItem('tg_id') || '0';
 
@@ -15,7 +17,19 @@ export default function KP() {
 
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState({ to_fill: [], pending_review: [], approved: [] });
-    const [activeTab, setActiveTab] = useState(isOffice ? 'approved' : 'to_fill');
+    const [activeTab, setActiveTab] = useState(() => {
+        const tab = searchParams.get('tab');
+        if (tab && ['to_fill', 'pending_review', 'approved'].includes(tab)) return tab;
+        return isOffice ? 'approved' : 'to_fill';
+    });
+
+    useEffect(() => {
+        const tab = searchParams.get('tab');
+        if (tab && ['to_fill', 'pending_review', 'approved'].includes(tab)) {
+            setActiveTab(tab);
+            setSearchParams({}, { replace: true });
+        }
+    }, [searchParams]);
 
     const [modalApp, setModalApp] = useState(null);
     const [kpItems, setKpItems] = useState([]);
