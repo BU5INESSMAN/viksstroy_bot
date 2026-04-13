@@ -329,9 +329,22 @@ async def cleanup_old_logs_job():
         logger.error(f"Ошибка очистки логов: {e}")
 
 
+async def cleanup_expired_sessions_job():
+    """Удаление истекших сессий."""
+    try:
+        if db.conn is None:
+            await db.init_db()
+        await db.conn.execute("DELETE FROM sessions WHERE expires_at < datetime('now')")
+        await db.conn.commit()
+        logger.info("🧹 Очистка истекших сессий выполнена")
+    except Exception as e:
+        logger.error(f"Ошибка очистки сессий: {e}")
+
+
 def start_scheduler():
     """Запускает проверку каждую минуту"""
     scheduler.add_job(check_and_run_tasks, 'cron', minute='*')
     scheduler.add_job(cleanup_old_logs_job, 'cron', hour=3, minute=0, id='cleanup_logs')
+    scheduler.add_job(cleanup_expired_sessions_job, 'cron', hour=4, minute=0, id='cleanup_sessions')
     scheduler.start()
     logger.info("⏳ Планировщик задач успешно запущен (Часовой пояс: Азия/Барнаул)")

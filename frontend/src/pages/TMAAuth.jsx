@@ -38,6 +38,7 @@ export default function TMAAuth() {
           if (res.data.status === 'ok') {
             localStorage.setItem('user_role', res.data.role);
             localStorage.setItem('tg_id', res.data.tg_id);
+            if (res.data.session_token) localStorage.setItem('session_token', res.data.session_token);
             navigate(returnUrl);
           } else if (res.data.status === 'needs_password') {
             setTgUser(res.data);
@@ -86,6 +87,7 @@ export default function TMAAuth() {
       if (response.data.status === 'ok') {
         localStorage.setItem('user_role', response.data.role);
         localStorage.setItem('tg_id', response.data.tg_id);
+        if (response.data.session_token) localStorage.setItem('session_token', response.data.session_token);
         const searchParams = new URLSearchParams(location.search);
         const returnUrl = searchParams.get('return_to') || '/dashboard';
         navigate(returnUrl);

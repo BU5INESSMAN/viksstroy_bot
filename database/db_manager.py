@@ -112,6 +112,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_foreman()
         await self.upgrade_db_for_account_linking()
         await self.upgrade_db_for_log_columns()
+        await self.upgrade_db_for_sessions()
 
         # Инициализация справочника из последнего доступного файла
         latest_file = self.get_latest_catalog_path()
@@ -252,6 +253,21 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             except Exception:
                 pass  # Колонка уже существует
         await self.conn.commit()
+
+    async def upgrade_db_for_sessions(self):
+        """Таблица браузерных сессий для persistent login."""
+        try:
+            await self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS sessions (
+                    token TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP NOT NULL
+                )
+            """)
+            await self.conn.commit()
+        except Exception:
+            pass
 
     async def upgrade_db_for_log_columns(self):
         """Stage 6.9: Добавляет target_type/target_id в таблицу логов + настройку хранения"""

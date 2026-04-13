@@ -70,6 +70,7 @@ export default function MAXAuth() {
         if (res.data.status === 'ok') {
           localStorage.setItem('user_role', res.data.role);
           localStorage.setItem('tg_id', res.data.tg_id);
+          if (res.data.session_token) localStorage.setItem('session_token', res.data.session_token);
           navigate(returnUrl);
         } else if (res.data.status === 'needs_password') {
           setMaxUser({ id: userId, first_name: firstName, last_name: lastName });
@@ -91,6 +92,7 @@ export default function MAXAuth() {
       const response = await axios.post('/api/max/register', formData);
       localStorage.setItem('user_role', response.data.role);
       localStorage.setItem('tg_id', response.data.tg_id);
+      if (response.data.session_token) localStorage.setItem('session_token', response.data.session_token);
 
       const searchParams = new URLSearchParams(location.search);
       const returnUrl = searchParams.get('return_to') || '/dashboard';

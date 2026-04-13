@@ -23,6 +23,7 @@ export default function Login() {
           if (res.data.status === 'ok') {
               localStorage.setItem('user_role', res.data.role);
               localStorage.setItem('tg_id', res.data.tg_id);
+              if (res.data.session_token) localStorage.setItem('session_token', res.data.session_token);
               navigate('/dashboard');
           }
       } catch (err) {

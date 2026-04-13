@@ -4,13 +4,15 @@ import os
 # Переходим на уровень выше (в папку web), чтобы импорты сработали
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Query
 import asyncio
 import time
 import hashlib
 import hmac
 import os
+import secrets
 import logging
+from datetime import datetime, timedelta
 from database_deps import db
 from utils import resolve_id
 from services.notifications import notify_users, notify_fio_match
@@ -18,6 +20,21 @@ from services.notifications import notify_users, notify_fio_match
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Auth"])
+
+
+async def _create_session(user_id: int) -> str:
+    """Generate a session token and store it in DB with 30-day expiry."""
+    token = secrets.token_urlsafe(32)
+    expires = datetime.utcnow() + timedelta(days=30)
+    try:
+        await db.conn.execute(
+            "INSERT INTO sessions (token, user_id, expires_at) VALUES (?, ?, ?)",
+            (token, user_id, expires.isoformat())
+        )
+        await db.conn.commit()
+    except Exception:
+        pass
+    return token
 
 
 async def _check_fio_match(new_user_id: int, new_fio: str):
@@ -68,7 +85,8 @@ async def api_auth_by_code(code: str = Form(...)):
     except:
         pass
 
-    return {"status": "ok", "role": user_dict['role'], "tg_id": primary_id}
+    token = await _create_session(primary_id)
+    return {"status": "ok", "role": user_dict['role'], "tg_id": primary_id, "session_token": token}
 
 
 @router.post("/api/max/web_auth")
@@ -84,7 +102,8 @@ async def max_web_auth(code: str = Form(...)):
     await db.conn.execute("DELETE FROM web_codes WHERE code = ?", (code,))
     await db.conn.commit()
 
-    return {"status": "ok", "role": dict(user)['role'], "tg_id": real_tg_id}
+    token = await _create_session(real_tg_id)
+    return {"status": "ok", "role": dict(user)['role'], "tg_id": real_tg_id, "session_token": token}
 
 
 @router.post("/api/max/auth")
@@ -94,7 +113,8 @@ async def api_max_auth(max_id: int = Form(...), first_name: str = Form(""), last
     user = await db.get_user(real_tg_id)
     if user:
         if dict(user).get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
-        return {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id}
+        token = await _create_session(real_tg_id)
+        return {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id, "session_token": token}
     return {"status": "needs_password", "max_id": max_id, "first_name": first_name, "last_name": last_name}
 
 
@@ -127,7 +147,8 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
     # Stage 5B-1: Поиск совпадений ФИО на другой платформе
     await _check_fio_match(pseudo_tg_id, fio)
 
-    return {"status": "ok", "role": role, "tg_id": pseudo_tg_id}
+    token = await _create_session(pseudo_tg_id)
+    return {"status": "ok", "role": role, "tg_id": pseudo_tg_id, "session_token": token}
 
 
 @router.post("/api/telegram_auth")
@@ -152,8 +173,9 @@ async def telegram_auth(data: dict):
                 await db.update_user_avatar(real_tg_id, photo_url)
                 user_dict['avatar_url'] = photo_url
 
+            token = await _create_session(real_tg_id)
             return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": real_tg_id,
-                    "avatar_url": user_dict.get('avatar_url', photo_url)}
+                    "avatar_url": user_dict.get('avatar_url', photo_url), "session_token": token}
         return {"status": "needs_password", "tg_id": raw_id, "first_name": data.get('first_name', ''),
                 "last_name": data.get('last_name', ''), "photo_url": photo_url}
     except HTTPException:
@@ -168,7 +190,8 @@ async def api_tma_auth(tg_id: int = Form(...), first_name: str = Form(""), last_
     user = await db.get_user(real_tg_id)
     if user:
         if dict(user).get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
-        return {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id}
+        token = await _create_session(real_tg_id)
+        return {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id, "session_token": token}
     return {"status": "needs_password", "tg_id": tg_id, "first_name": first_name, "last_name": last_name}
 
 
@@ -201,4 +224,29 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
     # Stage 5B-1: Поиск совпадений ФИО на другой платформе
     await _check_fio_match(tg_id, fio)
 
-    return {"status": "ok", "role": role, "tg_id": tg_id}
+    token = await _create_session(tg_id)
+    return {"status": "ok", "role": role, "tg_id": tg_id, "session_token": token}
+
+
+@router.get("/api/auth/session")
+async def validate_session(token: str = Query(...)):
+    """Validate a browser session token."""
+    if db.conn is None:
+        await db.init_db()
+    async with db.conn.execute("SELECT user_id, expires_at FROM sessions WHERE token = ?", (token,)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(status_code=401, detail="Сессия не найдена")
+    user_id, expires_at = row
+    if datetime.fromisoformat(expires_at) < datetime.utcnow():
+        try:
+            await db.conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            await db.conn.commit()
+        except Exception:
+            pass
+        raise HTTPException(status_code=401, detail="Сессия истекла")
+    user = await db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Пользователь не найден")
+    user_dict = dict(user)
+    return {"status": "ok", "tg_id": user_id, "role": user_dict['role'], "fio": user_dict.get('fio', '')}
