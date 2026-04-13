@@ -28,7 +28,18 @@ const versionColor = (v) => {
 
 const CHANGELOG = [
     {
-        version: '2.2.0', date: '2026-04-13', title: 'Тех. поддержка с ИИ', current: true,
+        version: '2.3.0', date: '2026-04-13', title: 'Поддержка: просмотр диалогов и Gemma 3', current: true,
+        commits: 4,
+        changes: [
+            { type: 'feat', text: 'Руководители и Супер-Админы могут просматривать все диалоги поддержки' },
+            { type: 'feat', text: 'Split-layout: список обращений + просмотр чата (адаптивный)' },
+            { type: 'feat', text: 'Умные уведомления: только при новых обращениях (перерыв >30 мин)' },
+            { type: 'fix', text: 'Смена AI-модели на Gemma 3 27B (стабильнее, бесплатная)' },
+            { type: 'fix', text: 'Улучшена загрузка базы знаний с fallback-путями' },
+        ],
+    },
+    {
+        version: '2.2.0', date: '2026-04-13', title: 'Тех. поддержка с ИИ',
         commits: 3,
         changes: [
             { type: 'feat', text: 'Страница тех. поддержки с ИИ-ассистентом' },
