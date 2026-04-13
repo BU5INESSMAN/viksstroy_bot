@@ -21,8 +21,8 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
     return (
         <>
-            <div className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-100 dark:border-gray-700 z-40 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors h-[60px] sm:h-[72px]">
-            <div className="max-w-5xl mx-auto flex justify-around items-end h-full pb-safe px-1 sm:px-4">
+            <div className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 z-40 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors h-[68px] sm:h-[76px]">
+            <div className="max-w-5xl mx-auto flex justify-around items-end h-full pt-3 pb-safe px-1 sm:px-4">
 
                 {/* 1. Главная */}
                 <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} />
@@ -69,7 +69,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
                 {/* 7. Меню (Сэндвич) */}
                 <button onClick={() => setIsMenuOpen(true)} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
-                    <Menu className="w-5 h-5 sm:w-6 sm:h-6 sm:mb-1" strokeWidth={2.5} />
+                    <Menu className="w-6 h-6 sm:w-6 sm:h-6 sm:mb-1" strokeWidth={2.5} />
                     <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Меню</span>
                 </button>
 
@@ -131,7 +131,7 @@ function NavBtn({ icon: Icon, label, path, current, onClick }) {
     const isActive = current === path;
     return (
         <button onClick={onClick} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
-            <Icon className="w-5 h-5 sm:w-6 sm:h-6 sm:mb-1" strokeWidth={isActive ? 3 : 2.5} />
+            <Icon className="w-6 h-6 sm:w-6 sm:h-6 sm:mb-1" strokeWidth={isActive ? 3 : 2.5} />
             <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">{label}</span>
         </button>
     );

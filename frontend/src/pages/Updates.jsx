@@ -37,6 +37,9 @@ const CHANGELOG = [
             { type: 'feat', text: 'Сессия сохраняется в браузере на 30 дней (таблица sessions, автовосстановление)' },
             { type: 'fix', text: 'Service Worker: network-first для HTML, cache-first для hashed assets — нет 404 после деплоя' },
             { type: 'feat', text: 'Полный коммит-ориентированный changelog с семантическими версиями' },
+            { type: 'feat', text: 'Блокировка доступа для неавторизованных пользователей' },
+            { type: 'fix', text: 'Увеличены иконки и отступы в нижней навигации' },
+            { type: 'fix', text: 'Гайд отображается в одну колонку' },
         ],
     },
     {

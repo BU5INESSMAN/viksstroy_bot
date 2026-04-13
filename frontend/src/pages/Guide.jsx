@@ -369,7 +369,7 @@ export default function Guide() {
                     <p className="text-gray-500 dark:text-gray-400 text-sm">Попробуйте другой запрос.</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 gap-4">
                     {filtered.map(s => (
                         <Section key={s.id} icon={s.icon} iconColor={s.iconColor} title={s.title} roleHint={s.roleHint} defaultOpen={filtered.length === 1}>
                             {s.content}
