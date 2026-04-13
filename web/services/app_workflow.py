@@ -368,6 +368,28 @@ async def archive_application(app_id: int, tg_id: int):
     await db.add_log(real_tg_id, fio, f"Архивировал заявку №{app_id}", target_type='application', target_id=app_id)
 
 
+async def unarchive_application(app_id: int, tg_id: int):
+    """Restore an archived application back to active state."""
+    from fastapi import HTTPException
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+    if not user or dict(user).get('role') not in ['moderator', 'boss', 'superadmin']:
+        raise HTTPException(403, "Нет прав для восстановления из архива")
+
+    async with db.conn.execute("SELECT is_archived FROM applications WHERE id = ?", (app_id,)) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Заявка не найдена")
+    if not row[0]:
+        raise HTTPException(400, "Заявка не находится в архиве")
+
+    await db.conn.execute("UPDATE applications SET is_archived = 0 WHERE id = ?", (app_id,))
+    await db.conn.commit()
+
+    fio = dict(user).get('fio', 'Модератор')
+    await db.add_log(real_tg_id, fio, f"Восстановил заявку №{app_id} из архива", target_type='application', target_id=app_id)
+
+
 async def remind_foreman_smr(app_id: int, tg_id: int):
     """Send SMR reminder to foreman. Returns app_dict for notification."""
     from fastapi import HTTPException

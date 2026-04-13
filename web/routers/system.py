@@ -135,7 +135,6 @@ async def get_debtors(tg_id: int = 0):
         "WHERE status IN ('in_progress', 'completed') "
         "AND date_target <= ? AND foreman_id IS NOT NULL "
         "AND (kp_status IS NULL OR kp_status NOT IN ('approved', 'submitted')) "
-        "AND (is_archived = 0 OR is_archived IS NULL) "
         "AND (kp_archived = 0 OR kp_archived IS NULL) "
         "ORDER BY foreman_name, date_target ASC",
         (grace_str,)

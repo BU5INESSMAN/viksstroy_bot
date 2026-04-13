@@ -348,7 +348,7 @@ export default function Home() {
                 />
             )}
 
-            <ArchiveModal isOpen={isArchiveOpen} onClose={() => setArchiveOpen(false)} />
+            <ArchiveModal isOpen={isArchiveOpen} onClose={() => setArchiveOpen(false)} onDataChanged={fetchData} />
 
             {/* Confirm dialog nodes from hook and page-level confirm */}
             {FormConfirmUI}

@@ -1,16 +1,21 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import {
     Archive, Calendar, MapPin, HardHat, Users, Truck,
-    X, Search, ChevronDown, ChevronUp
+    X, Search, ChevronDown, ChevronUp, RotateCcw
 } from 'lucide-react';
+import useConfirm from '../../../hooks/useConfirm';
 
-export default function ArchiveModal({ isOpen, onClose }) {
+export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
+    const tgId = localStorage.getItem('tg_id') || '0';
     const [apps, setApps] = useState([]);
     const [loading, setLoading] = useState(false);
     const [dateFrom, setDateFrom] = useState('');
     const [dateTo, setDateTo] = useState('');
     const [expandedDates, setExpandedDates] = useState({});
+    const [restoringId, setRestoringId] = useState(null);
+    const { confirm, ConfirmUI } = useConfirm();
 
     const fetchArchive = async () => {
         setLoading(true);
@@ -28,6 +33,28 @@ export default function ArchiveModal({ isOpen, onClose }) {
             console.error('Archive fetch error', e);
         }
         setLoading(false);
+    };
+
+    const handleRestore = async (appId) => {
+        const ok = await confirm('Восстановить заявку из архива? Она вернётся в канбан-доску.', {
+            title: 'Восстановление из архива',
+            variant: 'info',
+            confirmText: 'Восстановить',
+        });
+        if (!ok) return;
+        setRestoringId(appId);
+        try {
+            const fd = new FormData();
+            fd.append('tg_id', tgId);
+            await axios.post(`/api/applications/${appId}/unarchive`, fd);
+            toast.success('Заявка восстановлена из архива');
+            fetchArchive();
+            if (onDataChanged) onDataChanged();
+        } catch (err) {
+            toast.error(err.response?.data?.detail || 'Ошибка восстановления');
+        } finally {
+            setRestoringId(null);
+        }
     };
 
     useEffect(() => {
@@ -139,6 +166,16 @@ export default function ArchiveModal({ isOpen, onClose }) {
                                                                 ))}
                                                             </div>
                                                         )}
+                                                        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700 flex justify-end">
+                                                            <button
+                                                                onClick={() => handleRestore(a.id)}
+                                                                disabled={restoringId === a.id}
+                                                                className="flex items-center gap-1.5 text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-900/20 hover:bg-emerald-100 dark:hover:bg-emerald-900/40 px-3 py-1.5 rounded-lg border border-emerald-200 dark:border-emerald-800/50 transition-colors active:scale-95 disabled:opacity-50"
+                                                            >
+                                                                <RotateCcw className={`w-3.5 h-3.5 ${restoringId === a.id ? 'animate-spin' : ''}`} />
+                                                                Восстановить
+                                                            </button>
+                                                        </div>
                                                     </div>
                                                 );
                                             })}
@@ -150,6 +187,7 @@ export default function ArchiveModal({ isOpen, onClose }) {
                     </div>
                 </div>
             </div>
+            {ConfirmUI}
         </div>
     );
 }

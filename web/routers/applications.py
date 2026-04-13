@@ -20,7 +20,7 @@ from services.app_workflow import (
     review_application, send_review_notifications,
     change_application_status, send_status_change_notification,
     publish_applications, free_equipment, free_team,
-    archive_application, remind_foreman_smr, send_remind_notification,
+    archive_application, unarchive_application, remind_foreman_smr, send_remind_notification,
 )
 from schedule_generator import generate_schedule_image, publish_schedule_to_group
 
@@ -287,6 +287,12 @@ async def publish_schedule(tg_id: int = Form(0), target_date: str = Form("")):
 @router.post("/api/applications/{app_id}/archive")
 async def archive_app(app_id: int, tg_id: int = Form(0)):
     await archive_application(app_id, tg_id)
+    return {"status": "ok"}
+
+
+@router.post("/api/applications/{app_id}/unarchive")
+async def unarchive_app(app_id: int, tg_id: int = Form(0)):
+    await unarchive_application(app_id, tg_id)
     return {"status": "ok"}
 
 
