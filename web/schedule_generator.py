@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from database_deps import db, TZ_BARNAUL
 from services.max_api import send_max_message, get_max_group_id
 import aiohttp
+from services.tg_session import get_tg_session
 
 logger = logging.getLogger("SCHEDULE_GEN")
 
@@ -310,7 +311,7 @@ async def publish_schedule_to_group(target_date: str = None) -> bool:
         data.add_field("caption", f"📋 Расстановка на {target_date}")
         data.add_field("parse_mode", "HTML")
         try:
-            async with aiohttp.ClientSession() as session:
+            async with await get_tg_session() as session:
                 async with session.post(
                     f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=data
                 ) as resp:

@@ -18,6 +18,7 @@ from services.broadcast_service import broadcast_group, broadcast_dm_roles, broa
 from schedule_generator import publish_schedule_to_group, generate_schedule_image
 import asyncio
 import aiohttp
+from services.tg_session import get_tg_session
 
 router = APIRouter(tags=["System"])
 logger = logging.getLogger("SYSTEM")
@@ -310,7 +311,7 @@ async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
             if bot_token and tg_ids:
                 buf.seek(0)
                 photo_bytes = buf.getvalue()
-                async with aiohttp.ClientSession() as session:
+                async with await get_tg_session() as session:
                     for tid in tg_ids:
                         try:
                             form = aiohttp.FormData()

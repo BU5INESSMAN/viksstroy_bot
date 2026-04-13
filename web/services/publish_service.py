@@ -9,6 +9,7 @@ from database_deps import db
 from utils import fetch_teams_dict, enrich_app_with_team_name
 from services.image_service import create_app_image, strip_html
 from services.max_api import get_max_group_id, send_max_message
+from services.tg_session import get_tg_session
 
 
 async def execute_app_publish(app_dict, target_platform: str = "all"):
@@ -115,7 +116,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
         data.add_field('parse_mode', 'HTML')
 
         try:
-            async with aiohttp.ClientSession() as session:
+            async with await get_tg_session() as session:
                 async with session.post(f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=data) as resp:
                     if resp.status == 200: published_tg = True
         except:

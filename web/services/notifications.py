@@ -7,6 +7,7 @@ from database_deps import db
 from utils import get_all_linked_ids
 from services.image_service import strip_html
 from services.max_api import get_max_group_id, send_max_text, get_max_dm_chat_id
+from services.tg_session import get_tg_session
 
 from datetime import datetime, timedelta
 from database_deps import TZ_BARNAUL
@@ -35,7 +36,7 @@ async def notify_group_chat(text: str, url_path: str = "dashboard", target_platf
 
     if target_platform in ["all", "tg"] and bot_token and group_id:
         try:
-            async with aiohttp.ClientSession() as session:
+            async with await get_tg_session() as session:
                 await session.post(
                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
                     json={"chat_id": str(group_id), "text": text, "parse_mode": "HTML", "reply_markup": markup}
@@ -124,7 +125,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     if "report_group" in target_roles:
         if group_id and target_platform in ["all", "tg"] and bot_token:
             try:
-                async with aiohttp.ClientSession() as session:
+                async with await get_tg_session() as session:
                     await session.post(
                         f"https://api.telegram.org/bot{bot_token}/sendMessage",
                         json={"chat_id": str(group_id), "text": text, "parse_mode": "HTML", "reply_markup": markup}
@@ -142,7 +143,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
     if target_platform in ["all", "tg"] and bot_token:
         try:
-            async with aiohttp.ClientSession() as session:
+            async with await get_tg_session() as session:
                 for tid in final_tg_ids:
                     try:
                         await session.post(

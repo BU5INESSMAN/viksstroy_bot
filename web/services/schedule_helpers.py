@@ -8,6 +8,7 @@ from database_deps import db, TZ_BARNAUL
 from utils import get_all_linked_ids
 from services.image_service import strip_html
 from services.max_api import get_max_dm_chat_id, send_max_text
+from services.tg_session import get_tg_session
 
 
 async def get_smr_debtors():
@@ -111,7 +112,7 @@ async def send_smart_schedule_prompt():
         for lid in linked_ids:
             if lid > 0 and notify_tg and bot_token:
                 try:
-                    async with aiohttp.ClientSession() as session:
+                    async with await get_tg_session() as session:
                         await session.post(
                             f"https://api.telegram.org/bot{bot_token}/sendMessage",
                             json={"chat_id": lid, "text": text,
