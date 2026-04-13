@@ -13,7 +13,7 @@ import logging
 from datetime import datetime
 from database_deps import db, TZ_BARNAUL
 from utils import resolve_id
-from services.notifications import notify_users
+from services.notifications import notify_users, notify_group_chat
 from services.image_service import process_base64_image
 
 logger = logging.getLogger(__name__)
@@ -38,8 +38,8 @@ async def set_equipment_free(tg_id: int = Form(...)):
 
         async def _send_free_notification():
             try:
-                await notify_users(["report_group", "boss", "superadmin"],
-                                   f"🟢 <b>Техника освобождена</b>\n👤 Водитель: {fio}\n🕒 Время: {now}", "equipment", category="orders")
+                await notify_group_chat(
+                    f"🟢 <b>Техника освобождена</b>\n👤 Водитель: {fio}\n🕒 Время: {now}", "equipment")
             except Exception as e:
                 logger.error(f"Equipment free notification error: {e}")
 
