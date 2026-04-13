@@ -14,11 +14,10 @@ logger = logging.getLogger("SUPPORT")
 
 MODELS = [
     "google/gemma-3-27b-it:free",
-    "google/gemma-3-12b-it:free",
+    "nousresearch/hermes-3-llama-3.1-405b:free",
     "meta-llama/llama-3.2-3b-instruct:free",
     "google/gemma-3-4b-it:free",
     "google/gemma-3n-e4b-it:free",
-    "nousresearch/hermes-3-llama-3.1-405b:free",
 ]
 
 _knowledge_cache = None
@@ -250,8 +249,8 @@ async def support_chat(request: Request):
                         result = await resp.json()
                         reply = result["choices"][0]["message"]["content"]
                         break
-                    elif resp.status == 429:
-                        logger.warning(f"Model {model} rate limited (429), trying next")
+                    elif resp.status in (429, 400, 503):
+                        logger.warning(f"Model {model} returned {resp.status}, trying next")
                         continue
                     else:
                         error_text = await resp.text()
