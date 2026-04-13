@@ -166,13 +166,13 @@ export default function SystemSettings({ settings, handleSettingChange, saveSett
                         <div className="space-y-3">
                             <div>
                                 <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest">Ссылка на TG поддержку</label>
-                                <input type="text" name="support_tg_link" value={settings.support_tg_link || ''} onChange={handleSettingChange}
+                                <input type="text" name="support_tg_link_field" autoComplete="off" data-lpignore="true" value={settings.support_tg_link || ''} onChange={e => handleSettingChange({ target: { name: 'support_tg_link', value: e.target.value } })}
                                     placeholder="https://t.me/username"
                                     className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-violet-500 block w-full p-3 dark:text-white shadow-sm outline-none" />
                             </div>
                             <div>
                                 <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest">Ссылка на MAX поддержку</label>
-                                <input type="text" name="support_max_link" value={settings.support_max_link || ''} onChange={handleSettingChange}
+                                <input type="text" name="support_max_link_field" autoComplete="off" data-lpignore="true" value={settings.support_max_link || ''} onChange={e => handleSettingChange({ target: { name: 'support_max_link', value: e.target.value } })}
                                     placeholder="https://max.ru/..."
                                     className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-violet-500 block w-full p-3 dark:text-white shadow-sm outline-none" />
                             </div>
@@ -180,7 +180,7 @@ export default function SystemSettings({ settings, handleSettingChange, saveSett
                                 <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest flex items-center gap-1">
                                     <Key className="w-3 h-3" /> AI API ключ (OpenRouter)
                                 </label>
-                                <input type="password" name="gemini_api_key" value={settings.gemini_api_key || ''} onChange={handleSettingChange}
+                                <input type="text" name="ai_api_key_field" autoComplete="off" data-lpignore="true" value={settings.gemini_api_key || ''} onChange={e => handleSettingChange({ target: { name: 'gemini_api_key', value: e.target.value } })}
                                     placeholder="sk-or-..."
                                     className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-violet-500 block w-full p-3 dark:text-white shadow-sm outline-none" />
                             </div>
