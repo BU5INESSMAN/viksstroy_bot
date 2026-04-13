@@ -73,6 +73,10 @@ async def notify_group_chat(text: str, url_path: str = "dashboard", target_platf
                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
                     json={"chat_id": str(group_id), "text": text, "parse_mode": "HTML", "reply_markup": markup}
                 )
+            try:
+                await db.add_log(0, 'Система', f"📨 TG групповое: {strip_html(text)[:100]}", target_type='notification')
+            except Exception:
+                pass
         except:
             pass
 
@@ -81,6 +85,10 @@ async def notify_group_chat(text: str, url_path: str = "dashboard", target_platf
         max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"{BASE_URL}{redirect}")]]
         max_payload = ButtonsPayload(buttons=max_buttons).pack()
         await send_max_text(max_bot_token, max_group_id, max_plain_text, attachments=[max_payload])
+        try:
+            await db.add_log(0, 'Система', f"📨 MAX групповое: {max_plain_text[:100]}", target_type='notification')
+        except Exception:
+            pass
 
 
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
@@ -147,6 +155,19 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         [{"text": "📱 Открыть платформу", "web_app": {"url": f"{BASE_URL}/{url_path}"}}]]}
 
     max_plain_text = strip_html(text)
+    short_text = strip_html(text)[:100]
+
+    # Batch-lookup FIO for logging
+    _fio_cache = {}
+    all_log_ids = set(final_tg_ids) | {-int(m) for m in final_max_ids}
+    if all_log_ids:
+        try:
+            for _lid in all_log_ids:
+                u = await db.get_user(_lid)
+                if u:
+                    _fio_cache[_lid] = dict(u).get('fio', f'#{_lid}')
+        except Exception:
+            pass
 
     # Групповой чат — только если явно указан "report_group"
     if "report_group" in target_roles:
@@ -171,6 +192,11 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
                 max_btn = [[LinkButton(text="📱 Открыть платформу", url=auth_url)]]
                 att = [ButtonsPayload(buttons=max_btn).pack()]
             await send_max_text(max_bot_token, dm_chat_id, max_plain_text, attachments=att)
+            try:
+                fio = _fio_cache.get(-int(mid), f'MAX#{mid}')
+                await db.add_log(0, 'Система', f"📨 MAX → {fio}: {short_text}", target_type='notification', target_id=int(mid))
+            except Exception:
+                pass
 
     if target_platform in ["all", "tg"] and bot_token:
         try:
@@ -181,6 +207,11 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
                             f"https://api.telegram.org/bot{bot_token}/sendMessage",
                             json={"chat_id": tid, "text": text, "parse_mode": "HTML", "reply_markup": markup}
                         )
+                        try:
+                            fio = _fio_cache.get(tid, f'TG#{tid}')
+                            await db.add_log(0, 'Система', f"📨 TG → {fio}: {short_text}", target_type='notification', target_id=tid)
+                        except Exception:
+                            pass
                     except:
                         pass
         except:

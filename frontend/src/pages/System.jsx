@@ -16,15 +16,24 @@ export default function System() {
     const role = localStorage.getItem('user_role') || 'Гость';
     const tgId = localStorage.getItem('tg_id') || '0';
 
-    // Handle URL params from sidebar
+    // Handle URL params from sidebar — scroll after data loads
+    const [pendingSection, setPendingSection] = useState(() => searchParams.get('section') || '');
+
     useEffect(() => {
         const section = searchParams.get('section');
         if (section) {
-            const el = document.getElementById(`system-${section}`);
-            if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+            setPendingSection(section);
             setSearchParams({}, { replace: true });
         }
     }, [searchParams]);
+
+    useEffect(() => {
+        if (pendingSection && users.length > 0) {
+            const el = document.getElementById(`system-${pendingSection}`);
+            if (el) setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+            setPendingSection('');
+        }
+    }, [pendingSection, users]);
 
     // --- State ---
     const [users, setUsers] = useState([]);
