@@ -12,6 +12,12 @@ from utils import resolve_id
 router = APIRouter(tags=["Support"])
 logger = logging.getLogger("SUPPORT")
 
+MODELS = [
+    "google/gemma-3-27b-it:free",
+    "google/gemma-3-12b-it:free",
+    "meta-llama/llama-3.2-3b-instruct:free",
+]
+
 _knowledge_cache = None
 
 
@@ -96,7 +102,7 @@ async def all_dialogs(tg_id: int = 0):
                COUNT(*) as msg_count,
                (SELECT message FROM support_chats sc2 WHERE sc2.user_id = sc.user_id ORDER BY sc2.id DESC LIMIT 1) as last_text
         FROM support_chats sc
-        LEFT JOIN users u ON u.tg_id = sc.user_id
+        LEFT JOIN users u ON u.user_id = sc.user_id
         GROUP BY sc.user_id
         ORDER BY MAX(sc.id) DESC
     """) as cur:
@@ -211,27 +217,36 @@ async def support_chat(request: Request):
     try:
         import aiohttp
 
+        reply = None
         async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                json={
-                    "model": "google/gemma-3-27b-it:free",
-                    "messages": messages
-                },
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://miniapp.viks22.ru",
-                    "X-Title": "VIKS Schedule"
-                }
-            ) as resp:
-                if resp.status == 200:
-                    result = await resp.json()
-                    reply = result["choices"][0]["message"]["content"]
-                else:
-                    error_text = await resp.text()
-                    logger.error(f"OpenRouter API error {resp.status}: {error_text}")
-                    reply = "Ошибка AI сервиса. Попробуйте позже или обратитесь через мессенджеры."
+            for model in MODELS:
+                async with session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    json={
+                        "model": model,
+                        "messages": messages
+                    },
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "https://miniapp.viks22.ru",
+                        "X-Title": "VIKS Schedule"
+                    }
+                ) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        reply = result["choices"][0]["message"]["content"]
+                        break
+                    elif resp.status == 429:
+                        logger.warning(f"Model {model} rate limited (429), trying next")
+                        continue
+                    else:
+                        error_text = await resp.text()
+                        logger.error(f"OpenRouter API error {resp.status} for {model}: {error_text}")
+                        break
+
+        if not reply:
+            reply = "Ошибка AI сервиса. Попробуйте позже или обратитесь через мессенджеры."
     except Exception as e:
         logger.error(f"OpenRouter API error: {e}")
         reply = "Ошибка соединения с AI. Обратитесь через мессенджеры ниже."
