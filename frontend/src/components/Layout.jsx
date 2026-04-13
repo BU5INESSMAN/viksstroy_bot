@@ -7,6 +7,7 @@ import { motion } from 'framer-motion';
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 import Header from '../features/layout/components/Header';
 import BottomNav from '../features/layout/components/BottomNav';
+import Sidebar from '../features/layout/components/Sidebar';
 import ProfileModal from '../features/layout/components/ProfileModal';
 import SessionModal from '../features/layout/components/SessionModal';
 
@@ -84,10 +85,19 @@ export default function Layout() {
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
+    const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === 'true');
+
+    // Sync sidebar collapsed state from localStorage (Sidebar writes it)
+    useEffect(() => {
+        const onStorage = () => setSidebarCollapsed(localStorage.getItem('sidebar_collapsed') === 'true');
+        window.addEventListener('storage', onStorage);
+        const id = setInterval(onStorage, 300);
+        return () => { window.removeEventListener('storage', onStorage); clearInterval(id); };
+    }, []);
+
     useEffect(() => {
         const publicPaths = ['/login', '/invite', '/equip-invite'];
         const isPublic = publicPaths.some(path => location.pathname.startsWith(path));
-
         if (!tgId && !isPublic && location.pathname !== '/') {
             setSessionModalOpen(true);
         }
@@ -226,27 +236,52 @@ export default function Layout() {
         );
     }
 
+    const sidebarWidth = sidebarCollapsed ? 64 : 256;
+
     return (
-        <div className="bg-gray-50/50 dark:bg-gray-900 min-h-screen text-gray-800 dark:text-gray-100 pb-24 transition-colors duration-200">
-            <Header
-                isTMA={isTMA}
-                realRole={realRole}
-                role={role}
-                theme={theme}
-                toggleTheme={toggleTheme}
-                isMenuOpen={isMenuOpen}
-                setIsMenuOpen={setIsMenuOpen}
-            />
+        <div className="flex min-h-screen bg-gray-50/50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-200">
+            {/* Sidebar — desktop only */}
+            <div className="hidden lg:block">
+                <Sidebar
+                    role={role}
+                    openProfile={openProfile}
+                    setGlobalCreateAppOpen={setGlobalCreateAppOpen}
+                    theme={theme}
+                    toggleTheme={toggleTheme}
+                />
+            </div>
 
-            <motion.div
-                key={location.pathname}
-                initial={prefersReducedMotion ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ duration: 0.15 }}
+            {/* Main content area */}
+            <div
+                className="flex-1 flex flex-col min-h-screen pb-20 lg:pb-0 transition-[margin] duration-200"
+                style={{ marginLeft: typeof window !== 'undefined' && window.innerWidth >= 1024 ? sidebarWidth : 0 }}
             >
-                <Outlet context={{ openProfile, isGlobalCreateAppOpen, setGlobalCreateAppOpen }} />
-            </motion.div>
+                {/* Header — mobile only */}
+                <div className="lg:hidden">
+                    <Header
+                        isTMA={isTMA}
+                        realRole={realRole}
+                        role={role}
+                        theme={theme}
+                        toggleTheme={toggleTheme}
+                        isMenuOpen={isMenuOpen}
+                        setIsMenuOpen={setIsMenuOpen}
+                    />
+                </div>
 
+                {/* Page content */}
+                <motion.main
+                    key={location.pathname}
+                    className="flex-1"
+                    initial={prefersReducedMotion ? false : { opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    transition={{ duration: 0.15 }}
+                >
+                    <Outlet context={{ openProfile, isGlobalCreateAppOpen, setGlobalCreateAppOpen }} />
+                </motion.main>
+            </div>
+
+            {/* BottomNav — mobile only (lg:hidden is inside the component) */}
             <BottomNav
                 role={role}
                 canCreateApp={canCreateApp}

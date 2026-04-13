@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-    Home, ClipboardList, Briefcase, Settings as SettingsIcon, User, Plus, MapPin, FileText, Menu, X
+    Home, ClipboardList, Briefcase, Settings as SettingsIcon, User, Plus,
+    MapPin, FileText, Menu, X, BookOpen, Rocket, MessageCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -11,8 +12,6 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
     const navigate = useNavigate();
     const location = useLocation();
     const tgId = localStorage.getItem('tg_id');
-
-    // Локальный стейт для мобильного сэндвич-меню
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
@@ -21,62 +20,54 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
     return (
         <>
-            <div className="fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 z-40 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors h-[68px] sm:h-[76px]">
-            <div className="max-w-5xl mx-auto flex justify-around items-end h-full pt-3 pb-safe px-1 sm:px-4">
+            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 z-40 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors h-[60px] sm:h-[68px]">
+            <div className="max-w-5xl mx-auto flex justify-around items-end h-full pt-2 pb-safe px-1 sm:px-4">
 
-                {/* 1. Главная */}
                 <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} />
 
-                {/* 2. Объекты */}
                 {canSeeObjectsKP && (
                     <NavBtn icon={MapPin} label="Объекты" path="/objects" current={location.pathname} onClick={() => navigate('/objects')} />
                 )}
 
-                {/* 3. Ресурсы (Бригады + Автопарк) */}
                 {canSeeObjectsKP && (
                     <NavBtn icon={Briefcase} label="Ресурсы" path="/resources" current={location.pathname} onClick={() => navigate('/resources')} />
                 )}
 
-                {/* 4. Центральная кнопка СОЗДАТЬ */}
                 {canCreateApp && (
-                    <div className="relative w-full flex flex-col justify-center items-center sm:justify-end sm:pb-2.5 h-full">
+                    <div className="relative w-full flex flex-col justify-center items-center sm:justify-end sm:pb-2 h-full">
                         <motion.button
                             onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
-                            className="absolute -top-4 sm:-top-6 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] border-4 border-white dark:border-gray-800 transition-colors z-50"
-                            whileHover={prefersReducedMotion ? {} : { scale: 1.08 }}
+                            className="absolute -top-4 sm:-top-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] border-[3px] border-white dark:border-gray-800 transition-colors z-50"
+                            whileHover={prefersReducedMotion ? {} : { scale: 1.05 }}
                             whileTap={prefersReducedMotion ? {} : { scale: 0.92 }}
                             transition={{ duration: 0.15 }}
                         >
-                            <Plus className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={2.5} />
+                            <Plus className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2.5} />
                         </motion.button>
-                        <span className="hidden sm:block text-[10px] font-extrabold text-blue-600 dark:text-blue-400 uppercase tracking-wide mt-7 sm:mt-0">Создать</span>
+                        <span className="hidden sm:block text-[10px] font-extrabold text-blue-600 dark:text-blue-400 uppercase tracking-wide mt-6 sm:mt-0">Создать</span>
                     </div>
                 )}
 
-                {/* 5. Заявки (Мои заявки или Модерация) */}
                 <NavBtn
-                    icon={ClipboardList}
-                    label="Заявки"
+                    icon={ClipboardList} label="Заявки"
                     path={isWorkerOrDriver ? "/my-apps" : "/review"}
                     current={location.pathname}
                     onClick={() => navigate(isWorkerOrDriver ? "/my-apps" : "/review")}
                 />
 
-                {/* 6. СМР (Прайс и выполнение) */}
                 {canSeeKP && (
                     <NavBtn icon={FileText} label="СМР" path="/kp" current={location.pathname} onClick={() => navigate('/kp')} />
                 )}
 
-                {/* 7. Меню (Сэндвич) */}
-                <button onClick={() => setIsMenuOpen(true)} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
-                    <Menu className="w-6 h-6 sm:w-6 sm:h-6 sm:mb-1" strokeWidth={2.5} />
+                <button onClick={() => setIsMenuOpen(true)} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2 h-full w-full transition-all active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                    <Menu className="w-5 h-5 sm:w-5 sm:h-5 sm:mb-1" strokeWidth={2.5} />
                     <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Меню</span>
                 </button>
 
             </div>
             </div>
 
-            {/* ВСПЛЫВАЮЩЕЕ МЕНЮ (BOTTOM SHEET) */}
+            {/* Bottom Sheet Menu */}
             <AnimatePresence>
             {isMenuOpen && (
                 <motion.div
@@ -92,31 +83,27 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                         initial={prefersReducedMotion ? false : { opacity: 0, y: 40 }}
                         animate={{ opacity: 1, y: 0 }}
                         exit={{ opacity: 0, y: 40 }}
-                        transition={{ duration: 0.25, ease: [0.25, 0.1, 0.25, 1] }}
+                        transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
                         onClick={e => e.stopPropagation()}
                     >
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold dark:text-white">Дополнительно</h3>
-                            <button onClick={() => setIsMenuOpen(false)} className="p-1 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500 hover:text-red-500">
-                                <X className="w-5 h-5" />
+                        <div className="flex justify-between items-center mb-5">
+                            <h3 className="text-lg font-bold dark:text-white">Дополнительно</h3>
+                            <button onClick={() => setIsMenuOpen(false)} className="p-1.5 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500 hover:text-red-500 transition-colors">
+                                <X className="w-4 h-4" />
                             </button>
                         </div>
 
-                        <div className="space-y-3">
+                        <div className="space-y-2">
                             {isModOrBoss && (
-                                <button onClick={() => { setIsMenuOpen(false); navigate('/system'); }} className="w-full flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors font-bold text-gray-800 dark:text-white border border-gray-100 dark:border-gray-700 shadow-sm active:scale-95">
-                                    <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-xl text-blue-600 dark:text-blue-400">
-                                        <SettingsIcon className="w-5 h-5" />
-                                    </div>
-                                    Система и Настройки
-                                </button>
+                                <MenuRow icon={SettingsIcon} color="blue" label="Система и Настройки" onClick={() => { setIsMenuOpen(false); navigate('/system'); }} />
                             )}
-                            <button onClick={() => { setIsMenuOpen(false); openProfile(tgId); }} className="w-full flex items-center gap-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-2xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors font-bold text-gray-800 dark:text-white border border-gray-100 dark:border-gray-700 shadow-sm active:scale-95">
-                                <div className="p-2 bg-indigo-100 dark:bg-indigo-900/30 rounded-xl text-indigo-600 dark:text-indigo-400">
-                                    <User className="w-5 h-5" />
-                                </div>
-                                Мой Профиль
-                            </button>
+                            <MenuRow icon={User} color="indigo" label="Мой Профиль" onClick={() => { setIsMenuOpen(false); openProfile(tgId); }} />
+
+                            <div className="h-px bg-gray-100 dark:bg-gray-700 my-2" />
+
+                            <MenuRow icon={BookOpen} color="indigo" label="Инструкция" onClick={() => { setIsMenuOpen(false); navigate('/guide'); }} />
+                            <MenuRow icon={Rocket} color="emerald" label="Обновления" onClick={() => { setIsMenuOpen(false); navigate('/updates'); }} />
+                            <MenuRow icon={MessageCircle} color="blue" label="Техподдержка" onClick={() => { setIsMenuOpen(false); window.open('https://t.me/BU5INESSMAN', '_blank'); }} />
                         </div>
                     </motion.div>
                 </motion.div>
@@ -126,12 +113,32 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
     );
 }
 
-// Вспомогательный компонент для кнопок меню
+function MenuRow({ icon: Icon, color, label, onClick }) {
+    const colorMap = {
+        blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+        indigo: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
+        emerald: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',
+    };
+    return (
+        <button onClick={onClick} className="w-full flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors font-semibold text-sm text-gray-800 dark:text-white border border-gray-100 dark:border-gray-700 active:scale-[0.98]">
+            <div className={`p-1.5 rounded-lg ${colorMap[color] || colorMap.blue}`}>
+                <Icon className="w-4 h-4" />
+            </div>
+            {label}
+        </button>
+    );
+}
+
 function NavBtn({ icon: Icon, label, path, current, onClick }) {
     const isActive = current === path;
     return (
-        <button onClick={onClick} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2.5 h-full w-full transition-all active:scale-95 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
-            <Icon className="w-6 h-6 sm:w-6 sm:h-6 sm:mb-1" strokeWidth={isActive ? 3 : 2.5} />
+        <button onClick={onClick} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2 h-full w-full transition-all active:scale-95 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+            <motion.div
+                animate={prefersReducedMotion ? {} : { scale: isActive ? 1.1 : 1 }}
+                transition={{ type: 'spring', duration: 0.25, bounce: 0.15 }}
+            >
+                <Icon className="w-5 h-5 sm:w-5 sm:h-5 sm:mb-1" strokeWidth={isActive ? 2.8 : 2.2} />
+            </motion.div>
             <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">{label}</span>
         </button>
     );
