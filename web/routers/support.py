@@ -13,6 +13,20 @@ from services.notifications import notify_users
 router = APIRouter(tags=["Support"])
 logger = logging.getLogger("SUPPORT")
 
+_knowledge_cache = None
+
+def _load_knowledge_base() -> str:
+    global _knowledge_cache
+    if _knowledge_cache is not None:
+        return _knowledge_cache
+    knowledge_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "support_knowledge.txt")
+    try:
+        with open(knowledge_path, "r", encoding="utf-8") as f:
+            _knowledge_cache = f.read()
+            return _knowledge_cache
+    except Exception:
+        return ""
+
 
 async def _get_setting(key: str) -> str:
     async with db.conn.execute("SELECT value FROM settings WHERE key = ?", (key,)) as cur:
@@ -84,13 +98,23 @@ async def support_chat(request: Request):
         await db.conn.commit()
         return {"reply": fallback}
 
-    # Build OpenAI-compatible messages array
-    messages = [
-        {
-            "role": "system",
-            "content": "Ты — ИИ-ассистент платформы ВИКС Расписание. Это платформа для управления строительными нарядами. Основные функции: Канбан-доска заявок, управление бригадами и техникой, расстановки, обмен техникой, СМР отчёты, связывание аккаунтов TG и MAX, объекты. Роли: Супер-Админ > Руководитель > Модератор > Прораб > Бригадир > Рабочий > Водитель. Отвечай кратко, по делу, на русском языке. Если не знаешь ответа — предложи обратиться к человеку через мессенджеры."
-        }
-    ]
+    # Build OpenAI-compatible messages array with knowledge base
+    knowledge = _load_knowledge_base()
+
+    system_content = f"""Ты — ИИ-ассистент платформы ВИКС Расписание. Помогай пользователям разобраться в работе платформы.
+
+Вот полная база знаний:
+
+{knowledge}
+
+ПРАВИЛА:
+- Отвечай кратко и по делу, на русском языке
+- Используй информацию из базы знаний для ответов
+- Если вопрос выходит за рамки базы знаний — честно скажи и предложи обратиться к человеку через мессенджеры
+- Не выдумывай функции которых нет в базе знаний
+- Форматируй ответ с emoji где уместно"""
+
+    messages = [{"role": "system", "content": system_content}]
     for msg in history[-10:]:
         messages.append({
             "role": "user" if msg.get("from") == "user" else "assistant",
