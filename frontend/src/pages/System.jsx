@@ -16,6 +16,9 @@ export default function System() {
     const role = localStorage.getItem('user_role') || 'Гость';
     const tgId = localStorage.getItem('tg_id') || '0';
 
+    // --- State ---
+    const [users, setUsers] = useState([]);
+
     // Handle URL params from sidebar — scroll after data loads
     const [pendingSection, setPendingSection] = useState(() => searchParams.get('section') || '');
 
@@ -34,9 +37,6 @@ export default function System() {
             setPendingSection('');
         }
     }, [pendingSection, users]);
-
-    // --- State ---
-    const [users, setUsers] = useState([]);
     const [logs, setLogs] = useState([]);
     const [serverLogs, setServerLogs] = useState([]);
     const [serverLogsLoading, setServerLogsLoading] = useState(false);
