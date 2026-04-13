@@ -178,10 +178,10 @@ export default function SystemSettings({ settings, handleSettingChange, saveSett
                             </div>
                             <div>
                                 <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest flex items-center gap-1">
-                                    <Key className="w-3 h-3" /> Gemini API ключ
+                                    <Key className="w-3 h-3" /> AI API ключ (OpenRouter)
                                 </label>
                                 <input type="password" name="gemini_api_key" value={settings.gemini_api_key || ''} onChange={handleSettingChange}
-                                    placeholder="AIza..."
+                                    placeholder="sk-or-..."
                                     className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-violet-500 block w-full p-3 dark:text-white shadow-sm outline-none" />
                             </div>
                         </div>

@@ -73,7 +73,7 @@ async def support_chat(request: Request):
 
     asyncio.create_task(_notify_support_request())
 
-    # Get Gemini API key
+    # Get AI API key (OpenRouter)
     api_key = await _get_setting("gemini_api_key")
     if not api_key:
         fallback = "ИИ-поддержка не настроена. Обратитесь к администратору или используйте мессенджеры ниже."
@@ -84,53 +84,46 @@ async def support_chat(request: Request):
         await db.conn.commit()
         return {"reply": fallback}
 
-    # Build messages array from history
-    contents = []
+    # Build OpenAI-compatible messages array
+    messages = [
+        {
+            "role": "system",
+            "content": "Ты — ИИ-ассистент платформы ВИКС Расписание. Это платформа для управления строительными нарядами. Основные функции: Канбан-доска заявок, управление бригадами и техникой, расстановки, обмен техникой, СМР отчёты, связывание аккаунтов TG и MAX, объекты. Роли: Супер-Админ > Руководитель > Модератор > Прораб > Бригадир > Рабочий > Водитель. Отвечай кратко, по делу, на русском языке. Если не знаешь ответа — предложи обратиться к человеку через мессенджеры."
+        }
+    ]
     for msg in history[-10:]:
-        contents.append({
-            "role": "user" if msg.get("from") == "user" else "model",
-            "parts": [{"text": msg.get("text", "")}]
+        messages.append({
+            "role": "user" if msg.get("from") == "user" else "assistant",
+            "content": msg.get("text", "")
         })
-    contents.append({"role": "user", "parts": [{"text": user_message}]})
+    messages.append({"role": "user", "content": user_message})
 
     try:
         import aiohttp
 
-        system_prompt = """Ты — ИИ-ассистент платформы ВИКС Расписание.
-Это платформа для управления строительными нарядами.
-
-Основные функции:
-- Канбан-доска заявок (создание, модерация, публикация нарядов)
-- Управление бригадами и техникой
-- Расстановки (ежедневное расписание в виде картинки)
-- Обмен техникой между прорабами
-- Выполненные работы (СМР отчёты)
-- Связывание аккаунтов Telegram и MAX
-- Объекты (строительные площадки)
-
-Роли: Супер-Админ > Руководитель > Модератор > Прораб > Бригадир > Рабочий > Водитель
-
-Отвечай кратко, по делу, на русском языке. Если не знаешь ответа — предложи обратиться к человеку через мессенджеры."""
-
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}",
+                "https://openrouter.ai/api/v1/chat/completions",
                 json={
-                    "system_instruction": {"parts": [{"text": system_prompt}]},
-                    "contents": contents
+                    "model": "google/gemini-2.0-flash-exp:free",
+                    "messages": messages
                 },
-                headers={"Content-Type": "application/json"}
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                    "HTTP-Referer": "https://miniapp.viks22.ru",
+                    "X-Title": "VIKS Schedule"
+                }
             ) as resp:
                 if resp.status == 200:
                     result = await resp.json()
-                    reply = (result.get("candidates", [{}])[0]
-                             .get("content", {})
-                             .get("parts", [{}])[0]
-                             .get("text", "Ошибка получения ответа"))
+                    reply = result["choices"][0]["message"]["content"]
                 else:
+                    error_text = await resp.text()
+                    logger.error(f"OpenRouter API error {resp.status}: {error_text}")
                     reply = "Ошибка AI сервиса. Попробуйте позже или обратитесь через мессенджеры."
     except Exception as e:
-        logger.error(f"Gemini API error: {e}")
+        logger.error(f"OpenRouter API error: {e}")
         reply = "Ошибка соединения с AI. Обратитесь через мессенджеры ниже."
 
     # Save AI reply
