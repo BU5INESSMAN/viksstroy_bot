@@ -3,6 +3,7 @@ import { useEffect, useState, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import axios from 'axios';
 import Layout from './components/Layout';
+import { loadAuthData, saveAuthData, clearAuthData } from './utils/tokenStorage';
 
 // Lazy-loaded pages
 const Login = lazy(() => import('./pages/Login'));
@@ -24,7 +25,7 @@ const Support = lazy(() => import('./pages/Support'));
 
 function ProtectedRoute({ children }) {
   const [authState, setAuthState] = useState(() => {
-    // Synchronous fast-path: if localStorage already has auth data, skip the check
+    // Synchronous fast-path: localStorage already has full auth data
     const role = localStorage.getItem('user_role');
     const tgId = localStorage.getItem('tg_id');
     if (role && tgId) return 'authenticated';
@@ -34,42 +35,42 @@ function ProtectedRoute({ children }) {
   useEffect(() => {
     if (authState === 'authenticated') return;
 
-    // Medium path: localStorage has session_token but missing role/tgId
-    const token = localStorage.getItem('session_token');
-    if (token) {
-      axios.get(`/api/auth/session?token=${encodeURIComponent(token)}`)
-        .then(res => {
+    async function checkAuth() {
+      // Step 1: Try all local storage layers (localStorage → IndexedDB → Cache API)
+      const stored = await loadAuthData();
+
+      if (stored?.session_token) {
+        // Validate the token on the server
+        try {
+          const res = await axios.get(`/api/auth/session?token=${encodeURIComponent(stored.session_token)}`);
           if (res.data?.tg_id) {
-            localStorage.setItem('tg_id', String(res.data.tg_id));
-            localStorage.setItem('user_role', res.data.role);
+            await saveAuthData(res.data.tg_id, res.data.role, stored.session_token);
             setAuthState('authenticated');
-          } else {
-            localStorage.removeItem('session_token');
-            setAuthState('unauthenticated');
+            return;
           }
-        })
-        .catch(() => {
-          localStorage.removeItem('session_token');
-          setAuthState('unauthenticated');
-        });
-      return;
+        } catch {
+          // Token expired — clear all layers
+          await clearAuthData();
+        }
+      }
+
+      // Step 2: Try HttpOnly cookie (browser sends it automatically)
+      try {
+        const res = await axios.get('/api/auth/session');
+        if (res.data?.tg_id) {
+          await saveAuthData(res.data.tg_id, res.data.role, res.data.session_token || '');
+          setAuthState('authenticated');
+          return;
+        }
+      } catch {
+        // Cookie also failed
+      }
+
+      // All methods exhausted — must log in
+      setAuthState('unauthenticated');
     }
 
-    // Slow path: localStorage is completely empty — try HttpOnly cookie
-    // Browser sends the cookie automatically with withCredentials
-    axios.get('/api/auth/session')
-      .then(res => {
-        if (res.data?.tg_id) {
-          localStorage.setItem('tg_id', String(res.data.tg_id));
-          localStorage.setItem('user_role', res.data.role);
-          setAuthState('authenticated');
-        } else {
-          setAuthState('unauthenticated');
-        }
-      })
-      .catch(() => {
-        setAuthState('unauthenticated');
-      });
+    checkAuth();
   }, [authState]);
 
   if (authState === 'checking') {

@@ -79,11 +79,12 @@ self.addEventListener('install', (event) => {
   self.skipWaiting();
 });
 
-// Activate: delete ALL old caches, claim clients
+// Activate: delete old caches, but PRESERVE auth token cache
+const AUTH_CACHE = 'viks-auth-v1';
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key)))
+      Promise.all(keys.filter((key) => key !== CACHE_NAME && key !== AUTH_CACHE).map((key) => caches.delete(key)))
     ).then(() => self.clients.claim())
   );
 });
@@ -94,7 +95,7 @@ self.addEventListener('message', (event) => {
     self.skipWaiting();
   }
   if (event.data === 'clearCache') {
-    caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
+    caches.keys().then(keys => Promise.all(keys.filter(k => k !== AUTH_CACHE).map(k => caches.delete(k))));
   }
 });
 

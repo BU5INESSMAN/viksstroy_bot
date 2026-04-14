@@ -1,0 +1,165 @@
+/**
+ * Triple-layer token persistence for iOS PWA compatibility.
+ *
+ * iOS Safari standalone mode (home-screen PWA) aggressively evicts
+ * localStorage. We store auth credentials in three places and read
+ * them back in priority order:
+ *   1. localStorage  — fastest, works everywhere, but iOS evicts it
+ *   2. IndexedDB      — more durable on iOS than localStorage
+ *   3. Cache API      — most persistent storage available to a PWA
+ *
+ * On write we fan-out to all three; on read we try each in order and
+ * back-fill the faster layers from whichever succeeds.
+ */
+
+const DB_NAME = 'viks_auth';
+const DB_VERSION = 1;
+const STORE_NAME = 'session';
+const CACHE_NAME = 'viks-auth-v1';   // must match sw.js exclusion
+const CACHE_KEY = '/auth-token-store';
+
+// ───────────────────── IndexedDB layer ─────────────────────
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = (e) => e.target.result.createObjectStore(STORE_NAME);
+    req.onsuccess = (e) => resolve(e.target.result);
+    req.onerror = (e) => reject(e.target.error);
+  });
+}
+
+async function idbSet(data) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      tx.objectStore(STORE_NAME).put(data, 'auth');
+      tx.oncomplete = () => resolve();
+      tx.onerror = (e) => reject(e.target.error);
+    });
+  } catch { /* silent */ }
+}
+
+async function idbGet() {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const req = tx.objectStore(STORE_NAME).get('auth');
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch { return null; }
+}
+
+async function idbClear() {
+  try {
+    const db = await openDB();
+    const tx = db.transaction(STORE_NAME, 'readwrite');
+    tx.objectStore(STORE_NAME).clear();
+  } catch { /* silent */ }
+}
+
+// ───────────────────── Cache API layer ─────────────────────
+
+async function cacheSet(data) {
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(CACHE_KEY, new Response(JSON.stringify(data)));
+  } catch { /* silent */ }
+}
+
+async function cacheGet() {
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    const res = await cache.match(CACHE_KEY);
+    return res ? await res.json() : null;
+  } catch { return null; }
+}
+
+async function cacheClear() {
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.delete(CACHE_KEY);
+  } catch { /* silent */ }
+}
+
+// ───────────────────── Public API ─────────────────────
+
+/**
+ * Save auth credentials to all three storage layers.
+ * Call after every successful login / registration.
+ */
+export async function saveAuthData(tgId, role, sessionToken) {
+  const data = {
+    tg_id: String(tgId),
+    user_role: role,
+    session_token: sessionToken,
+    saved_at: Date.now(),
+  };
+
+  // Layer 1 — localStorage (synchronous)
+  try {
+    localStorage.setItem('tg_id', data.tg_id);
+    localStorage.setItem('user_role', data.user_role);
+    localStorage.setItem('session_token', data.session_token);
+  } catch { /* quota / private-mode */ }
+
+  // Layer 2 + 3 — async, fire in parallel
+  await Promise.all([idbSet(data), cacheSet(data)]);
+}
+
+/**
+ * Load auth credentials from the first available layer.
+ * Returns { tg_id, user_role, session_token } or null.
+ */
+export async function loadAuthData() {
+  // Layer 1 — localStorage
+  const role = localStorage.getItem('user_role');
+  const tgId = localStorage.getItem('tg_id');
+  const token = localStorage.getItem('session_token');
+  if (role && tgId && token) {
+    return { tg_id: tgId, user_role: role, session_token: token };
+  }
+
+  // Layer 2 — IndexedDB
+  const idbData = await idbGet();
+  if (idbData?.tg_id && idbData?.user_role && idbData?.session_token) {
+    // Back-fill localStorage for fast path next time
+    try {
+      localStorage.setItem('tg_id', idbData.tg_id);
+      localStorage.setItem('user_role', idbData.user_role);
+      localStorage.setItem('session_token', idbData.session_token);
+    } catch { /* silent */ }
+    return idbData;
+  }
+
+  // Layer 3 — Cache API
+  const cacheData = await cacheGet();
+  if (cacheData?.tg_id && cacheData?.user_role && cacheData?.session_token) {
+    // Back-fill localStorage + IndexedDB
+    try {
+      localStorage.setItem('tg_id', cacheData.tg_id);
+      localStorage.setItem('user_role', cacheData.user_role);
+      localStorage.setItem('session_token', cacheData.session_token);
+    } catch { /* silent */ }
+    await idbSet(cacheData);
+    return cacheData;
+  }
+
+  return null;
+}
+
+/**
+ * Wipe auth credentials from all layers.
+ * Call on explicit logout or expired-session cleanup.
+ */
+export async function clearAuthData() {
+  try {
+    localStorage.removeItem('tg_id');
+    localStorage.removeItem('user_role');
+    localStorage.removeItem('session_token');
+  } catch { /* silent */ }
+  await Promise.all([idbClear(), cacheClear()]);
+}

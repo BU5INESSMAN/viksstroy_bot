@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { ShieldAlert, KeyRound, XCircle } from 'lucide-react';
+import { saveAuthData } from '../utils/tokenStorage';
 
 export default function TMAAuth() {
   const [error, setError] = useState('');
@@ -36,9 +37,7 @@ export default function TMAAuth() {
         .then(res => {
           if (cancelled) return;
           if (res.data.status === 'ok') {
-            localStorage.setItem('user_role', res.data.role);
-            localStorage.setItem('tg_id', res.data.tg_id);
-            if (res.data.session_token) localStorage.setItem('session_token', res.data.session_token);
+            saveAuthData(res.data.tg_id, res.data.role, res.data.session_token);
             navigate(returnUrl);
           } else if (res.data.status === 'needs_password') {
             setTgUser(res.data);
@@ -85,9 +84,7 @@ export default function TMAAuth() {
 
       const response = await axios.post('/api/register_telegram', formData);
       if (response.data.status === 'ok') {
-        localStorage.setItem('user_role', response.data.role);
-        localStorage.setItem('tg_id', response.data.tg_id);
-        if (response.data.session_token) localStorage.setItem('session_token', response.data.session_token);
+        await saveAuthData(response.data.tg_id, response.data.role, response.data.session_token);
         const searchParams = new URLSearchParams(location.search);
         const returnUrl = searchParams.get('return_to') || '/dashboard';
         navigate(returnUrl);

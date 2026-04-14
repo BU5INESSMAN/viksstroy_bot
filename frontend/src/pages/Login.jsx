@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ShieldCheck, MessageCircle, Send, XCircle } from 'lucide-react';
+import { saveAuthData } from '../utils/tokenStorage';
 
 export default function Login() {
   const [error, setError] = useState('');
@@ -21,9 +22,7 @@ export default function Login() {
           const res = await axios.post('/api/auth/code', fd);
 
           if (res.data.status === 'ok') {
-              localStorage.setItem('user_role', res.data.role);
-              localStorage.setItem('tg_id', res.data.tg_id);
-              if (res.data.session_token) localStorage.setItem('session_token', res.data.session_token);
+              await saveAuthData(res.data.tg_id, res.data.role, res.data.session_token);
               navigate('/dashboard');
           }
       } catch (err) {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
+import { saveAuthData } from '../utils/tokenStorage';
 
 export default function AuthRedirect() {
     const [searchParams] = useSearchParams();
@@ -17,11 +18,9 @@ export default function AuthRedirect() {
         }
 
         axios.get(`/api/auth/session?token=${encodeURIComponent(token)}`)
-            .then(res => {
+            .then(async (res) => {
                 if (res.data.status === 'ok') {
-                    localStorage.setItem('tg_id', res.data.tg_id);
-                    localStorage.setItem('user_role', res.data.role);
-                    localStorage.setItem('session_token', token);
+                    await saveAuthData(res.data.tg_id, res.data.role, token);
                     navigate(redirect, { replace: true });
                 }
             })

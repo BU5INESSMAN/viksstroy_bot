@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { KeyRound, XCircle } from 'lucide-react';
+import { saveAuthData } from '../utils/tokenStorage';
 
 export default function MAXAuth() {
   const [error, setError] = useState('');
@@ -68,9 +69,7 @@ export default function MAXAuth() {
     axios.post('/api/max/auth', formData)
       .then(res => {
         if (res.data.status === 'ok') {
-          localStorage.setItem('user_role', res.data.role);
-          localStorage.setItem('tg_id', res.data.tg_id);
-          if (res.data.session_token) localStorage.setItem('session_token', res.data.session_token);
+          saveAuthData(res.data.tg_id, res.data.role, res.data.session_token);
           navigate(returnUrl);
         } else if (res.data.status === 'needs_password') {
           setMaxUser({ id: userId, first_name: firstName, last_name: lastName });
@@ -90,9 +89,7 @@ export default function MAXAuth() {
       formData.append('password', password);
 
       const response = await axios.post('/api/max/register', formData);
-      localStorage.setItem('user_role', response.data.role);
-      localStorage.setItem('tg_id', response.data.tg_id);
-      if (response.data.session_token) localStorage.setItem('session_token', response.data.session_token);
+      await saveAuthData(response.data.tg_id, response.data.role, response.data.session_token);
 
       const searchParams = new URLSearchParams(location.search);
       const returnUrl = searchParams.get('return_to') || '/dashboard';
