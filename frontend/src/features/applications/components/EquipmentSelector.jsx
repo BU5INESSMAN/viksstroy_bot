@@ -107,10 +107,17 @@ export default function EquipmentSelector({
                                             <div className="flex items-center justify-between gap-2">
                                                 <div className="flex items-center gap-2 min-w-0 flex-1">
                                                     {isSelected
-                                                        ? <CheckCircle className={`w-4 h-4 flex-shrink-0 ${selectedEquipment.find(eq => eq.id === eqA.id)?.isPartialTime ? 'text-amber-500' : 'text-blue-500'}`} />
-                                                        : <Truck className={`w-4 h-4 flex-shrink-0 ${state === 'repair' || state === 'unavailable' ? 'text-gray-300' : (state === 'exchange' || state === 'both') ? 'text-amber-500' : 'text-gray-500'}`} />
+                                                        ? <CheckCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${selectedEquipment.find(eq => eq.id === eqA.id)?.isPartialTime ? 'text-amber-500' : 'text-blue-500'}`} />
+                                                        : <Truck className={`w-4 h-4 flex-shrink-0 mt-0.5 ${state === 'repair' || state === 'unavailable' ? 'text-gray-300' : (state === 'exchange' || state === 'both') ? 'text-amber-500' : 'text-gray-500'}`} />
                                                     }
-                                                    <span className={`text-sm font-bold truncate ${state === 'unavailable' || state === 'in_exchange' ? 'text-gray-400' : 'dark:text-gray-200'}`}>{displayName}</span>
+                                                    <div className="min-w-0 flex-1">
+                                                        <span className={`text-sm font-bold truncate block ${state === 'unavailable' || state === 'in_exchange' ? 'text-gray-400' : 'dark:text-gray-200'}`}>
+                                                            {eqA.name} {eqA.license_plate ? `[${eqA.license_plate}]` : ''}
+                                                        </span>
+                                                        {(eqA.driver_fio && eqA.driver_fio !== 'Не указан') && (
+                                                            <span className="text-[11px] text-gray-400 dark:text-gray-500 truncate block">{eqA.driver_fio}</span>
+                                                        )}
+                                                    </div>
                                                 </div>
                                                 {statusBadge}
                                             </div>
