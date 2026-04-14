@@ -327,30 +327,86 @@ async def _debtors(db, role) -> str:
 
 
 async def _stats(db, role) -> str:
+    """System-wide statistics built from raw SQL for reliability."""
     try:
         if role not in _OFFICE:
             return ""
-        s = await db.get_general_statistics()
-        if not s:
-            return ""
-        lines = [
-            "=== СТАТИСТИКА ===",
-            f"Заявок сегодня: {s.get('today_total',0)} (одобрено {s.get('today_approved',0)}, отклонено {s.get('today_rejected',0)})",
-            f"Ожидают публикации: {s.get('waiting_publish',0)}",
-        ]
-        top_f = s.get("top_foremen", [])
-        if top_f:
-            lines.append("Топ прорабов:")
-            for f in top_f:
-                rd = _row(f)
-                lines.append(f"  {rd.get('fio', '?')}: {rd.get('cnt', '?')} заявок")
-        top_e = s.get("top_equip", [])
-        if top_e:
-            lines.append("Топ техники:")
-            for e in top_e:
-                rd = _row(e)
-                lines.append(f"  {rd.get('name', '?')}: {rd.get('cnt', '?')} назначений")
-        return "\n".join(lines)
+        conn = db.conn
+        lines = ["=== СТАТИСТИКА ==="]
+
+        # General counts
+        try:
+            async with conn.execute(
+                "SELECT COUNT(*) FROM applications WHERE status NOT IN ('rejected')"
+            ) as c:
+                total_apps = (await c.fetchone())[0]
+            async with conn.execute("SELECT COUNT(*) FROM users WHERE role != 'linked'") as c:
+                total_users = (await c.fetchone())[0]
+            async with conn.execute("SELECT COUNT(*) FROM teams") as c:
+                total_teams = (await c.fetchone())[0]
+            async with conn.execute("SELECT COUNT(*) FROM equipment WHERE is_active = 1") as c:
+                total_equip = (await c.fetchone())[0]
+            lines.append(
+                f"Всего: {total_apps} заявок, {total_users} пользователей, "
+                f"{total_teams} бригад, {total_equip} ед. техники"
+            )
+        except Exception as e:
+            logger.warning(f"stats counts: {e}")
+
+        # Top foremen by application count (foreman_name is stored directly)
+        try:
+            async with conn.execute("""
+                SELECT foreman_name, COUNT(*) as cnt
+                FROM applications
+                WHERE status NOT IN ('rejected') AND foreman_name IS NOT NULL
+                GROUP BY foreman_id ORDER BY cnt DESC LIMIT 5
+            """) as c:
+                rows = await c.fetchall()
+            if rows:
+                lines.append("Топ прорабов:")
+                for r in rows:
+                    lines.append(f"  {r[0]}: {r[1]} заявок")
+        except Exception as e:
+            logger.warning(f"stats foremen: {e}")
+
+        # Top objects by application count
+        try:
+            async with conn.execute("""
+                SELECT object_address, COUNT(*) as cnt
+                FROM applications
+                WHERE status NOT IN ('rejected') AND object_address IS NOT NULL
+                GROUP BY object_address ORDER BY cnt DESC LIMIT 5
+            """) as c:
+                rows = await c.fetchall()
+            if rows:
+                lines.append("Топ объектов:")
+                for r in rows:
+                    lines.append(f"  {r[0]}: {r[1]} заявок")
+        except Exception as e:
+            logger.warning(f"stats objects: {e}")
+
+        # Equipment never or rarely used (not in any app in the last 30 days)
+        try:
+            async with conn.execute("""
+                SELECT e.name, e.category, e.license_plate
+                FROM equipment e
+                WHERE e.is_active = 1 AND e.id NOT IN (
+                    SELECT DISTINCT a.equipment_id FROM applications a
+                    WHERE a.equipment_id IS NOT NULL
+                      AND a.date_target >= date('now','-30 days')
+                      AND a.status NOT IN ('rejected')
+                )
+                ORDER BY e.name LIMIT 10
+            """) as c:
+                rows = await c.fetchall()
+            if rows:
+                lines.append(f"Простаивающая техника (нет назначений 30 дн): {len(rows)}")
+                for r in rows:
+                    lines.append(f"  ⚪ {r[0]} [{r[1]}] {r[2] or ''}")
+        except Exception as e:
+            logger.warning(f"stats idle: {e}")
+
+        return "\n".join(lines) if len(lines) > 1 else ""
     except Exception as e:
         logger.warning(f"ctx stats: {e}")
         return ""
