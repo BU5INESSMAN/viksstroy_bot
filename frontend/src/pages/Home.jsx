@@ -15,6 +15,7 @@ import ArchiveModal from '../features/applications/components/ArchiveModal';
 import DebtorsWidget from '../features/applications/components/DebtorsWidget';
 import useAppForm from '../features/applications/hooks/useAppForm';
 import useConfirm from '../hooks/useConfirm';
+import { HomeSkeleton } from '../components/ui/PageSkeletons';
 
 export default function Home() {
     const smartDates = getSmartDates();
@@ -214,12 +215,7 @@ export default function Home() {
     // Render
     // -------------------------------------------------------------------------
 
-    if (loading) return (
-        <div className="flex flex-col items-center justify-center mt-32 text-gray-400">
-            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="font-medium animate-pulse">Загрузка данных...</p>
-        </div>
-    );
+    if (loading) return <HomeSkeleton />;
 
     return (
         <main className="px-4 sm:px-6 lg:px-8 space-y-8 pb-24">

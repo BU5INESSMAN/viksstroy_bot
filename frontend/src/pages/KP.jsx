@@ -6,6 +6,7 @@ import {
     FileText, CheckCircle, Clock, Search, X, MapPin,
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive
 } from 'lucide-react';
+import { KPSkeleton } from '../components/ui/PageSkeletons';
 
 export default function KP() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -192,7 +193,7 @@ export default function KP() {
         );
     }
 
-    if (loading) return <div className="mt-32 text-center text-gray-400 font-bold animate-pulse">Загрузка...</div>;
+    if (loading) return <KPSkeleton />;
 
     return (
         <main className="px-4 sm:px-6 lg:px-8 space-y-6 pb-24">

@@ -8,6 +8,7 @@ import CreateTeamModal from '../features/teams/components/CreateTeamModal';
 import ManageTeamModal from '../features/teams/components/ManageTeamModal';
 import TeamInviteModal from '../features/teams/components/TeamInviteModal';
 import useConfirm from '../hooks/useConfirm';
+import { TeamsSkeleton } from '../components/ui/PageSkeletons';
 
 export default function Teams() {
     const tgId = localStorage.getItem('tg_id') || '0';
@@ -15,6 +16,7 @@ export default function Teams() {
     const { openProfile } = useOutletContext();
 
     const [teams, setTeams] = useState([]);
+    const [loading, setLoading] = useState(true);
     const [isTeamModalOpen, setTeamModalOpen] = useState(false);
     const [newTeamName, setNewTeamName] = useState('');
     const [isManageModalOpen, setManageModalOpen] = useState(false);
@@ -24,7 +26,11 @@ export default function Teams() {
     const [copiedLink, setCopiedLink] = useState('');
     const { confirm, ConfirmUI } = useConfirm();
 
-    const fetchData = () => { axios.get('/api/dashboard').then(res => setTeams(res.data.teams || [])).catch(()=>{}); };
+    const fetchData = () => {
+        axios.get('/api/dashboard')
+            .then(res => { setTeams(res.data.teams || []); setLoading(false); })
+            .catch(() => { setLoading(false); });
+    };
     useEffect(() => { fetchData(); }, []);
 
     const handleCreateTeam = async (e) => {
@@ -113,6 +119,8 @@ export default function Teams() {
 
     const canManage = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canDeleteTeam = ['moderator', 'boss', 'superadmin'].includes(role);
+
+    if (loading) return <TeamsSkeleton />;
 
     return (
         <div className="px-4 sm:px-6 lg:px-8 space-y-6">

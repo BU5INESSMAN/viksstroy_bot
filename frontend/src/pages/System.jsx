@@ -9,6 +9,7 @@ import SystemSettings from '../features/system/components/SystemSettings';
 import NotificationTesting from '../features/system/components/NotificationTesting';
 import BroadcastPanel from '../features/system/components/BroadcastPanel';
 import LogViewer from '../features/system/components/LogViewer';
+import { SystemSkeleton } from '../components/ui/PageSkeletons';
 
 export default function System() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -18,6 +19,7 @@ export default function System() {
 
     // --- State ---
     const [users, setUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
 
     // Handle URL params from sidebar — scroll after data loads
     const [pendingSection, setPendingSection] = useState(() => searchParams.get('section') || '');
@@ -69,7 +71,9 @@ export default function System() {
 
     // --- Data Fetch ---
     useEffect(() => {
-        axios.get('/api/users').then(res => setUsers(res.data || [])).catch(() => {});
+        axios.get('/api/users')
+            .then(res => { setUsers(res.data || []); setLoading(false); })
+            .catch(() => { setLoading(false); });
         axios.get('/api/logs').then(res => setLogs(res.data || [])).catch(() => {});
 
         if (['superadmin', 'boss', 'moderator'].includes(role)) {
@@ -234,6 +238,8 @@ export default function System() {
     // ============================================================
     // RENDER
     // ============================================================
+    if (loading) return <SystemSkeleton />;
+
     return (
         <div className="px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
 

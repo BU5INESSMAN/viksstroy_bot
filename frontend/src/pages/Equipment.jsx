@@ -10,6 +10,7 @@ import BulkUploadForm from '../features/equipment/components/BulkUploadForm';
 import EquipmentInviteModal from '../features/equipment/components/EquipmentInviteModal';
 import EditEquipmentModal from '../features/equipment/components/EditEquipmentModal';
 import useConfirm from '../hooks/useConfirm';
+import { EquipmentSkeleton } from '../components/ui/PageSkeletons';
 
 export default function Equipment() {
     const role = localStorage.getItem('user_role') || 'Гость';
@@ -120,12 +121,7 @@ export default function Equipment() {
         } catch (e) { toast.error("Ошибка генерации ссылки"); }
     };
 
-    if (loading) return (
-        <div className="flex flex-col items-center justify-center mt-32 text-gray-400">
-            <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4"></div>
-            <p className="font-medium animate-pulse">Загрузка автопарка...</p>
-        </div>
-    );
+    if (loading) return <EquipmentSkeleton />;
 
     return (
         <div className="px-4 sm:px-6 lg:px-8 space-y-6">

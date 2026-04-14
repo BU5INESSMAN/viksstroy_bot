@@ -13,6 +13,7 @@ import ObjectEditModal from '../features/objects/components/ObjectEditModal';
 import ObjectStatsModal from '../features/objects/components/ObjectStatsModal';
 import ObjectRequestModal from '../features/objects/components/ObjectRequestModal';
 import ObjectRequestsPanel from '../features/objects/components/ObjectRequestsPanel';
+import { ObjectsSkeleton } from '../components/ui/PageSkeletons';
 
 export default function Objects() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -188,13 +189,7 @@ export default function Objects() {
         setStatsLoading(false);
     };
 
-    if (loading) {
-        return (
-            <div className="mt-32 text-center text-gray-400 font-bold animate-pulse">
-                Загрузка объектов...
-            </div>
-        );
-    }
+    if (loading) return <ObjectsSkeleton />;
 
     return (
         <main className="px-4 sm:px-6 lg:px-8 space-y-6 pb-24">

@@ -11,6 +11,7 @@ import {
 import { getTodayStr } from '../utils/dateUtils';
 import useConfirm from '../hooks/useConfirm';
 import ScheduleModal from '../features/applications/components/ScheduleModal';
+import { ReviewSkeleton } from '../components/ui/PageSkeletons';
 
 const ReviewSection = ({ title, icon: Icon, colorClass, titleColorClass, apps, statusType, renderAppCard }) => {
     const [showAll, setShowAll] = useState(false);
@@ -42,6 +43,7 @@ export default function Review() {
     const role = localStorage.getItem('user_role') || 'Гость';
     const { openProfile } = useOutletContext();
     const [reviewApps, setReviewApps] = useState([]);
+    const [loading, setLoading] = useState(true);
 
     const [selectedApp, setSelectedApp] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -50,7 +52,9 @@ export default function Review() {
     const approvedRef = useRef(null);
 
     const fetchData = () => {
-        axios.get(`/api/applications/review?tg_id=${tgId}`).then(res => setReviewApps(res.data || [])).catch(() => {});
+        axios.get(`/api/applications/review?tg_id=${tgId}`)
+            .then(res => { setReviewApps(res.data || []); setLoading(false); })
+            .catch(() => { setLoading(false); });
     };
 
     useEffect(() => { fetchData(); }, []);
@@ -187,6 +191,8 @@ export default function Review() {
             </div>
         );
     };
+
+    if (loading) return <ReviewSkeleton />;
 
     return (
         <main className="px-4 sm:px-6 lg:px-8 space-y-6 pb-24 relative">
