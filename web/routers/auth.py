@@ -4,7 +4,8 @@ import os
 # Переходим на уровень выше (в папку web), чтобы импорты сработали
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException, Query
+from fastapi import APIRouter, Form, HTTPException, Query, Cookie, Request
+from fastapi.responses import JSONResponse
 import asyncio
 import time
 import hashlib
@@ -20,6 +21,21 @@ from services.notifications import notify_users, notify_fio_match
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Auth"])
+
+
+def _make_auth_response(data: dict, session_token: str) -> JSONResponse:
+    """Wrap auth response with an HttpOnly session cookie for PWA persistence."""
+    response = JSONResponse(content=data)
+    response.set_cookie(
+        key="session_token",
+        value=session_token,
+        max_age=30 * 24 * 3600,  # 30 days
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+    )
+    return response
 
 
 async def _create_session(user_id: int) -> str:
@@ -85,7 +101,8 @@ async def api_auth_by_code(code: str = Form(...)):
         pass
 
     token = await _create_session(primary_id)
-    return {"status": "ok", "role": user_dict['role'], "tg_id": primary_id, "session_token": token}
+    return _make_auth_response(
+        {"status": "ok", "role": user_dict['role'], "tg_id": primary_id, "session_token": token}, token)
 
 
 @router.post("/api/max/web_auth")
@@ -102,7 +119,8 @@ async def max_web_auth(code: str = Form(...)):
     await db.conn.commit()
 
     token = await _create_session(real_tg_id)
-    return {"status": "ok", "role": dict(user)['role'], "tg_id": real_tg_id, "session_token": token}
+    return _make_auth_response(
+        {"status": "ok", "role": dict(user)['role'], "tg_id": real_tg_id, "session_token": token}, token)
 
 
 @router.post("/api/max/auth")
@@ -113,7 +131,8 @@ async def api_max_auth(max_id: int = Form(...), first_name: str = Form(""), last
     if user:
         if dict(user).get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
         token = await _create_session(real_tg_id)
-        return {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id, "session_token": token}
+        return _make_auth_response(
+            {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id, "session_token": token}, token)
     return {"status": "needs_password", "max_id": max_id, "first_name": first_name, "last_name": last_name}
 
 
@@ -147,7 +166,8 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
     await _check_fio_match(pseudo_tg_id, fio)
 
     token = await _create_session(pseudo_tg_id)
-    return {"status": "ok", "role": role, "tg_id": pseudo_tg_id, "session_token": token}
+    return _make_auth_response(
+        {"status": "ok", "role": role, "tg_id": pseudo_tg_id, "session_token": token}, token)
 
 
 @router.post("/api/telegram_auth")
@@ -173,8 +193,9 @@ async def telegram_auth(data: dict):
                 user_dict['avatar_url'] = photo_url
 
             token = await _create_session(real_tg_id)
-            return {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": real_tg_id,
-                    "avatar_url": user_dict.get('avatar_url', photo_url), "session_token": token}
+            return _make_auth_response(
+                {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": real_tg_id,
+                 "avatar_url": user_dict.get('avatar_url', photo_url), "session_token": token}, token)
         return {"status": "needs_password", "tg_id": raw_id, "first_name": data.get('first_name', ''),
                 "last_name": data.get('last_name', ''), "photo_url": photo_url}
     except HTTPException:
@@ -190,7 +211,8 @@ async def api_tma_auth(tg_id: int = Form(...), first_name: str = Form(""), last_
     if user:
         if dict(user).get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
         token = await _create_session(real_tg_id)
-        return {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id, "session_token": token}
+        return _make_auth_response(
+            {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id, "session_token": token}, token)
     return {"status": "needs_password", "tg_id": tg_id, "first_name": first_name, "last_name": last_name}
 
 
@@ -224,23 +246,30 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
     await _check_fio_match(tg_id, fio)
 
     token = await _create_session(tg_id)
-    return {"status": "ok", "role": role, "tg_id": tg_id, "session_token": token}
+    return _make_auth_response(
+        {"status": "ok", "role": role, "tg_id": tg_id, "session_token": token}, token)
 
 
 @router.get("/api/auth/session")
-async def validate_session(token: str = Query(...)):
-    """Validate a browser session token."""
+async def validate_session(
+    token: str = Query(default=None),
+    session_token: str = Cookie(default=None),
+):
+    """Validate a browser session token (query param or HttpOnly cookie)."""
+    effective_token = token or session_token
+    if not effective_token:
+        raise HTTPException(status_code=401, detail="No session token")
     if db.conn is None:
         await db.init_db()
     async with db.conn.execute(
         "SELECT user_id FROM sessions WHERE token = ? AND expires_at > datetime('now')",
-        (token,)
+        (effective_token,)
     ) as cur:
         row = await cur.fetchone()
     if not row:
         # Clean up expired token if it exists
         try:
-            await db.conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            await db.conn.execute("DELETE FROM sessions WHERE token = ?", (effective_token,))
             await db.conn.commit()
         except Exception:
             pass

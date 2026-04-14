@@ -123,24 +123,8 @@ export default function Layout() {
         document.body.style.overscrollBehaviorY = 'none';
     }, []);
 
-    // Session restore on load
-    useEffect(() => {
-        const token = localStorage.getItem('session_token');
-        if (token && !tgId) {
-            axios.get(`/api/auth/session?token=${encodeURIComponent(token)}`)
-                .then(res => {
-                    if (res.data.status === 'ok') {
-                        localStorage.setItem('tg_id', res.data.tg_id);
-                        localStorage.setItem('user_role', res.data.role);
-                        setTgId(String(res.data.tg_id));
-                        setRole(res.data.role);
-                    }
-                })
-                .catch(() => {
-                    localStorage.removeItem('session_token');
-                });
-        }
-    }, []);
+    // Session restore is handled by ProtectedRoute (App.jsx) before Layout mounts.
+    // localStorage is guaranteed to have tg_id + user_role at this point.
 
     // Server health check every 30s
     useEffect(() => {

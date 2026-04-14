@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, lazy, Suspense } from 'react';
+import { useEffect, useState, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
+import axios from 'axios';
 import Layout from './components/Layout';
 
 // Lazy-loaded pages
@@ -22,17 +23,72 @@ const AuthRedirect = lazy(() => import('./pages/AuthRedirect'));
 const Support = lazy(() => import('./pages/Support'));
 
 function ProtectedRoute({ children }) {
-  const isAuth = localStorage.getItem('user_role');
+  const [authState, setAuthState] = useState(() => {
+    // Synchronous fast-path: if localStorage already has auth data, skip the check
+    const role = localStorage.getItem('user_role');
+    const tgId = localStorage.getItem('tg_id');
+    if (role && tgId) return 'authenticated';
+    return 'checking';
+  });
 
-  const isTMA = window.Telegram?.WebApp?.initData ||
-                window.location.search.includes('tgWebAppData') ||
-                window.location.hash.includes('tgWebAppData');
+  useEffect(() => {
+    if (authState === 'authenticated') return;
 
-  const isMAX = window.location.pathname.includes('/max') ||
-                window.location.search.includes('WebAppData') ||
-                window.location.hash.includes('WebAppData');
+    // Medium path: localStorage has session_token but missing role/tgId
+    const token = localStorage.getItem('session_token');
+    if (token) {
+      axios.get(`/api/auth/session?token=${encodeURIComponent(token)}`)
+        .then(res => {
+          if (res.data?.tg_id) {
+            localStorage.setItem('tg_id', String(res.data.tg_id));
+            localStorage.setItem('user_role', res.data.role);
+            setAuthState('authenticated');
+          } else {
+            localStorage.removeItem('session_token');
+            setAuthState('unauthenticated');
+          }
+        })
+        .catch(() => {
+          localStorage.removeItem('session_token');
+          setAuthState('unauthenticated');
+        });
+      return;
+    }
 
-  if (!isAuth) {
+    // Slow path: localStorage is completely empty — try HttpOnly cookie
+    // Browser sends the cookie automatically with withCredentials
+    axios.get('/api/auth/session')
+      .then(res => {
+        if (res.data?.tg_id) {
+          localStorage.setItem('tg_id', String(res.data.tg_id));
+          localStorage.setItem('user_role', res.data.role);
+          setAuthState('authenticated');
+        } else {
+          setAuthState('unauthenticated');
+        }
+      })
+      .catch(() => {
+        setAuthState('unauthenticated');
+      });
+  }, [authState]);
+
+  if (authState === 'checking') {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  if (authState === 'unauthenticated') {
+    const isTMA = window.Telegram?.WebApp?.initData ||
+                  window.location.search.includes('tgWebAppData') ||
+                  window.location.hash.includes('tgWebAppData');
+
+    const isMAX = window.location.pathname.includes('/max') ||
+                  window.location.search.includes('WebAppData') ||
+                  window.location.hash.includes('WebAppData');
+
     if (isMAX) {
       return <Navigate to={`/max?return_to=${window.location.pathname}${window.location.hash}`} replace />;
     }
@@ -41,6 +97,7 @@ function ProtectedRoute({ children }) {
     }
     return <Navigate to="/" replace />;
   }
+
   return children;
 }
 
