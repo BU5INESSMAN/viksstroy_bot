@@ -52,6 +52,12 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
         await db.update_user_role(real_tg_id, "worker")
     await db.conn.commit()
 
+    try:
+        team_name = dict(team).get('name', f'#{dict(team).get("id", "?")}') if team else '?'
+        await db.add_log(real_tg_id, fio, f"Привязан к бригаде «{team_name}» по приглашению", target_type='team', target_id=dict(team).get('id') if team else 0)
+    except Exception:
+        pass
+
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
 
     async def _send_join_notification():

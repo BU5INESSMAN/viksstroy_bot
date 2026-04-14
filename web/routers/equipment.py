@@ -381,11 +381,20 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
                     fio = equip_driver_fio
                     await db.conn.execute("UPDATE users SET fio = ? WHERE user_id = ?", (fio, real_tg_id))
                     logger.info(f"Auto-set FIO '{fio}' for user {real_tg_id} from equipment '{eq_row[1]}'")
+                    try:
+                        await db.add_log(real_tg_id, fio, f"ФИО автоматически установлено из техники «{eq_row[1]}»", target_type='user', target_id=real_tg_id)
+                    except Exception:
+                        pass
             if user_dict['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
                 await db.update_user_role(real_tg_id, "driver")
         await db.conn.commit()
     except:
         await db.conn.rollback()
+
+    try:
+        await db.add_log(real_tg_id, fio, f"Привязан к технике «{eq_row[1]}» по приглашению", target_type='equipment', target_id=eq_row[0])
+    except Exception:
+        pass
 
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
 
