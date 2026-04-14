@@ -5,6 +5,7 @@ in try/except so the AI keeps working even if individual fetches fail.
 """
 import logging
 from datetime import datetime, timedelta
+from collections import defaultdict
 
 logger = logging.getLogger("AI_CONTEXT")
 
@@ -36,8 +37,9 @@ async def build_user_context(db, user_id: int, message: str) -> str:
     role = dict(user).get("role", "worker")
     fio = dict(user).get("fio", "?")
 
-    # Resolve user's team from profile
+    # Resolve user's team from full profile (includes team join)
     team_id = None
+    profile = None
     try:
         profile = await db.get_user_full_profile(user_id)
         if profile:
@@ -65,8 +67,10 @@ async def build_user_context(db, user_id: int, message: str) -> str:
         parts += [await _driver(db, user_id, role)]
     if _kw(low, "должник отчёт отчет смр не_заполн"):
         parts += [await _debtors(db, role)]
-    if _kw(low, "статистик рейтинг активност загруженн самый топ"):
+    if _kw(low, "статистик рейтинг активност загруженн самый топ продуктивн простаивает простой использован популярн частот"):
         parts += [await _stats(db, role)]
+    if _kw(low, "объект площадк стройк адрес"):
+        parts += [await _objects(db, role, low)]
 
     return "\n\n".join(p for p in parts if p)
 
@@ -115,7 +119,16 @@ async def _profile(db, uid, profile) -> str:
 async def _team(db, uid, role, team_id) -> str:
     try:
         if team_id:
-            team_row, members, _ = await db.get_team_full_data(team_id)
+            # get_team_full_data returns (dict, [dict,...], bool)
+            try:
+                team_row, members, _ = await db.get_team_full_data(team_id)
+            except Exception:
+                # Fallback to get_team + get_team_members separately
+                t = await db.get_team(team_id)
+                team_row = _row(t) if t else {"name": "?"}
+                raw = await db.get_team_members(team_id)
+                members = [_row(m) for m in (raw or [])]
+
             lines = [f"=== БРИГАДА: {team_row.get('name','?')} (ID {team_id}) ==="]
             for m in members:
                 linked = "привязан" if m.get("tg_user_id") or m.get("tg_id") else "не привязан"
@@ -145,7 +158,7 @@ async def _apps(db, uid, role) -> str:
         rows = [_row(a) for a in apps]
         lines = ["=== МОИ ЗАЯВКИ (последние 10) ==="]
         for a in rows:
-            st = _STATUS_NAMES.get(a.get("status",""), a.get("status","?"))
+            st = _STATUS_NAMES.get(a.get("status", ""), a.get("status", "?"))
             lines.append(
                 f"  #{a.get('id','?')} | {st} | {a.get('date_target','?')} | {a.get('object_address','?')}"
             )
@@ -156,6 +169,7 @@ async def _apps(db, uid, role) -> str:
 
 
 async def _equip(db, role, text) -> str:
+    """Equipment grouped by category with per-category summary."""
     try:
         if role not in _FOREMAN_PLUS:
             return ""
@@ -163,25 +177,44 @@ async def _equip(db, role, text) -> str:
         equipment = await db.get_all_equipment_admin()
         if not equipment:
             return ""
-        free, busy = 0, 0
-        lines = [f"=== ТЕХНИКА НА {date} ==="]
-        for eq in [_row(e) for e in equipment if _row(e).get("is_active", 1)][:30]:
+
+        # Group by category, check availability
+        cats = defaultdict(lambda: {"free": [], "busy": []})
+        for eq in [_row(e) for e in equipment]:
+            if not eq.get("is_active", 1):
+                continue
             eid = eq.get("id")
             name = eq.get("name", "?")
-            cat = eq.get("category", "")
+            cat = eq.get("category", "Без категории")
             plate = eq.get("license_plate", "")
+            label = f"{name} {plate}".strip()
             try:
                 intervals = await db.get_equipment_busy_intervals(eid, date)
             except Exception:
                 intervals = []
             if intervals:
-                busy += 1
-                slots = ", ".join(f"{s}-{e}" for s, e in intervals)
-                lines.append(f"  🔴 {name} [{cat}] {plate} — занята: {slots}")
+                slots = ", ".join(f"{s}:00-{e}:00" for s, e in intervals)
+                cats[cat]["busy"].append(f"🔴 {label} — занята: {slots}")
             else:
-                free += 1
-                lines.append(f"  🟢 {name} [{cat}] {plate} — свободна")
-        lines.append(f"Итого: свободно {free}, занято {busy}")
+                cats[cat]["free"].append(f"🟢 {label}")
+
+        total_free = sum(len(v["free"]) for v in cats.values())
+        total_busy = sum(len(v["busy"]) for v in cats.values())
+        lines = [f"=== ТЕХНИКА НА {date} ==="]
+
+        for cat in sorted(cats):
+            f_list = cats[cat]["free"]
+            b_list = cats[cat]["busy"]
+            total = len(f_list) + len(b_list)
+            lines.append(f"\n{cat}: {total} всего, {len(f_list)} свободно, {len(b_list)} занято")
+            # Show up to 5 per category
+            for item in (b_list + f_list)[:5]:
+                lines.append(f"  {item}")
+            rest = total - min(5, len(b_list) + len(f_list))
+            if rest > 0:
+                lines.append(f"  ...и ещё {rest}")
+
+        lines.append(f"\nИтого на {date}: свободно {total_free}, занято {total_busy}")
         return "\n".join(lines)
     except Exception as e:
         logger.warning(f"ctx equip: {e}")
@@ -269,7 +302,6 @@ async def _debtors(db, role) -> str:
     try:
         if role not in _OFFICE:
             return ""
-        # Direct query — no dedicated db method, use raw SQL
         async with db.conn.execute("""
             SELECT u.fio, COUNT(a.id) as cnt,
                    MAX(CAST(julianday('now') - julianday(a.date_target) AS INTEGER)) as max_days
@@ -310,13 +342,61 @@ async def _stats(db, role) -> str:
         if top_f:
             lines.append("Топ прорабов:")
             for f in top_f:
-                lines.append(f"  {_row(f).get('fio', f[0])}: {_row(f).get('cnt', f[1])} заявок")
+                rd = _row(f)
+                lines.append(f"  {rd.get('fio', '?')}: {rd.get('cnt', '?')} заявок")
         top_e = s.get("top_equip", [])
         if top_e:
             lines.append("Топ техники:")
             for e in top_e:
-                lines.append(f"  {_row(e).get('name', e[0])}: {_row(e).get('cnt', e[1])} назначений")
+                rd = _row(e)
+                lines.append(f"  {rd.get('name', '?')}: {rd.get('cnt', '?')} назначений")
         return "\n".join(lines)
     except Exception as e:
         logger.warning(f"ctx stats: {e}")
+        return ""
+
+
+async def _objects(db, role, text) -> str:
+    """Search objects by name/address or list all."""
+    try:
+        if role not in _FOREMAN_PLUS:
+            return ""
+        objects = await db.get_objects(include_archived=False)
+        if not objects:
+            return "=== ОБЪЕКТЫ ===\nНет активных объектов."
+
+        # Try to find a specific object mentioned in the message
+        matched = []
+        words = [w for w in text.split() if len(w) > 3]
+        for obj in objects:
+            obj_name = (obj.get("name") or "").lower()
+            obj_addr = (obj.get("address") or "").lower()
+            for w in words:
+                if w in obj_name or w in obj_addr:
+                    matched.append(obj)
+                    break
+
+        if matched:
+            lines = [f"=== НАЙДЕННЫЕ ОБЪЕКТЫ ({len(matched)}) ==="]
+            for obj in matched[:10]:
+                lines.append(f"  📍 {obj.get('name','?')} — {obj.get('address','?')} (ID {obj.get('id')})")
+                # Try to get completion stats
+                try:
+                    stats = await db.get_object_stats(obj["id"])
+                    if stats:
+                        done = sum(1 for s in stats if s.get("completed_volume", 0) >= s.get("target_volume", 1))
+                        lines.append(f"     Прогресс: {done}/{len(stats)} видов работ выполнено")
+                except Exception:
+                    pass
+            return "\n".join(lines)
+
+        # No match — list all objects
+        lines = [f"=== ВСЕ ОБЪЕКТЫ ({len(objects)}) ==="]
+        for obj in objects[:15]:
+            lines.append(f"  📍 {obj.get('name','?')} — {obj.get('address','?')}")
+        if len(objects) > 15:
+            lines.append(f"  ...и ещё {len(objects) - 15}")
+        return "\n".join(lines)
+    except Exception as e:
+        logger.warning(f"ctx objects: {e}")
         return ""
