@@ -113,16 +113,10 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                 transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             >
                 {/* Logo */}
-                <div className={`flex items-center ${collapsed ? 'justify-center px-2' : 'px-4'} h-16 border-b border-gray-100 dark:border-gray-800 flex-shrink-0`}>
-                    {!collapsed && (
-                        <div className="flex-1 h-8 bg-blue-600 dark:bg-blue-500" style={{
-                            WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
-                            WebkitMaskSize: 'contain', maskSize: 'contain',
-                            WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
-                            WebkitMaskPosition: 'left center', maskPosition: 'left center'
-                        }} />
-                    )}
-                    {collapsed && (
+                <div className={`flex items-center ${collapsed ? 'justify-center px-2' : 'px-5'} h-14 border-b border-gray-100 dark:border-gray-800 flex-shrink-0`}>
+                    {!collapsed ? (
+                        <img src="/logo.png" alt="ВИКС" className="h-7 w-auto object-contain brightness-0 dark:brightness-0 dark:invert opacity-80" />
+                    ) : (
                         <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
                             <span className="text-white font-extrabold text-sm">В</span>
                         </div>

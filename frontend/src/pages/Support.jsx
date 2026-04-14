@@ -258,30 +258,45 @@ export default function Support() {
     const chatPanel = (
         <div className="flex flex-col h-full">
             {/* Header */}
-            <div className="flex items-center gap-3 px-4 pt-4 lg:pt-6 pb-3 flex-shrink-0">
+            <div className="flex items-center gap-3 px-4 pt-4 lg:pt-5 pb-3 flex-shrink-0 border-b border-gray-100 dark:border-gray-800">
                 {isBoss && (
                     <button onClick={() => setShowSidebar(true)} className="lg:hidden w-9 h-9 flex items-center justify-center rounded-xl bg-gray-100 dark:bg-gray-800 mr-1">
                         <ArrowLeft className="w-4 h-4 text-gray-600 dark:text-gray-400" />
                     </button>
                 )}
-                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-2xl flex items-center justify-center">
+                <div className="w-9 h-9 bg-blue-100 dark:bg-blue-900/30 rounded-xl flex items-center justify-center flex-shrink-0">
                     {isViewingOther
-                        ? <User className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                        : <Headphones className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                        ? <User className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        : <Headphones className="w-4 h-4 text-blue-600 dark:text-blue-400" />
                     }
                 </div>
-                <div>
-                    <h1 className="text-xl font-extrabold tracking-tight dark:text-white">
-                        {isViewingOther ? viewUserFio : 'Тех. поддержка'}
+                <div className="min-w-0 flex-1">
+                    <h1 className="text-base font-extrabold tracking-tight dark:text-white truncate">
+                        {isViewingOther ? viewUserFio : 'Поддержка'}
                     </h1>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">
-                        {isViewingOther ? 'Просмотр диалога' : 'ИИ-ассистент ВИКС'}
+                    <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">
+                        {isViewingOther ? 'Просмотр диалога' : 'ИИ-ассистент'}
                     </p>
                 </div>
-                {isViewingOther && (
-                    <span className="ml-auto text-[10px] px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 font-bold">
+                {isViewingOther ? (
+                    <span className="ml-auto text-[10px] px-2 py-1 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 font-bold flex-shrink-0">
                         Только чтение
                     </span>
+                ) : (
+                    <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
+                        {hasTg && (
+                            <a href={supportLinks.support_tg_link} target="_blank" rel="noopener noreferrer"
+                               className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" title="Telegram">
+                                <Send className="w-3.5 h-3.5 text-blue-500" />
+                            </a>
+                        )}
+                        {hasMax && (
+                            <a href={supportLinks.support_max_link} target="_blank" rel="noopener noreferrer"
+                               className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors" title="MAX">
+                                <MessageCircle className="w-3.5 h-3.5 text-purple-500" />
+                            </a>
+                        )}
+                    </div>
                 )}
             </div>
 
@@ -340,28 +355,7 @@ export default function Support() {
                 </div>
             )}
 
-            {/* Messenger links */}
-            {!isViewingOther && hasLinks && (
-                <div className="flex-shrink-0 px-4 pb-4 pt-2">
-                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium mb-2 text-center">
-                        Для связи с человеком перейдите в мессенджер:
-                    </p>
-                    <div className="flex justify-center gap-3">
-                        {hasTg && (
-                            <a href={supportLinks.support_tg_link} target="_blank" rel="noopener noreferrer"
-                               className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl text-sm font-bold border border-blue-100 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors">
-                                <Send className="w-4 h-4" /> Telegram
-                            </a>
-                        )}
-                        {hasMax && (
-                            <a href={supportLinks.support_max_link} target="_blank" rel="noopener noreferrer"
-                               className="inline-flex items-center gap-2 px-4 py-2.5 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-xl text-sm font-bold border border-purple-100 dark:border-purple-800/50 hover:bg-purple-100 dark:hover:bg-purple-900/40 transition-colors">
-                                <Smartphone className="w-4 h-4" /> MAX
-                            </a>
-                        )}
-                    </div>
-                </div>
-            )}
+            {/* Messenger links moved to header as icon buttons */}
         </div>
     );
 
