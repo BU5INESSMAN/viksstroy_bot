@@ -230,7 +230,7 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
     );
 
     return (
-        <div className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
+        <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-lg shadow-2xl relative">
                 <button
                     onClick={handleClose}

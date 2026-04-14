@@ -2,6 +2,13 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Global overflow protection — prevent horizontal scroll on mobile */
+html, body, #root {
+  overflow-x: hidden;
+  width: 100%;
+  max-width: 100vw;
+}
+
 /* Safe area utilities for iPhone notch/home indicator */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);

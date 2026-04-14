@@ -7,7 +7,7 @@ export default function AnimatedModal({ isOpen, onClose, children, className = '
         <AnimatePresence>
             {isOpen && (
                 <motion.div
-                    className={`fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 backdrop-blur-sm ${className}`}
+                    className={`fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 backdrop-blur-sm ${className}`}
                     initial={prefersReducedMotion ? false : { opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}

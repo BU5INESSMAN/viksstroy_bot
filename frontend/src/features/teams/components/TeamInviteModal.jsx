@@ -13,7 +13,7 @@ export default function TeamInviteModal({ inviteInfo, setInviteInfo, copiedLink,
     };
 
     return (
-        <div className="fixed inset-0 w-screen h-[100dvh] z-[130] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+        <div className="fixed inset-0 w-full h-[100dvh] z-[130] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
             <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-sm shadow-2xl relative border border-gray-100 dark:border-gray-700">
                 <button onClick={() => setInviteInfo(null)} className="absolute top-5 right-5 text-gray-400 hover:text-red-500 transition-colors bg-gray-50 dark:bg-gray-700/50 rounded-full p-1.5">
                     <X className="w-5 h-5" />

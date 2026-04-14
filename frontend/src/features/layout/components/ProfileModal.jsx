@@ -167,7 +167,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
 
     return (
         <><motion.div
-            className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm"
+            className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm"
             initial={prefersReducedMotion ? false : { opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ duration: 0.2 }}

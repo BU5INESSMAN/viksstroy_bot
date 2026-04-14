@@ -2,7 +2,7 @@ import { Bell, MapPin, CheckCircle, XCircle, X } from 'lucide-react';
 
 export default function ObjectRequestsPanel({ objectRequests, onApprove, onReject, onClose }) {
     return (
-        <div className="fixed inset-0 w-screen h-[100dvh] z-[99990] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
+        <div className="fixed inset-0 w-full h-[100dvh] z-[99990] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl relative">
                 <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
                     <h3 className="text-xl font-bold dark:text-white flex items-center gap-2">

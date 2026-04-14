@@ -113,7 +113,7 @@ export default function JoinEquipment() {
       </div>
 
       {isConfirmModalOpen && (
-        <div className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
+        <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
             <div className="bg-white dark:bg-gray-800 p-8 rounded-[2rem] w-full max-w-sm text-center shadow-2xl border border-gray-100 dark:border-gray-700">
                 <h3 className="text-2xl font-bold mb-2 dark:text-white">Подтверждение</h3>
                 <p className="text-gray-500 dark:text-gray-400 mb-8 text-sm font-medium leading-relaxed">Привязать вас как водителя для: <br/><b className="text-xl text-gray-900 dark:text-white block mt-2">{equipData.name}</b></p>

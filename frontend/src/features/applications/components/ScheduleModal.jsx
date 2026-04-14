@@ -79,7 +79,7 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed inset-0 w-screen h-[100dvh] z-[99990] bg-black/60 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
+        <div className="fixed inset-0 w-full h-[100dvh] z-[99990] bg-black/60 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                 <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
 

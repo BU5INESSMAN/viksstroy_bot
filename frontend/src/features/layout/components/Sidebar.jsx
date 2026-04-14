@@ -98,7 +98,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
     return (
         <>
             <motion.aside
-                className="fixed top-0 left-0 h-screen bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 z-50 flex flex-col select-none"
+                className="fixed top-0 left-0 h-screen overflow-x-hidden bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 z-50 flex flex-col select-none"
                 animate={{ width: w }}
                 transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             >

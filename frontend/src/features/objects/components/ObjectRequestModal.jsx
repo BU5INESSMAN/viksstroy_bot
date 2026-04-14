@@ -23,7 +23,7 @@ export default function ObjectRequestModal({ onClose, onSubmitted, tgId }) {
     };
 
     return (
-        <div className="fixed inset-0 w-screen h-[100dvh] z-[99990] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+        <div className="fixed inset-0 w-full h-[100dvh] z-[99990] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
             <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-lg shadow-2xl relative">
                 <button
                     onClick={onClose}

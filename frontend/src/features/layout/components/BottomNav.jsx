@@ -75,7 +75,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
             <AnimatePresence>
             {isMenuOpen && (
                 <motion.div
-                    className="fixed inset-0 w-screen h-[100dvh] z-[100] bg-black/60 flex items-end sm:items-center justify-center sm:p-4"
+                    className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-end sm:items-center justify-center sm:p-4"
                     initial={prefersReducedMotion ? false : { opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
