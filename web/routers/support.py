@@ -2,9 +2,11 @@ import sys
 import os
 import logging
 import asyncio
+import random
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import aiohttp
 from fastapi import APIRouter, HTTPException, Request
 from database_deps import db
 from utils import resolve_id
@@ -12,12 +14,27 @@ from utils import resolve_id
 router = APIRouter(tags=["Support"])
 logger = logging.getLogger("SUPPORT")
 
-MODELS = [
+# Prioritised free-tier models on OpenRouter.
+# openrouter/free auto-selects the best available free model.
+# The rest are explicit fallbacks ordered by quality.
+MODELS_PRIMARY = [
+    "openrouter/auto",
+]
+MODELS_FALLBACK = [
+    # Tier 1 — best quality free models
     "google/gemma-3-27b-it:free",
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "deepseek/deepseek-r1:free",
+    "qwen/qwen3-30b-a3b:free",
+    # Tier 2 — good quality
+    "mistralai/mistral-small-3.1-24b-instruct:free",
+    "google/gemma-3-12b-it:free",
     "nousresearch/hermes-3-llama-3.1-405b:free",
+    # Tier 3 — smaller but reliable
     "meta-llama/llama-3.2-3b-instruct:free",
     "google/gemma-3-4b-it:free",
     "google/gemma-3n-e4b-it:free",
+    "microsoft/phi-4:free",
 ]
 
 _knowledge_cache = None
@@ -66,6 +83,60 @@ async def _should_notify(user_id: int) -> bool:
         return (datetime.now() - last_time) > timedelta(minutes=30)
     except Exception:
         return True
+
+
+async def _call_ai(messages: list, api_key: str, user_id: int = 0) -> str:
+    """Try free models with smart fallback. Returns AI text or an error string."""
+    if not api_key:
+        return "ИИ-поддержка не настроена. Обратитесь к администратору или используйте мессенджеры ниже."
+
+    # Primary auto-router first, then shuffled fallbacks to distribute load
+    fallbacks = list(MODELS_FALLBACK)
+    random.shuffle(fallbacks)
+    models_to_try = MODELS_PRIMARY + fallbacks
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://miniapp.viks22.ru",
+        "X-Title": "VIKS Schedule",
+    }
+    last_error = None
+
+    async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as session:
+        for model in models_to_try:
+            try:
+                async with session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    json={"model": model, "messages": messages, "max_tokens": 1000, "temperature": 0.3},
+                    headers=headers,
+                ) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        reply = (result.get("choices") or [{}])[0].get("message", {}).get("content", "")
+                        if reply and reply.strip():
+                            logger.info(f"AI response from {model} for user {user_id}")
+                            return reply.strip()
+                        logger.warning(f"Model {model} returned empty response, trying next")
+                        continue
+                    if resp.status in (429, 400, 503, 502):
+                        logger.warning(f"Model {model} returned {resp.status}, trying next")
+                        continue
+                    if resp.status == 401:
+                        return "Ошибка авторизации AI. Проверьте API ключ в настройках."
+                    body = await resp.text()
+                    logger.warning(f"Model {model} returned {resp.status}: {body[:200]}")
+                    last_error = f"HTTP {resp.status}"
+                    continue
+            except asyncio.TimeoutError:
+                logger.warning(f"Model {model} timed out, trying next")
+                continue
+            except Exception as e:
+                logger.warning(f"Model {model} error: {e}, trying next")
+                last_error = str(e)
+                continue
+
+    return f"Все AI модели недоступны. Попробуйте позже или обратитесь через мессенджеры. ({last_error or '429'})"
 
 
 @router.get("/api/support/history")
@@ -191,18 +262,7 @@ async def support_chat(request: Request):
 
         asyncio.create_task(_notify_support_request())
 
-    # Get AI API key (OpenRouter)
-    api_key = await _get_setting("gemini_api_key")
-    if not api_key:
-        fallback = "ИИ-поддержка не настроена. Обратитесь к администратору или используйте мессенджеры ниже."
-        await db.conn.execute(
-            "INSERT INTO support_chats (user_id, role, message) VALUES (?, 'assistant', ?)",
-            (resolved_user_id, fallback)
-        )
-        await db.conn.commit()
-        return {"reply": fallback}
-
-    # Build OpenAI-compatible messages array with knowledge base
+    # Build OpenAI-compatible messages with knowledge base
     knowledge = _load_knowledge_base()
 
     system_content = f"""Ты — ИИ-ассистент платформы ВИКС Расписание. Помогай пользователям разобраться в работе платформы.
@@ -226,42 +286,10 @@ async def support_chat(request: Request):
         })
     messages.append({"role": "user", "content": user_message})
 
-    try:
-        import aiohttp
-
-        reply = None
-        async with aiohttp.ClientSession() as session:
-            for model in MODELS:
-                async with session.post(
-                    "https://openrouter.ai/api/v1/chat/completions",
-                    json={
-                        "model": model,
-                        "messages": messages
-                    },
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                        "HTTP-Referer": "https://miniapp.viks22.ru",
-                        "X-Title": "VIKS Schedule"
-                    }
-                ) as resp:
-                    if resp.status == 200:
-                        result = await resp.json()
-                        reply = result["choices"][0]["message"]["content"]
-                        break
-                    elif resp.status in (429, 400, 503):
-                        logger.warning(f"Model {model} returned {resp.status}, trying next")
-                        continue
-                    else:
-                        error_text = await resp.text()
-                        logger.error(f"OpenRouter API error {resp.status} for {model}: {error_text}")
-                        break
-
-        if not reply:
-            reply = "Ошибка AI сервиса. Попробуйте позже или обратитесь через мессенджеры."
-    except Exception as e:
-        logger.error(f"OpenRouter API error: {e}")
-        reply = "Ошибка соединения с AI. Обратитесь через мессенджеры ниже."
+    # Call AI with smart multi-model fallback
+    # Setting is named gemini_api_key for legacy reasons — it holds an OpenRouter key
+    api_key = await _get_setting("gemini_api_key")
+    reply = await _call_ai(messages, api_key, user_id=resolved_user_id)
 
     # Save AI reply
     await db.conn.execute(
