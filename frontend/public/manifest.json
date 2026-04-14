@@ -2,7 +2,7 @@
   "name": "ВИКС Расписание",
   "short_name": "ВИКС",
   "description": "Платформа управления строительными нарядами",
-  "start_url": "/",
+  "start_url": "/dashboard",
   "display": "standalone",
   "orientation": "portrait",
   "background_color": "#1f2937",

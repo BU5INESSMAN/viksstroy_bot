@@ -1,15 +1,27 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { ShieldCheck, MessageCircle, Send, XCircle } from 'lucide-react';
-import { saveAuthData } from '../utils/tokenStorage';
+import { saveAuthData, loadAuthData } from '../utils/tokenStorage';
 
 export default function Login() {
   const [error, setError] = useState('');
   const [loginCode, setLoginCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [checking, setChecking] = useState(true);
 
   const navigate = useNavigate();
+
+  // Redirect already-authenticated users to dashboard
+  useEffect(() => {
+    loadAuthData().then(stored => {
+      if (stored?.tg_id && stored?.user_role) {
+        navigate('/dashboard', { replace: true });
+      } else {
+        setChecking(false);
+      }
+    }).catch(() => setChecking(false));
+  }, [navigate]);
 
   const handleCodeLogin = async (e) => {
       e.preventDefault();
@@ -31,6 +43,14 @@ export default function Login() {
           setIsLoading(false);
       }
   };
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 transition-colors">
