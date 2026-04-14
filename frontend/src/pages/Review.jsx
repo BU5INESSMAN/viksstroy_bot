@@ -203,15 +203,15 @@ export default function Review() {
                 </h2>
                 <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto">
                     {isModOrBoss && (
-                        <button onClick={() => setScheduleOpen(true)} disabled={isProcessing} className="w-full sm:w-auto bg-violet-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                        <button data-tour="review-schedule-btn" onClick={() => setScheduleOpen(true)} disabled={isProcessing} className="w-full sm:w-auto bg-violet-500 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-violet-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98] flex items-center justify-center gap-2">
                             <Calendar className="w-4 h-4" /> Расстановка
                         </button>
                     )}
                 </div>
             </div>
 
-            <ReviewSection title="Требуют проверки" icon={Clock} colorClass="border-yellow-200 dark:border-yellow-900/30" titleColorClass="text-yellow-700 dark:text-yellow-500" apps={waitingApps} statusType="waiting" renderAppCard={renderAppCard} />
-            <div ref={approvedRef}>
+            <div data-tour="review-waiting"><ReviewSection title="Требуют проверки" icon={Clock} colorClass="border-yellow-200 dark:border-yellow-900/30" titleColorClass="text-yellow-700 dark:text-yellow-500" apps={waitingApps} statusType="waiting" renderAppCard={renderAppCard} /></div>
+            <div ref={approvedRef} data-tour="review-approved">
                 <ReviewSection title="Одобрены (ожидают начала)" icon={CheckCircle} colorClass="border-emerald-200 dark:border-emerald-900/30" titleColorClass="text-emerald-700 dark:text-emerald-500" apps={approvedApps} statusType="approved" renderAppCard={renderAppCard} />
             </div>
             <ReviewSection title="В работе" icon={HardHat} colorClass="border-blue-200 dark:border-blue-900/30" titleColorClass="text-blue-700 dark:text-blue-500" apps={inProgressApps} statusType="published" renderAppCard={renderAppCard} />

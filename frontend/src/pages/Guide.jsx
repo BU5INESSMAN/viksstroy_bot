@@ -4,7 +4,8 @@ import {
     KeyRound, UserCircle, ClipboardList, Truck, Calendar, LayoutGrid,
     Settings, Smartphone, Search, BellRing, Link2, Users, MapPin,
     ArrowRightLeft, FileText, Shield, Bot, ChevronDown, Wrench,
-    HardHat, CheckCircle, Send, MessageCircle, BookOpen, Headphones
+    HardHat, CheckCircle, Send, MessageCircle, BookOpen, Headphones,
+    RotateCcw
 } from 'lucide-react';
 import GlassCard from '../components/ui/GlassCard';
 import { ROLE_NAMES } from '../utils/roleConfig';
@@ -355,9 +356,23 @@ export default function Guide() {
                     <h1 className="text-3xl md:text-4xl font-extrabold mb-3 tracking-tight flex items-center gap-3">
                         <BookOpen className="w-8 h-8 md:w-10 md:h-10" /> База знаний
                     </h1>
-                    <p className="text-blue-100 text-sm md:text-base font-medium mb-8 leading-relaxed max-w-xl">
-                        Полное руководство по платформе. 15 разделов, все функции от регистрации до администрирования.
-                    </p>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-8">
+                        <p className="text-blue-100 text-sm md:text-base font-medium leading-relaxed max-w-xl flex-1">
+                            Полное руководство по платформе. 15 разделов, все функции от регистрации до администрирования.
+                        </p>
+                        <button
+                            onClick={() => {
+                                Object.keys(localStorage).forEach(key => {
+                                    if (key.startsWith('tour_')) localStorage.removeItem(key);
+                                });
+                                window.location.reload();
+                            }}
+                            className="flex-shrink-0 px-4 py-2 rounded-xl bg-white/10 border border-white/20 text-white text-sm font-medium hover:bg-white/20 transition-colors flex items-center gap-2"
+                        >
+                            <RotateCcw className="w-4 h-4" />
+                            Пройти гайд заново
+                        </button>
+                    </div>
                     <div className="relative max-w-xl">
                         <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
                             <Search className="w-5 h-5 text-blue-300" />

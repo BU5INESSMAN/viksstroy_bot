@@ -132,6 +132,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                                     onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }} accent />
                             ) : (
                                 <motion.button
+                                    data-tour="sidebar-create-btn"
                                     onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
                                     className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-3 py-2.5 text-sm font-bold flex items-center justify-center gap-1.5 transition-colors mb-2"
                                     whileHover={anim({ scale: 1.02 })}
@@ -157,6 +158,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                                     isOpen={openMenus[item.id]}
                                     onToggle={() => toggleMenu(item.id)}
                                     onClick={() => navigate(item.path)}
+                                    dataTour={`sidebar-nav-${{ home: 'home', objects: 'objects', resources: 'resources', review: 'orders', kp: 'smr', system: 'settings' }[item.id] || item.id}`}
                                 />
                                 {/* Sub-items */}
                                 {!collapsed && item.subItems?.length > 0 && (
@@ -201,6 +203,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                                 isActive={location.pathname === item.path}
                                 onClick={() => navigate(item.path)}
                                 secondary
+                                dataTour={item.path === '/support' ? 'sidebar-support' : undefined}
                             />
                         ))}
                         <NavItem icon={ThemeIcon} label="Тема" collapsed={collapsed}
@@ -212,6 +215,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                                 isActive={false} onClick={() => openProfile(tgId)} secondary />
                         ) : (
                             <motion.div
+                                data-tour="sidebar-profile"
                                 className="flex items-center gap-3 rounded-xl px-3 py-2.5 cursor-pointer text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
                                 whileTap={anim({ scale: 0.97 })}
                                 onClick={() => openProfile(tgId)}
@@ -246,7 +250,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
 }
 
 /* ───── Nav item ───── */
-function NavItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, accent, hasSubItems, isOpen, onToggle }) {
+function NavItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, accent, hasSubItems, isOpen, onToggle, dataTour }) {
     const base = accent
         ? 'bg-blue-600 text-white hover:bg-blue-700'
         : isActive
@@ -261,6 +265,7 @@ function NavItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, a
             whileTap={anim({ scale: 0.97 })}
             title={collapsed ? label : undefined}
             onClick={onClick}
+            data-tour={dataTour}
         >
             {isActive && !accent && (
                 <motion.div

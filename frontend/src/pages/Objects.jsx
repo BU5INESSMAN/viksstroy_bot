@@ -226,6 +226,7 @@ export default function Objects() {
                     )}
                     {canCreate && (
                         <button
+                            data-tour="objects-create-btn"
                             onClick={() => setCreateModalOpen(true)}
                             className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:bg-blue-700 transition-all flex items-center gap-2 active:scale-95"
                         >
@@ -236,7 +237,7 @@ export default function Objects() {
             </div>
 
             {/* Objects grid */}
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-tour="objects-grid">
                 {objects.map(obj => (
                     <div
                         key={obj.id}

@@ -129,7 +129,7 @@ export default function Equipment() {
             {/* Кнопки управления теперь выровнены по правому краю */}
             {canManageEquipment && (
                 <div className="flex justify-end gap-2.5 mb-2">
-                    <button onClick={() => setActiveTab('new')} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
+                    <button data-tour="equip-add-btn" onClick={() => setActiveTab('new')} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
                         <Plus className="w-4 h-4" /> Добавить
                     </button>
                     <button onClick={() => setActiveTab('bulk')} className="bg-gray-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-gray-900 transition-all active:scale-95 flex items-center gap-2 dark:bg-gray-700 dark:hover:bg-gray-600">
@@ -138,7 +138,7 @@ export default function Equipment() {
                 </div>
             )}
 
-            <div className="flex overflow-x-auto space-x-2.5 pb-2 custom-scrollbar">
+            <div className="flex overflow-x-auto space-x-2.5 pb-2 custom-scrollbar" data-tour="equip-categories">
                 <button onClick={() => setActiveTab('list')} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'list' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>Все машины</button>
                 {categories.map(c => (
                     <button key={c} onClick={() => setActiveTab(c)} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === c ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>{c}</button>
@@ -146,7 +146,7 @@ export default function Equipment() {
             </div>
 
             {['list', ...categories].includes(activeTab) && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" data-tour="equip-grid">
                     {equipment.filter(e => activeTab === 'list' || e.category === activeTab).map(eq => (
                         <EquipmentCard
                             key={eq.id}

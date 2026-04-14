@@ -10,6 +10,8 @@ import BottomNav from '../features/layout/components/BottomNav';
 import Sidebar from '../features/layout/components/Sidebar';
 import ProfileModal from '../features/layout/components/ProfileModal';
 import SessionModal from '../features/layout/components/SessionModal';
+import OnboardingTour from './OnboardingTour';
+import { getTourSteps } from '../utils/tourSteps';
 
 function MaintenanceOverlay() {
     const [serverBack, setServerBack] = useState(false);
@@ -87,6 +89,11 @@ export default function Layout() {
 
     const [sidebarCollapsed, setSidebarCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === 'true');
 
+    // Onboarding tour state
+    const [showTour, setShowTour] = useState(false);
+    const [tourSteps, setTourSteps] = useState([]);
+    const [tourId, setTourId] = useState('');
+
     // Sync sidebar collapsed state from localStorage (Sidebar writes it)
     useEffect(() => {
         const onStorage = () => setSidebarCollapsed(localStorage.getItem('sidebar_collapsed') === 'true');
@@ -141,6 +148,39 @@ export default function Layout() {
         const id = setInterval(check, 30000);
         return () => clearInterval(id);
     }, []);
+
+    // Onboarding tour — show sidebar tour on first ever visit, then per-page tours
+    useEffect(() => {
+        if (!tgId || !role || role === 'Гость') return;
+        const getPageKey = (p) => {
+            if (p === '/dashboard') return 'dashboard';
+            if (p === '/review') return 'review';
+            if (p === '/my-apps') return 'myapps';
+            if (p === '/resources') return 'teams';
+            if (p.startsWith('/teams')) return 'teams';
+            if (p.startsWith('/equipment')) return 'equipment';
+            if (p.startsWith('/objects')) return 'objects';
+            if (p.startsWith('/kp')) return 'kp';
+            if (p.startsWith('/system')) return 'system';
+            if (p.startsWith('/support')) return 'support';
+            return null;
+        };
+        const pageKey = getPageKey(location.pathname);
+        const globalDone = localStorage.getItem('tour_global_done');
+        const pageDone = pageKey && localStorage.getItem(`tour_${pageKey}_done`);
+
+        // Small delay so page elements render before we measure them
+        const timer = setTimeout(() => {
+            if (!globalDone) {
+                const steps = getTourSteps('sidebar', role);
+                if (steps.length) { setTourSteps(steps); setTourId('global'); setShowTour(true); }
+            } else if (pageKey && !pageDone) {
+                const steps = getTourSteps(pageKey, role);
+                if (steps.length) { setTourSteps(steps); setTourId(pageKey); setShowTour(true); }
+            }
+        }, 600);
+        return () => clearTimeout(timer);
+    }, [location.pathname, tgId, role]);
 
     const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light');
 
@@ -284,6 +324,14 @@ export default function Layout() {
                     setProfileModalOpen={setProfileModalOpen}
                     canEditUsers={canEditUsers}
                     isMyProfile={isMyProfile}
+                />
+            )}
+
+            {showTour && tourSteps.length > 0 && (
+                <OnboardingTour
+                    steps={tourSteps}
+                    tourId={tourId}
+                    onComplete={() => setShowTour(false)}
                 />
             )}
         </div>

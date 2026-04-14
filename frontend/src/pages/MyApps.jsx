@@ -66,7 +66,7 @@ export default function MyApps() {
                     <div className="flex items-center gap-2 text-sm font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
                         <Filter className="w-4 h-4" /> Период:
                     </div>
-                    <div className="flex flex-wrap gap-2.5">
+                    <div className="flex flex-wrap gap-2.5" data-tour="myapps-filters">
                         {[
                             { id: 'all', label: 'За все время' },
                             { id: 'week', label: 'За неделю' },
@@ -93,7 +93,7 @@ export default function MyApps() {
                     )}
                 </div>
 
-                <div className="space-y-4">
+                <div className="space-y-4" data-tour="myapps-list">
                     {filteredApps.length === 0 ? (
                         <div className="flex flex-col items-center justify-center py-12 bg-gray-50 dark:bg-gray-900/30 rounded-3xl border border-dashed border-gray-200 dark:border-gray-700 text-gray-400">
                             <Search className="w-12 h-12 mb-3 opacity-30" />

@@ -220,7 +220,7 @@ export default function Home() {
     return (
         <main className="px-4 sm:px-6 lg:px-8 space-y-8 pb-24">
 
-            <div className="space-y-6">
+            <div className="space-y-6" data-tour="active-apps-card">
                 {['worker', 'driver', 'foreman'].includes(role) && (
                     <ActiveApplicationsCard
                         todayApps={todayApps}
@@ -235,7 +235,7 @@ export default function Home() {
             </div>
 
             {!isWorkerOrDriver && (
-                <DebtorsWidget debtors={debtors} tgId={tgId} />
+                <div data-tour="debtors-widget"><DebtorsWidget debtors={debtors} tgId={tgId} /></div>
             )}
 
             {!isWorkerOrDriver && (
@@ -265,7 +265,7 @@ export default function Home() {
                         </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5" data-tour="kanban-board">
                         <KanbanCol title="На модерации" icon={Clock} colorClass="bg-yellow-50/80 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 border-yellow-100 dark:border-yellow-900/50" apps={appsMap.waiting} isOpen={openKanban.waiting} toggleOpen={() => setOpenKanban({ ...openKanban, waiting: !openKanban.waiting })} onAppClick={openAppModalFromKanban} />
                         <KanbanCol title="Одобрены" icon={CheckCircle} colorClass="bg-emerald-50/80 text-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/50" apps={appsMap.approved} isOpen={openKanban.approved} toggleOpen={() => setOpenKanban({ ...openKanban, approved: !openKanban.approved })} onAppClick={openAppModalFromKanban} />
                         <KanbanCol title="В работе" icon={HardHat} colorClass="bg-blue-50/80 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 border-blue-100 dark:border-blue-900/50" apps={appsMap.in_progress} isOpen={openKanban.in_progress} toggleOpen={() => setOpenKanban({ ...openKanban, in_progress: !openKanban.in_progress })} onAppClick={openAppModalFromKanban} />

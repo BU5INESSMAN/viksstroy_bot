@@ -274,7 +274,7 @@ export default function System() {
             )}
 
             {/* Broadcast */}
-            <div id="system-broadcast" />
+            <div id="system-broadcast" data-tour="system-broadcast" />
             <BroadcastPanel
                 users={users}
                 broadcastText={broadcastText}
@@ -293,7 +293,7 @@ export default function System() {
             />
 
             {/* Users Table (Grouped by Role) */}
-            <GlassCard id="system-users" className="p-6 sm:p-8 overflow-hidden">
+            <GlassCard id="system-users" data-tour="system-users" className="p-6 sm:p-8 overflow-hidden">
                 <SectionHeader icon={Users} iconColor="text-emerald-500 bg-emerald-500" title="Пользователи"
                     subtitle="Нажмите на пользователя для редактирования." />
 

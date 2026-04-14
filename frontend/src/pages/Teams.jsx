@@ -128,13 +128,13 @@ export default function Teams() {
             {/* Кнопка создания теперь выровнена по правому краю */}
             {canManage && (
                 <div className="flex justify-end mb-2">
-                    <button onClick={() => setTeamModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
+                    <button data-tour="teams-create-btn" onClick={() => setTeamModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
                         <Plus className="w-4 h-4" /> Создать бригаду
                     </button>
                 </div>
             )}
 
-            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-tour="teams-grid">
                 {teams.map(t => (
                     <TeamCard key={t.id} t={t} canDeleteTeam={canDeleteTeam} openManageModal={openManageModal} handleDeleteTeam={handleDeleteTeam} />
                 ))}

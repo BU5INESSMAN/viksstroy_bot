@@ -301,7 +301,7 @@ export default function Support() {
             </div>
 
             {/* Chat area */}
-            <div ref={chatRef} className="flex-1 overflow-y-auto min-h-0 pb-2 px-4 pr-3 scrollbar-thin">
+            <div ref={chatRef} className="flex-1 overflow-y-auto min-h-0 pb-2 px-4 pr-3 scrollbar-thin" data-tour="support-chat">
                 {messages.length === 0 && !loading && !historyLoading && (
                     <motion.div {...fadeIn} className="flex flex-col items-center justify-center h-full text-center px-4">
                         <div className="w-16 h-16 bg-blue-50 dark:bg-blue-900/20 rounded-3xl flex items-center justify-center mb-4">
@@ -332,7 +332,7 @@ export default function Support() {
             {/* Input area — hidden when viewing other's chat */}
             {!isViewingOther && (
                 <div className="flex-shrink-0 px-4 pt-3 pb-2 border-t border-gray-100 dark:border-gray-800">
-                    <div className="flex items-end gap-2">
+                    <div className="flex items-end gap-2" data-tour="support-input">
                         <textarea
                             ref={textareaRef}
                             value={input}
