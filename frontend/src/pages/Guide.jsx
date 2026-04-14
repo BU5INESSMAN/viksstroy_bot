@@ -362,10 +362,11 @@ export default function Guide() {
                         </p>
                         <button
                             onClick={() => {
+                                localStorage.removeItem('tour_complete');
                                 Object.keys(localStorage).forEach(key => {
                                     if (key.startsWith('tour_')) localStorage.removeItem(key);
                                 });
-                                window.location.reload();
+                                window.location.href = '/dashboard';
                             }}
                             className="flex-shrink-0 px-4 py-2 rounded-xl bg-white/10 border border-white/20 text-white text-sm font-medium hover:bg-white/20 transition-colors flex items-center gap-2"
                         >
