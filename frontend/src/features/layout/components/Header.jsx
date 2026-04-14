@@ -9,7 +9,7 @@ export default function Header({ isTMA, realRole, role }) {
     };
 
     return (
-        <header className={`w-full max-w-full overflow-x-hidden bg-white dark:bg-gray-800 shadow-sm border-b border-gray-100 dark:border-gray-700/80 mb-4 ${isTMA ? 'pt-16' : 'pt-4'}`}>
+        <header className={`w-full max-w-full bg-white dark:bg-gray-800 shadow-sm border-b border-gray-100 dark:border-gray-700/80 mb-4 ${isTMA ? 'pt-16' : 'pt-4'}`}>
             {realRole && (
                 <div className="bg-purple-600 text-white text-center py-2.5 font-bold flex justify-center items-center space-x-4 relative z-50 shadow-sm text-sm">
                     <span className="flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Тест роли: {roleNames[role]}</span>

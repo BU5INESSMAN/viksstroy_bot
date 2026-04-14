@@ -239,7 +239,7 @@ export default function Layout() {
     const sidebarWidth = sidebarCollapsed ? 64 : 256;
 
     return (
-        <div className="flex min-h-screen w-full max-w-full overflow-x-hidden bg-gray-50/50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-200">
+        <div className="flex min-h-screen w-full max-w-full bg-gray-50/50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-200">
             {/* Sidebar — desktop only */}
             <div className="hidden lg:block">
                 <Sidebar
@@ -253,7 +253,7 @@ export default function Layout() {
 
             {/* Main content area */}
             <div
-                className="flex-1 flex flex-col min-h-screen w-full max-w-full overflow-x-hidden pb-20 lg:pb-0 transition-[margin] duration-200"
+                className="flex-1 flex flex-col min-h-screen w-full max-w-full pb-20 lg:pb-0 transition-[margin] duration-200"
                 style={{ marginLeft: typeof window !== 'undefined' && window.innerWidth >= 1024 ? sidebarWidth : 0 }}
             >
                 {/* Header — mobile only */}

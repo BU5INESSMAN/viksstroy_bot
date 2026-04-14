@@ -2,19 +2,17 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Global overflow protection — prevent horizontal scroll on mobile */
-html, body, #root {
-  overflow-x: hidden;
-  width: 100%;
-  max-width: 100vw;
-}
-
 /* Safe area utilities for iPhone notch/home indicator */
 .pb-safe {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 body {
+  /* Global overflow protection — prevent horizontal scroll on mobile.
+     Applied ONLY to body (not html/#root) to avoid nested scroll containers
+     that break mouse-wheel vertical scrolling. */
+  overflow-x: hidden;
+  max-width: 100vw;
   background-color: #f9fafb;
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
