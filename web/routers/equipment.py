@@ -359,19 +359,30 @@ async def get_equip_invite_info(invite_code: str):
 
 @router.post("/api/equipment/invite/join")
 async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
-    async with db.conn.execute("SELECT id, name FROM equipment WHERE invite_code = ?", (invite_code,)) as cur:
+    async with db.conn.execute("SELECT id, name, driver_fio FROM equipment WHERE invite_code = ?", (invite_code,)) as cur:
         eq_row = await cur.fetchone()
     if not eq_row: raise HTTPException(status_code=404, detail="Техника не найдена")
 
     real_tg_id = await resolve_id(tg_id)
+    equip_driver_fio = eq_row[2] or ""  # driver_fio from equipment record
     try:
         await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (real_tg_id, eq_row[0]))
         user = await db.get_user(real_tg_id)
-        fio = dict(user).get('fio', f"Пользователь {real_tg_id}") if user else f"Пользователь {real_tg_id}"
         if not user:
+            # New user — use equipment's driver_fio if available, otherwise placeholder
+            fio = equip_driver_fio if equip_driver_fio and equip_driver_fio != "Не указан" else f"Пользователь {real_tg_id}"
             await db.add_user(real_tg_id, fio, "driver")
-        elif dict(user)['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
-            await db.update_user_role(real_tg_id, "driver")
+        else:
+            user_dict = dict(user)
+            fio = user_dict.get('fio', '')
+            # Auto-assign FIO from equipment if user has a placeholder name
+            if equip_driver_fio and equip_driver_fio != "Не указан":
+                if not fio or fio.startswith("Пользователь") or fio == "Не указан":
+                    fio = equip_driver_fio
+                    await db.conn.execute("UPDATE users SET fio = ? WHERE user_id = ?", (fio, real_tg_id))
+                    logger.info(f"Auto-set FIO '{fio}' for user {real_tg_id} from equipment '{eq_row[1]}'")
+            if user_dict['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
+                await db.update_user_role(real_tg_id, "driver")
         await db.conn.commit()
     except:
         await db.conn.rollback()
