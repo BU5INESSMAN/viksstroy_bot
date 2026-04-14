@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Headphones, Send, MessageCircle, Smartphone, Bot, Users, ArrowLeft, Clock, User } from 'lucide-react';
 import axios from 'axios';
+import { renderMarkdown } from '../utils/markdownLight';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const fadeIn = prefersReducedMotion ? {} : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.2 } };
@@ -39,12 +40,12 @@ function ChatMessage({ msg, index }) {
                     <Bot className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
                 </div>
             )}
-            <div className={`max-w-[80%] sm:max-w-[70%] px-4 py-2.5 text-sm leading-relaxed whitespace-pre-wrap break-words ${
+            <div className={`max-w-[80%] sm:max-w-[70%] px-4 py-2.5 text-sm leading-relaxed break-words ${
                 isUser
-                    ? 'bg-blue-600 text-white rounded-2xl rounded-br-md shadow-sm'
+                    ? 'bg-blue-600 text-white rounded-2xl rounded-br-md shadow-sm whitespace-pre-wrap'
                     : 'bg-gray-100 dark:bg-gray-700/60 text-gray-800 dark:text-gray-200 rounded-2xl rounded-bl-md'
             }`}>
-                {msg.text}
+                {isUser ? msg.text : renderMarkdown(msg.text)}
             </div>
         </motion.div>
     );
