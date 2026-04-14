@@ -25,7 +25,7 @@ const Support = lazy(() => import('./pages/Support'));
 
 function ProtectedRoute({ children }) {
   const [authState, setAuthState] = useState(() => {
-    // Synchronous fast-path: localStorage already has full auth data
+    // Synchronous fast-path: localStorage already has auth data
     const role = localStorage.getItem('user_role');
     const tgId = localStorage.getItem('tg_id');
     if (role && tgId) return 'authenticated';
@@ -33,24 +33,41 @@ function ProtectedRoute({ children }) {
   });
 
   useEffect(() => {
-    if (authState === 'authenticated') return;
+    // Fast-path hit: back-fill IndexedDB + Cache API from localStorage
+    // so they survive iOS localStorage eviction on next reopen.
+    if (authState === 'authenticated') {
+      const role = localStorage.getItem('user_role');
+      const tgId = localStorage.getItem('tg_id');
+      const token = localStorage.getItem('session_token');
+      if (role && tgId) {
+        saveAuthData(tgId, role, token || '');  // fire-and-forget
+      }
+      return;
+    }
 
     async function checkAuth() {
       // Step 1: Try all local storage layers (localStorage → IndexedDB → Cache API)
       const stored = await loadAuthData();
 
-      if (stored?.session_token) {
-        // Validate the token on the server
-        try {
-          const res = await axios.get(`/api/auth/session?token=${encodeURIComponent(stored.session_token)}`);
-          if (res.data?.tg_id) {
-            await saveAuthData(res.data.tg_id, res.data.role, stored.session_token);
-            setAuthState('authenticated');
-            return;
+      if (stored?.user_role && stored?.tg_id) {
+        if (stored.session_token) {
+          // Validate the token on the server
+          try {
+            const res = await axios.get(`/api/auth/session?token=${encodeURIComponent(stored.session_token)}`);
+            if (res.data?.tg_id) {
+              await saveAuthData(res.data.tg_id, res.data.role, stored.session_token);
+              setAuthState('authenticated');
+              return;
+            }
+          } catch {
+            // Token expired — clear all layers
+            await clearAuthData();
           }
-        } catch {
-          // Token expired — clear all layers
-          await clearAuthData();
+        } else {
+          // Have role+tgId but no token (old login) — trust it
+          await saveAuthData(stored.tg_id, stored.user_role, '');
+          setAuthState('authenticated');
+          return;
         }
       }
 

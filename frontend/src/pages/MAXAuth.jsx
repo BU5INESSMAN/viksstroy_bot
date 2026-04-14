@@ -67,9 +67,9 @@ export default function MAXAuth() {
     formData.append('last_name', lastName);
 
     axios.post('/api/max/auth', formData)
-      .then(res => {
+      .then(async (res) => {
         if (res.data.status === 'ok') {
-          saveAuthData(res.data.tg_id, res.data.role, res.data.session_token);
+          await saveAuthData(res.data.tg_id, res.data.role, res.data.session_token);
           navigate(returnUrl);
         } else if (res.data.status === 'needs_password') {
           setMaxUser({ id: userId, first_name: firstName, last_name: lastName });

@@ -34,10 +34,10 @@ export default function TMAAuth() {
       formData.append('last_name', user.last_name || '');
 
       axios.post('/api/tma/auth', formData)
-        .then(res => {
+        .then(async (res) => {
           if (cancelled) return;
           if (res.data.status === 'ok') {
-            saveAuthData(res.data.tg_id, res.data.role, res.data.session_token);
+            await saveAuthData(res.data.tg_id, res.data.role, res.data.session_token);
             navigate(returnUrl);
           } else if (res.data.status === 'needs_password') {
             setTgUser(res.data);

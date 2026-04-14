@@ -115,34 +115,34 @@ export async function saveAuthData(tgId, role, sessionToken) {
  * Returns { tg_id, user_role, session_token } or null.
  */
 export async function loadAuthData() {
-  // Layer 1 — localStorage
+  // Layer 1 — localStorage (role + tgId required; token optional for backward compat)
   const role = localStorage.getItem('user_role');
   const tgId = localStorage.getItem('tg_id');
   const token = localStorage.getItem('session_token');
-  if (role && tgId && token) {
-    return { tg_id: tgId, user_role: role, session_token: token };
+  if (role && tgId) {
+    return { tg_id: tgId, user_role: role, session_token: token || null };
   }
 
   // Layer 2 — IndexedDB
   const idbData = await idbGet();
-  if (idbData?.tg_id && idbData?.user_role && idbData?.session_token) {
+  if (idbData?.tg_id && idbData?.user_role) {
     // Back-fill localStorage for fast path next time
     try {
       localStorage.setItem('tg_id', idbData.tg_id);
       localStorage.setItem('user_role', idbData.user_role);
-      localStorage.setItem('session_token', idbData.session_token);
+      if (idbData.session_token) localStorage.setItem('session_token', idbData.session_token);
     } catch { /* silent */ }
     return idbData;
   }
 
   // Layer 3 — Cache API
   const cacheData = await cacheGet();
-  if (cacheData?.tg_id && cacheData?.user_role && cacheData?.session_token) {
+  if (cacheData?.tg_id && cacheData?.user_role) {
     // Back-fill localStorage + IndexedDB
     try {
       localStorage.setItem('tg_id', cacheData.tg_id);
       localStorage.setItem('user_role', cacheData.user_role);
-      localStorage.setItem('session_token', cacheData.session_token);
+      if (cacheData.session_token) localStorage.setItem('session_token', cacheData.session_token);
     } catch { /* silent */ }
     await idbSet(cacheData);
     return cacheData;
