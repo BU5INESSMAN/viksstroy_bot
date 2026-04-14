@@ -10,6 +10,7 @@ import aiohttp
 from fastapi import APIRouter, HTTPException, Request
 from database_deps import db
 from utils import resolve_id
+from services.ai_context import build_user_context
 
 router = APIRouter(tags=["Support"])
 logger = logging.getLogger("SUPPORT")
@@ -262,20 +263,34 @@ async def support_chat(request: Request):
 
         asyncio.create_task(_notify_support_request())
 
-    # Build OpenAI-compatible messages with knowledge base
+    # Build OpenAI-compatible messages with knowledge base + live context
     knowledge = _load_knowledge_base()
 
-    system_content = f"""Ты — ИИ-ассистент платформы ВИКС Расписание. Помогай пользователям разобраться в работе платформы.
+    # Fetch live data relevant to the user's question (read-only, role-gated)
+    dynamic_context = ""
+    try:
+        dynamic_context = await build_user_context(db, resolved_user_id, user_message)
+    except Exception as e:
+        logger.warning(f"AI context build failed (non-fatal): {e}")
 
-Вот полная база знаний:
+    user_role = dict(user_obj).get("role", "worker") if user_obj else "worker"
 
+    system_content = f"""Ты — ИИ-ассистент платформы ВИКС Расписание (строительная компания).
+Помогай пользователям разобраться в работе платформы и предоставляй актуальные данные.
+
+БАЗА ЗНАНИЙ О ПЛАТФОРМЕ:
 {knowledge}
+{f"""
+АКТУАЛЬНЫЕ ДАННЫЕ:
+{dynamic_context}""" if dynamic_context else ""}
 
 ПРАВИЛА:
 - Отвечай кратко и по делу, на русском языке
-- Используй информацию из базы знаний для ответов
-- Если вопрос выходит за рамки базы знаний — честно скажи и предложи обратиться к человеку через мессенджеры
-- Не выдумывай функции которых нет в базе знаний
+- Если в разделе АКТУАЛЬНЫЕ ДАННЫЕ есть ответ на вопрос — используй его
+- Если данных нет — используй базу знаний
+- Не выдумывай данные, которых нет в контексте
+- Если не можешь найти информацию — предложи обратиться через мессенджеры
+- Роль пользователя: {user_role}. Не показывай данные выше его уровня доступа
 - Форматируй ответ с emoji где уместно"""
 
     messages = [{"role": "system", "content": system_content}]
