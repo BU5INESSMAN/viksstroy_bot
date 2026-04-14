@@ -1,6 +1,6 @@
 ================================================================================
                     VIKSSTROY BOT -- CONTEXT & STAGE TRACKER
-                              (updated 2026-04-13)
+                              (updated 2026-04-14)
 ================================================================================
 
 --- PROJECT SUMMARY ---
@@ -10,7 +10,7 @@ equipment exchange, cost estimation) with dual-bot architecture (TG + MAX),
 React frontend, FastAPI backend, SQLite database.
 
 Stack: FastAPI + SQLite (WAL) | React + Vite + Tailwind + framer-motion | aiogram (TG) + maxapi (MAX)
-Graph: 803 nodes, 834 edges, 126 communities (graphify)
+Graph: 831 nodes, 863 edges, 137 communities (graphify)
 Git: 177 commits across v1.0-v2.1
 
 --- COMPLETED STAGES ---
@@ -82,12 +82,27 @@ Git: 177 commits across v1.0-v2.1
     iPhone safe area: .pb-safe CSS utility for BottomNav.
     BottomNav: icons only on mobile, text labels on sm+ screens.
 
+  v2.1 Fixes (comprehensive)                                                [OK]
+    - Equipment create 405 fixed (API endpoint routing)
+    - TG proxy for all API calls (tg_session.py centralized session)
+    - Review publish button removed (duplicated schedule_generator flow)
+    - Mobile layout fixes (compact buttons, viewport-fit, safe area insets)
+    - SMR 24h grace period + days overdue display with color scale
+    - BottomNav icons only on mobile, text labels on sm+ screens
+    - Updates.jsx rewritten with full git history (177 commits, 7 versions)
+    - Nginx gzip + cache configured (static assets, API responses)
+    - update.sh script rewritten (zero-downtime deploy)
+    - Sidebar expandable submenus with API counters, profile bottom, collapse
+    - System.jsx crash fix (variable initialization order)
+    - AI model fallback on 400/503 errors, removed incompatible gemma-12b
+    - Disable browser autofill on support settings inputs
+
 --- CURRENT STATUS ---
 
   ALL STAGES COMPLETE. Stage 6 (Global Polish) fully delivered:
   6.1 through 6.9, all 9 substages done. v2.1 fixes applied.
 
-  No remaining stages.
+  Current: v2.1 fixes in progress, next batch pending.
 
 --- TOOLING ---
 
@@ -100,9 +115,9 @@ Git: 177 commits across v1.0-v2.1
     graphify-out/graph.html            -- Interactive graph (browser)
     graphify-out/GRAPH_REPORT.md       -- Audit report
     graphify-out/graph.json            -- Queryable graph data
-    graphify-out/obsidian/             -- Obsidian vault (929 notes + canvas)
-    graphify-out/wiki/                 -- Agent-crawlable wiki (126 articles)
+    graphify-out/obsidian/             -- Obsidian vault (968 notes + canvas)
+    graphify-out/wiki/                 -- Agent-crawlable wiki (137 articles)
 
-  Token reduction: 206.2x avg (best: 2352.3x for error handling queries)
+  Token reduction: 209.0x avg (best: 2535.1x for error handling queries)
 
 ================================================================================
