@@ -275,14 +275,16 @@ async def support_chat(request: Request):
 
     user_role = dict(user_obj).get("role", "worker") if user_obj else "worker"
 
+    dynamic_section = ""
+    if dynamic_context:
+        dynamic_section = f"\nАКТУАЛЬНЫЕ ДАННЫЕ:\n{dynamic_context}"
+
     system_content = f"""Ты — ИИ-ассистент платформы ВИКС Расписание (строительная компания).
 Помогай пользователям разобраться в работе платформы и предоставляй актуальные данные.
 
 БАЗА ЗНАНИЙ О ПЛАТФОРМЕ:
 {knowledge}
-{f"""
-АКТУАЛЬНЫЕ ДАННЫЕ:
-{dynamic_context}""" if dynamic_context else ""}
+{dynamic_section}
 
 ПРАВИЛА:
 - Отвечай кратко и по делу, на русском языке
