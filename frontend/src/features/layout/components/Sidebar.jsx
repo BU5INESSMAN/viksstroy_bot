@@ -8,6 +8,7 @@ import {
     Sun, Moon, Monitor, Headphones
 } from 'lucide-react';
 import axios from 'axios';
+import { ROLE_NAMES } from '../../../utils/roleConfig';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (props) => prefersReducedMotion ? {} : props;
@@ -20,14 +21,23 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
     const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebar_collapsed') === 'true');
     const [openMenus, setOpenMenus] = useState({});
     const [counts, setCounts] = useState({});
+    const [userFio, setUserFio] = useState('');
 
     useEffect(() => { localStorage.setItem('sidebar_collapsed', collapsed); }, [collapsed]);
 
-    // Fetch sidebar counts
+    // Fetch sidebar counts + user FIO
     const fetchCounts = useCallback(() => {
         axios.get(`/api/dashboard/sidebar_counts?tg_id=${tgId}`)
             .then(r => setCounts(r.data || {}))
             .catch(() => {});
+    }, [tgId]);
+
+    useEffect(() => {
+        if (tgId && tgId !== '0') {
+            axios.get(`/api/users/${tgId}/profile`)
+                .then(r => setUserFio(r.data?.profile?.fio || ''))
+                .catch(() => {});
+        }
     }, [tgId]);
 
     useEffect(() => {
@@ -102,10 +112,10 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                 animate={{ width: w }}
                 transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             >
-                {/* Logo + Create */}
-                <div className={`flex items-center ${collapsed ? 'justify-center px-2' : 'justify-between px-4'} h-16 border-b border-gray-100 dark:border-gray-800 flex-shrink-0`}>
+                {/* Logo */}
+                <div className={`flex items-center ${collapsed ? 'justify-center px-2' : 'px-4'} h-16 border-b border-gray-100 dark:border-gray-800 flex-shrink-0`}>
                     {!collapsed && (
-                        <div className="w-28 h-8 bg-blue-600 dark:bg-blue-500 flex-shrink-0" style={{
+                        <div className="flex-1 h-8 bg-blue-600 dark:bg-blue-500" style={{
                             WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
                             WebkitMaskSize: 'contain', maskSize: 'contain',
                             WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
@@ -117,32 +127,38 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                             <span className="text-white font-extrabold text-sm">В</span>
                         </div>
                     )}
-                    {!collapsed && canCreateApp && (
-                        <motion.button
-                            onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
-                            className="bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-3 py-1.5 text-xs font-bold flex items-center gap-1 transition-colors"
-                            whileHover={anim({ scale: 1.03 })}
-                            whileTap={anim({ scale: 0.97 })}
-                        >
-                            <Plus className="w-3.5 h-3.5" strokeWidth={3} /> Создать
-                        </motion.button>
-                    )}
                 </div>
 
                 {/* Main nav */}
                 <nav className="flex-1 flex flex-col overflow-y-auto py-3 px-2 scrollbar-thin">
                     <div className="space-y-0.5">
-                        {canCreateApp && collapsed && (
-                            <NavItem icon={Plus} label="Создать" collapsed={collapsed} isActive={false}
-                                onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }} accent />
+                        {canCreateApp && (
+                            collapsed ? (
+                                <NavItem icon={Plus} label="Создать" collapsed={collapsed} isActive={false}
+                                    onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }} accent />
+                            ) : (
+                                <motion.button
+                                    onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
+                                    className="w-full bg-blue-600 hover:bg-blue-700 text-white rounded-xl px-3 py-2.5 text-sm font-bold flex items-center justify-center gap-1.5 transition-colors mb-2"
+                                    whileHover={anim({ scale: 1.02 })}
+                                    whileTap={anim({ scale: 0.97 })}
+                                >
+                                    <Plus className="w-4 h-4" strokeWidth={2.5} /> Создать заявку
+                                </motion.button>
+                            )
                         )}
-                        {navItems.map(item => (
+                        {navItems.map(item => {
+                            // Active detection: exact match or prefix match, plus /my-apps alias for review
+                            const active = location.pathname === item.path
+                                || location.pathname.startsWith(item.path + '/')
+                                || (item.id === 'review' && location.pathname === '/my-apps');
+                            return (
                             <div key={item.id}>
                                 <NavItem
                                     icon={item.icon}
                                     label={item.label}
                                     collapsed={collapsed}
-                                    isActive={location.pathname === item.path || location.pathname.startsWith(item.path + '/')}
+                                    isActive={active}
                                     hasSubItems={!collapsed && item.subItems?.length > 0}
                                     isOpen={openMenus[item.id]}
                                     onToggle={() => toggleMenu(item.id)}
@@ -175,7 +191,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                                     </AnimatePresence>
                                 )}
                             </div>
-                        ))}
+                        ); })}
                     </div>
 
                     <div className="flex-1" />
@@ -196,9 +212,23 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                         <NavItem icon={ThemeIcon} label="Тема" collapsed={collapsed}
                             isActive={false} onClick={toggleTheme} secondary />
 
-                        {/* Profile — bottom */}
-                        <NavItem icon={User} label="Профиль" collapsed={collapsed}
-                            isActive={false} onClick={() => openProfile(tgId)} secondary />
+                        {/* Profile — bottom: FIO + role */}
+                        {collapsed ? (
+                            <NavItem icon={User} label={userFio || 'Профиль'} collapsed={collapsed}
+                                isActive={false} onClick={() => openProfile(tgId)} secondary />
+                        ) : (
+                            <motion.div
+                                className="flex items-center gap-3 rounded-xl px-3 py-2.5 cursor-pointer text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors"
+                                whileTap={anim({ scale: 0.97 })}
+                                onClick={() => openProfile(tgId)}
+                            >
+                                <User className="w-5 h-5 flex-shrink-0" />
+                                <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-semibold truncate text-gray-700 dark:text-gray-200">{userFio || 'Профиль'}</p>
+                                    <p className="text-[11px] text-gray-400 dark:text-gray-500">{ROLE_NAMES[role] || role}</p>
+                                </div>
+                            </motion.div>
+                        )}
                     </div>
                 </nav>
             </motion.aside>

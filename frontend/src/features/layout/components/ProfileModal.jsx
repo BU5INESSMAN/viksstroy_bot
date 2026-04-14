@@ -3,9 +3,10 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     User, X, Camera, Trash2, Unplug, ShieldCheck,
-    Send, Smartphone, MessageCircle, Bell, UserPlus, ClipboardList, FileText, AlertTriangle, RefreshCw
+    Send, Smartphone, MessageCircle, Bell, UserPlus, ClipboardList, FileText, AlertTriangle, RefreshCw, LogOut
 } from 'lucide-react';
 import useConfirm from '../../../hooks/useConfirm';
+import { clearAuthData } from '../../../utils/tokenStorage';
 
 import { ROLE_NAMES as roleNames } from '../../../utils/roleConfig';
 import { motion } from 'framer-motion';
@@ -431,6 +432,20 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                         Сохранить изменения
                                     </button>
                                 </div>
+                            )}
+
+                            {/* Logout — only on own profile */}
+                            {isMyProfile && (
+                                <button
+                                    onClick={async () => {
+                                        await clearAuthData();
+                                        document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
+                                        window.location.href = '/';
+                                    }}
+                                    className="w-full mt-4 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
+                                >
+                                    <LogOut className="w-4 h-4" /> Выйти из аккаунта
+                                </button>
                             )}
                         </div>
                     )}
