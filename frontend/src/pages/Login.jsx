@@ -69,13 +69,13 @@ export default function Login() {
         className="max-w-md w-full relative z-10"
         {...anim({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.5, ease } })}
       >
-        {/* ── Logo + Title ── */}
+        {/* ── Logo ── */}
         <motion.div
-          className="flex flex-col items-center justify-center mb-10"
+          className="flex items-center justify-center mb-6"
           {...anim({ initial: { opacity: 0, scale: 0.8 }, animate: { opacity: 1, scale: 1 }, transition: { duration: 0.6, delay: 0.1, ease } })}
         >
           <div
-            className="w-40 h-12 bg-white mb-6"
+            className="w-36 h-10 bg-white"
             style={{
               WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
               WebkitMaskSize: 'contain', maskSize: 'contain',
@@ -83,13 +83,11 @@ export default function Login() {
               WebkitMaskPosition: 'center', maskPosition: 'center',
             }}
           />
-          <h1 className="text-2xl font-extrabold text-white mb-1.5 text-center tracking-tight">Расписание</h1>
-          <p className="text-white/40 text-sm text-center font-medium">Система управления ресурсами</p>
         </motion.div>
 
         {/* ── Card ── */}
         <motion.div
-          className="rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl shadow-2xl shadow-black/40 p-6 sm:p-8 relative overflow-hidden"
+          className="rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl shadow-2xl shadow-black/40 p-5 sm:p-6 relative overflow-hidden"
           {...anim({ initial: { opacity: 0, y: 30 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.5, delay: 0.2, ease } })}
         >
           {/* Top accent line */}
@@ -119,10 +117,10 @@ export default function Login() {
             )}
           </AnimatePresence>
 
-          <h2 className="text-lg font-bold text-white mb-5 text-center">Вход в систему</h2>
+          <h2 className="text-lg font-bold text-white mb-4 text-center">Вход в систему</h2>
 
           {/* Instructions */}
-          <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-4 mb-6">
+          <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-3.5 mb-4">
               <p className="text-sm text-white/60 mb-3 leading-relaxed">
                   Для входа на платформу с компьютера или браузера вам понадобится одноразовый код.
               </p>
@@ -140,9 +138,9 @@ export default function Login() {
           </div>
 
           {/* Form */}
-          <form onSubmit={handleCodeLogin} className="flex flex-col space-y-4">
+          <form onSubmit={handleCodeLogin} className="flex flex-col space-y-3">
               <div>
-                <label htmlFor="auth-code" className="block text-xs font-semibold text-white/30 mb-2 uppercase tracking-wider">Код авторизации</label>
+                <label htmlFor="auth-code" className="block text-xs font-semibold text-white/30 mb-1.5 uppercase tracking-wider">Код авторизации</label>
                 <input
                     id="auth-code"
                     type="text"
@@ -154,13 +152,13 @@ export default function Login() {
                     placeholder="000000"
                     required
                     aria-label="Код авторизации"
-                    className="w-full px-4 py-4 bg-white/[0.04] border border-white/[0.08] text-white rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-center font-mono text-3xl sm:text-4xl tracking-[0.3em] sm:tracking-[0.5em] placeholder:text-white/20 placeholder:tracking-normal placeholder:font-sans placeholder:text-lg"
+                    className="w-full px-4 py-3.5 bg-white/[0.04] border border-white/[0.08] text-white rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-center font-mono text-3xl sm:text-4xl tracking-[0.3em] sm:tracking-[0.5em] placeholder:text-white/20 placeholder:tracking-normal placeholder:font-sans placeholder:text-lg"
                 />
               </div>
               <button
                   type="submit"
                   disabled={isLoading || loginCode.length < 6}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:from-blue-600/50 disabled:to-blue-500/50 disabled:cursor-not-allowed text-white px-6 py-4 rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-500/30 active:scale-[0.98] text-base flex justify-center items-center"
+                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:from-blue-600/50 disabled:to-blue-500/50 disabled:cursor-not-allowed text-white px-6 py-3.5 rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-500/30 active:scale-[0.98] text-base flex justify-center items-center"
               >
                   {isLoading ? (
                     <span className="flex items-center gap-2">
@@ -171,9 +169,6 @@ export default function Login() {
               </button>
           </form>
         </motion.div>
-
-        {/* Footer */}
-        <p className="text-white/20 text-xs text-center mt-8 font-medium">&copy; {new Date().getFullYear()} ВИКС Строй</p>
       </motion.div>
     </div>
   );
