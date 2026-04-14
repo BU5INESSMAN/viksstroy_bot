@@ -113,9 +113,9 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                 transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             >
                 {/* Logo */}
-                <div className={`flex items-center ${collapsed ? 'justify-center px-2' : 'px-5'} h-14 border-b border-gray-100 dark:border-gray-800 flex-shrink-0`}>
+                <div className={`border-b border-gray-100 dark:border-gray-800 flex-shrink-0 ${collapsed ? 'flex items-center justify-center px-2 h-14' : 'px-4 py-3.5'}`}>
                     {!collapsed ? (
-                        <img src="/logo.png" alt="ВИКС" className="h-7 w-auto object-contain brightness-0 dark:brightness-0 dark:invert opacity-80" />
+                        <img src="/logo.png" alt="ВИКС Расписание" className="w-full h-auto object-contain brightness-0 dark:brightness-0 dark:invert opacity-80" />
                     ) : (
                         <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
                             <span className="text-white font-extrabold text-sm">В</span>
