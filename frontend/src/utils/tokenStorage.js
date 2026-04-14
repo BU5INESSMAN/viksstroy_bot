@@ -22,6 +22,7 @@ const CACHE_KEY = '/auth-token-store';
 
 function openDB() {
   return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') return reject(new Error('No IndexedDB'));
     const req = indexedDB.open(DB_NAME, DB_VERSION);
     req.onupgradeneeded = (e) => e.target.result.createObjectStore(STORE_NAME);
     req.onsuccess = (e) => resolve(e.target.result);
@@ -65,23 +66,26 @@ async function idbClear() {
 
 async function cacheSet(data) {
   try {
+    if (typeof caches === 'undefined') return;
     const cache = await caches.open(CACHE_NAME);
-    await cache.put(CACHE_KEY, new Response(JSON.stringify(data)));
+    await cache.put(new Request(CACHE_KEY), new Response(JSON.stringify(data)));
   } catch { /* silent */ }
 }
 
 async function cacheGet() {
   try {
+    if (typeof caches === 'undefined') return null;
     const cache = await caches.open(CACHE_NAME);
-    const res = await cache.match(CACHE_KEY);
+    const res = await cache.match(new Request(CACHE_KEY));
     return res ? await res.json() : null;
   } catch { return null; }
 }
 
 async function cacheClear() {
   try {
+    if (typeof caches === 'undefined') return;
     const cache = await caches.open(CACHE_NAME);
-    await cache.delete(CACHE_KEY);
+    await cache.delete(new Request(CACHE_KEY));
   } catch { /* silent */ }
 }
 

@@ -74,7 +74,7 @@ self.addEventListener('install', (event) => {
           headers: { 'Content-Type': 'text/html; charset=utf-8' }
         })
       )
-    )
+    ).catch(() => {}) // never block install on cache failure
   );
   self.skipWaiting();
 });
@@ -99,6 +99,17 @@ self.addEventListener('message', (event) => {
   }
 });
 
+// Safe cache write — never throws
+function safeCachePut(request, response) {
+  try {
+    if (!response || !response.ok || response.type !== 'basic') return;
+    const clone = response.clone();
+    caches.open(CACHE_NAME)
+      .then((cache) => cache.put(request, clone))
+      .catch(() => {}); // silently ignore quota / put errors
+  } catch { /* silent */ }
+}
+
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
@@ -113,13 +124,10 @@ self.addEventListener('fetch', (event) => {
       caches.match(event.request).then((cached) => {
         if (cached) return cached;
         return fetch(event.request).then((response) => {
-          if (response.status === 200) {
-            const clone = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-          }
+          safeCachePut(event.request, response);
           return response;
         });
-      }).catch(() => {})
+      }).catch(() => fetch(event.request)) // fallback to network on any cache error
     );
     return;
   }
@@ -127,7 +135,9 @@ self.addEventListener('fetch', (event) => {
   // Navigation (HTML pages): NETWORK FIRST — fall back to maintenance page
   if (event.request.mode === 'navigate') {
     event.respondWith(
-      fetch(event.request).catch(() => caches.match('offline-page'))
+      fetch(event.request).catch(() =>
+        caches.match('offline-page').then((r) => r || new Response('Offline', { status: 503 }))
+      )
     );
     return;
   }
@@ -135,11 +145,10 @@ self.addEventListener('fetch', (event) => {
   // Everything else (icons, manifest, etc.): NETWORK FIRST with cache fallback
   event.respondWith(
     fetch(event.request).then((response) => {
-      if (response.status === 200) {
-        const clone = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, clone));
-      }
+      safeCachePut(event.request, response);
       return response;
-    }).catch(() => caches.match(event.request))
+    }).catch(() =>
+      caches.match(event.request).then((r) => r || new Response('', { status: 503 }))
+    )
   );
 });
