@@ -86,13 +86,22 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
 
                             {equipList.length > 0 && (
                                 <div className="mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700 space-y-1">
-                                    {equipList.map((eq, idx) => (
-                                        <p key={idx} className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-indigo-600 dark:text-indigo-400'}`}>
-                                            <Truck className="w-3.5 h-3.5" />
-                                            <span>{eq.name}</span>
-                                            {eq.is_freed && <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />}
-                                        </p>
-                                    ))}
+                                    {equipList.map((eq, idx) => {
+                                        // Compact: first word of name + license plate in brackets
+                                        const fullName = eq.name || '';
+                                        const firstWord = fullName.split(' ')[0];
+                                        const bracketMatch = fullName.match(/\[([^\]]+)\]/);
+                                        const plate = bracketMatch ? bracketMatch[1] : (eq.license_plate || '');
+                                        const label = plate ? `${firstWord} ${plate.replace(/\s+/g, '')}` : firstWord;
+                                        return (
+                                            <p key={idx} className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                <Truck className="w-3 h-3 flex-shrink-0" />
+                                                <span>{label}</span>
+                                                {eq.time_start != null && <span className="text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">{eq.time_start}–{eq.time_end}</span>}
+                                                {eq.is_freed && <CheckCircle className="w-3 h-3 text-emerald-500 flex-shrink-0" />}
+                                            </p>
+                                        );
+                                    })}
                                 </div>
                             )}
 
