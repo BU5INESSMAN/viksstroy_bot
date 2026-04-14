@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronRight, ChevronLeft } from 'lucide-react';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
 
 export default function OnboardingTour({ steps, tourId, onComplete }) {
   const navigate = useNavigate();
@@ -18,23 +17,21 @@ export default function OnboardingTour({ steps, tourId, onComplete }) {
   // Measure target element with retry logic
   const measureTarget = useCallback((stepIdx) => {
     const step = steps[stepIdx];
-    if (!step?.target) { setRect(null); return; }
+    if (!step?.target) { setRect(null); setNavigating(false); return; }
 
     const el = document.querySelector(`[data-tour="${step.target}"]`) || document.querySelector(step.target);
     if (el) {
       retryRef.current = 0;
       el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      // Wait for scroll to settle, then re-measure
       setTimeout(() => {
-        const r = el.getBoundingClientRect();
-        setRect(r);
+        setRect(el.getBoundingClientRect());
         setNavigating(false);
-      }, 180);
+      }, 350);
     } else if (retryRef.current < 4) {
-      // Element not found — retry (page may still be rendering)
       retryRef.current++;
       timerRef.current = setTimeout(() => measureTarget(stepIdx), 500);
     } else {
-      // Give up — skip to next step or show centered
       retryRef.current = 0;
       setRect(null);
       setNavigating(false);
@@ -73,14 +70,11 @@ export default function OnboardingTour({ steps, tourId, onComplete }) {
     if (nextIdx < 0 || nextIdx >= steps.length) return;
     const nextStep = steps[nextIdx];
 
-    // If current step has navigate — perform navigation, then advance
     if (nextStep.navigate) {
       setNavigating(true);
       navigate(nextStep.navigate);
-      // Delay step change so the new page renders
       setTimeout(() => setCur(nextIdx), 100);
     } else if (nextStep.page && !window.location.pathname.startsWith(nextStep.page.split('?')[0])) {
-      // Step is on a specific page but we're not there
       setNavigating(true);
       navigate(nextStep.page);
       setTimeout(() => setCur(nextIdx), 100);
@@ -91,10 +85,7 @@ export default function OnboardingTour({ steps, tourId, onComplete }) {
 
   const next = useCallback(() => {
     if (cur >= steps.length - 1) { finish(); return; }
-
     const currentStep = steps[cur];
-    // If the current step has navigate, the navigation happens NOW (on "Далее"),
-    // and then we advance to cur+1 which is on that new page
     if (currentStep.navigate) {
       setNavigating(true);
       navigate(currentStep.navigate);
@@ -106,36 +97,90 @@ export default function OnboardingTour({ steps, tourId, onComplete }) {
 
   const prev = useCallback(() => {
     if (cur <= 0) return;
-    // Walk back: find the previous step and navigate if needed
     goToStep(cur - 1);
   }, [cur, goToStep]);
 
   if (!visible || !steps.length) return null;
   const step = steps[cur];
 
-  // Tooltip position with viewport clamping + mobile override
-  const pos = isMobile ? 'bottom' : (step.position || 'bottom');
-  const gap = 14;
-  let style;
+  // ── Tooltip positioning with proper viewport clamping ──
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 768;
+  const mobile = vw < 768;
+  const tooltipW = mobile ? vw - 32 : 288; // w-72 = 288px; mobile = full width - 32px padding
+  const tooltipH = 180; // approximate max height
+  const pad = 16; // min distance from screen edge
+  const gap = 12;
+
+  let tooltipStyle;
+
   if (!rect) {
-    style = { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' };
+    // No target — center on screen
+    tooltipStyle = {
+      position: 'fixed',
+      top: '50%',
+      left: '50%',
+      transform: 'translate(-50%, -50%)',
+      width: mobile ? `${tooltipW}px` : undefined,
+    };
   } else {
-    const vw = window.innerWidth, vh = window.innerHeight;
+    // Preferred position (mobile always bottom)
+    let pos = mobile ? 'bottom' : (step.position || 'bottom');
     let top, left;
-    if (pos === 'bottom') { top = rect.bottom + gap; left = rect.left + rect.width / 2; }
-    else if (pos === 'top') { top = rect.top - gap; left = rect.left + rect.width / 2; }
-    else if (pos === 'right') { top = rect.top + rect.height / 2; left = rect.right + gap; }
-    else { top = rect.top + rect.height / 2; left = rect.left - gap; }
-    // Clamp to viewport
-    left = Math.max(150, Math.min(left, vw - 150));
-    top = Math.max(40, Math.min(top, vh - 200));
-    const tx = pos === 'left' ? 'translate(-100%, -50%)' : pos === 'right' ? 'translateY(-50%)' : pos === 'top' ? 'translate(-50%, -100%)' : 'translateX(-50%)';
-    style = { top, left, transform: tx };
+
+    const calcPos = (p) => {
+      switch (p) {
+        case 'bottom':
+          top = rect.bottom + gap;
+          left = rect.left + rect.width / 2 - tooltipW / 2;
+          break;
+        case 'top':
+          top = rect.top - gap - tooltipH;
+          left = rect.left + rect.width / 2 - tooltipW / 2;
+          break;
+        case 'right':
+          top = rect.top + rect.height / 2 - tooltipH / 2;
+          left = rect.right + gap;
+          break;
+        case 'left':
+          top = rect.top + rect.height / 2 - tooltipH / 2;
+          left = rect.left - gap - tooltipW;
+          break;
+      }
+    };
+
+    calcPos(pos);
+
+    // Flip if off-screen vertically
+    if (pos === 'bottom' && top + tooltipH > vh - pad) {
+      pos = 'top'; calcPos(pos);
+    } else if (pos === 'top' && top < pad) {
+      pos = 'bottom'; calcPos(pos);
+    }
+    // Flip if off-screen horizontally
+    if (pos === 'right' && left + tooltipW > vw - pad) {
+      pos = 'left'; calcPos(pos);
+    } else if (pos === 'left' && left < pad) {
+      pos = 'right'; calcPos(pos);
+    }
+
+    // Final vertical clamp (after flip)
+    if (top + tooltipH > vh - pad) top = vh - tooltipH - pad;
+    if (top < pad) top = pad;
+
+    // Final horizontal clamp
+    if (left + tooltipW > vw - pad) left = vw - tooltipW - pad;
+    if (left < pad) left = pad;
+
+    tooltipStyle = {
+      position: 'fixed',
+      top: `${top}px`,
+      left: `${left}px`,
+      width: mobile ? `${tooltipW}px` : undefined,
+    };
   }
 
   const anim = prefersReducedMotion ? {} : { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 }, exit: { opacity: 0 }, transition: { duration: 0.2 } };
-
-  // Progress bar percentage
   const progress = ((cur + 1) / steps.length) * 100;
 
   return (
@@ -153,13 +198,18 @@ export default function OnboardingTour({ steps, tourId, onComplete }) {
 
       {/* Highlight ring */}
       {rect && (
-        <div className="absolute border-2 border-blue-500/70 rounded-lg pointer-events-none" style={{ top: rect.top - 6, left: rect.left - 6, width: rect.width + 12, height: rect.height + 12, boxShadow: '0 0 0 3px rgba(59,130,246,0.15)' }} />
+        <div className="fixed border-2 border-blue-500/70 rounded-lg pointer-events-none" style={{ top: rect.top - 6, left: rect.left - 6, width: rect.width + 12, height: rect.height + 12, boxShadow: '0 0 0 3px rgba(59,130,246,0.15)' }} />
       )}
 
       {/* Tooltip */}
       <AnimatePresence mode="wait">
         {!navigating && (
-          <motion.div key={cur} {...anim} className="absolute z-10 w-72 bg-gray-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden" style={{ ...style, pointerEvents: 'all' }}>
+          <motion.div
+            key={cur}
+            {...anim}
+            className="z-10 w-72 max-w-[calc(100vw-2rem)] bg-gray-900 border border-white/10 rounded-xl shadow-2xl overflow-hidden"
+            style={{ ...tooltipStyle, pointerEvents: 'all' }}
+          >
             {/* Progress bar */}
             <div className="h-0.5 bg-white/5">
               <div className="h-full bg-blue-500 transition-all duration-300" style={{ width: `${progress}%` }} />
