@@ -5,7 +5,6 @@ import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-import { Bell } from 'lucide-react';
 import Header from '../features/layout/components/Header';
 import BottomNav from '../features/layout/components/BottomNav';
 import Sidebar from '../features/layout/components/Sidebar';
@@ -268,6 +267,10 @@ export default function Layout() {
                     setGlobalCreateAppOpen={setGlobalCreateAppOpen}
                     theme={theme}
                     toggleTheme={toggleTheme}
+                    unreadCount={unreadCount}
+                    onlineCount={onlineCount}
+                    onNotificationsClick={() => setShowNotifications(true)}
+                    onOnlineClick={() => setShowOnlineUsers(true)}
                 />
             </div>
 
@@ -287,28 +290,6 @@ export default function Layout() {
                         onNotificationsClick={() => setShowNotifications(true)}
                         onOnlineClick={() => setShowOnlineUsers(true)}
                     />
-                </div>
-
-                {/* Desktop top bar — notification bell + online counter */}
-                <div className="hidden lg:flex items-center justify-end gap-2 px-6 py-2 border-b border-gray-100 dark:border-gray-800">
-                    <button
-                        onClick={() => setShowNotifications(true)}
-                        className="relative w-9 h-9 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    >
-                        <Bell className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                        {unreadCount > 0 && (
-                            <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5 shadow-sm">
-                                {unreadCount > 99 ? '99+' : unreadCount}
-                            </span>
-                        )}
-                    </button>
-                    <button
-                        onClick={() => setShowOnlineUsers(true)}
-                        className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                    >
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        <span className="text-xs text-gray-500 dark:text-gray-400 font-medium tabular-nums">{onlineCount} онлайн</span>
-                    </button>
                 </div>
 
                 {/* Page content */}

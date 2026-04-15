@@ -5,7 +5,7 @@ import {
     Home, MapPin, Briefcase, ClipboardList, FileText,
     Settings as SettingsIcon, User, BookOpen, Rocket,
     MessageCircle, Plus, ChevronLeft, ChevronDown,
-    Sun, Moon, Monitor, Headphones
+    Sun, Moon, Monitor, Headphones, Bell
 } from 'lucide-react';
 import axios from 'axios';
 import { ROLE_NAMES } from '../../../utils/roleConfig';
@@ -13,7 +13,7 @@ import { ROLE_NAMES } from '../../../utils/roleConfig';
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (props) => prefersReducedMotion ? {} : props;
 
-export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, theme, toggleTheme }) {
+export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, theme, toggleTheme, unreadCount = 0, onlineCount = 0, onNotificationsClick, onOnlineClick }) {
     const navigate = useNavigate();
     const location = useLocation();
     const tgId = localStorage.getItem('tg_id') || '0';
@@ -123,6 +123,34 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                         <img src="/favicon.svg" alt="ВиКС" className="w-8 h-8 flex-shrink-0" />
                     )}
                 </div>
+
+                {/* Notification bell + Online counter */}
+                {collapsed ? (
+                    <div className="flex flex-col items-center gap-1.5 py-2 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+                        <button onClick={onNotificationsClick} className="relative w-9 h-9 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Уведомления">
+                            <Bell className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                            {unreadCount > 0 && (
+                                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5">{unreadCount > 99 ? '99+' : unreadCount}</span>
+                            )}
+                        </button>
+                        <button onClick={onOnlineClick} className="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={`${onlineCount} онлайн`}>
+                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+                        <button onClick={onNotificationsClick} className="relative w-9 h-9 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                            <Bell className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                            {unreadCount > 0 && (
+                                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5">{unreadCount > 99 ? '99+' : unreadCount}</span>
+                            )}
+                        </button>
+                        <button onClick={onOnlineClick} className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                            <span className="text-xs text-gray-500 dark:text-gray-400 font-medium tabular-nums">{onlineCount} онлайн</span>
+                        </button>
+                    </div>
+                )}
 
                 {/* Main nav */}
                 <nav className="flex-1 flex flex-col overflow-y-auto py-3 px-2 scrollbar-thin">
