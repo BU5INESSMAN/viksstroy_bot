@@ -159,8 +159,16 @@ class AppsRepoMixin:
         async with self.conn.execute(query, params) as cur:
             active_apps = await cur.fetchall()
 
-        # Parse requested team IDs
+        # Parse requested team IDs and resolve names
         target_teams = [t.strip() for t in str(team_ids).split(',')] if team_ids and str(team_ids) != '0' else []
+        team_names_map = {}
+        if target_teams:
+            try:
+                async with self.conn.execute("SELECT id, name FROM teams") as _tc:
+                    for _tr in await _tc.fetchall():
+                        team_names_map[str(_tr[0])] = _tr[1]
+            except Exception:
+                pass
 
         # Parse requested equipment with time windows
         target_equip_map = {}  # id_str -> {time_start, time_end, name}
@@ -195,7 +203,8 @@ class AppsRepoMixin:
                 app_team_list = [t.strip() for t in app_team.split(',') if t.strip() and t.strip() != '0']
                 for t in target_teams:
                     if t in app_team_list:
-                        occupied_resources.append(f"❌ Бригада (ID: {t}) уже занята на объекте «{obj_name}»")
+                        t_name = team_names_map.get(t, f"#{t}")
+                        occupied_resources.append(f"❌ Бригада «{t_name}» уже занята на объекте «{obj_name}»")
 
             # Equipment conflict check with time-overlap
             if target_equip_map and app_equip_raw:
