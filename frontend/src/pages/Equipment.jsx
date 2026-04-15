@@ -9,6 +9,7 @@ import AddEquipForm from '../features/equipment/components/AddEquipForm';
 import BulkUploadForm from '../features/equipment/components/BulkUploadForm';
 import EquipmentInviteModal from '../features/equipment/components/EquipmentInviteModal';
 import EditEquipmentModal from '../features/equipment/components/EditEquipmentModal';
+import EquipmentStatsModal from '../features/equipment/components/EquipmentStatsModal';
 import useConfirm from '../hooks/useConfirm';
 import { EquipmentSkeleton } from '../components/ui/PageSkeletons';
 
@@ -30,6 +31,7 @@ export default function Equipment() {
     const [inviteInfo, setInviteInfo] = useState(null);
     const [copiedLink, setCopiedLink] = useState('');
     const [editingEquip, setEditingEquip] = useState(null);
+    const [statsEquip, setStatsEquip] = useState(null);
 
     const canManageEquipment = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canDeleteEquipment = ['moderator', 'boss', 'superadmin'].includes(role);
@@ -158,6 +160,7 @@ export default function Equipment() {
                             generateInvite={generateInvite}
                             handleEquipStatusChange={handleEquipStatusChange}
                             onEdit={setEditingEquip}
+                            onStats={setStatsEquip}
                         />
                     ))}
                     {equipment.filter(e => activeTab === 'list' || e.category === activeTab).length === 0 && (
@@ -207,6 +210,7 @@ export default function Equipment() {
                 copiedLink={copiedLink}
                 setCopiedLink={setCopiedLink}
             />
+            <EquipmentStatsModal isOpen={!!statsEquip} onClose={() => setStatsEquip(null)} equipment={statsEquip} tgId={tgId} />
             {ConfirmUI}
         </div>
     );
