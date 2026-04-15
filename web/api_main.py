@@ -13,7 +13,7 @@ import asyncio
 from database_deps import db, TZ_BARNAUL
 from services.notifications import notify_users
 from services.publish_service import execute_app_publish
-from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system, exchange, support
+from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system, exchange, support, push
 from scheduler import start_scheduler
 
 # --- File-based logging for server-logs endpoint ---
@@ -84,6 +84,7 @@ app.include_router(kp.router)
 app.include_router(system.router)
 app.include_router(exchange.router)
 app.include_router(support.router)
+app.include_router(push.router)
 
 
 @app.exception_handler(Exception)

@@ -11,3 +11,4 @@ pandas
 openpyxl
 pdfplumber
 aiohttp-socks
+pywebpush>=2.0.0

@@ -129,6 +129,22 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
                 pass
         await self.conn.commit()
 
+        # Push notification subscriptions
+        await self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS push_subscriptions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                endpoint TEXT NOT NULL UNIQUE,
+                p256dh TEXT NOT NULL,
+                auth TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        await self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_push_subs_user ON push_subscriptions(user_id)
+        """)
+        await self.conn.commit()
+
         # Import catalog only when table is empty (first run).
         # Skipping re-import on restart preserves kp_catalog IDs that
         # object_kp_plan and application_kp depend on.

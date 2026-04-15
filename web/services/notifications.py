@@ -1,5 +1,8 @@
 import os
+import json
+import logging
 import secrets
+import asyncio
 import aiohttp
 
 from maxapi.types import ButtonsPayload, LinkButton, CallbackButton
@@ -12,6 +15,8 @@ from services.tg_session import get_tg_session
 
 from datetime import datetime, timedelta
 from database_deps import TZ_BARNAUL
+
+logger = logging.getLogger("NOTIFICATIONS")
 
 BASE_URL = os.getenv("WEB_APP_URL", "https://miniapp.viks22.ru")
 
@@ -238,6 +243,82 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
                     except:
                         pass
         except:
+            pass
+
+    # ── Web Push (fire-and-forget, never blocks TG/MAX flow) ──
+    try:
+        push_user_ids = list(raw_user_ids)
+        if push_user_ids:
+            asyncio.create_task(_send_web_push_safe(push_user_ids, _notif_title, _notif_body, redirect))
+    except Exception:
+        pass
+
+
+async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = "/dashboard"):
+    """Send web push to all subscriptions for given user_ids. Fire-and-forget."""
+    vapid_private = os.getenv("VAPID_PRIVATE_KEY", "")
+    vapid_public = os.getenv("VAPID_PUBLIC_KEY", "")
+    if not vapid_private or not vapid_public:
+        return
+
+    try:
+        from pywebpush import webpush, WebPushException
+    except ImportError:
+        return
+
+    vapid_claims = {"sub": os.getenv("VAPID_CLAIM_EMAIL", "mailto:admin@viks22.ru")}
+
+    if not user_ids:
+        return
+
+    try:
+        placeholders = ",".join("?" * len(user_ids))
+        async with db.conn.execute(
+            f"SELECT id, user_id, endpoint, p256dh, auth FROM push_subscriptions WHERE user_id IN ({placeholders})",
+            tuple(user_ids),
+        ) as cur:
+            subscriptions = await cur.fetchall()
+    except Exception as e:
+        logger.warning(f"PUSH — DB query error: {e}")
+        return
+
+    if not subscriptions:
+        return
+
+    payload = json.dumps({
+        "title": title[:100],
+        "body": body[:200],
+        "url": url,
+        "icon": "/icon-192.png",
+        "badge": "/icon-192.png",
+    })
+
+    expired_ids = []
+    for sub in subscriptions:
+        sub_id, sub_uid, endpoint, p256dh, auth_key = sub[0], sub[1], sub[2], sub[3], sub[4]
+        sub_info = {"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth_key}}
+        try:
+            webpush(
+                subscription_info=sub_info,
+                data=payload,
+                vapid_private_key=vapid_private,
+                vapid_claims=vapid_claims,
+            )
+        except WebPushException as e:
+            if e.response and e.response.status_code in (404, 410):
+                expired_ids.append(sub_id)
+                logger.info(f"PUSH — Subscription expired for user {sub_uid}, removing")
+            else:
+                logger.warning(f"PUSH — Failed for user {sub_uid}: {e}")
+        except Exception as e:
+            logger.warning(f"PUSH — Error: {e}")
+
+    if expired_ids:
+        try:
+            placeholders = ",".join("?" * len(expired_ids))
+            await db.conn.execute(f"DELETE FROM push_subscriptions WHERE id IN ({placeholders})", tuple(expired_ids))
+            await db.conn.commit()
+        except Exception:
             pass
 
 

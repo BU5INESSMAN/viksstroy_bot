@@ -110,6 +110,48 @@ function safeCachePut(request, response) {
   } catch { /* silent */ }
 }
 
+// ─── Push Notifications ───────────────────────
+self.addEventListener('push', function(event) {
+  if (!event.data) return;
+  try {
+    const data = event.data.json();
+    const options = {
+      body: data.body || '',
+      icon: data.icon || '/icon-192.png',
+      badge: data.badge || '/icon-192.png',
+      data: { url: data.url || '/dashboard' },
+      vibrate: [200, 100, 200],
+      tag: 'viks-notification',
+      renotify: true,
+    };
+    event.waitUntil(
+      self.registration.showNotification(data.title || 'ВиКС', options)
+    );
+  } catch (e) {
+    // Fallback for non-JSON payloads
+    event.waitUntil(
+      self.registration.showNotification('ВиКС', { body: event.data.text() })
+    );
+  }
+});
+
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  const url = event.notification.data?.url || '/dashboard';
+  event.waitUntil(
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+      for (const client of clientList) {
+        if ('focus' in client) {
+          client.navigate(url);
+          return client.focus();
+        }
+      }
+      return clients.openWindow(url);
+    })
+  );
+});
+
+// ─── Fetch Handler ────────────────────────────
 self.addEventListener('fetch', (event) => {
   const url = new URL(event.request.url);
 
