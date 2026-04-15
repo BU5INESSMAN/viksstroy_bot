@@ -540,13 +540,24 @@ ORD_PAGE_SIZE = 10
 WEEKDAY_NAMES = {0: 'Пн', 1: 'Вт', 2: 'Ср', 3: 'Чт', 4: 'Пт', 5: 'Сб', 6: 'Вс'}
 
 
-def _has_driver(name: str) -> str | None:
-    """Extract driver FIO from equipment name like 'Экскаватор [22мк4237] (Иванов)'."""
-    m = (name or '').strip()
-    match = __import__('re').search(r'\(([^)]+)\)\s*$', m)
-    if match and match.group(1) != 'Не указан':
-        return match.group(1)
-    return None
+def parse_time_range(text):
+    """Parse time range from user text. Returns (start_hh, end_hh) as zero-padded strings or (None, None)."""
+    import re as _re
+    text = text.strip().replace(",", ".").replace(";", "-")
+    patterns = [
+        (r"(\d{1,2})[:\.](\d{2})\s*[-–—]\s*(\d{1,2})[:\.](\d{2})", True),   # 08:00-17:00 or 08.00-17.00
+        (r"(\d{1,2})\s*[-–—]\s*(\d{1,2})", False),                            # 8-17
+        (r"(\d{1,2})\s+(\d{1,2})", False),                                     # 8 17
+    ]
+    for pattern, has_minutes in patterns:
+        m = _re.match(pattern, text)
+        if m:
+            g = m.groups()
+            start_h = int(g[0])
+            end_h = int(g[2]) if has_minutes else int(g[1])
+            if 0 <= start_h <= 23 and 0 <= end_h <= 23 and start_h < end_h:
+                return f"{start_h:02d}", f"{end_h:02d}"
+    return None, None
 
 
 @dp.message(Command("order"))
@@ -859,30 +870,31 @@ async def order_select_equip(callback: types.CallbackQuery, state: FSMContext):
         await _show_equip(callback.message, data.get('_equip', []), selected, data.get('_equip_page', 0))
         return await callback.answer(f"❌ Техника убрана")
 
-    # Not selected — show time picker
+    # Not selected — ask for time as text input
     eq = next((e for e in data.get('_equip', []) if e['id'] == equip_id), {})
     eq_name = eq.get('name', '?').split(' ')[0]
     plate = eq.get('license_plate', '')
     label = f"{eq_name} [{plate}]" if plate else eq_name
 
     await state.update_data(_pending_eq_id=equip_id)
-    time_buttons = [
-        [InlineKeyboardButton(text="08 — 17 (полный день)", callback_data="ord_eqt|08|17")],
-        [InlineKeyboardButton(text="08 — 12 (утро)", callback_data="ord_eqt|08|12")],
-        [InlineKeyboardButton(text="12 — 17 (день)", callback_data="ord_eqt|12|17")],
-        [InlineKeyboardButton(text="17 — 22 (вечер)", callback_data="ord_eqt|17|22")],
+    kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="◀ Назад к технике", callback_data="ord_eq_back")],
-    ]
-    kb = InlineKeyboardMarkup(inline_keyboard=time_buttons)
-    await callback.message.edit_text(f"⏰ Время для <b>{label}</b>:", reply_markup=kb, parse_mode="HTML")
+    ])
+    await callback.message.edit_text(
+        f"⏰ Введите время для <b>{label}</b>:\n\n"
+        f"Формат: начало-конец\n"
+        f"Примеры: <code>8-17</code>, <code>08:00-17:00</code>, <code>8 17</code>",
+        reply_markup=kb, parse_mode="HTML")
     await state.set_state(OrderState.select_equip_time)
     await callback.answer()
 
 
-@dp.callback_query(F.data.startswith("ord_eqt|"))
-async def order_equip_time(callback: types.CallbackQuery, state: FSMContext):
-    parts = callback.data.split("|")
-    t_start, t_end = parts[1], parts[2]
+@dp.message(OrderState.select_equip_time)
+async def order_equip_time_text(message: types.Message, state: FSMContext):
+    t_start, t_end = parse_time_range(message.text)
+    if t_start is None:
+        return await message.answer("❌ Неверный формат. Примеры: 8-17, 08:00-17:00, 8 17")
+
     data = await state.get_data()
     equip_id = data.get('_pending_eq_id')
     equip_list = data.get('_equip', [])
@@ -898,7 +910,6 @@ async def order_equip_time(callback: types.CallbackQuery, state: FSMContext):
     if driver and driver != 'Не указан':
         display_name += f" ({driver})"
 
-    # Remove if already present, then add
     selected = [s for s in selected if s['id'] != equip_id]
     selected.append({
         'id': equip_id,
@@ -909,9 +920,8 @@ async def order_equip_time(callback: types.CallbackQuery, state: FSMContext):
 
     await state.update_data(selected_equip=selected, _pending_eq_id=None)
     page = data.get('_equip_page', 0)
-    await _show_equip(callback.message, equip_list, selected, page)
+    await _show_equip(message, equip_list, selected, page)
     await state.set_state(OrderState.select_equipment)
-    await callback.answer(f"✅ {eq_name.split(' ')[0]} ({t_start}:00–{t_end}:00)")
 
 
 @dp.callback_query(F.data == "ord_eq_back")
@@ -1106,12 +1116,26 @@ async def order_submit(callback: types.CallbackQuery, state: FSMContext):
             'time_end': eq['time_end'],
         })
 
+    # Auto-select all members from chosen teams
+    selected_teams = data.get('selected_teams', [])
+    member_ids = []
+    for tid in selected_teams:
+        try:
+            members = await db.get_team_members(tid)
+            for m in members:
+                mid = dict(m).get('id')
+                if mid:
+                    member_ids.append(mid)
+        except Exception:
+            pass
+
     form = aiohttp.FormData()
     form.add_field('tg_id', str(raw_id))
     form.add_field('date_target', data.get('date_target', ''))
     form.add_field('object_address', data.get('object_address', ''))
     form.add_field('object_id', str(data.get('object_id', 0)))
-    form.add_field('team_id', ','.join(str(t) for t in data.get('selected_teams', [])) or '0')
+    form.add_field('team_id', ','.join(str(t) for t in selected_teams) or '0')
+    form.add_field('selected_members', ','.join(str(m) for m in member_ids))
     form.add_field('equipment_data', _json.dumps(equip_payload, ensure_ascii=False) if equip_payload else '')
     form.add_field('comment', data.get('comment', ''))
 

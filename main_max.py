@@ -239,6 +239,30 @@ async def message_handler(event: MessageCreated):
         await _ord_show_dates(event)
         return
 
+    # Order wizard: equipment time text input
+    if current_state == "order_select_equip_time":
+        t_start, t_end = _parse_time_range(text)
+        if t_start is None:
+            return await send_max_msg(event, "❌ Неверный формат. Примеры: 8-17, 08:00-17:00, 8 17")
+        equip_id = state_data.get('_pending_eq_id')
+        eq = next((e for e in state_data.get('_equip', []) if e['id'] == equip_id), {})
+        eq_name = eq.get('name', '?')
+        plate = eq.get('license_plate', '')
+        driver = eq.get('driver_fio', '')
+        display = eq_name
+        if plate:
+            display += f" [{plate}]"
+        if driver and driver != 'Не указан':
+            display += f" ({driver})"
+        selected = [s for s in state_data.get('selected_equip', []) if s['id'] != equip_id]
+        selected.append({'id': equip_id, 'name': display, 'time_start': t_start, 'time_end': t_end})
+        state_data["selected_equip"] = selected
+        state_data["_pending_eq_id"] = None
+        state_data["state"] = "order_select_equip"
+        USER_STATES[max_id_str] = state_data
+        await _ord_show_equip(event, state_data, state_data.get('equip_page', 0))
+        return
+
     # Order wizard: comment text input
     if current_state == "order_enter_comment":
         state_data["comment"] = text
@@ -591,6 +615,25 @@ _ORD_PAGE = 10
 _WD = {0: 'Пн', 1: 'Вт', 2: 'Ср', 3: 'Чт', 4: 'Пт', 5: 'Сб', 6: 'Вс'}
 
 
+def _parse_time_range(text):
+    """Parse time range from user text. Returns (start_hh, end_hh) as zero-padded strings or (None, None)."""
+    text = text.strip().replace(",", ".").replace(";", "-")
+    patterns = [
+        (r"(\d{1,2})[:\.](\d{2})\s*[-–—]\s*(\d{1,2})[:\.](\d{2})", True),
+        (r"(\d{1,2})\s*[-–—]\s*(\d{1,2})", False),
+        (r"(\d{1,2})\s+(\d{1,2})", False),
+    ]
+    for pattern, has_minutes in patterns:
+        m = re.match(pattern, text)
+        if m:
+            g = m.groups()
+            start_h = int(g[0])
+            end_h = int(g[2]) if has_minutes else int(g[1])
+            if 0 <= start_h <= 23 and 0 <= end_h <= 23 and start_h < end_h:
+                return f"{start_h:02d}", f"{end_h:02d}"
+    return None, None
+
+
 def _ord_btns(rows):
     """Build ButtonsPayload attachment from list of (text, payload) row tuples."""
     return ButtonsPayload(buttons=[
@@ -741,13 +784,13 @@ async def _ord_show_time(event, eq):
     plate = eq.get('license_plate', '')
     label = f"{short} [{plate}]" if plate else short
     rows = [
-        [("08 — 17 (полный день)", "ord_eqt|08|17")],
-        [("08 — 12 (утро)", "ord_eqt|08|12")],
-        [("12 — 17 (день)", "ord_eqt|12|17")],
-        [("17 — 22 (вечер)", "ord_eqt|17|22")],
         [("◀ Назад к технике", "ord_eq_back")],
     ]
-    await send_max_msg(event, f"⏰ Время для {label}:", attachments=[_ord_btns(rows)])
+    await send_max_msg(event,
+        f"⏰ Введите время для {label}:\n\n"
+        f"Формат: начало-конец\n"
+        f"Примеры: 8-17, 08:00-17:00, 8 17",
+        attachments=[_ord_btns(rows)])
 
 
 async def _ord_show_comment(event):
@@ -897,28 +940,6 @@ async def handle_order_callback(event, payload, max_id_str, real_tg_id):
         USER_STATES[max_id_str] = state
         return await _ord_show_time(event, eq)
 
-    # ── Equipment time selected ──
-    if payload.startswith("ord_eqt|"):
-        parts = payload.split("|")
-        t_start, t_end = parts[1], parts[2]
-        equip_id = state.get('_pending_eq_id')
-        eq = next((e for e in state.get('_equip', []) if e['id'] == equip_id), {})
-        name = eq.get('name', '?')
-        plate = eq.get('license_plate', '')
-        driver = eq.get('driver_fio', '')
-        display = name
-        if plate:
-            display += f" [{plate}]"
-        if driver and driver != 'Не указан':
-            display += f" ({driver})"
-        selected = [s for s in state.get('selected_equip', []) if s['id'] != equip_id]
-        selected.append({'id': equip_id, 'name': display, 'time_start': t_start, 'time_end': t_end})
-        state["selected_equip"] = selected
-        state["_pending_eq_id"] = None
-        state["state"] = "order_select_equip"
-        USER_STATES[max_id_str] = state
-        return await _ord_show_equip(event, state, state.get('equip_page', 0))
-
     # ── Equipment back from time picker ──
     if payload == "ord_eq_back":
         state["state"] = "order_select_equip"
@@ -989,12 +1010,25 @@ async def handle_order_callback(event, payload, max_id_str, real_tg_id):
     # ── Submit ──
     if payload == "ord_submit":
         equip_payload = [{'id': e['id'], 'name': e['name'], 'time_start': e['time_start'], 'time_end': e['time_end']} for e in state.get('selected_equip', [])]
+        # Auto-select all members from chosen teams
+        selected_teams = state.get('selected_teams', [])
+        member_ids = []
+        for tid in selected_teams:
+            try:
+                members = await db.get_team_members(tid)
+                for m in members:
+                    mid = dict(m).get('id')
+                    if mid:
+                        member_ids.append(mid)
+            except Exception:
+                pass
         form = aiohttp.FormData()
         form.add_field('tg_id', str(real_tg_id))
         form.add_field('date_target', state.get('date_target', ''))
         form.add_field('object_address', state.get('object_address', ''))
         form.add_field('object_id', str(state.get('object_id', 0)))
-        form.add_field('team_id', ','.join(str(t) for t in state.get('selected_teams', [])) or '0')
+        form.add_field('team_id', ','.join(str(t) for t in selected_teams) or '0')
+        form.add_field('selected_members', ','.join(str(m) for m in member_ids))
         form.add_field('equipment_data', _json.dumps(equip_payload, ensure_ascii=False) if equip_payload else '')
         form.add_field('comment', state.get('comment', ''))
         try:
