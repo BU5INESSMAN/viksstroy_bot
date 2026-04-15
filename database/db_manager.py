@@ -116,10 +116,20 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_online_and_notifications()
         await self.migrate_estimate_pdfs_to_files()
 
-        # Инициализация справочника из последнего доступного файла
-        latest_file = self.get_latest_catalog_path()
-        if latest_file:
-            await self.import_kp_from_excel(latest_file)
+        # Import catalog only when table is empty (first run).
+        # Skipping re-import on restart preserves kp_catalog IDs that
+        # object_kp_plan and application_kp depend on.
+        async with self.conn.execute("SELECT COUNT(*) FROM kp_catalog") as cur:
+            catalog_count = (await cur.fetchone())[0]
+        if catalog_count == 0:
+            latest_file = self.get_latest_catalog_path()
+            if latest_file:
+                await self.import_kp_from_excel(latest_file)
+
+        # Repair orphaned object_kp_plan rows whose kp_id no longer
+        # exists in kp_catalog (caused by previous DELETE+INSERT imports
+        # that changed AUTOINCREMENT IDs).
+        await self.repair_orphaned_kp_references()
 
         logging.info("База данных успешно инициализирована.")
 
@@ -354,3 +364,94 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             await self.conn.commit()
         except Exception:
             pass
+
+    async def repair_orphaned_kp_references(self):
+        """Remap object_kp_plan and application_kp rows whose kp_id points to
+        a deleted kp_catalog entry.  Previous imports used DELETE+INSERT with
+        AUTOINCREMENT, shifting all IDs each restart.  This migration remaps
+        orphaned references back to the current catalog by positional offset."""
+        try:
+            # Find orphaned object_kp_plan rows (kp_id not in kp_catalog)
+            async with self.conn.execute("""
+                SELECT okp.id, okp.kp_id
+                FROM object_kp_plan okp
+                LEFT JOIN kp_catalog k ON okp.kp_id = k.id
+                WHERE k.id IS NULL
+            """) as cur:
+                orphaned_plan = await cur.fetchall()
+
+            if not orphaned_plan:
+                return  # Nothing to repair
+
+            # Get current catalog entries in insertion order
+            async with self.conn.execute("SELECT id FROM kp_catalog ORDER BY id") as cur:
+                catalog_list = [row[0] for row in await cur.fetchall()]
+
+            if not catalog_list:
+                return
+
+            # The catalog is always imported from the same file in the same
+            # row order, so old_id and new_id differ by a fixed offset.
+            # Infer offset: old IDs started at min(orphaned), current at catalog[0].
+            orphaned_ids = {row[1] for row in orphaned_plan}
+            min_orphan = min(orphaned_ids)
+            current_first = catalog_list[0]
+            current_count = len(catalog_list)
+
+            # Build old_id -> new_id mapping
+            id_remap = {}
+            for i, new_id in enumerate(catalog_list):
+                old_id = min_orphan + i
+                if old_id in orphaned_ids:
+                    id_remap[old_id] = new_id
+
+            # Apply remap to object_kp_plan
+            repaired = 0
+            for row in orphaned_plan:
+                plan_row_id, old_kp_id = row[0], row[1]
+                new_kp_id = id_remap.get(old_kp_id)
+                if new_kp_id:
+                    # Guard against duplicates after remap
+                    async with self.conn.execute(
+                        "SELECT object_id FROM object_kp_plan WHERE id = ?", (plan_row_id,)
+                    ) as c2:
+                        obj_row = await c2.fetchone()
+                    if obj_row:
+                        async with self.conn.execute(
+                            "SELECT id FROM object_kp_plan WHERE object_id = ? AND kp_id = ?",
+                            (obj_row[0], new_kp_id)
+                        ) as c3:
+                            if await c3.fetchone():
+                                await self.conn.execute(
+                                    "DELETE FROM object_kp_plan WHERE id = ?", (plan_row_id,))
+                                continue
+                    await self.conn.execute(
+                        "UPDATE object_kp_plan SET kp_id = ? WHERE id = ?",
+                        (new_kp_id, plan_row_id))
+                    repaired += 1
+                else:
+                    await self.conn.execute(
+                        "DELETE FROM object_kp_plan WHERE id = ?", (plan_row_id,))
+
+            # Also repair orphaned application_kp rows
+            async with self.conn.execute("""
+                SELECT akp.id, akp.kp_id
+                FROM application_kp akp
+                LEFT JOIN kp_catalog k ON akp.kp_id = k.id
+                WHERE k.id IS NULL
+            """) as cur:
+                orphaned_akp = await cur.fetchall()
+
+            for row in orphaned_akp:
+                akp_row_id, old_kp_id = row[0], row[1]
+                new_kp_id = id_remap.get(old_kp_id)
+                if new_kp_id:
+                    await self.conn.execute(
+                        "UPDATE application_kp SET kp_id = ? WHERE id = ?",
+                        (new_kp_id, akp_row_id))
+
+            await self.conn.commit()
+            if repaired:
+                logging.info(f"Repaired {repaired} orphaned KP plan references")
+        except Exception as e:
+            logging.error(f"Error repairing KP references: {e}")

@@ -126,14 +126,20 @@ class KpRepoMixin:
         return new_path
 
     async def import_kp_from_excel(self, file_path: str):
-        """Универсальный парсер Excel/CSV для обновления базы КП"""
+        """Универсальный парсер Excel/CSV для обновления базы КП.
+        Uses UPSERT by (category, name) to preserve existing IDs —
+        critical because object_kp_plan and application_kp reference kp_catalog.id."""
         try:
             if file_path.endswith('.csv'):
                 df = pd.read_csv(file_path, header=None, dtype=str).fillna("")
             else:
                 df = pd.read_excel(file_path, header=None, dtype=str).fillna("")
 
-            await self.conn.execute("DELETE FROM kp_catalog")
+            # Build lookup of existing entries: (category, name) -> id
+            existing = {}
+            async with self.conn.execute("SELECT id, category, name FROM kp_catalog") as cur:
+                for row in await cur.fetchall():
+                    existing[(row[1], row[2])] = row[0]
 
             current_category = "Без категории"
             for index, row in df.iterrows():
@@ -155,11 +161,17 @@ class KpRepoMixin:
                     coef = float(col_coef) if col_coef.replace('.', '', 1).isdigit() else 0.0
                     old_salary = float(col_old) if col_old.replace('.', '', 1).isdigit() else salary
 
-                    await self.conn.execute("""
-                                            INSERT INTO kp_catalog (category, name, unit, coefficient, salary, price, old_salary)
-                                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                                            """,
-                                            (current_category, col_name, col_unit, coef, salary, price, old_salary))
+                    key = (current_category, col_name)
+                    if key in existing:
+                        await self.conn.execute("""
+                            UPDATE kp_catalog SET unit=?, coefficient=?, salary=?, price=?, old_salary=?
+                            WHERE id=?
+                            """, (col_unit, coef, salary, price, old_salary, existing[key]))
+                    else:
+                        await self.conn.execute("""
+                            INSERT INTO kp_catalog (category, name, unit, coefficient, salary, price, old_salary)
+                            VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, (current_category, col_name, col_unit, coef, salary, price, old_salary))
 
             await self.conn.commit()
             logging.info(f"Справочник КП обновлен из файла: {file_path}")
