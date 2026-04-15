@@ -124,8 +124,12 @@ export default function OnboardingTour({ steps, tourId, onComplete }) {
       width: mobile ? `${tooltipW}px` : undefined,
     };
   } else {
-    // Preferred position (mobile always bottom)
+    // Preferred position (mobile always bottom, but force top for bottom-of-screen targets)
     let pos = mobile ? 'bottom' : (step.position || 'bottom');
+    // If target is near the bottom of the viewport, force tooltip above it
+    if (rect.bottom > vh - 100) {
+      pos = 'top';
+    }
     let top, left;
 
     const calcPos = (p) => {

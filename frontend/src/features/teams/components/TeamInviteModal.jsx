@@ -1,4 +1,4 @@
-import { Link, Send, Globe, MessageCircle, Copy, X } from 'lucide-react';
+import { Link, Send, MessageCircle, Copy, X } from 'lucide-react';
 import { copyToClipboard } from '../../../utils/clipboard.js';
 import toast from 'react-hot-toast';
 
@@ -7,7 +7,7 @@ export default function TeamInviteModal({ inviteInfo, setInviteInfo, copiedLink,
 
     const copyInviteMessage = () => {
         const code = inviteInfo.invite_code || inviteInfo.join_password;
-        const message = `👋 Привет! Присоединяйся к нашей бригаде в системе «ВИКС Расписание».\n\n📱 Прямая ссылка:\n${inviteInfo.invite_link}\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
+        const message = `👋 Привет! Присоединяйся к нашей бригаде в системе «ВИКС Расписание».\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
         copyToClipboard(message, 'all', setCopiedLink);
         toast.success('Полное сообщение скопировано в буфер обмена!');
     };
@@ -30,14 +30,6 @@ export default function TeamInviteModal({ inviteInfo, setInviteInfo, copiedLink,
                         </label>
                         <button onClick={() => copyToClipboard(inviteInfo.tg_bot_link, 'tg', setCopiedLink)} className="w-full text-left px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-gray-50 dark:bg-gray-700/50 font-bold hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-sm text-blue-600 dark:text-blue-400 active:scale-[0.98]">
                             {copiedLink === 'tg' ? '✅ Успешно скопировано!' : '🔗 Нажмите, чтобы скопировать'}
-                        </button>
-                    </div>
-                    <div>
-                        <label className="flex items-center gap-1.5 text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
-                            <Globe className="w-4 h-4" /> Прямая Web-ссылка:
-                        </label>
-                        <button onClick={() => copyToClipboard(inviteInfo.invite_link, 'web', setCopiedLink)} className="w-full text-left px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-gray-50 dark:bg-gray-700/50 font-bold hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-sm text-blue-600 dark:text-blue-400 active:scale-[0.98]">
-                            {copiedLink === 'web' ? '✅ Успешно скопировано!' : '🔗 Нажмите, чтобы скопировать'}
                         </button>
                     </div>
                     <div>

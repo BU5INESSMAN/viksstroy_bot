@@ -27,7 +27,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
             <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 z-40 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors h-[60px] sm:h-[68px]">
             <div className="max-w-5xl mx-auto flex justify-around items-end h-full pt-2 pb-safe px-1 sm:px-4">
 
-                <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} />
+                <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} dataTour="bottomnav-home" />
 
                 {canSeeObjectsKP && (
                     <NavBtn icon={MapPin} label="Объекты" path="/objects" current={location.pathname} onClick={() => navigate('/objects')} />
@@ -38,7 +38,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                 )}
 
                 {canCreateApp && (
-                    <div className="relative w-full flex flex-col justify-center items-center sm:justify-end sm:pb-2 h-full">
+                    <div className="relative w-full flex flex-col justify-center items-center sm:justify-end sm:pb-2 h-full" data-tour="bottomnav-create">
                         <motion.button
                             onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
                             className="absolute -top-4 sm:-top-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] border-[3px] border-white dark:border-gray-800 transition-colors z-50"
@@ -57,13 +57,14 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                     path={isWorkerOrDriver ? "/my-apps" : "/review"}
                     current={location.pathname}
                     onClick={() => navigate(isWorkerOrDriver ? "/my-apps" : "/review")}
+                    dataTour="bottomnav-orders"
                 />
 
                 {canSeeKP && (
                     <NavBtn icon={FileText} label="СМР" path="/kp" current={location.pathname} onClick={() => navigate('/kp')} />
                 )}
 
-                <button onClick={() => setIsMenuOpen(true)} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2 h-full w-full transition-all active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+                <button data-tour="bottomnav-menu" onClick={() => setIsMenuOpen(true)} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2 h-full w-full transition-all active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
                     <Menu className="w-5 h-5 sm:w-5 sm:h-5 sm:mb-1" strokeWidth={2.5} />
                     <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Меню</span>
                 </button>
@@ -153,10 +154,10 @@ function GridItem({ icon: Icon, color, label, onClick }) {
     );
 }
 
-function NavBtn({ icon: Icon, label, path, current, onClick }) {
+function NavBtn({ icon: Icon, label, path, current, onClick, dataTour }) {
     const isActive = current === path;
     return (
-        <button onClick={onClick} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2 h-full w-full transition-all active:scale-95 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+        <button onClick={onClick} data-tour={dataTour} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2 h-full w-full transition-all active:scale-95 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
             <motion.div
                 animate={prefersReducedMotion ? {} : { scale: isActive ? 1.1 : 1 }}
                 transition={{ type: 'spring', duration: 0.25, bounce: 0.15 }}
