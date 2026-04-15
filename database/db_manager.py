@@ -113,6 +113,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_account_linking()
         await self.upgrade_db_for_log_columns()
         await self.upgrade_db_for_sessions()
+        await self.upgrade_db_for_online_and_notifications()
 
         # Инициализация справочника из последнего доступного файла
         latest_file = self.get_latest_catalog_path()
@@ -287,4 +288,29 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             )
         except Exception:
             pass
+        await self.conn.commit()
+
+    async def upgrade_db_for_online_and_notifications(self):
+        """Online tracking (last_active) + notification center table."""
+        try:
+            await self.conn.execute("ALTER TABLE users ADD COLUMN last_active TIMESTAMP DEFAULT NULL")
+        except Exception:
+            pass
+
+        await self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_notifications (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                type TEXT NOT NULL DEFAULT 'info',
+                title TEXT NOT NULL,
+                body TEXT DEFAULT '',
+                is_read INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                link_url TEXT DEFAULT NULL
+            )
+        """)
+        await self.conn.execute("""
+            CREATE INDEX IF NOT EXISTS idx_user_notif_user
+            ON user_notifications(user_id, is_read, created_at DESC)
+        """)
         await self.conn.commit()

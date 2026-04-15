@@ -36,6 +36,43 @@ os.makedirs("data/uploads", exist_ok=True)
 os.makedirs("data/uploads/objects", exist_ok=True)
 app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
 
+_last_active_cache = {}  # tg_id → last_update_time (throttle to 1 update per 60s)
+
+
+@app.middleware("http")
+async def track_activity(request: Request, call_next):
+    response = await call_next(request)
+    try:
+        tg_id = request.query_params.get("tg_id")
+        if not tg_id:
+            # Also check form body for POST — but only from query params to keep it cheap
+            pass
+        if tg_id and tg_id not in ("0", "undefined", "null", ""):
+            import time
+            tg_id_int = int(tg_id)
+            now = time.time()
+            last = _last_active_cache.get(tg_id_int, 0)
+            if now - last > 60:  # Throttle: max once per 60 seconds per user
+                _last_active_cache[tg_id_int] = now
+                asyncio.create_task(_update_last_active(tg_id_int))
+    except Exception:
+        pass
+    return response
+
+
+async def _update_last_active(tg_id: int):
+    try:
+        from utils import resolve_id
+        real_id = await resolve_id(tg_id)
+        await db.conn.execute(
+            "UPDATE users SET last_active = datetime('now', 'localtime') WHERE user_id = ?",
+            (real_id,)
+        )
+        await db.conn.commit()
+    except Exception:
+        pass
+
+
 app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(users.router)

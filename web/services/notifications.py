@@ -152,11 +152,33 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             elif lid < 0 and prefs["max"]:
                 final_max_ids.add(abs(lid))
 
+    # ── Save to notification center (one entry per user, before platform split) ──
+    redirect = _URL_PATH_MAP.get(url_path, f"/{url_path}")
+    _notif_plain = strip_html(text)
+    _notif_title = _notif_plain[:100]
+    _notif_body = _notif_plain[:500]
+    _notif_type = category or 'info'
+    for uid in raw_user_ids:
+        prefs = user_prefs.get(uid, {"cat": True})
+        if not prefs["cat"]:
+            continue
+        try:
+            await db.conn.execute(
+                "INSERT INTO user_notifications (user_id, type, title, body, link_url) VALUES (?, ?, ?, ?, ?)",
+                (uid, _notif_type, _notif_title, _notif_body, redirect)
+            )
+        except Exception:
+            pass
+    try:
+        await db.conn.commit()
+    except Exception:
+        pass
+
     markup = tg_reply_markup or {"inline_keyboard": [
         [{"text": "📱 Открыть платформу", "web_app": {"url": f"{BASE_URL}/{url_path}"}}]]}
 
-    max_plain_text = strip_html(text)
-    short_text = strip_html(text)[:100]
+    max_plain_text = _notif_plain
+    short_text = _notif_title
 
     # Batch-lookup FIO for logging
     _fio_cache = {}

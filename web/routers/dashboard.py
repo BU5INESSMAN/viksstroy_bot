@@ -7,7 +7,7 @@ from fastapi import APIRouter, Form, HTTPException
 import asyncio
 import logging
 from database_deps import db, TZ_BARNAUL
-from datetime import datetime
+from datetime import datetime, timedelta
 from utils import resolve_id, fetch_teams_dict, enrich_app_with_team_name
 from services.notifications import notify_users
 from services.publish_service import execute_app_publish
@@ -84,6 +84,71 @@ async def get_dashboard_data(tg_id: int = 0):
 
 @router.get("/api/logs")
 async def get_logs(): return await db.get_recent_logs(50)
+
+
+# ── Online users ──
+
+@router.get("/api/online")
+async def get_online_users(tg_id: int = 0):
+    """Returns users active in the last 5 minutes."""
+    if tg_id:
+        real_id = await resolve_id(tg_id)
+        user = await db.get_user(real_id)
+        if not user:
+            raise HTTPException(401, "Not authenticated")
+
+    cutoff = (datetime.now() - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
+    async with db.conn.execute(
+        "SELECT user_id, fio, role, last_active FROM users WHERE last_active > ? AND is_blacklisted = 0 ORDER BY last_active DESC",
+        (cutoff,)
+    ) as cur:
+        rows = await cur.fetchall()
+
+    users_list = [{"user_id": r[0], "fio": r[1], "role": r[2], "last_active": r[3]} for r in rows]
+    return {"count": len(users_list), "users": users_list}
+
+
+# ── Notification center ──
+
+@router.get("/api/notifications/my")
+async def get_my_notifications(tg_id: int = 0, limit: int = 50):
+    if not tg_id:
+        raise HTTPException(401, "Not authenticated")
+    real_id = await resolve_id(tg_id)
+
+    async with db.conn.execute(
+        "SELECT id, type, title, body, is_read, created_at, link_url FROM user_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
+        (real_id, limit)
+    ) as cur:
+        rows = await cur.fetchall()
+
+    notifications = []
+    unread = 0
+    for r in rows:
+        is_read = bool(r[4])
+        notifications.append({"id": r[0], "type": r[1], "title": r[2], "body": r[3], "is_read": is_read, "created_at": r[5], "link_url": r[6]})
+        if not is_read:
+            unread += 1
+
+    return {"notifications": notifications, "unread_count": unread}
+
+
+@router.post("/api/notifications/read")
+async def mark_notifications_read(tg_id: int = Form(...), notification_ids: str = Form("")):
+    if not tg_id:
+        raise HTTPException(401, "Not authenticated")
+    real_id = await resolve_id(tg_id)
+
+    if notification_ids == "all":
+        await db.conn.execute("UPDATE user_notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0", (real_id,))
+    else:
+        ids = [int(x) for x in notification_ids.split(",") if x.strip().isdigit()]
+        if ids:
+            pl = ",".join("?" * len(ids))
+            await db.conn.execute(f"UPDATE user_notifications SET is_read = 1 WHERE user_id = ? AND id IN ({pl})", (real_id, *ids))
+
+    await db.conn.commit()
+    return {"status": "ok"}
 
 
 @router.get("/api/settings")

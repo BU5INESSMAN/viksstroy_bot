@@ -341,10 +341,23 @@ async def cleanup_expired_sessions_job():
         logger.error(f"Ошибка очистки сессий: {e}")
 
 
+async def cleanup_old_notifications_job():
+    """Удаление уведомлений старше 30 дней."""
+    try:
+        if db.conn is None:
+            await db.init_db()
+        await db.conn.execute("DELETE FROM user_notifications WHERE created_at < datetime('now', '-30 days')")
+        await db.conn.commit()
+        logger.info("🧹 Очистка старых уведомлений выполнена")
+    except Exception as e:
+        logger.error(f"Ошибка очистки уведомлений: {e}")
+
+
 def start_scheduler():
     """Запускает проверку каждую минуту"""
     scheduler.add_job(check_and_run_tasks, 'cron', minute='*')
     scheduler.add_job(cleanup_old_logs_job, 'cron', hour=3, minute=0, id='cleanup_logs')
     scheduler.add_job(cleanup_expired_sessions_job, 'cron', hour=4, minute=0, id='cleanup_sessions')
+    scheduler.add_job(cleanup_old_notifications_job, 'cron', hour=4, minute=30, id='cleanup_notifications')
     scheduler.start()
     logger.info("⏳ Планировщик задач успешно запущен (Часовой пояс: Азия/Барнаул)")
