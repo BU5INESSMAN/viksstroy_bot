@@ -204,24 +204,32 @@ def _match_work_to_catalog(work: dict, catalog: list):
 
 @router.post("/api/objects/{obj_id}/smr/import")
 async def api_import_smr_from_pdf(obj_id: int, file: UploadFile = File(...)):
-    """Parse PDF and return comparison against current object KP plan for confirmation."""
+    """Parse PDF, save permanently, return comparison for confirmation."""
     if db.conn is None: await db.init_db()
 
     content = await file.read()
-    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-    try:
-        tmp.write(content)
-        tmp.close()
 
+    # Save permanently to object's upload dir
+    upload_dir = os.path.join("data", "uploads", "objects", str(obj_id))
+    os.makedirs(upload_dir, exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    safe_name = f"{ts}_smr_{file.filename}"
+    perm_path = os.path.join(upload_dir, safe_name)
+    with open(perm_path, "wb") as out:
+        out.write(content)
+
+    rel_path = f"/uploads/objects/{obj_id}/{safe_name}"
+    # Add to object_files
+    try:
+        await db.add_object_file(obj_id, rel_path, original_name=f"СМР — {file.filename}", file_size=len(content))
+    except Exception:
+        pass
+
+    try:
         from services.pdf_parser import parse_smr_pdf
-        parsed = parse_smr_pdf(tmp.name)
+        parsed = parse_smr_pdf(perm_path)
     except Exception as e:
         raise HTTPException(500, f"Ошибка парсинга PDF: {e}")
-    finally:
-        try:
-            os.unlink(tmp.name)
-        except OSError:
-            pass
 
     # Get current object info
     objects = await db.get_objects(include_archived=True)
@@ -382,6 +390,16 @@ async def api_upload_object_pdf(obj_id: int, file: UploadFile = File(...), tg_id
 
     rel_path = f"/uploads/objects/{obj_id}/{safe_name}"
     await db.conn.execute("UPDATE objects SET pdf_file_path = ? WHERE id = ?", (rel_path, obj_id))
+    # Also add to object_files so it appears in the files list
+    try:
+        async with db.conn.execute("SELECT id FROM object_files WHERE object_id = ? AND file_path = ?", (obj_id, rel_path)) as cur:
+            if not await cur.fetchone():
+                await db.conn.execute(
+                    "INSERT INTO object_files (object_id, file_path, original_name, file_size) VALUES (?, ?, ?, ?)",
+                    (obj_id, rel_path, f"Смета КП — {file.filename}", len(content))
+                )
+    except Exception:
+        pass
     await db.conn.commit()
     if tg_id:
         user = await db.get_user(real_tg_id)
@@ -405,11 +423,40 @@ async def api_rename_object_file(file_id: int, new_name: str = Form(...)):
 @router.delete("/api/objects/files/{file_id}")
 async def api_delete_object_file(file_id: int):
     if db.conn is None: await db.init_db()
+    # Get file info before deleting
+    obj_id = None
+    file_path = None
+    try:
+        async with db.conn.execute("SELECT object_id, file_path FROM object_files WHERE id = ?", (file_id,)) as cur:
+            row = await cur.fetchone()
+            if row:
+                obj_id = row[0]
+                file_path = row[1]
+    except Exception:
+        pass
+
     path = await db.delete_object_file(file_id)
-    if path:
-        real = os.path.join("data", path.lstrip("/"))
-        if os.path.exists(real):
-            os.remove(real)
+
+    # If this was the main estimate PDF, clear pdf_file_path on the object
+    if obj_id and file_path:
+        try:
+            async with db.conn.execute("SELECT pdf_file_path FROM objects WHERE id = ?", (obj_id,)) as cur:
+                obj_row = await cur.fetchone()
+                if obj_row and obj_row[0] and obj_row[0] == file_path:
+                    await db.conn.execute("UPDATE objects SET pdf_file_path = NULL WHERE id = ?", (obj_id,))
+                    await db.conn.commit()
+        except Exception:
+            pass
+
+    # Delete physical file
+    effective_path = path or file_path
+    if effective_path:
+        try:
+            real = os.path.join("data", effective_path.lstrip("/"))
+            if os.path.exists(real):
+                os.remove(real)
+        except Exception:
+            pass
     return {"status": "ok"}
 
 # ==========================================

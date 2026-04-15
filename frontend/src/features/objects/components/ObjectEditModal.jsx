@@ -378,19 +378,6 @@ export default function ObjectEditModal({
                                 </div>
                             )}
 
-                            {/* Main estimate */}
-                            {editObj.pdf_file_path && (
-                                <div className="flex items-center gap-3 p-3 bg-red-50 dark:bg-red-900/10 border border-red-100 dark:border-red-800/30 rounded-xl">
-                                    <FileText className="w-5 h-5 text-red-500 flex-shrink-0" />
-                                    <div className="flex-1 min-w-0">
-                                        <p className="text-sm font-bold text-gray-800 dark:text-gray-200">Смета (КП)</p>
-                                        <p className="text-xs text-gray-400">Основной файл</p>
-                                    </div>
-                                    <button onClick={() => setViewingFile({ url: editObj.pdf_file_path, name: 'Смета' })}
-                                        className="px-3 py-1.5 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 text-xs font-bold hover:bg-red-200 dark:hover:bg-red-900/50 transition-colors">Открыть</button>
-                                </div>
-                            )}
-
                             {/* Image grid for images sub-tab */}
                             {fileTab === 'images' && filteredFiles.length > 0 ? (
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
@@ -441,7 +428,7 @@ export default function ObjectEditModal({
                                             </div>
                                         ))}
                                     </div>
-                                ) : !editObj.pdf_file_path ? (
+                                ) : filteredFiles.length === 0 ? (
                                     <p className="text-center text-gray-400 italic py-6">Нет файлов</p>
                                 ) : null
                             )}

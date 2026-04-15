@@ -114,6 +114,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_log_columns()
         await self.upgrade_db_for_sessions()
         await self.upgrade_db_for_online_and_notifications()
+        await self.migrate_estimate_pdfs_to_files()
 
         # Инициализация справочника из последнего доступного файла
         latest_file = self.get_latest_catalog_path()
@@ -322,3 +323,34 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             ON user_notifications(user_id, is_read, created_at DESC)
         """)
         await self.conn.commit()
+
+    async def migrate_estimate_pdfs_to_files(self):
+        """One-time migration: copy existing objects.pdf_file_path into object_files table."""
+        try:
+            async with self.conn.execute(
+                "SELECT id, pdf_file_path FROM objects WHERE pdf_file_path IS NOT NULL AND pdf_file_path != ''"
+            ) as cur:
+                rows = await cur.fetchall()
+            for row in rows:
+                obj_id = row[0]
+                pdf_path = row[1]
+                async with self.conn.execute(
+                    "SELECT id FROM object_files WHERE object_id = ? AND file_path = ?", (obj_id, pdf_path)
+                ) as c2:
+                    if await c2.fetchone():
+                        continue  # Already migrated
+                size = 0
+                try:
+                    import os
+                    real = os.path.join("data", pdf_path.lstrip("/"))
+                    if os.path.exists(real):
+                        size = os.path.getsize(real)
+                except Exception:
+                    pass
+                await self.conn.execute(
+                    "INSERT INTO object_files (object_id, file_path, original_name, file_size) VALUES (?, ?, ?, ?)",
+                    (obj_id, pdf_path, "Смета КП", size)
+                )
+            await self.conn.commit()
+        except Exception:
+            pass
