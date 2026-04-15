@@ -1,8 +1,24 @@
+import { useState } from 'react';
 import {
     Users, Link, UserPlus, User, UserMinus, Star, Trash2, X
 } from 'lucide-react';
+import MemberStatusModal from './MemberStatusModal';
 
-export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen, manageTeamData, canManage, generateInvite, newMember, setNewMember, handleAddMember, toggleForeman, handleUnlinkMember, deleteMember, openProfile }) {
+const STATUS_BADGES = {
+    vacation: { label: 'Отпуск', className: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-700' },
+    sick: { label: 'Больничный', className: 'bg-red-50 dark:bg-red-900/20 text-red-500 border-red-200 dark:border-red-700' },
+};
+
+const formatShortDate = (dateStr) => {
+    if (!dateStr) return '';
+    try {
+        return new Date(dateStr + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+    } catch { return dateStr; }
+};
+
+export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen, manageTeamData, canManage, generateInvite, newMember, setNewMember, handleAddMember, toggleForeman, handleUnlinkMember, deleteMember, openProfile, tgId, onRefresh }) {
+    const [statusMember, setStatusMember] = useState(null);
+
     if (!isManageModalOpen || !manageTeamData) return null;
 
     return (
@@ -36,7 +52,14 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
                                                     {m.is_foreman ? <Star className="w-5 h-5 fill-current" /> : <User className="w-5 h-5" />}
                                                 </div>
                                                 <div className="min-w-0">
-                                                    <p className="font-bold text-gray-800 dark:text-gray-100 text-base leading-tight truncate">{m.fio}</p>
+                                                    <div className="flex items-center gap-2">
+                                                        <p className="font-bold text-gray-800 dark:text-gray-100 text-base leading-tight truncate">{m.fio}</p>
+                                                        {m.status && m.status !== 'available' && STATUS_BADGES[m.status] && (
+                                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${STATUS_BADGES[m.status].className}`}>
+                                                                {STATUS_BADGES[m.status].label}{m.status_until ? ` до ${formatShortDate(m.status_until)}` : ''}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     <p className="text-[10px] uppercase tracking-wider text-gray-500 dark:text-gray-400 font-bold mt-0.5">{m.position}</p>
                                                 </div>
                                             </div>
@@ -53,6 +76,9 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
                                                         </button>
                                                     )}
 
+                                                    <button onClick={() => setStatusMember(m)} className={`${m.status === 'vacation' ? 'bg-yellow-50 text-yellow-600 dark:bg-yellow-900/20 dark:text-yellow-400' : m.status === 'sick' ? 'bg-red-50 text-red-500 dark:bg-red-900/20 dark:text-red-400' : 'bg-emerald-50 text-emerald-600 dark:bg-emerald-900/20 dark:text-emerald-400'} px-3.5 py-2 rounded-xl text-xs font-bold hover:opacity-80 transition-colors flex items-center gap-1.5 shadow-sm active:scale-95`}>
+                                                        {m.status === 'vacation' ? 'Отпуск' : m.status === 'sick' ? 'Больничный' : 'Статус'}
+                                                    </button>
                                                     <button onClick={() => toggleForeman(m.id, m.is_foreman ? 0 : 1)} className={`${m.is_foreman ? 'bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600' : 'bg-yellow-50 text-yellow-700 hover:bg-yellow-100 dark:bg-yellow-900/20 dark:text-yellow-400 dark:hover:bg-yellow-900/40'} px-3.5 py-2 rounded-xl text-xs font-bold transition-colors flex items-center gap-1.5 shadow-sm active:scale-95`}>
                                                         <Star className={`w-3.5 h-3.5 ${m.is_foreman ? 'text-gray-500' : 'fill-current'}`} /> {m.is_foreman ? 'Снять роль' : 'Бригадир'}
                                                     </button>
@@ -94,6 +120,16 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
                     </div>
                 </div>
             </div>
+
+            {canManage && (
+                <MemberStatusModal
+                    isOpen={!!statusMember}
+                    onClose={() => setStatusMember(null)}
+                    member={statusMember}
+                    tgId={tgId}
+                    onSaved={onRefresh}
+                />
+            )}
         </div>
     );
 }

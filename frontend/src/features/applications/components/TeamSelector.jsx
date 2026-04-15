@@ -112,10 +112,21 @@ export default function TeamSelector({
                     <div className="flex flex-wrap gap-2.5">
                         {teamMembers.map(m => {
                             const isSelected = selectedMembers?.includes(m.id);
+                            const isUnavailable = m.status === 'vacation' || m.status === 'sick';
+                            const statusLabel = m.status === 'vacation' ? 'Отп' : m.status === 'sick' ? 'Бол' : '';
                             return (
-                                <button key={m.id} type="button" disabled={isSubmitting} onClick={() => onToggleMember(m.id)} className={`px-3.5 py-2 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 hover:shadow-md ${isSelected ? 'bg-indigo-600 text-white border-indigo-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
-                                    {isSelected ? <Check className="w-4 h-4" /> : <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>}
+                                <button key={m.id} type="button" disabled={isSubmitting || isUnavailable} onClick={() => onToggleMember(m.id)}
+                                    title={isUnavailable ? `${m.status === 'vacation' ? 'Отпуск' : 'Больничный'}${m.status_until ? ' до ' + m.status_until : ''}` : ''}
+                                    className={`px-3.5 py-2 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 hover:shadow-md ${isUnavailable ? 'opacity-40 cursor-not-allowed bg-gray-50 dark:bg-gray-800/50 text-gray-400 border-gray-200 dark:border-gray-700' : isSelected ? 'bg-indigo-600 text-white border-indigo-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                                    {isUnavailable
+                                        ? <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>
+                                        : isSelected ? <Check className="w-4 h-4" /> : <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>}
                                     {m.fio}
+                                    {isUnavailable && (
+                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${m.status === 'vacation' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' : 'bg-red-100 dark:bg-red-900/30 text-red-500'}`}>
+                                            {statusLabel}
+                                        </span>
+                                    )}
                                 </button>
                             );
                         })}

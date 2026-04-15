@@ -148,7 +148,7 @@ export default function Teams() {
             {/* МОДАЛКИ ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ */}
             <CreateTeamModal isTeamModalOpen={isTeamModalOpen} setTeamModalOpen={setTeamModalOpen} newTeamName={newTeamName} setNewTeamName={setNewTeamName} handleCreateTeam={handleCreateTeam} />
 
-            <ManageTeamModal isManageModalOpen={isManageModalOpen} setManageModalOpen={setManageModalOpen} manageTeamData={manageTeamData} canManage={canManage} generateInvite={generateInvite} newMember={newMember} setNewMember={setNewMember} handleAddMember={handleAddMember} toggleForeman={toggleForeman} handleUnlinkMember={handleUnlinkMember} deleteMember={deleteMember} openProfile={openProfile} />
+            <ManageTeamModal isManageModalOpen={isManageModalOpen} setManageModalOpen={setManageModalOpen} manageTeamData={manageTeamData} canManage={canManage} generateInvite={generateInvite} newMember={newMember} setNewMember={setNewMember} handleAddMember={handleAddMember} toggleForeman={toggleForeman} handleUnlinkMember={handleUnlinkMember} deleteMember={deleteMember} openProfile={openProfile} tgId={tgId} onRefresh={() => manageTeamData && openManageModal(manageTeamData.id)} />
 
             <TeamInviteModal inviteInfo={inviteInfo} setInviteInfo={setInviteInfo} copiedLink={copiedLink} setCopiedLink={setCopiedLink} />
             <TeamStatsModal isOpen={!!statsTeam} onClose={() => setStatsTeam(null)} team={statsTeam} tgId={tgId} />
