@@ -229,6 +229,24 @@ async def message_handler(event: MessageCreated):
 
         return await send_max_msg(event, "❌ Неверный код приглашения. Проверьте правильность ввода.")
 
+    if text.startswith("/order") or text.lower() in ('заявка', '/заявка'):
+        if not user:
+            return await send_max_msg(event, "❌ Вы не зарегистрированы. Используйте /start")
+        role = dict(user).get('role', 'worker')
+        if role not in ('foreman', 'moderator', 'boss', 'superadmin'):
+            return await send_max_msg(event, "❌ Создание заявок доступно только прорабам и руководству.")
+        USER_STATES[max_id_str] = {"state": "order_select_date"}
+        await _ord_show_dates(event)
+        return
+
+    # Order wizard: comment text input
+    if current_state == "order_enter_comment":
+        state_data["comment"] = text
+        state_data["state"] = "order_confirm"
+        USER_STATES[max_id_str] = state_data
+        await _ord_show_confirm(event, state_data)
+        return
+
     if text.startswith("/schedule"):
         if not user:
             return await send_max_msg(event, "❌ Сначала зарегистрируйтесь (используйте /start или /join).")
@@ -452,6 +470,10 @@ async def message_callback(event: MessageCallback):
                 await send_max_msg(event, f"❌ Ошибка: {e}")
         return
 
+    # ---------------- ORDER WIZARD ----------------
+    if payload.startswith("ord_"):
+        return await handle_order_callback(event, payload, max_id_str, real_tg_id)
+
     # ---------------- ОТМЕНА ----------------
     if payload == "join_cancel":
         return await send_max_msg(event, "🛑 Действие отменено.")
@@ -556,6 +578,450 @@ async def message_callback(event: MessageCallback):
                 logger.error(f"MAX equip link notification error: {e}")
 
         asyncio.create_task(_send_equip_link_notification())
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# /order wizard — helpers & callback routing (MAX)
+# ═══════════════════════════════════════════════════════════════════════
+
+import json as _json
+from zoneinfo import ZoneInfo
+
+_ORD_PAGE = 10
+_WD = {0: 'Пн', 1: 'Вт', 2: 'Ср', 3: 'Чт', 4: 'Пт', 5: 'Сб', 6: 'Вс'}
+
+
+def _ord_btns(rows):
+    """Build ButtonsPayload attachment from list of (text, payload) row tuples."""
+    return ButtonsPayload(buttons=[
+        [CallbackButton(text=t, payload=p) for t, p in row] for row in rows
+    ]).pack()
+
+
+async def _ord_show_dates(event):
+    tz = ZoneInfo("Asia/Barnaul")
+    now = datetime.now(tz)
+    rows = []
+    for i in range(4):
+        d = now + timedelta(days=i)
+        wd = _WD[d.weekday()]
+        if i == 0:
+            label = f"Сегодня — {d.strftime('%d.%m')} ({wd})"
+        elif i == 1:
+            label = f"Завтра — {d.strftime('%d.%m')} ({wd})"
+        else:
+            label = f"{d.strftime('%d.%m')} ({wd})"
+        rows.append([(label, f"ord_date|{d.strftime('%Y-%m-%d')}")])
+    rows.append([("❌ Отмена", "ord_cancel")])
+    await send_max_msg(event, "📋 Создание заявки\n\nВыберите дату выезда:", attachments=[_ord_btns(rows)])
+
+
+async def _ord_show_objects(event, state, page):
+    objects = state.get('_objects', [])
+    start = page * _ORD_PAGE
+    items = objects[start:start + _ORD_PAGE]
+    total = (len(objects) + _ORD_PAGE - 1) // _ORD_PAGE
+    rows = []
+    for o in items:
+        name = o.get('name', '?')
+        label = f"📍 {name}" if len(name) <= 28 else f"📍 {name[:25]}..."
+        rows.append([(label, f"ord_obj|{o['id']}")])
+    nav = []
+    if page > 0:
+        nav.append(("◀ Назад", f"ord_objp|{page - 1}"))
+    if start + _ORD_PAGE < len(objects):
+        nav.append(("Вперёд ▶", f"ord_objp|{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([("❌ Отмена", "ord_cancel")])
+    header = f"📍 Выберите объект ({page + 1}/{total}):" if total > 1 else "📍 Выберите объект:"
+    await send_max_msg(event, header, attachments=[_ord_btns(rows)])
+
+
+async def _ord_load_free_teams(date_target):
+    raw = await db.get_all_teams()
+    teams = [dict(t) for t in raw]
+    busy = set()
+    try:
+        async with db.conn.execute(
+            "SELECT team_id FROM applications WHERE date_target = ? AND status NOT IN ('rejected', 'cancelled') AND is_team_freed = 0 AND team_id IS NOT NULL AND team_id != '0'",
+            (date_target,)
+        ) as cur:
+            for row in await cur.fetchall():
+                if row[0]:
+                    for tid in str(row[0]).split(','):
+                        tid = tid.strip()
+                        if tid and tid != '0':
+                            busy.add(int(tid))
+    except Exception:
+        pass
+    return [t for t in teams if t['id'] not in busy]
+
+
+async def _ord_show_teams(event, state, page):
+    teams = state.get('_teams', [])
+    selected = state.get('selected_teams', [])
+    start = page * _ORD_PAGE
+    items = teams[start:start + _ORD_PAGE]
+    rows = []
+    for t in items:
+        prefix = "✅ " if t['id'] in selected else ""
+        rows.append([(f"{prefix}👷 {t.get('name', '?')}", f"ord_tm|{t['id']}")])
+    nav = []
+    if page > 0:
+        nav.append(("◀ Назад", f"ord_tmp|{page - 1}"))
+    if start + _ORD_PAGE < len(teams):
+        nav.append(("Вперёд ▶", f"ord_tmp|{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([("⏭ Пропустить", "ord_tm_skip"), ("✅ Готово", "ord_tm_done")])
+    rows.append([("❌ Отмена", "ord_cancel")])
+    sel = f"\nВыбрано: {len(selected)}" if selected else ""
+    await send_max_msg(event, f"👷 Выберите бригады (можно несколько):{sel}", attachments=[_ord_btns(rows)])
+
+
+async def _ord_load_free_equip(date_target):
+    raw = await db.get_all_equipment_admin()
+    all_eq = [dict(e) for e in raw]
+    available = [e for e in all_eq if e.get('is_active', 1) == 1 and e.get('status') != 'repair']
+    booked = set()
+    try:
+        async with db.conn.execute(
+            "SELECT equipment_data FROM applications WHERE date_target = ? AND status NOT IN ('rejected', 'cancelled')",
+            (date_target,)
+        ) as cur:
+            for row in await cur.fetchall():
+                if row[0]:
+                    try:
+                        for eq in _json.loads(row[0]):
+                            if not eq.get('is_freed'):
+                                booked.add(eq['id'])
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+    return [e for e in available if e['id'] not in booked]
+
+
+async def _ord_show_equip(event, state, page):
+    equip = state.get('_equip', [])
+    selected = state.get('selected_equip', [])
+    start = page * _ORD_PAGE
+    items = equip[start:start + _ORD_PAGE]
+    rows = []
+    for eq in items:
+        is_sel = any(s['id'] == eq['id'] for s in selected)
+        prefix = "✅ " if is_sel else ""
+        short = eq.get('name', '?').split(' ')[0]
+        label = f"{prefix}🚛 {short}"
+        plate = eq.get('license_plate', '')
+        if plate:
+            label += f" [{plate}]"
+        driver = eq.get('driver_fio', '')
+        if driver and driver != 'Не указан':
+            label += f" • {driver}"
+        if len(label) > 45:
+            label = label[:42] + "..."
+        rows.append([(label, f"ord_eq|{eq['id']}")])
+    nav = []
+    if page > 0:
+        nav.append(("◀ Назад", f"ord_eqp|{page - 1}"))
+    if start + _ORD_PAGE < len(equip):
+        nav.append(("Вперёд ▶", f"ord_eqp|{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([("⏭ Пропустить", "ord_eq_skip"), ("✅ Готово", "ord_eq_done")])
+    rows.append([("❌ Отмена", "ord_cancel")])
+    sel = f"\nВыбрано: {len(selected)}" if selected else ""
+    await send_max_msg(event, f"🚛 Выберите технику:{sel}", attachments=[_ord_btns(rows)])
+
+
+async def _ord_show_time(event, eq):
+    short = eq.get('name', '?').split(' ')[0]
+    plate = eq.get('license_plate', '')
+    label = f"{short} [{plate}]" if plate else short
+    rows = [
+        [("08 — 17 (полный день)", "ord_eqt|08|17")],
+        [("08 — 12 (утро)", "ord_eqt|08|12")],
+        [("12 — 17 (день)", "ord_eqt|12|17")],
+        [("17 — 22 (вечер)", "ord_eqt|17|22")],
+        [("◀ Назад к технике", "ord_eq_back")],
+    ]
+    await send_max_msg(event, f"⏰ Время для {label}:", attachments=[_ord_btns(rows)])
+
+
+async def _ord_show_comment(event):
+    rows = [
+        [("⏭ Без комментария", "ord_nocomment")],
+        [("❌ Отмена", "ord_cancel")],
+    ]
+    await send_max_msg(event, "💬 Введите комментарий к заявке или нажмите «Без комментария»:", attachments=[_ord_btns(rows)])
+
+
+async def _ord_show_confirm(event, state):
+    teams = state.get('_teams', [])
+    sel_teams = state.get('selected_teams', [])
+    sel_equip = state.get('selected_equip', [])
+    team_names = [t.get('name', '?') for t in teams if t['id'] in sel_teams]
+    equip_lines = [f"{e['name'].split(' ')[0]} ({e['time_start']}:00–{e['time_end']}:00)" for e in sel_equip]
+    summary = (
+        f"📋 Подтверждение заявки\n\n"
+        f"📅 Дата: {state.get('date_target', '?')}\n"
+        f"📍 Объект: {state.get('object_address', '?')}\n"
+        f"👷 Бригады: {', '.join(team_names) if team_names else 'не выбраны'}\n"
+        f"🚛 Техника: {', '.join(equip_lines) if equip_lines else 'не выбрана'}\n"
+        f"💬 Комментарий: {state.get('comment') or '—'}"
+    )
+    rows = [
+        [("✅ Создать заявку", "ord_submit")],
+        [("✏️ Изменить", "ord_edit")],
+        [("❌ Отмена", "ord_cancel")],
+    ]
+    await send_max_msg(event, summary, attachments=[_ord_btns(rows)])
+
+
+async def _ord_show_edit_menu(event):
+    rows = [
+        [("📅 Дату", "ord_e_date"), ("📍 Объект", "ord_e_obj")],
+        [("👷 Бригады", "ord_e_team"), ("🚛 Технику", "ord_e_equip")],
+        [("💬 Комментарий", "ord_e_comm")],
+        [("◀ Назад", "ord_e_back")],
+    ]
+    await send_max_msg(event, "✏️ Что изменить?", attachments=[_ord_btns(rows)])
+
+
+async def handle_order_callback(event, payload, max_id_str, real_tg_id):
+    """Route all ord_* callback payloads for the order wizard."""
+    if db.conn is None:
+        await db.init_db()
+
+    state = USER_STATES.get(max_id_str, {})
+
+    # ── Cancel ──
+    if payload == "ord_cancel":
+        USER_STATES.pop(max_id_str, None)
+        return await send_max_msg(event, "❌ Создание заявки отменено.")
+
+    # ── Date selected ──
+    if payload.startswith("ord_date|"):
+        date_str = payload.split("|")[1]
+        objects = await db.get_objects()
+        if not objects:
+            USER_STATES.pop(max_id_str, None)
+            return await send_max_msg(event, "❌ Нет активных объектов. Создайте объект в платформе.")
+        state.update({"state": "order_select_object", "date_target": date_str, "_objects": objects, "obj_page": 0})
+        USER_STATES[max_id_str] = state
+        return await _ord_show_objects(event, state, 0)
+
+    # ── Object pagination ──
+    if payload.startswith("ord_objp|"):
+        page = int(payload.split("|")[1])
+        state["obj_page"] = page
+        USER_STATES[max_id_str] = state
+        return await _ord_show_objects(event, state, page)
+
+    # ── Object selected ──
+    if payload.startswith("ord_obj|"):
+        obj_id = int(payload.split("|")[1])
+        obj = next((o for o in state.get('_objects', []) if o['id'] == obj_id), None)
+        if not obj:
+            return await send_max_msg(event, "❌ Объект не найден.")
+        state["object_id"] = obj_id
+        state["object_address"] = f"{obj.get('name', '?')} ({obj.get('address', '')})"
+        state["selected_teams"] = []
+        free_teams = await _ord_load_free_teams(state.get('date_target', ''))
+        state["_teams"] = free_teams
+        state["team_page"] = 0
+        if not free_teams:
+            state["state"] = "order_select_equip"
+            free_equip = await _ord_load_free_equip(state.get('date_target', ''))
+            state["_equip"] = free_equip
+            state["selected_equip"] = []
+            state["equip_page"] = 0
+            USER_STATES[max_id_str] = state
+            if not free_equip:
+                state["state"] = "order_enter_comment"
+                USER_STATES[max_id_str] = state
+                return await _ord_show_comment(event)
+            return await _ord_show_equip(event, state, 0)
+        state["state"] = "order_select_teams"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_teams(event, state, 0)
+
+    # ── Team toggle ──
+    if payload.startswith("ord_tm|"):
+        team_id = int(payload.split("|")[1])
+        selected = list(state.get('selected_teams', []))
+        if team_id in selected:
+            selected.remove(team_id)
+        else:
+            selected.append(team_id)
+        state["selected_teams"] = selected
+        USER_STATES[max_id_str] = state
+        return await _ord_show_teams(event, state, state.get('team_page', 0))
+
+    # ── Team pagination ──
+    if payload.startswith("ord_tmp|"):
+        page = int(payload.split("|")[1])
+        state["team_page"] = page
+        USER_STATES[max_id_str] = state
+        return await _ord_show_teams(event, state, page)
+
+    # ── Teams done / skip ──
+    if payload in ("ord_tm_done", "ord_tm_skip"):
+        free_equip = await _ord_load_free_equip(state.get('date_target', ''))
+        state["_equip"] = free_equip
+        state["selected_equip"] = state.get("selected_equip", [])
+        state["equip_page"] = 0
+        if not free_equip:
+            state["state"] = "order_enter_comment"
+            USER_STATES[max_id_str] = state
+            return await _ord_show_comment(event)
+        state["state"] = "order_select_equip"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_equip(event, state, 0)
+
+    # ── Equipment select (toggle or time pick) ──
+    if payload.startswith("ord_eq|"):
+        equip_id = int(payload.split("|")[1])
+        selected = list(state.get('selected_equip', []))
+        # If already selected — remove (toggle off)
+        if any(s['id'] == equip_id for s in selected):
+            state["selected_equip"] = [s for s in selected if s['id'] != equip_id]
+            USER_STATES[max_id_str] = state
+            return await _ord_show_equip(event, state, state.get('equip_page', 0))
+        # Show time picker
+        eq = next((e for e in state.get('_equip', []) if e['id'] == equip_id), {})
+        state["_pending_eq_id"] = equip_id
+        state["state"] = "order_select_equip_time"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_time(event, eq)
+
+    # ── Equipment time selected ──
+    if payload.startswith("ord_eqt|"):
+        parts = payload.split("|")
+        t_start, t_end = parts[1], parts[2]
+        equip_id = state.get('_pending_eq_id')
+        eq = next((e for e in state.get('_equip', []) if e['id'] == equip_id), {})
+        name = eq.get('name', '?')
+        plate = eq.get('license_plate', '')
+        driver = eq.get('driver_fio', '')
+        display = name
+        if plate:
+            display += f" [{plate}]"
+        if driver and driver != 'Не указан':
+            display += f" ({driver})"
+        selected = [s for s in state.get('selected_equip', []) if s['id'] != equip_id]
+        selected.append({'id': equip_id, 'name': display, 'time_start': t_start, 'time_end': t_end})
+        state["selected_equip"] = selected
+        state["_pending_eq_id"] = None
+        state["state"] = "order_select_equip"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_equip(event, state, state.get('equip_page', 0))
+
+    # ── Equipment back from time picker ──
+    if payload == "ord_eq_back":
+        state["state"] = "order_select_equip"
+        state["_pending_eq_id"] = None
+        USER_STATES[max_id_str] = state
+        return await _ord_show_equip(event, state, state.get('equip_page', 0))
+
+    # ── Equipment pagination ──
+    if payload.startswith("ord_eqp|"):
+        page = int(payload.split("|")[1])
+        state["equip_page"] = page
+        USER_STATES[max_id_str] = state
+        return await _ord_show_equip(event, state, page)
+
+    # ── Equipment done / skip ──
+    if payload in ("ord_eq_done", "ord_eq_skip"):
+        state["state"] = "order_enter_comment"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_comment(event)
+
+    # ── No comment ──
+    if payload == "ord_nocomment":
+        state["comment"] = ""
+        state["state"] = "order_confirm"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_confirm(event, state)
+
+    # ── Edit menu ──
+    if payload == "ord_edit":
+        return await _ord_show_edit_menu(event)
+
+    if payload == "ord_e_date":
+        state["state"] = "order_select_date"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_dates(event)
+
+    if payload == "ord_e_obj":
+        state["state"] = "order_select_object"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_objects(event, state, 0)
+
+    if payload == "ord_e_team":
+        teams = state.get('_teams', [])
+        if not teams:
+            return await send_max_msg(event, "Нет свободных бригад на эту дату.")
+        state["state"] = "order_select_teams"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_teams(event, state, 0)
+
+    if payload == "ord_e_equip":
+        equip = state.get('_equip', [])
+        if not equip:
+            return await send_max_msg(event, "Нет свободной техники на эту дату.")
+        state["state"] = "order_select_equip"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_equip(event, state, 0)
+
+    if payload == "ord_e_comm":
+        state["state"] = "order_enter_comment"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_comment(event)
+
+    if payload == "ord_e_back":
+        state["state"] = "order_confirm"
+        USER_STATES[max_id_str] = state
+        return await _ord_show_confirm(event, state)
+
+    # ── Submit ──
+    if payload == "ord_submit":
+        equip_payload = [{'id': e['id'], 'name': e['name'], 'time_start': e['time_start'], 'time_end': e['time_end']} for e in state.get('selected_equip', [])]
+        form = aiohttp.FormData()
+        form.add_field('tg_id', str(real_tg_id))
+        form.add_field('date_target', state.get('date_target', ''))
+        form.add_field('object_address', state.get('object_address', ''))
+        form.add_field('object_id', str(state.get('object_id', 0)))
+        form.add_field('team_id', ','.join(str(t) for t in state.get('selected_teams', [])) or '0')
+        form.add_field('equipment_data', _json.dumps(equip_payload, ensure_ascii=False) if equip_payload else '')
+        form.add_field('comment', state.get('comment', ''))
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(f"{API_URL}/api/applications/create", data=form) as resp:
+                    if resp.status == 200:
+                        result = await resp.json()
+                        app_id = result.get('id', '?')
+                        await send_max_msg(event,
+                            f"✅ Заявка #{app_id} создана!\n\n"
+                            f"📅 {state.get('date_target')}\n"
+                            f"📍 {state.get('object_address')}\n\n"
+                            f"Заявка отправлена на модерацию.")
+                    elif resp.status == 409:
+                        error = await resp.json()
+                        detail = error.get('detail', 'Бригада или техника уже заняты.')
+                        await send_max_msg(event, f"⚠️ Конфликт ресурсов:\n{detail}\n\nНажмите /order чтобы попробовать снова.")
+                    else:
+                        await send_max_msg(event, f"❌ Ошибка создания заявки (код {resp.status}). Попробуйте /order")
+        except Exception as e:
+            logger.error(f"MAX order submit error: {e}")
+            await send_max_msg(event, "❌ Ошибка связи с сервером. Попробуйте /order")
+        USER_STATES.pop(max_id_str, None)
+        return
+
+
+# ═══════════════════════════════════════════════════════════════════════
 
 
 async def clear_webhook():
