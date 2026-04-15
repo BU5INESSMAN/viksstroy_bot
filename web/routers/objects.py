@@ -113,13 +113,168 @@ async def api_parse_pdf(file: UploadFile = File(...)):
             pass
 
 # ==========================================
-# ФАЙЛЫ ОБЪЕКТА (PDF)
+# УМНЫЙ ИМПОРТ СМР ИЗ PDF
+# ==========================================
+
+def _fuzzy_name_match(a: str, b: str) -> bool:
+    """Check if two names match loosely (50%+ significant word overlap)."""
+    if not a or not b:
+        return False
+    a, b = a.lower().strip(), b.lower().strip()
+    if a == b or a in b or b in a:
+        return True
+    words_a = {w for w in a.split() if len(w) > 3}
+    words_b = {w for w in b.split() if len(w) > 3}
+    if words_a and words_b:
+        return len(words_a & words_b) >= min(2, len(words_b))
+    return False
+
+
+def _match_work_to_catalog(work: dict, catalog: list):
+    """Match a parsed work to the closest catalog entry by name similarity."""
+    wn = (work.get("name") or "").lower().strip()
+    if not wn:
+        return None
+    best, best_score = None, 0
+    for item in catalog:
+        cn = (item.get("name") or "").lower().strip()
+        if not cn:
+            continue
+        if wn == cn:
+            return item
+        if wn in cn or cn in wn:
+            score = min(len(wn), len(cn)) / max(len(wn), len(cn))
+            if score > best_score:
+                best_score, best = score, item
+        words_w = set(wn.split())
+        words_c = set(cn.split())
+        if words_w and words_c:
+            score = len(words_w & words_c) / max(len(words_w), len(words_c))
+            if score > best_score:
+                best_score, best = score, item
+    return best if best_score >= 0.5 else None
+
+
+@router.post("/api/objects/{obj_id}/smr/import")
+async def api_import_smr_from_pdf(obj_id: int, file: UploadFile = File(...)):
+    """Parse PDF and return comparison against current object KP plan for confirmation."""
+    if db.conn is None: await db.init_db()
+
+    content = await file.read()
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+    try:
+        tmp.write(content)
+        tmp.close()
+
+        from services.pdf_parser import parse_smr_pdf
+        parsed = parse_smr_pdf(tmp.name)
+    except Exception as e:
+        raise HTTPException(500, f"Ошибка парсинга PDF: {e}")
+    finally:
+        try:
+            os.unlink(tmp.name)
+        except OSError:
+            pass
+
+    # Get current object info
+    objects = await db.get_objects(include_archived=True)
+    obj = next((o for o in objects if o['id'] == obj_id), None)
+    if not obj:
+        raise HTTPException(404, "Объект не найден")
+
+    # Get current KP plan and catalog
+    current_plan = await db.get_object_kp_plan(obj_id)
+    current_kp_ids = {p['id'] for p in current_plan}  # kp_catalog IDs in plan
+    catalog = await db.get_kp_catalog()
+
+    # Match parsed works to catalog
+    new_works = []
+    unmatched = []
+    for work in parsed.get("works", []):
+        matched = _match_work_to_catalog(work, catalog)
+        if matched:
+            new_works.append({
+                "kp_id": matched["id"],
+                "name": matched["name"],
+                "unit": matched.get("unit", ""),
+                "volume": work.get("volume", 0),
+                "is_new": matched["id"] not in current_kp_ids,
+            })
+        else:
+            unmatched.append({"name": work.get("name", "?"), "unit": work.get("unit", ""), "volume": work.get("volume", 0)})
+
+    new_kp_ids = {w["kp_id"] for w in new_works}
+
+    # Find works to remove
+    to_remove = []
+    for p in current_plan:
+        if p['id'] not in new_kp_ids:
+            try:
+                async with db.conn.execute(
+                    "SELECT COUNT(*) FROM application_kp WHERE kp_id = ? AND volume > 0 AND application_id IN (SELECT id FROM applications WHERE object_id = ?)",
+                    (p['id'], obj_id)
+                ) as cur:
+                    row = await cur.fetchone()
+                    has_history = row[0] > 0 if row else False
+            except Exception:
+                has_history = False
+            to_remove.append({"kp_id": p['id'], "name": p.get("name", "?"), "has_history": has_history})
+
+    return {
+        "parsed_name": parsed.get("name", ""),
+        "parsed_address": parsed.get("address", ""),
+        "object_name": obj.get("name", ""),
+        "name_match": _fuzzy_name_match(parsed.get("name", ""), obj.get("name", "")),
+        "new_works": [w for w in new_works if w["is_new"]],
+        "existing_works": [w for w in new_works if not w["is_new"]],
+        "to_remove": to_remove,
+        "unmatched": unmatched,
+        "total_parsed": len(parsed.get("works", [])),
+        "total_matched": len(new_works),
+        "errors": parsed.get("errors", []),
+    }
+
+
+@router.post("/api/objects/{obj_id}/smr/confirm")
+async def api_confirm_smr_import(obj_id: int, request: Request):
+    """Apply SMR import: add new works, remove deselected (preserve application_kp history)."""
+    if db.conn is None: await db.init_db()
+    data = await request.json()
+    add_ids = data.get("add_kp_ids", [])
+    remove_ids = data.get("remove_kp_ids", [])
+    volumes = data.get("volumes", {})
+
+    for kp_id in add_ids:
+        try:
+            async with db.conn.execute("SELECT id FROM object_kp_plan WHERE object_id = ? AND kp_id = ?", (obj_id, kp_id)) as cur:
+                if not await cur.fetchone():
+                    vol = volumes.get(str(kp_id), 0)
+                    await db.conn.execute("INSERT INTO object_kp_plan (object_id, kp_id, target_volume) VALUES (?, ?, ?)", (obj_id, kp_id, vol))
+        except Exception:
+            pass
+
+    for kp_id in remove_ids:
+        try:
+            await db.conn.execute("DELETE FROM object_kp_plan WHERE object_id = ? AND kp_id = ?", (obj_id, kp_id))
+        except Exception:
+            pass
+
+    await db.conn.commit()
+    await db.add_log(0, "Система", f"Импорт СМР из PDF для объекта №{obj_id}: +{len(add_ids)} / -{len(remove_ids)}", target_type='object', target_id=obj_id)
+    return {"status": "ok", "added": len(add_ids), "removed": len(remove_ids)}
+
+
+# ==========================================
+# ФАЙЛЫ ОБЪЕКТА
 # ==========================================
 
 @router.get("/api/objects/{obj_id}/files")
 async def api_get_object_files(obj_id: int):
     if db.conn is None: await db.init_db()
     return await db.get_object_files(obj_id)
+
+ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.xlsx', '.xls', '.csv', '.doc', '.docx', '.dwg', '.zip'}
+
 
 @router.post("/api/objects/{obj_id}/files/upload")
 async def api_upload_object_files(obj_id: int, files: List[UploadFile] = File(...)):
@@ -128,7 +283,8 @@ async def api_upload_object_files(obj_id: int, files: List[UploadFile] = File(..
     os.makedirs(upload_dir, exist_ok=True)
     saved = []
     for f in files:
-        if not f.filename.lower().endswith('.pdf'):
+        ext = os.path.splitext(f.filename or '')[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
             continue
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_name = f"{ts}_{f.filename}"
@@ -137,7 +293,7 @@ async def api_upload_object_files(obj_id: int, files: List[UploadFile] = File(..
         with open(dest, "wb") as out:
             out.write(content)
         rel_path = f"/uploads/objects/{obj_id}/{safe_name}"
-        await db.add_object_file(obj_id, rel_path)
+        await db.add_object_file(obj_id, rel_path, original_name=f.filename or '', file_size=len(content))
         saved.append(rel_path)
     return {"status": "ok", "files": saved}
 

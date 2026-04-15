@@ -24,17 +24,9 @@ def parse_smr_pdf(file_path: str) -> dict:
                     all_rows.extend(table)
 
     # --- Extract name & address from header ---
-    object_name = ""
-    object_address = ""
-
-    addr_match = re.search(r'(.{5,300}?)\s*по адресу:\s*(.+)', full_text, re.IGNORECASE)
-    if addr_match:
-        raw_name = addr_match.group(1).strip()
-        raw_address = addr_match.group(2).strip()
-        object_name = re.sub(r'^.*?(?:объект[аеу]?\s+|на\s+)', '', raw_name, flags=re.IGNORECASE).strip() or raw_name
-        object_address = raw_address.split('\n')[0].strip()
-    else:
-        errors.append("Не найден заголовок с 'по адресу:' — заполните название и адрес вручную")
+    object_name, object_address = _extract_object_info(full_text)
+    if not object_name:
+        errors.append("Не удалось определить название объекта — заполните вручную")
 
     # --- Extract SMR table (all pages until 'Итого СМР') ---
     works = _extract_works_from_rows(all_rows)
@@ -52,6 +44,68 @@ def parse_smr_pdf(file_path: str) -> dict:
         "works": works,
         "errors": errors,
     }
+
+
+def _extract_object_info(full_text: str):
+    """Extract object name and address from various PDF header formats."""
+    # Normalize whitespace for reliable matching
+    text = re.sub(r'\s+', ' ', full_text)
+
+    # Pattern 1: "на объекте: NAME по адресу: ADDRESS"
+    m = re.search(
+        r'(?:на\s+объекте|Объект|объект\s+строительства)\s*[:\-–]\s*(.+?)\s+по\s+адресу\s*[:\-–]\s*(.+?)(?:\n|Материалы|Техника|СМР|$)',
+        text, re.IGNORECASE
+    )
+    if m:
+        name = m.group(1).strip().rstrip('.,;')
+        addr = m.group(2).strip().split('\n')[0].rstrip('.,;')
+        return name, addr
+
+    # Pattern 2: "по адресу:" standalone (earlier broad pattern)
+    m = re.search(r'(.{5,300}?)\s*по адресу\s*[:\-–]\s*(.+?)(?:\n|$)', text, re.IGNORECASE)
+    if m:
+        raw_name = m.group(1).strip()
+        raw_addr = m.group(2).strip().split('\n')[0].rstrip('.,;')
+        name = re.sub(r'^.*?(?:объект[аеу]?\s*[:\-–]?\s*|на\s+)', '', raw_name, flags=re.IGNORECASE).strip() or raw_name
+        return name.rstrip('.,;'), raw_addr
+
+    # Pattern 3: "на объекте: NAME" without "по адресу"
+    m = re.search(
+        r'(?:на\s+объекте|Объект|объект\s+строительства)\s*[:\-–]\s*(.+?)(?:Материалы|Техника|СМР|Наименование|№\s*п|$)',
+        text, re.IGNORECASE
+    )
+    if m:
+        raw = m.group(1).strip().rstrip('.,;')
+        # Try to split name/address by address markers
+        addr_m = re.search(
+            r'^(.+?)\s*(?=(?:по\s+)?(?:ул\.|пр\.|пер\.|г\.|р-н|край|обл\.|Алтайский|Барнаул|Белокуриха))',
+            raw, re.IGNORECASE
+        )
+        if addr_m:
+            name = addr_m.group(1).strip().rstrip('.,;')
+            addr = raw[len(addr_m.group(0)):].strip().lstrip('.,;').strip()
+            if not addr:
+                addr = raw[len(name):].strip().lstrip('.,;').strip()
+            return name, addr
+        # Try parenthesized address: "NAME (ADDRESS)"
+        paren_m = re.match(r'^(.+?)\s*\((.+?)\)\s*$', raw)
+        if paren_m:
+            return paren_m.group(1).strip(), paren_m.group(2).strip()
+        return raw[:150], ""
+
+    # Pattern 4: "Капитальный ремонт / Строительство / Реконструкция ..."
+    m = re.search(
+        r'(Капитальный\s+ремонт|Строительство|Реконструкция|Монтаж)\s+(.+?)(?:Материалы|Техника|СМР|$)',
+        text, re.IGNORECASE
+    )
+    if m:
+        full = (m.group(1) + ' ' + m.group(2)).strip()
+        parts = re.split(r'\s+по\s+(?=ул|пр|пер)', full, maxsplit=1)
+        name = parts[0].strip()[:150]
+        addr = ("по " + parts[1].strip()[:200]) if len(parts) > 1 else ""
+        return name, addr
+
+    return "", ""
 
 
 def _extract_works_from_rows(all_rows: list) -> List[Dict]:

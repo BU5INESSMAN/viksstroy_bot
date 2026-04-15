@@ -291,11 +291,19 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.conn.commit()
 
     async def upgrade_db_for_online_and_notifications(self):
-        """Online tracking (last_active) + notification center table."""
+        """Online tracking (last_active) + notification center table + file metadata."""
         try:
             await self.conn.execute("ALTER TABLE users ADD COLUMN last_active TIMESTAMP DEFAULT NULL")
         except Exception:
             pass
+        for col_stmt in [
+            "ALTER TABLE object_files ADD COLUMN original_name TEXT DEFAULT ''",
+            "ALTER TABLE object_files ADD COLUMN file_size INTEGER DEFAULT 0",
+        ]:
+            try:
+                await self.conn.execute(col_stmt)
+            except Exception:
+                pass
 
         await self.conn.execute("""
             CREATE TABLE IF NOT EXISTS user_notifications (

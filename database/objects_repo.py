@@ -73,9 +73,10 @@ class ObjectsRepoMixin:
         ) as cur:
             return [dict(row) for row in await cur.fetchall()]
 
-    async def add_object_file(self, object_id: int, file_path: str):
+    async def add_object_file(self, object_id: int, file_path: str, original_name: str = '', file_size: int = 0):
         await self.conn.execute(
-            "INSERT INTO object_files (object_id, file_path) VALUES (?, ?)", (object_id, file_path)
+            "INSERT INTO object_files (object_id, file_path, original_name, file_size) VALUES (?, ?, ?, ?)",
+            (object_id, file_path, original_name, file_size)
         )
         await self.conn.commit()
 
