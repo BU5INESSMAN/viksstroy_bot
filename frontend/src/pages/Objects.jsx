@@ -4,7 +4,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     MapPin, Plus, Settings, Archive,
-    Bell, BarChart3, FileText, Upload,
+    Bell, BarChart3, FolderOpen,
     MessageSquarePlus,
 } from 'lucide-react';
 import useConfirm from '../hooks/useConfirm';
@@ -145,7 +145,10 @@ export default function Objects() {
         }
     };
 
-    const openEditModal = async (obj) => {
+    const [editInitialTab, setEditInitialTab] = useState('info');
+
+    const openEditModal = async (obj, tab = 'info') => {
+        setEditInitialTab(tab);
         setEditObj({
             ...obj,
             default_team_ids: obj.default_team_ids
@@ -260,31 +263,13 @@ export default function Objects() {
                         </div>
 
                         <div className="flex gap-2 border-t border-gray-100 dark:border-gray-700 pt-4">
-                            {obj.pdf_file_path && (
-                                <a
-                                    href={obj.pdf_file_path}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="flex-none px-4 bg-red-50 text-red-600 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 py-2.5 rounded-xl font-bold transition-colors flex justify-center items-center"
-                                    title="Смета PDF"
-                                >
-                                    <FileText className="w-4 h-4" />
-                                </a>
-                            )}
-                            {isOffice && (
-                                <label
-                                    className="flex-none px-4 bg-violet-50 text-violet-600 hover:bg-violet-100 dark:bg-violet-900/20 dark:text-violet-400 py-2.5 rounded-xl font-bold transition-colors flex justify-center items-center cursor-pointer"
-                                    title="Загрузить смету"
-                                >
-                                    <input
-                                        type="file"
-                                        accept=".pdf"
-                                        className="hidden"
-                                        onChange={e => handleUploadPdf(obj.id, e)}
-                                    />
-                                    <Upload className="w-4 h-4" />
-                                </label>
-                            )}
+                            <button
+                                onClick={() => openEditModal(obj, 'files')}
+                                className="flex-none px-4 bg-orange-50 text-orange-600 hover:bg-orange-100 dark:bg-orange-900/20 dark:text-orange-400 py-2.5 rounded-xl font-bold transition-colors flex justify-center items-center"
+                                title="Файлы"
+                            >
+                                <FolderOpen className="w-4 h-4" />
+                            </button>
                             {canManage && (
                                 <button
                                     onClick={() => openEditModal(obj)}
@@ -345,6 +330,7 @@ export default function Objects() {
                     objectFiles={objectFiles}
                     setObjectFiles={setObjectFiles}
                     confirm={confirm}
+                    initialTab={editInitialTab}
                 />
             )}
 
