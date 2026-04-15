@@ -68,7 +68,11 @@ export default function useAppForm({
         if (appForm.team_ids && appForm.team_ids.length > 0) {
             Promise.all(appForm.team_ids.map(id => axios.get(`/api/teams/${id}/details`)))
                 .then(responses => {
-                    const allMembers = responses.flatMap(res => res.data?.members || []);
+                    const allMembers = responses.flatMap(res => {
+                        const tid = res.data?.id;
+                        const tname = res.data?.name || '';
+                        return (res.data?.members || []).map(m => ({ ...m, team_id: tid, team_name: tname }));
+                    });
                     const uniqueMembers = Array.from(
                         new Map(allMembers.map(m => [m.id, m])).values()
                     );
@@ -252,6 +256,34 @@ export default function useAppForm({
     };
 
     // -------------------------------------------------------------------------
+    // Cross-brigade SMR check
+    // -------------------------------------------------------------------------
+
+    const [crossBrigadeWarnings, setCrossBrigadeWarnings] = useState([]);
+    const [showCrossBrigadeModal, setShowCrossBrigadeModal] = useState(false);
+
+    const checkCrossBrigadeMembers = () => {
+        const warnings = [];
+        const teamIdSet = new Set(appForm.team_ids);
+
+        for (const tid of teamIdSet) {
+            const membersOfTeam = teamMembers.filter(m => m.team_id === tid);
+            const selectedFromTeam = membersOfTeam.filter(m => appForm.members.includes(m.id));
+            const brigadier = membersOfTeam.find(m => m.is_foreman);
+
+            if (selectedFromTeam.length > 0 && brigadier && !appForm.members.includes(brigadier.id)) {
+                const tname = membersOfTeam[0]?.team_name || `#${tid}`;
+                selectedFromTeam.forEach(m => {
+                    if (!m.is_foreman) {
+                        warnings.push({ member: m, fromTeam: { id: tid, name: tname } });
+                    }
+                });
+            }
+        }
+        return warnings;
+    };
+
+    // -------------------------------------------------------------------------
     // Create / update application
     // -------------------------------------------------------------------------
 
@@ -270,6 +302,24 @@ export default function useAppForm({
         if (appForm.team_ids.length > 0 && appForm.members.length === 0)
             return toast.error('Выберите хотя бы одного рабочего из бригады!');
 
+        // Cross-brigade warning check
+        const cbWarnings = checkCrossBrigadeMembers();
+        if (cbWarnings.length > 0) {
+            setCrossBrigadeWarnings(cbWarnings);
+            setShowCrossBrigadeModal(true);
+            return;
+        }
+
+        await _doSubmit();
+    };
+
+    const confirmCrossBrigade = async () => {
+        setShowCrossBrigadeModal(false);
+        setCrossBrigadeWarnings([]);
+        await _doSubmit();
+    };
+
+    const _doSubmit = async () => {
         setIsSubmitting(true);
         try {
             const fd = new FormData();
@@ -363,6 +413,11 @@ export default function useAppForm({
         checkEquipStatus,
         handleCreateApp,
         handleDeleteApp,
+        // cross-brigade warning
+        crossBrigadeWarnings,
+        showCrossBrigadeModal,
+        setShowCrossBrigadeModal,
+        confirmCrossBrigade,
         // confirm dialog node (must be rendered by the consuming component)
         ConfirmUI,
     };

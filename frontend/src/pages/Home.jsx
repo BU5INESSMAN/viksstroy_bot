@@ -13,6 +13,7 @@ import ConfirmFreeModal from '../features/applications/components/ConfirmFreeMod
 import ViewAppModal from '../features/applications/components/ViewAppModal';
 import ArchiveModal from '../features/applications/components/ArchiveModal';
 import DebtorsWidget from '../features/applications/components/DebtorsWidget';
+import CrossBrigadeWarningModal from '../features/applications/components/CrossBrigadeWarningModal';
 import useAppForm from '../features/applications/hooks/useAppForm';
 import useConfirm from '../hooks/useConfirm';
 import { HomeSkeleton } from '../components/ui/PageSkeletons';
@@ -50,6 +51,7 @@ export default function Home() {
         toggleEquipmentSelection, updateEquipmentTime,
         checkTeamStatus, checkEquipStatus,
         handleCreateApp, handleDeleteApp,
+        crossBrigadeWarnings, showCrossBrigadeModal, setShowCrossBrigadeModal, confirmCrossBrigade,
         ConfirmUI: FormConfirmUI,
     } = useAppForm({
         tgId,
@@ -345,6 +347,13 @@ export default function Home() {
             )}
 
             <ArchiveModal isOpen={isArchiveOpen} onClose={() => setArchiveOpen(false)} onDataChanged={fetchData} />
+
+            <CrossBrigadeWarningModal
+                isOpen={showCrossBrigadeModal}
+                onClose={() => setShowCrossBrigadeModal(false)}
+                warnings={crossBrigadeWarnings}
+                onConfirm={confirmCrossBrigade}
+            />
 
             {/* Confirm dialog nodes from hook and page-level confirm */}
             {FormConfirmUI}

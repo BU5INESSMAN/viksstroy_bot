@@ -109,28 +109,42 @@ export default function TeamSelector({
                     <label className="flex items-center gap-2 text-xs font-bold text-indigo-800 dark:text-indigo-300 mb-4 uppercase tracking-wider">
                         <User className="w-4 h-4" /> Выберите людей:
                     </label>
-                    <div className="flex flex-wrap gap-2.5">
-                        {teamMembers.map(m => {
-                            const isSelected = selectedMembers?.includes(m.id);
-                            const isUnavailable = m.status === 'vacation' || m.status === 'sick';
-                            const statusLabel = m.status === 'vacation' ? 'Отп' : m.status === 'sick' ? 'Бол' : '';
-                            return (
-                                <button key={m.id} type="button" disabled={isSubmitting || isUnavailable} onClick={() => onToggleMember(m.id)}
-                                    title={isUnavailable ? `${m.status === 'vacation' ? 'Отпуск' : 'Больничный'}${m.status_until ? ' до ' + m.status_until : ''}` : ''}
-                                    className={`px-3.5 py-2 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 hover:shadow-md ${isUnavailable ? 'opacity-40 cursor-not-allowed bg-gray-50 dark:bg-gray-800/50 text-gray-400 border-gray-200 dark:border-gray-700' : isSelected ? 'bg-indigo-600 text-white border-indigo-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
-                                    {isUnavailable
-                                        ? <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>
-                                        : isSelected ? <Check className="w-4 h-4" /> : <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>}
-                                    {m.fio}
-                                    {isUnavailable && (
-                                        <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${m.status === 'vacation' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' : 'bg-red-100 dark:bg-red-900/30 text-red-500'}`}>
-                                            {statusLabel}
-                                        </span>
-                                    )}
-                                </button>
-                            );
-                        })}
-                    </div>
+                    {/* Group members by team */}
+                    {teamIds.map(tid => {
+                        const membersOfTeam = teamMembers.filter(m => m.team_id === tid);
+                        if (membersOfTeam.length === 0) return null;
+                        const teamName = membersOfTeam[0]?.team_name || teams?.find(t => t.id === tid)?.name || 'Бригада';
+                        return (
+                            <div key={tid} className="mb-4 last:mb-0">
+                                <h4 className="text-[10px] font-extrabold text-indigo-500/70 dark:text-indigo-400/60 uppercase tracking-widest mb-2 flex items-center gap-1.5">
+                                    <Users className="w-3 h-3" /> {teamName}
+                                </h4>
+                                <div className="flex flex-wrap gap-2.5">
+                                    {membersOfTeam.map(m => {
+                                        const isSelected = selectedMembers?.includes(m.id);
+                                        const isUnavailable = m.status === 'vacation' || m.status === 'sick';
+                                        const statusLabel = m.status === 'vacation' ? 'Отп' : m.status === 'sick' ? 'Бол' : '';
+                                        return (
+                                            <button key={m.id} type="button" disabled={isSubmitting || isUnavailable} onClick={() => onToggleMember(m.id)}
+                                                title={isUnavailable ? `${m.status === 'vacation' ? 'Отпуск' : 'Больничный'}${m.status_until ? ' до ' + m.status_until : ''}` : ''}
+                                                className={`px-3.5 py-2 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 hover:shadow-md ${isUnavailable ? 'opacity-40 cursor-not-allowed bg-gray-50 dark:bg-gray-800/50 text-gray-400 border-gray-200 dark:border-gray-700' : isSelected ? 'bg-indigo-600 text-white border-indigo-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
+                                                {isUnavailable
+                                                    ? <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>
+                                                    : isSelected ? <Check className="w-4 h-4" /> : <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>}
+                                                {m.fio}
+                                                {m.is_foreman && <span className="text-[10px] px-1 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 font-bold">Бр</span>}
+                                                {isUnavailable && (
+                                                    <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${m.status === 'vacation' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' : 'bg-red-100 dark:bg-red-900/30 text-red-500'}`}>
+                                                        {statusLabel}
+                                                    </span>
+                                                )}
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             )}
         </>
