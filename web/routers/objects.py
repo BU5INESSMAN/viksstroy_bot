@@ -159,7 +159,8 @@ def _fuzzy_name_match(a: str, b: str) -> bool:
 
 
 def _match_work_to_catalog(work: dict, catalog: list):
-    """Match a parsed work to the closest catalog entry by name similarity."""
+    """Match a parsed work to the closest catalog entry.
+    Handles: exact, containment, prefix (truncated names), word overlap."""
     wn = (work.get("name") or "").lower().strip()
     if not wn:
         return None
@@ -168,14 +169,32 @@ def _match_work_to_catalog(work: dict, catalog: list):
         cn = (item.get("name") or "").lower().strip()
         if not cn:
             continue
+        # 1. Exact
         if wn == cn:
             return item
+        # 2. Containment
         if wn in cn or cn in wn:
             score = min(len(wn), len(cn)) / max(len(wn), len(cn))
             if score > best_score:
                 best_score, best = score, item
-        words_w = set(wn.split())
-        words_c = set(cn.split())
+            continue
+        # 3. Prefix match — for truncated names from PDF
+        min_len = min(len(wn), len(cn))
+        if min_len >= 15:
+            match_len = 0
+            for a, b in zip(wn, cn):
+                if a == b:
+                    match_len += 1
+                else:
+                    break
+            if match_len >= min_len * 0.7:
+                score = 0.85 + (match_len / min_len - 0.7) * 0.5
+                if score > best_score:
+                    best_score, best = score, item
+                continue
+        # 4. Word overlap
+        words_w = {w for w in wn.split() if len(w) > 2}
+        words_c = {w for w in cn.split() if len(w) > 2}
         if words_w and words_c:
             score = len(words_w & words_c) / max(len(words_w), len(words_c))
             if score > best_score:
@@ -248,6 +267,12 @@ async def api_import_smr_from_pdf(obj_id: int, file: UploadFile = File(...)):
                 has_history = False
             to_remove.append({"kp_id": p['id'], "name": p.get("name", "?"), "has_history": has_history})
 
+    # Check for incomplete data (zero/missing volumes)
+    warnings = list(parsed.get("errors", []))
+    incomplete = [w.get("name", "?") for w in parsed.get("works", []) if not w.get("volume")]
+    if incomplete:
+        warnings.append(f"⚠️ {len(incomplete)} работ без указанного объёма. Проверьте данные.")
+
     return {
         "parsed_name": parsed.get("name", ""),
         "parsed_address": parsed.get("address", ""),
@@ -259,7 +284,8 @@ async def api_import_smr_from_pdf(obj_id: int, file: UploadFile = File(...)):
         "unmatched": unmatched,
         "total_parsed": len(parsed.get("works", [])),
         "total_matched": len(new_works),
-        "errors": parsed.get("errors", []),
+        "incomplete_count": len(incomplete),
+        "warnings": warnings,
     }
 
 
@@ -362,6 +388,18 @@ async def api_upload_object_pdf(obj_id: int, file: UploadFile = File(...), tg_id
         fio = dict(user).get('fio', '') if user else ''
         await db.add_log(real_tg_id, fio, f"Загрузил PDF для объекта №{obj_id}", target_type='object', target_id=obj_id)
     return {"status": "ok", "pdf_file_path": rel_path}
+
+
+@router.post("/api/objects/files/{file_id}/rename")
+async def api_rename_object_file(file_id: int, new_name: str = Form(...)):
+    """Rename a file (updates original_name in DB only, not the filesystem)."""
+    if db.conn is None: await db.init_db()
+    try:
+        await db.conn.execute("UPDATE object_files SET original_name = ? WHERE id = ?", (new_name.strip(), file_id))
+        await db.conn.commit()
+        return {"status": "ok"}
+    except Exception as e:
+        raise HTTPException(500, str(e))
 
 
 @router.delete("/api/objects/files/{file_id}")

@@ -197,11 +197,15 @@ def _parse_work_row(row: list) -> Optional[Dict]:
     if not name or len(name) < 2:
         return None
 
-    # Clean volume
-    volume = volume.replace(',', '.').replace(' ', '')
-    try:
-        vol_float = float(volume)
-    except (ValueError, TypeError):
+    # Clean volume — handle dash, empty, #Н/Д, None
+    raw_vol = volume.strip() if volume else ""
+    if raw_vol and raw_vol not in ("-", "—", "#Н/Д", "None", ""):
+        raw_vol = raw_vol.replace(',', '.').replace(' ', '')
+        try:
+            vol_float = float(raw_vol)
+        except (ValueError, TypeError):
+            vol_float = 0
+    else:
         vol_float = 0
 
     if not unit:
