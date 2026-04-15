@@ -272,7 +272,7 @@ async def message_handler(event: MessageCreated):
                 await send_max_msg(event, msg, target_url=WEB_APP_URL)
         else:
             USER_STATES[max_id_str] = {"state": "waiting_for_password"}
-            msg = "🔐 Добро пожаловать в ВИКС Расписание!\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль или 6-значный код привязки (если аккаунт уже есть в Telegram).\nЕсли вы рабочий или водитель, используйте команду /join [код]"
+            msg = "🔐 Добро пожаловать в ВиКС!\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль или 6-значный код привязки (если аккаунт уже есть в Telegram).\nЕсли вы рабочий или водитель, используйте команду /join [код]"
             await send_max_msg(event, msg)
         return
 

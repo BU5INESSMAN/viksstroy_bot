@@ -74,15 +74,7 @@ export default function Login() {
           className="flex items-center justify-center mb-6"
           {...anim({ initial: { opacity: 0, scale: 0.8 }, animate: { opacity: 1, scale: 1 }, transition: { duration: 0.6, delay: 0.1, ease } })}
         >
-          <div
-            className="w-36 h-10 bg-white"
-            style={{
-              WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
-              WebkitMaskSize: 'contain', maskSize: 'contain',
-              WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
-              WebkitMaskPosition: 'center', maskPosition: 'center',
-            }}
-          />
+          <img src="/logo-white.svg" alt="ВиКС" className="h-10 w-auto" />
         </motion.div>
 
         {/* ── Card ── */}

@@ -23,7 +23,7 @@ file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(logging.Formatter("%(asctime)s - %(levelname)s - %(name)s - %(message)s"))
 logging.getLogger().addHandler(file_handler)
 
-app = FastAPI(title="ВИКС Расписание API")
+app = FastAPI(title="VIKS API")
 
 origins = [
     "https://miniapp.viks22.ru",

@@ -7,7 +7,7 @@ export default function TeamInviteModal({ inviteInfo, setInviteInfo, copiedLink,
 
     const copyInviteMessage = () => {
         const code = inviteInfo.invite_code || inviteInfo.join_password;
-        const message = `👋 Привет! Присоединяйся к нашей бригаде в системе «ВИКС Расписание».\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
+        const message = `👋 Привет! Присоединяйся к нашей бригаде в системе «ВиКС».\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
         copyToClipboard(message, 'all', setCopiedLink);
         toast.success('Полное сообщение скопировано в буфер обмена!');
     };

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 export default function EquipmentInviteModal({ inviteInfo, setInviteInfo, copiedLink, setCopiedLink }) {
     const copyEquipMessage = () => {
         const code = inviteInfo.invite_code || inviteInfo.join_password;
-        const message = `🚜 Привет! Вот приглашение для привязки техники в «ВИКС Расписание».\n\nМашина: ${inviteInfo.equipName}\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
+        const message = `🚜 Привет! Вот приглашение для привязки техники в «ВиКС».\n\nМашина: ${inviteInfo.equipName}\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
         copyToClipboard(message, 'all', setCopiedLink);
         toast.success('Сообщение скопировано в буфер обмена!');
     };

@@ -114,7 +114,7 @@ async def cmd_start(message: types.Message, command: CommandObject, state: FSMCo
     else:
         await state.set_state(RegState.waiting_for_password)
         await message.answer(
-            "🔐 <b>Добро пожаловать в ВИКС Расписание!</b>\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш <b>системный пароль</b> или <b>6-значный код привязки</b> (если аккаунт уже есть в MAX):",
+            "🔐 <b>Добро пожаловать в ВиКС!</b>\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш <b>системный пароль</b> или <b>6-значный код привязки</b> (если аккаунт уже есть в MAX):",
             parse_mode="html")
 
 
@@ -1218,7 +1218,7 @@ async def main():
     scheduler.add_job(backup_database, 'cron', hour=3, minute=0, id='backup_database')
     scheduler.start()
 
-    logger.info(">>> Бот ВИКС Расписание успешно запущен (Deep Links) <<<")
+    logger.info(">>> Бот ВиКС успешно запущен <<<")
     await dp.start_polling(bot)
 
 

@@ -17,12 +17,8 @@ export default function Header({ isTMA, realRole, role }) {
                 </div>
             )}
             <nav className="px-4 sm:px-6 py-3 flex justify-center items-center max-w-7xl mx-auto">
-                <div className="w-28 h-8 bg-blue-600 dark:bg-blue-500 transition-colors" style={{
-                    WebkitMaskImage: 'url(/logo.png)', maskImage: 'url(/logo.png)',
-                    WebkitMaskSize: 'contain', maskSize: 'contain',
-                    WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat',
-                    WebkitMaskPosition: 'center', maskPosition: 'center'
-                }} />
+                <img src="/logo-dark.svg" alt="ВиКС" className="h-7 w-auto dark:hidden" />
+                <img src="/logo-white.svg" alt="ВиКС" className="h-7 w-auto hidden dark:block" />
             </nav>
         </header>
     );

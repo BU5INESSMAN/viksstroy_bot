@@ -37,6 +37,13 @@ export default {
           500: colors.indigo[500],
           600: colors.indigo[600],
         },
+        brand: {
+          gold: '#BC9B0E',
+          'gold-dark': '#917300',
+          navy: '#1F253A',
+          white: '#FFFFFF',
+          dark: '#313131',
+        },
       },
     },
   },
