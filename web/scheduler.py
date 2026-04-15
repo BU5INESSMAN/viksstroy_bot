@@ -353,11 +353,35 @@ async def cleanup_old_notifications_job():
         logger.error(f"Ошибка очистки уведомлений: {e}")
 
 
+async def reset_expired_member_statuses_job():
+    """Reset team member statuses where status_until < today."""
+    try:
+        if db.conn is None:
+            await db.init_db()
+        today = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
+        async with db.conn.execute(
+            "SELECT COUNT(*) FROM team_members WHERE status != 'available' AND status_until IS NOT NULL AND status_until < ?",
+            (today,)
+        ) as cur:
+            count = (await cur.fetchone())[0]
+        if count > 0:
+            await db.conn.execute(
+                "UPDATE team_members SET status='available', status_from=NULL, status_until=NULL, status_reason='' "
+                "WHERE status != 'available' AND status_until IS NOT NULL AND status_until < ?",
+                (today,)
+            )
+            await db.conn.commit()
+            logger.info(f"🔄 Сброс просроченных статусов: {count} сотрудников")
+    except Exception as e:
+        logger.error(f"Ошибка сброса статусов: {e}")
+
+
 def start_scheduler():
     """Запускает проверку каждую минуту"""
     scheduler.add_job(check_and_run_tasks, 'cron', minute='*')
     scheduler.add_job(cleanup_old_logs_job, 'cron', hour=3, minute=0, id='cleanup_logs')
     scheduler.add_job(cleanup_expired_sessions_job, 'cron', hour=4, minute=0, id='cleanup_sessions')
     scheduler.add_job(cleanup_old_notifications_job, 'cron', hour=4, minute=30, id='cleanup_notifications')
+    scheduler.add_job(reset_expired_member_statuses_job, 'cron', hour=0, minute=5, id='reset_member_statuses')
     scheduler.start()
     logger.info("⏳ Планировщик задач успешно запущен (Часовой пояс: Азия/Барнаул)")

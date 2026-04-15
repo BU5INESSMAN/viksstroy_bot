@@ -98,10 +98,12 @@ async def get_team_details(team_id: int):
     async with db.conn.execute("SELECT name FROM teams WHERE id = ?",
                                (team_id,)) as cur: team_row = await cur.fetchone()
     async with db.conn.execute(
-            "SELECT id, fio, position, tg_user_id, is_foreman FROM team_members WHERE team_id = ? ORDER BY is_foreman DESC, id ASC",
+            "SELECT id, fio, position, tg_user_id, is_foreman, status, status_from, status_until, status_reason FROM team_members WHERE team_id = ? ORDER BY is_foreman DESC, id ASC",
             (team_id,)) as cur:
-        members = [{"id": r[0], "fio": r[1], "position": r[2], "is_linked": bool(r[3]), "is_foreman": bool(r[4])} for r
-                   in await cur.fetchall()]
+        members = [{
+            "id": r[0], "fio": r[1], "position": r[2], "is_linked": bool(r[3]), "is_foreman": bool(r[4]),
+            "status": r[5] or "available", "status_from": r[6] or "", "status_until": r[7] or "", "status_reason": r[8] or "",
+        } for r in await cur.fetchall()]
     return {"id": team_id, "name": team_row[0], "members": members}
 
 
@@ -199,4 +201,53 @@ async def delete_entire_team(team_id: int, tg_id: int = Form(0)):
     except:
         await db.conn.rollback()
     await db.add_log(tg_id, dict(user).get('fio', 'Система'), f"Удалил бригаду «{t_name}»", target_type='team', target_id=team_id)
+    return {"status": "ok"}
+
+
+@router.post("/api/teams/members/{member_id}/status")
+async def update_member_status(
+    member_id: int,
+    status: str = Form(...),
+    status_from: str = Form(""),
+    status_until: str = Form(""),
+    status_reason: str = Form(""),
+    tg_id: int = Form(0),
+):
+    """Update team member availability status (available / vacation / sick)."""
+    real_tg_id = await resolve_id(tg_id) if tg_id else 0
+    user = await db.get_user(real_tg_id) if real_tg_id else None
+    if not user or dict(user).get('role') not in ('foreman', 'moderator', 'boss', 'superadmin'):
+        raise HTTPException(403, "Недостаточно прав")
+
+    if status not in ('available', 'vacation', 'sick'):
+        raise HTTPException(400, "Недопустимый статус")
+
+    await db.conn.execute(
+        "UPDATE team_members SET status=?, status_from=?, status_until=?, status_reason=? WHERE id=?",
+        (status, status_from or None, status_until or None, status_reason, member_id),
+    )
+    await db.conn.commit()
+
+    # Fetch member info for log message
+    async with db.conn.execute("SELECT fio, team_id FROM team_members WHERE id = ?", (member_id,)) as cur:
+        m_row = await cur.fetchone()
+    member_fio = m_row[0] if m_row else f"#{member_id}"
+    team_id = m_row[1] if m_row else 0
+
+    team_name = ""
+    if team_id:
+        async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
+            t_row = await cur.fetchone()
+            if t_row: team_name = t_row[0]
+
+    status_labels = {"available": "Доступен", "vacation": "Отпуск", "sick": "Больничный"}
+    status_label = status_labels.get(status, status)
+    fio = dict(user).get('fio', 'Система')
+    period = f" ({status_from} — {status_until})" if status_from and status_until and status != 'available' else ""
+
+    await db.add_log(
+        real_tg_id, fio,
+        f"Изменил статус {member_fio} ({team_name}): {status_label}{period}",
+        target_type='team', target_id=team_id,
+    )
     return {"status": "ok"}

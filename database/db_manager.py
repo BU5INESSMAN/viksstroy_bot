@@ -116,6 +116,19 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_online_and_notifications()
         await self.migrate_estimate_pdfs_to_files()
 
+        # Employee status columns on team_members
+        for col_stmt in [
+            "ALTER TABLE team_members ADD COLUMN status TEXT DEFAULT 'available'",
+            "ALTER TABLE team_members ADD COLUMN status_from TEXT DEFAULT NULL",
+            "ALTER TABLE team_members ADD COLUMN status_until TEXT DEFAULT NULL",
+            "ALTER TABLE team_members ADD COLUMN status_reason TEXT DEFAULT ''",
+        ]:
+            try:
+                await self.conn.execute(col_stmt)
+            except Exception:
+                pass
+        await self.conn.commit()
+
         # Import catalog only when table is empty (first run).
         # Skipping re-import on restart preserves kp_catalog IDs that
         # object_kp_plan and application_kp depend on.

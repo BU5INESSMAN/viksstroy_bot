@@ -120,7 +120,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
             rows.append({
                 "name": fio or "—",
                 "role": ROLE_MAP.get(role, role or "—"),
-                "status": 1 if objs else 0,
+                "status": "Акт" if objs else "—",
                 "object": ", ".join(dict.fromkeys(objs)) if objs else "",
             })
         sections.append({"title": "ПРОРАБЫ", "rows": rows})
@@ -131,7 +131,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
 
     for tid, tname in teams:
         async with db.conn.execute(
-            "SELECT id, fio, position FROM team_members "
+            "SELECT id, fio, position, status, status_until FROM team_members "
             "WHERE team_id = ? ORDER BY is_leader DESC, is_foreman DESC, fio",
             (tid,),
         ) as cur:
@@ -139,31 +139,47 @@ async def _fetch_schedule_sections(target_date: str) -> list:
         if not members:
             continue
         rows = []
-        for mid, fio, pos in members:
+        for mid, fio, pos, m_status, m_status_until in members:
             objs = member_objs.get(mid, [])
+            m_status = m_status or "available"
+            # Determine display status: vacation/sick override attendance
+            if m_status == "vacation" and (not m_status_until or m_status_until >= target_date):
+                display_status = "Отп"
+            elif m_status == "sick" and (not m_status_until or m_status_until >= target_date):
+                display_status = "Бол"
+            elif objs:
+                display_status = "Акт"
+            else:
+                display_status = "—"
             rows.append({
                 "name": fio or "—",
                 "role": pos or "—",
-                "status": 1 if objs else 0,
+                "status": display_status,
                 "object": ", ".join(dict.fromkeys(objs)) if objs else "",
             })
         sections.append({"title": tname, "rows": rows})
 
     # ── Техника (по категориям) ───────────────
     async with db.conn.execute(
-        "SELECT id, name, category, driver_fio FROM equipment "
+        "SELECT id, name, category, driver_fio, status FROM equipment "
         "WHERE is_active = 1 ORDER BY category, driver_fio"
     ) as cur:
         equip_rows = await cur.fetchall()
 
     eq_cats: dict[str, list] = {}
-    for eid, ename, cat, driver in equip_rows:
+    for eid, ename, cat, driver, eq_status in equip_rows:
         cat = cat or "Прочая техника"
         objs = equip_objs.get(eid, [])
+        if eq_status == "repair":
+            display_status = "Рем"
+        elif objs:
+            display_status = "Акт"
+        else:
+            display_status = "—"
         eq_cats.setdefault(cat, []).append({
             "name": driver or "—",
             "role": ename or "—",
-            "status": 1 if objs else 0,
+            "status": display_status,
             "object": ", ".join(dict.fromkeys(objs)) if objs else "",
         })
 
@@ -197,8 +213,8 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
     font = _load_font(14, bold=False)
     font_bold = _load_font(14, bold=True)
 
-    # Ширины колонок: ФИО | Должность | Явка | Объект
-    COL_W = [200, 280, 40, 240]
+    # Ширины колонок: ФИО | Должность | Статус | Объект
+    COL_W = [200, 270, 50, 240]
     TABLE_W = sum(COL_W)
     ROW_H = 20
     PX = 4   # padding-x
@@ -207,6 +223,15 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
     YELLOW = (255, 242, 204)   # #FFF2CC
     BLACK = (0, 0, 0)
     WHITE = (255, 255, 255)
+
+    # Status text → fill color
+    STATUS_COLORS = {
+        "Акт": (46, 125, 50),      # Dark green
+        "Отп": (183, 149, 11),     # Dark yellow
+        "Бол": (198, 40, 40),      # Dark red
+        "Рем": (198, 40, 40),      # Dark red
+        "—":   (149, 165, 166),    # Gray
+    }
 
     # Дата для отображения
     try:
@@ -249,10 +274,12 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
             for ci, val in enumerate(vals):
                 draw.rectangle([x, y, x + COL_W[ci], y + ROW_H], fill=WHITE, outline=BLACK)
                 clipped = _clip_text(draw, val, font, COL_W[ci] - PX * 2)
-                if ci == 2:  # Статус — по центру
-                    bb = draw.textbbox((0, 0), clipped, font=font)
+                if ci == 2:  # Status column — centered, color-coded
+                    text_color = STATUS_COLORS.get(clipped, BLACK)
+                    status_font = font_bold if clipped in ("Акт", "Отп", "Бол", "Рем") else font
+                    bb = draw.textbbox((0, 0), clipped, font=status_font)
                     cx = x + (COL_W[ci] - (bb[2] - bb[0])) // 2
-                    draw.text((cx, y + PY), clipped, fill=BLACK, font=font)
+                    draw.text((cx, y + PY), clipped, fill=text_color, font=status_font)
                 else:
                     draw.text((x + PX, y + PY), clipped, fill=BLACK, font=font)
                 x += COL_W[ci]
