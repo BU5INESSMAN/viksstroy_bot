@@ -6,6 +6,7 @@ import {
     X, Users, Truck, Search, Check, CheckCircle,
     Upload, Trash2, FileText, Image, File, FolderOpen,
 } from 'lucide-react';
+import FileViewerModal from '../../../components/FileViewerModal';
 
 const FILE_TABS = [
     { key: 'all', label: 'Все' },
@@ -438,27 +439,12 @@ export default function ObjectEditModal({
                 </div>
             </div>
 
-            {/* File Viewer Modal */}
-            {viewingFile && (
-                <div className="fixed inset-0 z-[300] bg-black/90 flex flex-col" onTouchMove={e => e.stopPropagation()}>
-                    <div className="flex items-center justify-between px-4 py-3 bg-black/50 flex-shrink-0">
-                        <h3 className="text-sm text-white truncate flex-1">{viewingFile.name || 'Файл'}</h3>
-                        <button onClick={() => setViewingFile(null)} className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center"><X className="w-4 h-4 text-white" /></button>
-                    </div>
-                    <div className="flex-1 overflow-auto flex items-center justify-center p-4" style={{ touchAction: 'none' }}>
-                        {viewingFile.url.match(/\.(png|jpg|jpeg|gif|webp)$/i) ? (
-                            <img src={viewingFile.url} alt={viewingFile.name} className="max-w-full max-h-full object-contain" draggable={false} />
-                        ) : viewingFile.url.match(/\.pdf$/i) ? (
-                            <iframe src={viewingFile.url} className="w-full h-full rounded-lg bg-white" title={viewingFile.name} />
-                        ) : (
-                            <div className="text-center text-white/50">
-                                <p className="mb-4">Предпросмотр недоступен</p>
-                                <a href={viewingFile.url} download className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm">Скачать</a>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
+            <FileViewerModal
+                isOpen={!!viewingFile}
+                onClose={() => setViewingFile(null)}
+                fileUrl={viewingFile?.url || ''}
+                fileName={viewingFile?.name || ''}
+            />
         </div>
     );
 }
