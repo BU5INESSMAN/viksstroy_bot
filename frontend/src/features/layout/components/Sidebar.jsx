@@ -112,45 +112,31 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                 animate={{ width: w }}
                 transition={prefersReducedMotion ? { duration: 0 } : { duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
             >
-                {/* Logo */}
-                <div className={`border-b border-gray-100 dark:border-gray-800 flex-shrink-0 ${collapsed ? 'flex items-center justify-center px-2 h-14' : 'px-4 py-3.5 flex items-center justify-center'}`}>
+                {/* Logo row — expanded: logo + bell + online; collapsed: icon only */}
+                <div className={`border-b border-gray-100 dark:border-gray-800 flex-shrink-0 ${collapsed ? 'flex items-center justify-center px-2 h-14' : 'flex items-center justify-between px-3 py-3'}`}>
                     {!collapsed ? (
-                        <img src="/logo-dark.svg" alt="ВиКС" className="h-8 w-auto dark:hidden" />
-                    ) : null}
-                    {!collapsed ? (
-                        <img src="/logo-white.svg" alt="ВиКС" className="h-8 w-auto hidden dark:block" />
+                        <>
+                            <div className="flex-shrink-0">
+                                <img src="/logo-dark.svg" alt="ВиКС" className="h-7 w-auto dark:hidden" />
+                                <img src="/logo-white.svg" alt="ВиКС" className="h-7 w-auto hidden dark:block" />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                                <button onClick={onNotificationsClick} className="relative w-8 h-8 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                    <Bell className="w-3.5 h-3.5 text-gray-500 dark:text-gray-400" />
+                                    {unreadCount > 0 && (
+                                        <span className="absolute -top-1 -right-1 min-w-[14px] h-[14px] rounded-full bg-red-500 text-white text-[9px] font-bold flex items-center justify-center px-0.5">{unreadCount > 99 ? '99+' : unreadCount}</span>
+                                    )}
+                                </button>
+                                <button onClick={onOnlineClick} className="flex items-center gap-1 px-2 h-8 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                                    <span className="text-[11px] text-gray-500 dark:text-gray-400 font-medium tabular-nums">{onlineCount}</span>
+                                </button>
+                            </div>
+                        </>
                     ) : (
                         <img src="/favicon.svg" alt="ВиКС" className="w-8 h-8 flex-shrink-0" />
                     )}
                 </div>
-
-                {/* Notification bell + Online counter */}
-                {collapsed ? (
-                    <div className="flex flex-col items-center gap-1.5 py-2 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
-                        <button onClick={onNotificationsClick} className="relative w-9 h-9 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title="Уведомления">
-                            <Bell className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                            {unreadCount > 0 && (
-                                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5">{unreadCount > 99 ? '99+' : unreadCount}</span>
-                            )}
-                        </button>
-                        <button onClick={onOnlineClick} className="w-9 h-9 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors" title={`${onlineCount} онлайн`}>
-                            <span className="w-2 h-2 rounded-full bg-emerald-400" />
-                        </button>
-                    </div>
-                ) : (
-                    <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
-                        <button onClick={onNotificationsClick} className="relative w-9 h-9 flex items-center justify-center rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                            <Bell className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                            {unreadCount > 0 && (
-                                <span className="absolute -top-1 -right-1 min-w-[16px] h-[16px] rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center px-0.5">{unreadCount > 99 ? '99+' : unreadCount}</span>
-                            )}
-                        </button>
-                        <button onClick={onOnlineClick} className="flex items-center gap-1.5 px-3 h-9 rounded-lg bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                            <span className="text-xs text-gray-500 dark:text-gray-400 font-medium tabular-nums">{onlineCount} онлайн</span>
-                        </button>
-                    </div>
-                )}
 
                 {/* Main nav */}
                 <nav className="flex-1 flex flex-col overflow-y-auto py-3 px-2 scrollbar-thin">
