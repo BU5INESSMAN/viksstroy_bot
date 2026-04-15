@@ -296,27 +296,47 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                     </div>
                                     <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">* Выберите, куда бот будет присылать вам наряды в личные сообщения.</p>
 
-                                    <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2 text-sm mt-5 pt-4 border-t border-gray-200 dark:border-gray-600">
-                                        <Bell className="w-4 h-4 text-gray-400" /> Категории уведомлений
-                                    </h4>
-                                    <div className="flex flex-col gap-3">
-                                        {[
+                                    {(() => {
+                                        const ROLE_TOGGLES = {
+                                            superadmin: ['notify_new_users', 'notify_orders', 'notify_reports', 'notify_errors', 'notify_exchange'],
+                                            boss: ['notify_new_users', 'notify_orders', 'notify_reports', 'notify_errors', 'notify_exchange'],
+                                            moderator: ['notify_new_users', 'notify_orders', 'notify_reports', 'notify_exchange'],
+                                            foreman: ['notify_orders', 'notify_reports', 'notify_exchange'],
+                                            brigadier: ['notify_orders', 'notify_reports'],
+                                            worker: ['notify_orders'],
+                                            driver: ['notify_orders'],
+                                        };
+                                        const profileRole = editProfile?.role || localStorage.getItem('user_role') || 'worker';
+                                        const visible = ROLE_TOGGLES[profileRole] || ['notify_orders'];
+                                        const allToggles = [
                                             { key: 'notify_new_users', label: 'Новые пользователи', icon: UserPlus, color: 'text-emerald-500' },
                                             { key: 'notify_orders', label: 'Наряды', icon: ClipboardList, color: 'text-blue-500' },
                                             { key: 'notify_reports', label: 'Отчеты СМР', icon: FileText, color: 'text-violet-500' },
                                             { key: 'notify_errors', label: 'Системные ошибки', icon: AlertTriangle, color: 'text-red-500' },
-                                            { key: 'notify_exchange', label: 'Уведомления об обменах техники', icon: RefreshCw, color: 'text-cyan-500' },
-                                        ].map(({ key, label, icon: Ico, color }) => (
-                                            <div key={key} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                                                <span className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Ico className={`w-4 h-4 ${color}`} /> {label}</span>
-                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input type="checkbox" checked={editProfile[key]} onChange={() => setEditProfile(prev => ({ ...prev, [key]: !prev[key] }))} className="sr-only peer" />
-                                                    <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                                                </label>
-                                            </div>
-                                        ))}
-                                    </div>
-                                    <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">* Отключите категории, уведомления по которым вам не нужны.</p>
+                                            { key: 'notify_exchange', label: 'Обмены техники', icon: RefreshCw, color: 'text-cyan-500' },
+                                        ];
+                                        const filtered = allToggles.filter(t => visible.includes(t.key));
+                                        if (filtered.length === 0) return null;
+                                        return (
+                                            <>
+                                                <h4 className="font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2 text-sm mt-5 pt-4 border-t border-gray-200 dark:border-gray-600">
+                                                    <Bell className="w-4 h-4 text-gray-400" /> Категории уведомлений
+                                                </h4>
+                                                <div className="flex flex-col gap-3">
+                                                    {filtered.map(({ key, label, icon: Ico, color }) => (
+                                                        <div key={key} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                                                            <span className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Ico className={`w-4 h-4 ${color}`} /> {label}</span>
+                                                            <label className="relative inline-flex items-center cursor-pointer">
+                                                                <input type="checkbox" checked={editProfile[key]} onChange={() => setEditProfile(prev => ({ ...prev, [key]: !prev[key] }))} className="sr-only peer" />
+                                                                <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                                                            </label>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">* Отключите категории, уведомления по которым вам не нужны.</p>
+                                            </>
+                                        );
+                                    })()}
                                 </div>
                             )}
 

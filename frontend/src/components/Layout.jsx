@@ -182,6 +182,7 @@ export default function Layout() {
                     notify_orders: res.data.profile.notify_orders !== 0,
                     notify_reports: res.data.profile.notify_reports !== 0,
                     notify_errors: res.data.profile.notify_errors !== 0,
+                    notify_exchange: res.data.profile.notify_exchange !== 0,
                 });
             }
             setProfileModalOpen(true);

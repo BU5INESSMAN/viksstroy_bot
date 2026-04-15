@@ -50,6 +50,7 @@ NOTIFY_CATEGORY_COLUMNS = {
     "orders": "notify_orders",
     "reports": "notify_reports",
     "errors": "notify_errors",
+    "exchange": "notify_exchange",
 }
 
 

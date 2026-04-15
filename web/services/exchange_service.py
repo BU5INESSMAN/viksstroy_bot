@@ -49,6 +49,7 @@ async def _send_exchange_notification_with_buttons(donor_id: int, text: str, exc
         extra_tg_ids=[donor_id],
         tg_reply_markup=tg_markup,
         max_attachments=[max_payload],
+        category="exchange",
     )
     logger.info(f"Exchange notification with buttons sent to donor {donor_id} (exchange #{exchange_id})")
 
@@ -348,16 +349,16 @@ async def send_respond_notifications(notify_data: dict):
         if notify_data['type'] == 'reject':
             await notify_users(
                 [], f"❌ Обмен отклонён. {notify_data['donor_name']} отказался обменять {notify_data['requested_equip_name']}.",
-                "dashboard", extra_tg_ids=[notify_data['requester_id']])
+                "dashboard", extra_tg_ids=[notify_data['requester_id']], category="exchange")
             await _notify_moderators_exchange(
                 f"❌ Обмен отклонён: {notify_data['requester_name']} ↔ {notify_data['donor_name']}")
         elif notify_data['type'] == 'accept':
             await notify_users(
                 [], f"✅ Обмен завершён! Вы получили {notify_data['requested_equip_name']}.",
-                "dashboard", extra_tg_ids=[notify_data['requester_id']])
+                "dashboard", extra_tg_ids=[notify_data['requester_id']], category="exchange")
             await notify_users(
                 [], f"✅ Обмен завершён! Вы получили {notify_data['offered_equip_name']}.",
-                "dashboard", extra_tg_ids=[notify_data['donor_id']])
+                "dashboard", extra_tg_ids=[notify_data['donor_id']], category="exchange")
             await _notify_moderators_exchange(
                 f"✅ Обмен завершён: {notify_data['requester_name']} получил {notify_data['requested_equip_name']}, "
                 f"{notify_data['donor_name']} получил {notify_data['offered_equip_name']}")
@@ -403,7 +404,7 @@ async def send_cancel_notifications(notify_data: dict):
     try:
         await notify_users(
             [], f"↩️ Обмен отменён. {notify_data['requester_name']} отменил запрос на {notify_data['requested_equip_name']}.",
-            "dashboard", extra_tg_ids=[notify_data['donor_id']])
+            "dashboard", extra_tg_ids=[notify_data['donor_id']], category="exchange")
     except Exception as e:
         logger.error(f"Exchange cancel notification error: {e}")
 
