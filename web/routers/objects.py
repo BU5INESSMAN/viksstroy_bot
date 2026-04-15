@@ -47,24 +47,52 @@ async def api_create_object(request: Request):
     return {"status": "ok", "id": obj_id}
 
 @router.post("/api/objects/{obj_id}/update")
-async def api_update_object(obj_id: int, name: str = Form(...), address: str = Form(...), default_teams: str = Form(""), default_equip: str = Form("")):
+async def api_update_object(obj_id: int, name: str = Form(...), address: str = Form(...), default_teams: str = Form(""), default_equip: str = Form(""), tg_id: int = Form(0)):
     if db.conn is None: await db.init_db()
     await db.update_object(obj_id, name, address, default_teams, default_equip)
-    await db.add_log(0, "Система", f"Обновил объект №{obj_id}", target_type='object', target_id=obj_id)
+    _uid, _fio = 0, "Система"
+    if tg_id:
+        _rid = await resolve_id(tg_id)
+        _u = await db.get_user(_rid)
+        if _u: _uid, _fio = _rid, dict(_u).get('fio', 'Система')
+    await db.add_log(_uid, _fio, f"Обновил объект «{name}»", target_type='object', target_id=obj_id)
     return {"status": "ok"}
 
 @router.post("/api/objects/{obj_id}/archive")
-async def api_archive_object(obj_id: int):
+async def api_archive_object(obj_id: int, tg_id: int = Form(0)):
     if db.conn is None: await db.init_db()
+    # Get name before archiving
+    _name = f"#{obj_id}"
+    try:
+        async with db.conn.execute("SELECT name FROM objects WHERE id = ?", (obj_id,)) as c:
+            r = await c.fetchone()
+            if r: _name = r[0]
+    except Exception: pass
     await db.archive_object(obj_id)
-    await db.add_log(0, "Система", f"Архивировал объект №{obj_id}", target_type='object', target_id=obj_id)
+    _uid, _fio = 0, "Система"
+    if tg_id:
+        _rid = await resolve_id(tg_id)
+        _u = await db.get_user(_rid)
+        if _u: _uid, _fio = _rid, dict(_u).get('fio', 'Система')
+    await db.add_log(_uid, _fio, f"Архивировал объект «{_name}»", target_type='object', target_id=obj_id)
     return {"status": "ok"}
 
 @router.post("/api/objects/{obj_id}/restore")
-async def api_restore_object(obj_id: int):
+async def api_restore_object(obj_id: int, tg_id: int = Form(0)):
     if db.conn is None: await db.init_db()
+    _name = f"#{obj_id}"
+    try:
+        async with db.conn.execute("SELECT name FROM objects WHERE id = ?", (obj_id,)) as c:
+            r = await c.fetchone()
+            if r: _name = r[0]
+    except Exception: pass
     await db.restore_object(obj_id)
-    await db.add_log(0, "Система", f"Восстановил объект №{obj_id}", target_type='object', target_id=obj_id)
+    _uid, _fio = 0, "Система"
+    if tg_id:
+        _rid = await resolve_id(tg_id)
+        _u = await db.get_user(_rid)
+        if _u: _uid, _fio = _rid, dict(_u).get('fio', 'Система')
+    await db.add_log(_uid, _fio, f"Восстановил объект «{_name}»", target_type='object', target_id=obj_id)
     return {"status": "ok"}
 
 @router.get("/api/kp/catalog")
@@ -260,7 +288,13 @@ async def api_confirm_smr_import(obj_id: int, request: Request):
             pass
 
     await db.conn.commit()
-    await db.add_log(0, "Система", f"Импорт СМР из PDF для объекта №{obj_id}: +{len(add_ids)} / -{len(remove_ids)}", target_type='object', target_id=obj_id)
+    _obj_name = f"#{obj_id}"
+    try:
+        async with db.conn.execute("SELECT name FROM objects WHERE id = ?", (obj_id,)) as c:
+            r = await c.fetchone()
+            if r: _obj_name = r[0]
+    except Exception: pass
+    await db.add_log(0, "Система", f"Импорт СМР из PDF для «{_obj_name}»: +{len(add_ids)} / -{len(remove_ids)}", target_type='object', target_id=obj_id)
     return {"status": "ok", "added": len(add_ids), "removed": len(remove_ids)}
 
 

@@ -5,9 +5,10 @@ import { GlassCard, SectionHeader } from './UIHelpers';
 
 function groupLogs(logs) {
     const result = [];
-    let i = 0;
+    const used = new Set();
 
-    while (i < logs.length) {
+    for (let i = 0; i < logs.length; i++) {
+        if (used.has(i)) continue;
         const log = logs[i];
 
         if (log.target_type === 'notification' && log.action?.startsWith('📨')) {
@@ -17,23 +18,24 @@ function groupLogs(logs) {
             if (msgKey) {
                 const baseTime = new Date(log.timestamp).getTime();
                 const group = [log];
+                used.add(i);
 
-                let j = i + 1;
-                while (j < logs.length) {
+                // Scan ALL remaining logs (not just consecutive) within 30s window
+                for (let j = i + 1; j < logs.length; j++) {
+                    if (used.has(j)) continue;
                     const next = logs[j];
-                    if (next.target_type !== 'notification' || !next.action?.startsWith('📨')) break;
+                    if (next.target_type !== 'notification' || !next.action?.startsWith('📨')) continue;
+                    const nextTime = new Date(next.timestamp).getTime();
+                    if (Math.abs(nextTime - baseTime) > 30000) continue;
                     const nextMatch = next.action.match(/^📨\s*(?:TG|MAX)\s*→\s*[^:]+:\s*(.+)$/);
-                    const nextKey = nextMatch ? nextMatch[1].trim() : null;
-                    if (nextKey !== msgKey) break;
-                    if (Math.abs(new Date(next.timestamp).getTime() - baseTime) > 10000) break;
-                    group.push(next);
-                    j++;
+                    if (nextMatch && nextMatch[1].trim() === msgKey) {
+                        group.push(next);
+                        used.add(j);
+                    }
                 }
 
                 if (group.length > 1) {
-                    const recipients = [];
-                    const tgR = [];
-                    const maxR = [];
+                    const recipients = [], tgR = [], maxR = [];
                     group.forEach(g => {
                         const m = g.action.match(/^📨\s*(TG|MAX)\s*→\s*([^:]+):/);
                         if (m) {
@@ -44,21 +46,15 @@ function groupLogs(logs) {
                         }
                     });
                     result.push({
-                        ...log,
-                        _grouped: true,
-                        _count: group.length,
-                        _recipients: recipients,
-                        _tgR: tgR,
-                        _maxR: maxR,
+                        ...log, _grouped: true, _count: group.length,
+                        _recipients: recipients, _tgR: tgR, _maxR: maxR,
                         _preview: msgKey.length > 70 ? msgKey.slice(0, 67) + '...' : msgKey,
                     });
-                    i = j;
                     continue;
                 }
             }
         }
         result.push(log);
-        i++;
     }
     return result;
 }

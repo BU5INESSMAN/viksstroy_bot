@@ -303,7 +303,7 @@ async def edit_equipment(equip_id: int, request: Request):
     if not row:
         raise HTTPException(status_code=404, detail="Техника не найдена")
     admin_fio = dict(user).get('fio', 'Админ')
-    await db.add_log(data.get('tg_id', 0), admin_fio, f"Обновил технику №{equip_id}: {name}", target_type='equipment', target_id=equip_id)
+    await db.add_log(data.get('tg_id', 0), admin_fio, f"Обновил технику: {name}", target_type='equipment', target_id=equip_id)
     return dict(zip([c[0] for c in cur.description], row))
 
 

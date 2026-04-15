@@ -114,7 +114,13 @@ async def add_team_member(team_id: int, fio: str = Form(...), position: str = Fo
     real_tg_id = await resolve_id(tg_id) if tg_id else 0
     user = await db.get_user(real_tg_id) if real_tg_id else None
     admin_fio = dict(user).get('fio', 'Система') if user else 'Система'
-    await db.add_log(real_tg_id, admin_fio, f"Добавил участника «{fio}» в бригаду №{team_id}", target_type='team', target_id=team_id)
+    _t_name = f"#{team_id}"
+    try:
+        async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as c:
+            r = await c.fetchone()
+            if r: _t_name = r[0]
+    except Exception: pass
+    await db.add_log(real_tg_id, admin_fio, f"Добавил участника «{fio}» в бригаду «{_t_name}»", target_type='team', target_id=team_id)
     return {"status": "ok"}
 
 
@@ -166,7 +172,13 @@ async def delete_team_member(member_id: int, tg_id: int = Form(0)):
     real_tg_id = await resolve_id(tg_id) if tg_id else 0
     user = await db.get_user(real_tg_id) if real_tg_id else None
     admin_fio = dict(user).get('fio', 'Система') if user else 'Система'
-    await db.add_log(real_tg_id, admin_fio, f"Удалил участника «{m_fio}» из бригады №{m_team_id}", target_type='team', target_id=m_team_id)
+    _t_name = f"#{m_team_id}"
+    try:
+        async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (m_team_id,)) as c:
+            r = await c.fetchone()
+            if r: _t_name = r[0]
+    except Exception: pass
+    await db.add_log(real_tg_id, admin_fio, f"Удалил участника «{m_fio}» из бригады «{_t_name}»", target_type='team', target_id=m_team_id)
     return {"status": "ok"}
 
 

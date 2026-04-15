@@ -90,7 +90,7 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
         (real_tg_id, fio, team_id, object_id, date_target, object_address, comment, selected_members, equipment_data))
     new_app_id = cursor.lastrowid
     await db.conn.commit()
-    await db.add_log(real_tg_id, fio, f"Создал заявку №{new_app_id} на {date_target}", target_type='application', target_id=new_app_id)
+    await db.add_log(real_tg_id, fio, f"Создал заявку на {object_address} ({date_target})", target_type='application', target_id=new_app_id)
     return new_app_id, real_tg_id, fio
 
 
@@ -118,7 +118,7 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
         await db.conn.rollback()
 
     fio = dict(user).get('fio', 'Пользователь')
-    await db.add_log(real_tg_id, fio, f"Обновил заявку №{app_id}", target_type='application', target_id=app_id)
+    await db.add_log(real_tg_id, fio, f"Обновил заявку на {object_address} ({date_target})", target_type='application', target_id=app_id)
     return real_tg_id, fio
 
 

@@ -68,7 +68,13 @@ async def submit_app_kp(app_id: int, request: Request):
     if tg_id:
         user = await db.get_user(real_tg_id)
         fio = dict(user).get('fio', '') if user else ''
-        await db.add_log(real_tg_id, fio, f"Отправил отчёт СМР по заявке №{app_id}", target_type='smr', target_id=app_id)
+        _obj = ''
+        try:
+            async with db.conn.execute("SELECT object_address FROM applications WHERE id = ?", (app_id,)) as c:
+                r = await c.fetchone()
+                if r: _obj = r[0]
+        except Exception: pass
+        await db.add_log(real_tg_id, fio, f"Отправил отчёт СМР ({_obj})" if _obj else f"Отправил отчёт СМР по заявке №{app_id}", target_type='smr', target_id=app_id)
     return {"status": "ok"}
 
 
@@ -89,7 +95,13 @@ async def review_app_kp(app_id: int, request: Request):
         user = await db.get_user(real_tg_id)
         fio = dict(user).get('fio', '') if user else ''
         action_label = "Одобрил" if action == 'approve' else "Отклонил"
-        await db.add_log(real_tg_id, fio, f"{action_label} СМР по заявке №{app_id}", target_type='smr', target_id=app_id)
+        _obj = ''
+        try:
+            async with db.conn.execute("SELECT object_address FROM applications WHERE id = ?", (app_id,)) as c:
+                r = await c.fetchone()
+                if r: _obj = r[0]
+        except Exception: pass
+        await db.add_log(real_tg_id, fio, f"{action_label} СМР ({_obj})" if _obj else f"{action_label} СМР по заявке №{app_id}", target_type='smr', target_id=app_id)
     return {"status": "ok"}
 
 

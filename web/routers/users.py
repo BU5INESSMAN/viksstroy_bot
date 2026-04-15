@@ -276,6 +276,11 @@ async def set_user_role(user_id: int, role: str = Form(...), admin_id: int = For
     if admin_id:
         admin_user = await db.get_user(admin_id)
         admin_fio = dict(admin_user).get('fio', 'Админ') if admin_user else 'Админ'
-        await db.add_log(admin_id, admin_fio, f"Изменил роль пользователя №{user_id}: {role}", target_type='user', target_id=user_id)
+        _target_fio = ''
+        try:
+            _tu = await db.get_user(user_id)
+            if _tu: _target_fio = dict(_tu).get('fio', '')
+        except Exception: pass
+        await db.add_log(admin_id, admin_fio, f"Изменил роль {_target_fio or f'#{user_id}'}: {role}", target_type='user', target_id=user_id)
 
     return {"status": "ok", "user_id": user_id, "role": role}

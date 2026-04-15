@@ -94,7 +94,8 @@ async def review_application(app_id: int, new_status: str, reason: str, tg_id: i
         await db.conn.rollback()
 
     action_label = "Одобрил" if new_status == 'approved' else ("Отклонил" if new_status == 'rejected' else "Завершил")
-    log_msg = f"{action_label} заявку №{app_id}"
+    obj_addr = app_dict.get('object_address', '') or ''
+    log_msg = f"{action_label} заявку на {obj_addr}" if obj_addr else f"{action_label} заявку №{app_id}"
     if new_status == 'rejected' and reason:
         log_msg += f": {reason}"
     await db.add_log(real_tg_id, mod_fio, log_msg, target_type='application', target_id=app_id)
@@ -265,7 +266,13 @@ async def free_equipment(app_id: int, tg_id: int):
     await db.conn.commit()
     fio = dict(user).get('fio', '')
     user_role = dict(user).get('role', 'Водитель')
-    await db.add_log(real_tg_id, fio, f"Освободил технику в заявке №{app_id}", target_type='application', target_id=app_id)
+    try:
+        async with db.conn.execute("SELECT object_address FROM applications WHERE id = ?", (app_id,)) as _c:
+            _r = await _c.fetchone()
+            _obj = _r[0] if _r else ''
+    except Exception:
+        _obj = ''
+    await db.add_log(real_tg_id, fio, f"Освободил технику ({_obj})" if _obj else f"Освободил технику в заявке №{app_id}", target_type='application', target_id=app_id)
 
     async with db.conn.execute("SELECT name FROM equipment WHERE id = ?", (my_eq_id,)) as cur:
         eq_name_row = await cur.fetchone()
@@ -365,7 +372,13 @@ async def archive_application(app_id: int, tg_id: int):
     await db.conn.commit()
 
     fio = dict(user).get('fio', 'Модератор')
-    await db.add_log(real_tg_id, fio, f"Архивировал заявку №{app_id}", target_type='application', target_id=app_id)
+    try:
+        async with db.conn.execute("SELECT object_address FROM applications WHERE id = ?", (app_id,)) as _c:
+            _r = await _c.fetchone()
+            _obj = _r[0] if _r else ''
+    except Exception:
+        _obj = ''
+    await db.add_log(real_tg_id, fio, f"Архивировал заявку на {_obj}" if _obj else f"Архивировал заявку №{app_id}", target_type='application', target_id=app_id)
 
 
 async def unarchive_application(app_id: int, tg_id: int):
@@ -376,7 +389,7 @@ async def unarchive_application(app_id: int, tg_id: int):
     if not user or dict(user).get('role') not in ['moderator', 'boss', 'superadmin']:
         raise HTTPException(403, "Нет прав для восстановления из архива")
 
-    async with db.conn.execute("SELECT is_archived FROM applications WHERE id = ?", (app_id,)) as cur:
+    async with db.conn.execute("SELECT is_archived, object_address FROM applications WHERE id = ?", (app_id,)) as cur:
         row = await cur.fetchone()
     if not row:
         raise HTTPException(404, "Заявка не найдена")
@@ -387,7 +400,8 @@ async def unarchive_application(app_id: int, tg_id: int):
     await db.conn.commit()
 
     fio = dict(user).get('fio', 'Модератор')
-    await db.add_log(real_tg_id, fio, f"Восстановил заявку №{app_id} из архива", target_type='application', target_id=app_id)
+    _obj = row[1] or ''
+    await db.add_log(real_tg_id, fio, f"Восстановил заявку на {_obj}" if _obj else f"Восстановил заявку №{app_id}", target_type='application', target_id=app_id)
 
 
 async def remind_foreman_smr(app_id: int, tg_id: int):

@@ -138,7 +138,8 @@ export default function Objects() {
         });
         if (!ok) return;
         try {
-            await axios.post(`/api/objects/${objId}/${isCurrentlyArchived ? 'restore' : 'archive'}`);
+            const fd = new FormData(); fd.append('tg_id', tgId);
+            await axios.post(`/api/objects/${objId}/${isCurrentlyArchived ? 'restore' : 'archive'}`, fd);
             fetchObjects();
         } catch (e) {
             toast.error('Ошибка смены статуса');
