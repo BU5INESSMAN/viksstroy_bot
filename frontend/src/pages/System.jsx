@@ -219,6 +219,10 @@ export default function System() {
             if (!groups[r]) groups[r] = [];
             groups[r].push(u);
         });
+        // Sort each role group alphabetically by FIO (Russian locale)
+        for (const r of Object.keys(groups)) {
+            groups[r].sort((a, b) => (a.fio || '').localeCompare(b.fio || '', 'ru'));
+        }
         return groups;
     }, [filteredUsers]);
 

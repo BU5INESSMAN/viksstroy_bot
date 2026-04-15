@@ -85,7 +85,12 @@ async def get_profile(target_id: int, member_id: int = 0, equip_id: int = 0):
                                        (real_tg_id,)) as cur:
                 eq = await cur.fetchone()
                 if eq:
-                    profile.update({"equip_id": eq[0], "position": eq[2], "max_invite_link": ""})
+                    profile["equip_id"] = eq[0]
+                    # Only fall back to equipment category if team_members
+                    # didn't already provide a position (avoids overwriting
+                    # the user's saved specialty with equipment type).
+                    if not profile.get("position"):
+                        profile["position"] = eq[2] or ''
 
             links = {"has_tg": False, "has_max": False, "is_linked": False}
             linked_ids = await get_all_linked_ids(real_tg_id)
