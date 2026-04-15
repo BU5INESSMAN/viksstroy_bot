@@ -1,8 +1,9 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect, useState, lazy, Suspense } from 'react';
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import axios from 'axios';
 import Layout from './components/Layout';
+import SplashScreen from './components/SplashScreen';
 import { loadAuthData, saveAuthData, clearAuthData } from './utils/tokenStorage';
 
 // Lazy-loaded pages
@@ -124,6 +125,17 @@ const SuspenseFallback = (
 );
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(() => {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
+    const hasShown = sessionStorage.getItem('splash_shown');
+    return !hasShown && (isStandalone || !document.referrer);
+  });
+
+  const handleSplashFinish = useCallback(() => {
+    setShowSplash(false);
+    sessionStorage.setItem('splash_shown', 'true');
+  }, []);
+
   useEffect(() => {
     document.body.style.overscrollBehaviorY = 'none';
 
@@ -134,6 +146,7 @@ export default function App() {
 
   return (
     <BrowserRouter>
+      {showSplash && <SplashScreen onFinish={handleSplashFinish} />}
       <Toaster
         position="top-center"
         containerStyle={{ zIndex: 99999 }}

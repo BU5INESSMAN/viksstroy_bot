@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import useConfirm from '../../../hooks/useConfirm';
 import { clearAuthData } from '../../../utils/tokenStorage';
+import { unsubscribeFromPush } from '../../../utils/pushSubscription';
 
 import { ROLE_NAMES as roleNames } from '../../../utils/roleConfig';
 import { motion } from 'framer-motion';
@@ -458,6 +459,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                             {isMyProfile && (
                                 <button
                                     onClick={async () => {
+                                        await unsubscribeFromPush();
                                         await clearAuthData();
                                         document.cookie = "session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;";
                                         window.location.href = '/';

@@ -16,6 +16,7 @@ import NotificationsModal from '../features/layout/components/NotificationsModal
 import OnlineUsersModal from '../features/layout/components/OnlineUsersModal';
 import OnboardingTour from './OnboardingTour';
 import { getFullTourSteps } from '../utils/tourSteps';
+import { subscribeToPush } from '../utils/pushSubscription';
 
 function MaintenanceOverlay() {
     const [serverBack, setServerBack] = useState(false);
@@ -175,6 +176,13 @@ export default function Layout() {
         const iv = setInterval(fetchCounts, 30000);
         return () => clearInterval(iv);
     }, [tgId, role]);
+
+    // Push notification subscription — delayed to not interrupt initial load
+    useEffect(() => {
+        if (!tgId) return;
+        const timer = setTimeout(() => { subscribeToPush(tgId); }, 3000);
+        return () => clearTimeout(timer);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Continuous onboarding tour — show once on first authenticated visit
     useEffect(() => {
