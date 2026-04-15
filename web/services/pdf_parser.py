@@ -6,11 +6,12 @@ from typing import List, Dict, Optional
 def parse_smr_pdf(file_path: str) -> dict:
     """
     Parse a PDF estimate to extract object name, address, and SMR works table.
+    Reads ALL pages until 'Итого СМР' is found.
     Returns: { name, address, works: [{ name, unit, volume }], errors: [] }
     """
     errors = []
     full_text = ""
-    all_tables = []
+    all_rows = []  # Flattened: all rows from all tables from all pages
 
     with pdfplumber.open(file_path) as pdf:
         for page in pdf.pages:
@@ -19,27 +20,28 @@ def parse_smr_pdf(file_path: str) -> dict:
 
             tables = page.extract_tables() or []
             for table in tables:
-                all_tables.append(table)
+                if table:
+                    all_rows.extend(table)
 
     # --- Extract name & address from header ---
     object_name = ""
     object_address = ""
 
-    # Search for "по адресу:" pattern across the full text
     addr_match = re.search(r'(.{5,300}?)\s*по адресу:\s*(.+)', full_text, re.IGNORECASE)
     if addr_match:
         raw_name = addr_match.group(1).strip()
         raw_address = addr_match.group(2).strip()
-        # Clean up: take the meaningful tail of the name (remove leading boilerplate)
-        # Often the line is like "Смета на строительство объекта ЖК Счастье по адресу: ..."
         object_name = re.sub(r'^.*?(?:объект[аеу]?\s+|на\s+)', '', raw_name, flags=re.IGNORECASE).strip() or raw_name
-        # Address: take until end of line
         object_address = raw_address.split('\n')[0].strip()
     else:
         errors.append("Не найден заголовок с 'по адресу:' — заполните название и адрес вручную")
 
-    # --- Extract SMR table ---
-    works = _extract_works_from_tables(all_tables, full_text)
+    # --- Extract SMR table (all pages until 'Итого СМР') ---
+    works = _extract_works_from_rows(all_rows)
+
+    # Fallback: text-based extraction if table parsing found nothing
+    if not works:
+        works = _extract_works_from_text(full_text)
 
     if not works:
         errors.append("Не найдена таблица 'СМР' / 'Строительно-монтажные работы' — добавьте работы вручную")
@@ -52,41 +54,49 @@ def parse_smr_pdf(file_path: str) -> dict:
     }
 
 
-def _extract_works_from_tables(all_tables: list, full_text: str) -> List[Dict]:
-    """Find and extract works from SMR table rows."""
+def _extract_works_from_rows(all_rows: list) -> List[Dict]:
+    """
+    Single-pass through ALL flattened table rows across ALL pages.
+    Finds the СМР section header, collects work rows, stops at 'Итого СМР'.
+    """
     works = []
+    in_smr = False
 
-    # Strategy 1: look for SMR section in tables
-    smr_found = False
-    for table in all_tables:
-        if not table:
+    for row in all_rows:
+        if not row:
             continue
 
-        for row_idx, row in enumerate(table):
-            row_text = " ".join(str(c or "") for c in row).strip()
+        row_text = " ".join(str(c or "") for c in row).strip()
+        row_lower = row_text.lower()
 
-            # Detect SMR header row
-            if not smr_found:
-                if re.search(r'(СМР|Строительно[\s-]*монтажные\s+работ)', row_text, re.IGNORECASE):
-                    smr_found = True
-                continue
+        if not row_text:
+            continue
 
-            # We're inside the SMR section — parse rows
-            if smr_found:
-                # Stop if we hit another major section header (e.g. "Итого", empty block)
-                if re.search(r'^(Итого|Всего|ИТОГО)', row_text.strip()):
-                    break
+        # Detect SMR section start
+        if not in_smr:
+            if re.search(r'\bСМР\b|Строительно[\s-]*монтажные\s+работ', row_text, re.IGNORECASE):
+                # Make sure this is a section header, not "Итого СМР"
+                if 'итого' not in row_lower:
+                    in_smr = True
+            continue
 
-                work = _parse_work_row(row)
-                if work:
-                    works.append(work)
+        # Inside SMR section — check for end marker
+        if re.search(r'итого\s+смр|итого\s+строительно', row_lower):
+            break  # Done — found "Итого СМР без НДС" or similar
 
-        if smr_found and works:
-            break  # got our data from this table
+        # Skip sub-totals within SMR (e.g., sub-section totals)
+        if re.match(r'^(Всего|ВСЕГО)\b', row_text.strip()):
+            continue
 
-    # Strategy 2: if no table-based extraction worked, try text-based
-    if not works:
-        works = _extract_works_from_text(full_text)
+        # Skip if we hit a completely different section (safety)
+        if re.match(r'^(Материалы|Техника|Оборудование)\s*$', row_text.strip(), re.IGNORECASE):
+            in_smr = False
+            continue
+
+        # Parse the work row
+        work = _parse_work_row(row)
+        if work:
+            works.append(work)
 
     return works
 
@@ -95,7 +105,6 @@ def _parse_work_row(row: list) -> Optional[Dict]:
     """
     Try to extract (name, unit, volume) from a table row.
     Typical columns: №, Name, Unit, Volume, Price, Cost
-    We need: Name, Unit, Volume only.
     """
     if not row or len(row) < 3:
         return None
@@ -112,14 +121,12 @@ def _parse_work_row(row: list) -> Optional[Dict]:
     if not non_empty:
         return None
 
-    # Heuristic: find the name (longest text cell), unit (short like "м2", "шт"), volume (number)
     name = ""
     unit = ""
     volume = ""
 
-    # Try positional approach first: typically [№, Name, Unit, Volume, ...]
+    # Positional: typically [№, Name, Unit, Volume, Price, Cost]
     if len(cells) >= 4:
-        # Check if first cell is a row number
         if re.match(r'^\d{1,3}\.?$', cells[0]):
             name = cells[1]
             unit = cells[2]
@@ -133,11 +140,10 @@ def _parse_work_row(row: list) -> Optional[Dict]:
         unit = cells[1]
         volume = cells[2]
 
-    # Validate
     if not name or len(name) < 2:
         return None
 
-    # Clean volume: handle comma decimals
+    # Clean volume
     volume = volume.replace(',', '.').replace(' ', '')
     try:
         vol_float = float(volume)
@@ -155,7 +161,8 @@ def _parse_work_row(row: list) -> Optional[Dict]:
 
 
 def _extract_works_from_text(full_text: str) -> List[Dict]:
-    """Fallback: try to parse works from raw text if table extraction failed."""
+    """Fallback: parse works from raw text across ALL pages.
+    Stops at 'Итого СМР' (case-insensitive)."""
     works = []
     lines = full_text.split('\n')
     in_smr = False
@@ -164,12 +171,19 @@ def _extract_works_from_text(full_text: str) -> List[Dict]:
         stripped = line.strip()
 
         if not in_smr:
-            if re.search(r'(СМР|Строительно[\s-]*монтажные\s+работ)', stripped, re.IGNORECASE):
-                in_smr = True
+            if re.search(r'\bСМР\b|Строительно[\s-]*монтажные\s+работ', stripped, re.IGNORECASE):
+                if 'итого' not in stripped.lower():
+                    in_smr = True
             continue
 
-        if re.search(r'^(Итого|Всего|ИТОГО)', stripped):
+        # Stop at "Итого СМР" specifically, not just any "Итого"
+        if re.search(r'итого\s+смр|итого\s+строительно', stripped, re.IGNORECASE):
             break
+
+        # Skip other section headers if somehow encountered
+        if re.match(r'^(Материалы|Техника|Оборудование)\s*$', stripped, re.IGNORECASE):
+            in_smr = False
+            continue
 
         # Try to parse: "1. Кладка кирпича   м3   150"
         m = re.match(r'^\d+[\.\)]\s*(.+?)\s{2,}(\S+)\s{2,}([\d.,]+)', stripped)
