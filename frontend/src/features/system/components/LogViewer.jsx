@@ -1,9 +1,77 @@
-import { FileText, Terminal, RefreshCw, AlertTriangle, ChevronUp, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { FileText, Terminal, RefreshCw, AlertTriangle, ChevronUp, ChevronDown, ChevronRight } from 'lucide-react';
+import { useState, useMemo } from 'react';
 import { GlassCard, SectionHeader } from './UIHelpers';
+
+
+function groupLogs(logs) {
+    const result = [];
+    let i = 0;
+
+    while (i < logs.length) {
+        const log = logs[i];
+
+        if (log.target_type === 'notification' && log.action?.startsWith('📨')) {
+            const msgMatch = log.action.match(/^📨\s*(?:TG|MAX)\s*→\s*[^:]+:\s*(.+)$/);
+            const msgKey = msgMatch ? msgMatch[1].trim() : null;
+
+            if (msgKey) {
+                const baseTime = new Date(log.timestamp).getTime();
+                const group = [log];
+
+                let j = i + 1;
+                while (j < logs.length) {
+                    const next = logs[j];
+                    if (next.target_type !== 'notification' || !next.action?.startsWith('📨')) break;
+                    const nextMatch = next.action.match(/^📨\s*(?:TG|MAX)\s*→\s*[^:]+:\s*(.+)$/);
+                    const nextKey = nextMatch ? nextMatch[1].trim() : null;
+                    if (nextKey !== msgKey) break;
+                    if (Math.abs(new Date(next.timestamp).getTime() - baseTime) > 10000) break;
+                    group.push(next);
+                    j++;
+                }
+
+                if (group.length > 1) {
+                    const recipients = [];
+                    const tgR = [];
+                    const maxR = [];
+                    group.forEach(g => {
+                        const m = g.action.match(/^📨\s*(TG|MAX)\s*→\s*([^:]+):/);
+                        if (m) {
+                            const name = m[2].trim();
+                            if (!recipients.includes(name)) recipients.push(name);
+                            if (m[1] === 'TG' && !tgR.includes(name)) tgR.push(name);
+                            if (m[1] === 'MAX' && !maxR.includes(name)) maxR.push(name);
+                        }
+                    });
+                    result.push({
+                        ...log,
+                        _grouped: true,
+                        _count: group.length,
+                        _recipients: recipients,
+                        _tgR: tgR,
+                        _maxR: maxR,
+                        _preview: msgKey.length > 70 ? msgKey.slice(0, 67) + '...' : msgKey,
+                    });
+                    i = j;
+                    continue;
+                }
+            }
+        }
+        result.push(log);
+        i++;
+    }
+    return result;
+}
+
 
 export default function LogViewer({ logs, serverLogs, fetchServerLogs, serverLogsLoading }) {
     const [logsExpanded, setLogsExpanded] = useState(false);
+    const [expanded, setExpanded] = useState({});
+
+    const grouped = useMemo(() => groupLogs(logs), [logs]);
+    const displayedLogs = logsExpanded ? grouped : grouped.slice(0, 10);
+
+    const toggleExpand = (id) => setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
 
     const formatLogTime = (timestamp) => {
         if (!timestamp) return '';
@@ -19,6 +87,7 @@ export default function LogViewer({ logs, serverLogs, fetchServerLogs, serverLog
         application: 'Заявка', user: 'Пользователь', equipment: 'Техника',
         team: 'Бригада', object: 'Объект', smr: 'СМР',
         exchange: 'Обмен', system: 'Система', settings: 'Настройки',
+        notification: 'Уведомление',
     };
 
     const formatContext = (log) => {
@@ -26,8 +95,6 @@ export default function LogViewer({ logs, serverLogs, fetchServerLogs, serverLog
         const label = TARGET_TYPE_LABELS[log.target_type] || log.target_type;
         return log.target_id ? `${label} #${log.target_id}` : label;
     };
-
-    const displayedLogs = logsExpanded ? logs : logs.slice(0, 10);
 
     return (
         <>
@@ -46,6 +113,36 @@ export default function LogViewer({ logs, serverLogs, fetchServerLogs, serverLog
                         </thead>
                         <tbody className="divide-y divide-gray-100/80 dark:divide-gray-700/30">
                             {displayedLogs.map((log) => {
+                                if (log._grouped) {
+                                    const isOpen = expanded[log.id];
+                                    return (
+                                        <tr key={`g-${log.id}`} className="hover:bg-blue-50/30 dark:hover:bg-blue-900/10 transition-colors">
+                                            <td className="px-4 py-3 whitespace-nowrap text-[11px] font-mono text-gray-400">{formatLogTime(log.timestamp)}</td>
+                                            <td className="px-4 py-3 font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap text-xs">Система</td>
+                                            <td className="px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">
+                                                <div className="cursor-pointer select-none" onClick={() => toggleExpand(log.id)}>
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform flex-shrink-0 ${isOpen ? 'rotate-90' : ''}`} />
+                                                        <span className="truncate">📨 {log._preview}</span>
+                                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 font-bold border border-blue-200 dark:border-blue-800/50 whitespace-nowrap flex-shrink-0">
+                                                            {log._recipients.length} получат.
+                                                        </span>
+                                                    </div>
+                                                    {isOpen && (
+                                                        <div className="mt-2 ml-5 text-xs text-gray-400 dark:text-gray-500 space-y-1">
+                                                            {log._tgR.length > 0 && <div><span className="font-bold text-blue-500 dark:text-blue-400">TG:</span> {log._tgR.join(', ')}</div>}
+                                                            {log._maxR.length > 0 && <div><span className="font-bold text-indigo-500 dark:text-indigo-400">MAX:</span> {log._maxR.join(', ')}</div>}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </td>
+                                            <td className="px-4 py-3 text-[11px] font-mono text-gray-400">
+                                                <span className="text-blue-500 dark:text-blue-400">×{log._count}</span>
+                                            </td>
+                                        </tr>
+                                    );
+                                }
+
                                 const isError = log.action && (log.action.includes('Ошибка') || log.action.includes('ошибка') || log.action.includes('ERROR'));
                                 return (
                                     <tr key={log.id} className={`transition-colors ${isError ? 'bg-red-50/50 dark:bg-red-900/10' : 'hover:bg-gray-50/50 dark:hover:bg-gray-700/20'}`}>
@@ -64,11 +161,11 @@ export default function LogViewer({ logs, serverLogs, fetchServerLogs, serverLog
                         </tbody>
                     </table>
                 </div>
-                {logs.length > 10 && (
+                {grouped.length > 10 && (
                     <div className="mt-5 text-center">
                         <button onClick={() => setLogsExpanded(!logsExpanded)}
                             className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300 font-bold text-xs transition-all active:scale-95 py-2.5 px-5 rounded-xl bg-blue-50 hover:bg-blue-100 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 flex items-center justify-center gap-1.5 mx-auto">
-                            {logsExpanded ? <><ChevronUp className="w-3.5 h-3.5" /> Свернуть</> : <><ChevronDown className="w-3.5 h-3.5" /> Все записи ({logs.length})</>}
+                            {logsExpanded ? <><ChevronUp className="w-3.5 h-3.5" /> Свернуть</> : <><ChevronDown className="w-3.5 h-3.5" /> Все записи ({grouped.length})</>}
                         </button>
                     </div>
                 )}
