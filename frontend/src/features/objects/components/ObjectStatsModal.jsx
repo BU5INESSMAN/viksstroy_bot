@@ -75,7 +75,7 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                                             </p>
                                                         </div>
                                                         <span className="text-xs text-gray-400 text-center">
-                                                            {p.unit}
+                                                            {p.unit && isNaN(p.unit) ? p.unit : '—'}
                                                         </span>
                                                         <span className="text-sm font-bold text-right text-gray-800 dark:text-gray-200">
                                                             {p.completed_volume}
@@ -147,9 +147,11 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                                                     >
                                                                         <span className="text-gray-700 dark:text-gray-300">
                                                                             {h.name}{' '}
-                                                                            <span className="text-gray-400 text-xs">
-                                                                                ({h.unit})
-                                                                            </span>
+                                                                            {h.unit && isNaN(h.unit) && (
+                                                                                <span className="text-gray-400 text-xs">
+                                                                                    ({h.unit})
+                                                                                </span>
+                                                                            )}
                                                                         </span>
                                                                         <span className="font-bold text-gray-800 dark:text-gray-200">
                                                                             {h.volume}
