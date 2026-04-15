@@ -146,7 +146,13 @@ async def archive_kp(app_id: int, request: Request):
     real_id, user = await _verify_office(data.get('tg_id', 0))
     await db.conn.execute("UPDATE applications SET kp_archived = 1 WHERE id = ?", (app_id,))
     await db.conn.commit()
-    await db.add_log(real_id, user.get('fio'), f"Архивировал СМР заявки №{app_id}", target_type='smr', target_id=app_id)
+    _obj = ''
+    try:
+        async with db.conn.execute("SELECT object_address FROM applications WHERE id = ?", (app_id,)) as c:
+            r = await c.fetchone()
+            if r: _obj = r[0]
+    except Exception: pass
+    await db.add_log(real_id, user.get('fio'), f"Архивировал СМР ({_obj})" if _obj else f"Архивировал СМР заявки №{app_id}", target_type='smr', target_id=app_id)
     return {"status": "ok"}
 
 
@@ -158,7 +164,13 @@ async def restore_kp(app_id: int, request: Request):
     real_id, user = await _verify_office(data.get('tg_id', 0))
     await db.conn.execute("UPDATE applications SET kp_archived = 0 WHERE id = ?", (app_id,))
     await db.conn.commit()
-    await db.add_log(real_id, user.get('fio'), f"Восстановил СМР заявки №{app_id}", target_type='smr', target_id=app_id)
+    _obj = ''
+    try:
+        async with db.conn.execute("SELECT object_address FROM applications WHERE id = ?", (app_id,)) as c:
+            r = await c.fetchone()
+            if r: _obj = r[0]
+    except Exception: pass
+    await db.add_log(real_id, user.get('fio'), f"Восстановил СМР ({_obj})" if _obj else f"Восстановил СМР заявки №{app_id}", target_type='smr', target_id=app_id)
     return {"status": "ok"}
 
 

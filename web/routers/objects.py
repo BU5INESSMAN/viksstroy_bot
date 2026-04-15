@@ -328,7 +328,13 @@ async def api_confirm_smr_import(obj_id: int, request: Request):
             r = await c.fetchone()
             if r: _obj_name = r[0]
     except Exception: pass
-    await db.add_log(0, "Система", f"Импорт СМР из PDF для «{_obj_name}»: +{len(add_ids)} / -{len(remove_ids)}", target_type='object', target_id=obj_id)
+    _uid, _fio = 0, "Система"
+    _tg_id = data.get("tg_id", 0)
+    if _tg_id:
+        _rid = await resolve_id(_tg_id)
+        _u = await db.get_user(_rid)
+        if _u: _uid, _fio = _rid, dict(_u).get('fio', 'Система')
+    await db.add_log(_uid, _fio, f"Импорт СМР из PDF для «{_obj_name}»: +{len(add_ids)} / -{len(remove_ids)}", target_type='object', target_id=obj_id)
     return {"status": "ok", "added": len(add_ids), "removed": len(remove_ids)}
 
 
@@ -404,7 +410,13 @@ async def api_upload_object_pdf(obj_id: int, file: UploadFile = File(...), tg_id
     if tg_id:
         user = await db.get_user(real_tg_id)
         fio = dict(user).get('fio', '') if user else ''
-        await db.add_log(real_tg_id, fio, f"Загрузил PDF для объекта №{obj_id}", target_type='object', target_id=obj_id)
+        _pname = f"#{obj_id}"
+        try:
+            async with db.conn.execute("SELECT name FROM objects WHERE id = ?", (obj_id,)) as _c:
+                _pr = await _c.fetchone()
+                if _pr: _pname = _pr[0]
+        except Exception: pass
+        await db.add_log(real_tg_id, fio, f"Загрузил PDF для объекта «{_pname}»", target_type='object', target_id=obj_id)
     return {"status": "ok", "pdf_file_path": rel_path}
 
 
@@ -561,7 +573,7 @@ async def api_review_object_request(req_id: int, request: Request):
     else:
         raise HTTPException(400, "Неверное действие")
     action_label = "одобрил" if action == 'approve' else "отклонил"
-    await db.add_log(real_tg_id, mod_fio, f"Рассмотрел запрос на объект №{req_id}: {action_label}", target_type='object', target_id=req_id)
+    await db.add_log(real_tg_id, mod_fio, f"Рассмотрел запрос на объект «{req_dict['name']}»: {action_label}", target_type='object', target_id=req_id)
     return {"status": "ok"}
 
 

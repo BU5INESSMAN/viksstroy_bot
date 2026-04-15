@@ -328,7 +328,7 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
             t_row = await cur.fetchone()
             t_name = t_row[0] if t_row else f"ID:{team_id}"
 
-        await db.add_log(real_tg_id, fio, f"Освободил бригаду «{t_name}» в заявке №{app_id}", target_type='application', target_id=app_id)
+        await db.add_log(real_tg_id, fio, f"Освободил бригаду «{t_name}» ({obj_addr})" if obj_addr else f"Освободил бригаду «{t_name}» в заявке №{app_id}", target_type='application', target_id=app_id)
 
         async def _send_free_team_notification():
             try:
@@ -342,7 +342,7 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
         await db.conn.execute("UPDATE applications SET is_team_freed = 1, freed_team_ids = ? WHERE id = ?",
                               (all_team_ids_str, app_id))
         await db.conn.commit()
-        await db.add_log(real_tg_id, fio, f"Освободил все бригады в заявке №{app_id}", target_type='application', target_id=app_id)
+        await db.add_log(real_tg_id, fio, f"Освободил все бригады ({obj_addr})" if obj_addr else f"Освободил все бригады в заявке №{app_id}", target_type='application', target_id=app_id)
 
         async def _send_free_all_teams_notification():
             try:
@@ -423,7 +423,8 @@ async def remind_foreman_smr(app_id: int, tg_id: int):
         raise HTTPException(400, "У заявки не указан прораб")
 
     mod_fio = dict(user).get('fio', 'Модератор')
-    await db.add_log(real_tg_id, mod_fio, f"Отправил напоминание прорабу по заявке №{app_id}", target_type='application', target_id=app_id)
+    _obj = app_dict.get('object_address', '')
+    await db.add_log(real_tg_id, mod_fio, f"Отправил напоминание прорабу ({_obj})" if _obj else f"Отправил напоминание прорабу по заявке №{app_id}", target_type='application', target_id=app_id)
 
     return app_dict
 
