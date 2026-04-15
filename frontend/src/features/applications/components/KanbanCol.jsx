@@ -89,17 +89,25 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                                     {equipList.map((eq, idx) => {
                                         // Compact: first word of name + license plate in brackets
                                         const fullName = eq.name || '';
-                                        const firstWord = fullName.split(' ')[0];
-                                        const bracketMatch = fullName.match(/\[([^\]]+)\]/);
+                                        const driverMatch = fullName.match(/\(([^)]+)\)\s*$/);
+                                        const driverFio = driverMatch && driverMatch[1] !== 'Не указан' ? driverMatch[1] : null;
+                                        const nameWithoutDriver = driverFio ? fullName.replace(/\s*\([^)]+\)\s*$/, '') : fullName;
+                                        const firstWord = nameWithoutDriver.split(' ')[0];
+                                        const bracketMatch = nameWithoutDriver.match(/\[([^\]]+)\]/);
                                         const plate = bracketMatch ? bracketMatch[1] : (eq.license_plate || '');
                                         const label = plate ? `${firstWord} ${plate.replace(/\s+/g, '')}` : firstWord;
                                         return (
-                                            <p key={idx} className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
-                                                <Truck className="w-3 h-3 flex-shrink-0" />
-                                                <span>{label}</span>
-                                                {eq.time_start != null && <span className="text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">{eq.time_start}–{eq.time_end}</span>}
-                                                {eq.is_freed && <CheckCircle className="w-3 h-3 text-emerald-500 flex-shrink-0" />}
-                                            </p>
+                                            <div key={idx}>
+                                                <p className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                    <Truck className="w-3 h-3 flex-shrink-0" />
+                                                    <span>{label}</span>
+                                                    {eq.time_start != null && <span className="text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">{eq.time_start}–{eq.time_end}</span>}
+                                                    {eq.is_freed && <CheckCircle className="w-3 h-3 text-emerald-500 flex-shrink-0" />}
+                                                </p>
+                                                {driverFio && !eq.is_freed && (
+                                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate ml-[18px]">{driverFio}</p>
+                                                )}
+                                            </div>
                                         );
                                     })}
                                 </div>

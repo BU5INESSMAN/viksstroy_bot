@@ -171,13 +171,23 @@ export default function Review() {
 
                         {equipList.length > 0 && (
                             <div className="pt-1 space-y-1.5 border-t border-gray-200 dark:border-gray-600/50">
-                                {equipList.map((eq, idx) => (
-                                    <p key={idx} className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400 font-medium'}`}>
-                                        <Truck className={`w-3.5 h-3.5 ${eq.is_freed ? 'text-gray-400' : 'text-blue-400'}`} />
-                                        <span>{eq.name}</span>
-                                        {eq.is_freed && <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />}
-                                    </p>
-                                ))}
+                                {equipList.map((eq, idx) => {
+                                    const driverMatch = (eq.name || '').match(/\(([^)]+)\)\s*$/);
+                                    const driverFio = driverMatch && driverMatch[1] !== 'Не указан' ? driverMatch[1] : null;
+                                    const displayName = driverFio ? eq.name.replace(/\s*\([^)]+\)\s*$/, '') : eq.name;
+                                    return (
+                                        <div key={idx}>
+                                            <p className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400 font-medium'}`}>
+                                                <Truck className={`w-3.5 h-3.5 ${eq.is_freed ? 'text-gray-400' : 'text-blue-400'}`} />
+                                                <span>{displayName}</span>
+                                                {eq.is_freed && <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />}
+                                            </p>
+                                            {driverFio && !eq.is_freed && (
+                                                <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate ml-5">{driverFio}</p>
+                                            )}
+                                        </div>
+                                    );
+                                })}
                             </div>
                         )}
                     </div>
@@ -336,18 +346,28 @@ export default function Review() {
                                     </label>
                                     {selectedApp.equipment_data && JSON.parse(selectedApp.equipment_data).length > 0 ? (
                                         <div className="space-y-2.5">
-                                            {JSON.parse(selectedApp.equipment_data).map(eq => (
-                                                <div key={eq.id} className="flex justify-between items-center bg-gray-50/80 dark:bg-gray-700/30 p-4 rounded-2xl border border-gray-200 dark:border-gray-600/50 shadow-sm transition-all hover:bg-white dark:hover:bg-gray-700">
-                                                    <button type="button" disabled={isProcessing} onClick={() => { setSelectedApp(null); openProfile(0, 'equip', eq.id); }} className={`font-bold flex items-center gap-2 hover:underline disabled:opacity-50 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
-                                                        <Truck className={`w-4 h-4 ${eq.is_freed ? 'text-gray-400' : 'text-blue-500'}`} />
-                                                        {eq.name}
-                                                        {eq.is_freed && <CheckCircle className="w-4 h-4 text-emerald-500" />}
-                                                    </button>
-                                                    <span className="text-xs font-bold text-gray-500 dark:text-gray-300 bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 flex items-center gap-1.5 shadow-sm">
-                                                        <Clock className="w-3.5 h-3.5" /> {eq.time_start}:00 - {eq.time_end}:00
-                                                    </span>
-                                                </div>
-                                            ))}
+                                            {JSON.parse(selectedApp.equipment_data).map(eq => {
+                                                const driverMatch = (eq.name || '').match(/\(([^)]+)\)\s*$/);
+                                                const driverFio = driverMatch && driverMatch[1] !== 'Не указан' ? driverMatch[1] : null;
+                                                const displayName = driverFio ? eq.name.replace(/\s*\([^)]+\)\s*$/, '') : eq.name;
+                                                return (
+                                                    <div key={eq.id} className="flex justify-between items-center bg-gray-50/80 dark:bg-gray-700/30 p-4 rounded-2xl border border-gray-200 dark:border-gray-600/50 shadow-sm transition-all hover:bg-white dark:hover:bg-gray-700">
+                                                        <div className="min-w-0">
+                                                            <button type="button" disabled={isProcessing} onClick={() => { setSelectedApp(null); openProfile(0, 'equip', eq.id); }} className={`font-bold flex items-center gap-2 hover:underline disabled:opacity-50 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                                <Truck className={`w-4 h-4 ${eq.is_freed ? 'text-gray-400' : 'text-blue-500'}`} />
+                                                                {displayName}
+                                                                {eq.is_freed && <CheckCircle className="w-4 h-4 text-emerald-500" />}
+                                                            </button>
+                                                            {driverFio && !eq.is_freed && (
+                                                                <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate ml-6 mt-0.5">{driverFio}</p>
+                                                            )}
+                                                        </div>
+                                                        <span className="text-xs font-bold text-gray-500 dark:text-gray-300 bg-white dark:bg-gray-800 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 flex items-center gap-1.5 shadow-sm flex-shrink-0">
+                                                            <Clock className="w-3.5 h-3.5" /> {eq.time_start}:00 - {eq.time_end}:00
+                                                        </span>
+                                                    </div>
+                                                );
+                                            })}
                                         </div>
                                     ) : (
                                         <p className="text-gray-500 italic bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl border border-dashed border-gray-200 dark:border-gray-700 text-center">Не требуется</p>
