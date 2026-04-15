@@ -7,6 +7,7 @@ import TeamCard from '../features/teams/components/TeamCard';
 import CreateTeamModal from '../features/teams/components/CreateTeamModal';
 import ManageTeamModal from '../features/teams/components/ManageTeamModal';
 import TeamInviteModal from '../features/teams/components/TeamInviteModal';
+import TeamStatsModal from '../features/teams/components/TeamStatsModal';
 import useConfirm from '../hooks/useConfirm';
 import { TeamsSkeleton } from '../components/ui/PageSkeletons';
 
@@ -24,6 +25,7 @@ export default function Teams() {
     const [newMember, setNewMember] = useState({ fio: '', position: 'Рабочий', is_foreman: false });
     const [inviteInfo, setInviteInfo] = useState(null);
     const [copiedLink, setCopiedLink] = useState('');
+    const [statsTeam, setStatsTeam] = useState(null);
     const { confirm, ConfirmUI } = useConfirm();
 
     const fetchData = () => {
@@ -136,7 +138,7 @@ export default function Teams() {
 
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-tour="teams-grid">
                 {teams.map(t => (
-                    <TeamCard key={t.id} t={t} canDeleteTeam={canDeleteTeam} openManageModal={openManageModal} handleDeleteTeam={handleDeleteTeam} />
+                    <TeamCard key={t.id} t={t} canDeleteTeam={canDeleteTeam} openManageModal={openManageModal} handleDeleteTeam={handleDeleteTeam} onStats={setStatsTeam} />
                 ))}
                 {teams.length === 0 && (
                     <div className="col-span-full text-center py-12 text-gray-400 italic">Бригад пока нет.</div>
@@ -149,6 +151,7 @@ export default function Teams() {
             <ManageTeamModal isManageModalOpen={isManageModalOpen} setManageModalOpen={setManageModalOpen} manageTeamData={manageTeamData} canManage={canManage} generateInvite={generateInvite} newMember={newMember} setNewMember={setNewMember} handleAddMember={handleAddMember} toggleForeman={toggleForeman} handleUnlinkMember={handleUnlinkMember} deleteMember={deleteMember} openProfile={openProfile} />
 
             <TeamInviteModal inviteInfo={inviteInfo} setInviteInfo={setInviteInfo} copiedLink={copiedLink} setCopiedLink={setCopiedLink} />
+            <TeamStatsModal isOpen={!!statsTeam} onClose={() => setStatsTeam(null)} team={statsTeam} tgId={tgId} />
             {ConfirmUI}
         </div>
     );

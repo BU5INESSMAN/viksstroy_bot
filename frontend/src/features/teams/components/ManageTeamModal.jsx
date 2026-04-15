@@ -19,31 +19,6 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
                     </div>
 
                     <div className="p-6 space-y-6">
-                        {canManage && (
-                            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/10 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/30 shadow-inner">
-                                <h4 className="font-bold text-indigo-800 dark:text-indigo-300 mb-2 flex items-center gap-2">
-                                    <Link className="w-5 h-5" /> Пригласить рабочих
-                                </h4>
-                                <p className="text-xs text-indigo-600/80 dark:text-indigo-400/80 mb-4 font-medium">Сгенерируйте ссылку, чтобы рабочие сами добавились в бригаду.</p>
-                                <button onClick={generateInvite} className="bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 font-bold py-3 px-5 rounded-xl shadow-sm border border-indigo-200 dark:border-indigo-700/50 hover:bg-indigo-50 dark:hover:bg-gray-700 transition-all active:scale-[0.98] text-sm flex items-center justify-center gap-2 w-full sm:w-auto">
-                                    <UserPlus className="w-4 h-4" /> Сгенерировать ссылку
-                                </button>
-                            </div>
-                        )}
-
-                        {canManage && (
-                            <div className="bg-gray-50 dark:bg-gray-700/30 p-5 rounded-2xl border border-gray-200 dark:border-gray-600 shadow-inner">
-                                <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
-                                    <UserPlus className="w-4 h-4 text-gray-400" /> Добавить вручную
-                                </h4>
-                                <form onSubmit={handleAddMember} className="flex flex-col sm:flex-row gap-3">
-                                    <input type="text" value={newMember.fio} onChange={e => setNewMember({...newMember, fio: e.target.value})} placeholder="ФИО" required className="flex-[2] p-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-xl outline-none text-sm dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 transition-colors" />
-                                    <input type="text" value={newMember.position} onChange={e => setNewMember({...newMember, position: e.target.value})} placeholder="Должность" required className="flex-1 p-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-xl outline-none text-sm dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 transition-colors" />
-                                    <button type="submit" className="bg-gray-800 dark:bg-gray-600 text-white font-bold py-3 px-6 rounded-xl hover:bg-gray-900 dark:hover:bg-gray-500 transition-all shadow-sm text-sm active:scale-95 flex items-center justify-center">Добавить</button>
-                                </form>
-                            </div>
-                        )}
-
                         <div>
                             <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
                                 <Users className="w-5 h-5 text-gray-400" /> Состав ({manageTeamData.members.length})
@@ -91,6 +66,31 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
                                 </div>
                             )}
                         </div>
+
+                        {canManage && (
+                            <div className="bg-gray-50 dark:bg-gray-700/30 p-5 rounded-2xl border border-gray-200 dark:border-gray-600 shadow-inner">
+                                <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
+                                    <UserPlus className="w-4 h-4 text-gray-400" /> Добавить вручную
+                                </h4>
+                                <form onSubmit={handleAddMember} className="flex flex-col sm:flex-row gap-3">
+                                    <input type="text" value={newMember.fio} onChange={e => setNewMember({...newMember, fio: e.target.value})} placeholder="ФИО" required className="flex-[2] p-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-xl outline-none text-sm dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 transition-colors" />
+                                    <input type="text" value={newMember.position} onChange={e => setNewMember({...newMember, position: e.target.value})} placeholder="Должность" required className="flex-1 p-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 rounded-xl outline-none text-sm dark:text-white shadow-sm focus:ring-2 focus:ring-blue-500 transition-colors" />
+                                    <button type="submit" className="bg-gray-800 dark:bg-gray-600 text-white font-bold py-3 px-6 rounded-xl hover:bg-gray-900 dark:hover:bg-gray-500 transition-all shadow-sm text-sm active:scale-95 flex items-center justify-center">Добавить</button>
+                                </form>
+                            </div>
+                        )}
+
+                        {canManage && (
+                            <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/10 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/30 shadow-inner">
+                                <h4 className="font-bold text-indigo-800 dark:text-indigo-300 mb-2 flex items-center gap-2">
+                                    <Link className="w-5 h-5" /> Пригласить рабочих
+                                </h4>
+                                <p className="text-xs text-indigo-600/80 dark:text-indigo-400/80 mb-4 font-medium">Сгенерируйте ссылку, чтобы рабочие сами добавились в бригаду.</p>
+                                <button onClick={generateInvite} className="bg-white dark:bg-gray-800 text-indigo-600 dark:text-indigo-400 font-bold py-3 px-5 rounded-xl shadow-sm border border-indigo-200 dark:border-indigo-700/50 hover:bg-indigo-50 dark:hover:bg-gray-700 transition-all active:scale-[0.98] text-sm flex items-center justify-center gap-2 w-full sm:w-auto">
+                                    <UserPlus className="w-4 h-4" /> Сгенерировать ссылку
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </div>

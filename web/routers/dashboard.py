@@ -78,7 +78,24 @@ async def get_dashboard_data(tg_id: int = 0):
     if user_role in ('foreman', 'brigadier') and real_tg_id:
         all_apps = [a for a in all_apps if a.get('foreman_id') == real_tg_id]
 
-    return {"stats": stats, "teams": [{"id": t['id'], "name": t['name']} for t in teams], "equipment": equip,
+    # Enrich teams with member_count + brigadier_name
+    enriched_teams = []
+    for t in teams:
+        tid = t['id']
+        team_info = {"id": tid, "name": t['name'], "member_count": 0, "brigadier_name": None}
+        try:
+            async with db.conn.execute("SELECT COUNT(*) FROM team_members WHERE team_id = ?", (tid,)) as c:
+                row = await c.fetchone()
+                team_info["member_count"] = row[0] if row else 0
+            async with db.conn.execute("SELECT fio FROM team_members WHERE team_id = ? AND is_foreman = 1 LIMIT 1", (tid,)) as c:
+                row = await c.fetchone()
+                if row:
+                    team_info["brigadier_name"] = row[0]
+        except Exception:
+            pass
+        enriched_teams.append(team_info)
+
+    return {"stats": stats, "teams": enriched_teams, "equipment": equip,
             "equip_categories": list(set(categories)), "kanban_apps": all_apps, "recent_addresses": recent_addresses}
 
 
