@@ -5,7 +5,7 @@ import {
     Settings, Smartphone, Search, BellRing, Link2, Users, MapPin,
     ArrowRightLeft, FileText, Shield, Bot, ChevronDown, Wrench,
     HardHat, CheckCircle, Send, MessageCircle, BookOpen, Headphones,
-    RotateCcw
+    RotateCcw, FolderOpen, Upload, Palmtree, Bell
 } from 'lucide-react';
 import GlassCard from '../components/ui/GlassCard';
 import { ROLE_NAMES } from '../utils/roleConfig';
@@ -316,8 +316,115 @@ export default function Guide() {
             ),
         },
         {
+            id: 'bot-order', icon: Send, iconColor: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+            title: '15. Создание заявки через бота', roleHint: 'Прораб и выше',
+            keywords: 'бот заявка order telegram max создание шаги',
+            content: (
+                <>
+                    <p><b>Команда /order:</b> Отправьте <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded text-xs">/order</code> боту в Telegram или MAX. Бот проведёт вас по шагам:</p>
+                    <ol className="list-decimal pl-5 space-y-1">
+                        <li>Выбор даты (кнопки: сегодня, завтра, послезавтра)</li>
+                        <li>Выбор объекта (пагинация, если много)</li>
+                        <li>Выбор бригад (можно несколько или пропустить)</li>
+                        <li>Выбор техники (с указанием времени, например 8-17)</li>
+                        <li>Комментарий (или «Без комментария»)</li>
+                        <li>Подтверждение — итоговая сводка</li>
+                    </ol>
+                    <p><b>Редактирование:</b> На экране подтверждения нажмите «Изменить» для правки любого поля.</p>
+                    <Tip>Бот проверяет занятость бригад и техники на выбранную дату — занятые ресурсы автоматически скрываются.</Tip>
+                </>
+            ),
+        },
+        {
+            id: 'notifications-center', icon: Bell, iconColor: 'bg-orange-100 dark:bg-orange-900/30 text-orange-600 dark:text-orange-400',
+            title: '16. Центр уведомлений и онлайн', roleHint: 'Все роли',
+            keywords: 'уведомления колокольчик онлайн push центр непрочитанные',
+            content: (
+                <>
+                    <p><b>Колокольчик:</b> В Sidebar отображается колокольчик с бейджем непрочитанных уведомлений. Нажмите для просмотра всех уведомлений.</p>
+                    <p><b>Непрочитанные:</b> Выделены синим фоном. Кнопка «Прочитать все» отмечает все как прочитанные.</p>
+                    <p><b>Онлайн-пользователи:</b> Счётчик рядом с колокольчиком. Нажмите для просмотра активных пользователей с ролями.</p>
+                    <p><b>Push-уведомления:</b> Нативные push-уведомления приходят на устройство даже когда приложение закрыто. Разрешение запрашивается автоматически при входе. Нажатие на уведомление открывает соответствующий раздел.</p>
+                </>
+            ),
+        },
+        {
+            id: 'ai-assistant', icon: Headphones, iconColor: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
+            title: '17. ИИ-ассистент', roleHint: 'Все роли',
+            keywords: 'ии ассистент поддержка данные бригады техника заявки должники',
+            content: (
+                <>
+                    <p><b>Реальные данные:</b> ИИ-ассистент на странице «Поддержка» отвечает на вопросы с актуальными данными платформы.</p>
+                    <p><b>Что можно спросить:</b></p>
+                    <ul className="list-disc pl-5 space-y-1">
+                        <li>Свободная техника на конкретную дату</li>
+                        <li>Состав бригады и контакты</li>
+                        <li>Пригласительные коды для бригад и техники</li>
+                        <li>Статус и детали заявок</li>
+                        <li>Должники СМР</li>
+                        <li>Статистика системы</li>
+                    </ul>
+                    <p><b>Роль влияет на данные:</b> Модераторы и руководители видят больше информации, чем прорабы и рабочие.</p>
+                    <Tip>Ответы форматируются с таблицами, списками и выделением — для удобного чтения.</Tip>
+                </>
+            ),
+        },
+        {
+            id: 'object-files', icon: FolderOpen, iconColor: 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400',
+            title: '18. Файлы объекта', roleHint: 'Прораб и выше',
+            keywords: 'файлы объект pdf фото excel word загрузка просмотр зум',
+            content: (
+                <>
+                    <p><b>Доступ:</b> На карточке объекта нажмите кнопку «Файлы» для открытия вкладки документов.</p>
+                    <p><b>Форматы:</b> PDF, фото (PNG, JPG), Excel (XLSX, CSV), Word (DOC, DOCX), чертежи (DWG), архивы (ZIP).</p>
+                    <p><b>Загрузка:</b> Перетащите файлы или нажмите на область загрузки. Доступно модераторам и выше.</p>
+                    <p><b>Просмотр:</b> PDF и изображения открываются во встроенном просмотрщике с зумом (25%–400%), вращением и защитой от случайных свайпов.</p>
+                    <p><b>Под-вкладки:</b> Все / Документы / Фото / Таблицы — для удобной фильтрации.</p>
+                    <p><b>Переименование:</b> Двойной клик по имени файла для быстрого переименования.</p>
+                </>
+            ),
+        },
+        {
+            id: 'smr-import', icon: Upload, iconColor: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',
+            title: '19. Импорт СМР из PDF', roleHint: 'Модератор и выше',
+            keywords: 'импорт смр pdf коммерческое предложение каталог сравнение',
+            content: (
+                <>
+                    <p><b>Где:</b> Настройки объекта → вкладка «План СМР» → кнопка «Из PDF».</p>
+                    <p><b>Как работает:</b> Загрузите PDF коммерческого предложения. Система автоматически:</p>
+                    <ol className="list-decimal pl-5 space-y-1">
+                        <li>Распарсит документ и извлечёт список работ с объёмами</li>
+                        <li>Сопоставит каждую работу с каталогом КП (по названию)</li>
+                        <li>Покажет предпросмотр: новые работы, существующие, нераспознанные</li>
+                    </ol>
+                    <p><b>Без дублей:</b> Работы, уже добавленные в план, не дублируются.</p>
+                    <p><b>Предупреждения:</b> Если название объекта в PDF не совпадает с текущим — появится предупреждение. Работы без объёма также помечаются.</p>
+                    <Tip>PDF-файл автоматически сохраняется в файлах объекта после импорта.</Tip>
+                </>
+            ),
+        },
+        {
+            id: 'employee-status', icon: Palmtree, iconColor: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400',
+            title: '20. Статусы сотрудников', roleHint: 'Прораб и выше',
+            keywords: 'статус отпуск больничный доступен сотрудник расстановка',
+            content: (
+                <>
+                    <p><b>Где:</b> В управлении бригадой нажмите кнопку статуса у сотрудника.</p>
+                    <p><b>Статусы:</b></p>
+                    <div className="flex flex-wrap gap-2">
+                        <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50">Доступен</span>
+                        <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400 border border-yellow-200 dark:border-yellow-800/50">Отпуск</span>
+                        <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-400 border border-red-200 dark:border-red-800/50">Больничный</span>
+                    </div>
+                    <p><b>Даты:</b> Укажите период начала и окончания. По истечении срока статус автоматически сбросится на «Доступен».</p>
+                    <p><b>В заявках:</b> Сотрудники в отпуске или на больничном автоматически заблокированы при создании заявки — их нельзя выбрать.</p>
+                    <p><b>В расстановке (PNG):</b> Вместо 0/1 отображается: <b>Акт</b> (на объекте), <b>Отп</b> (отпуск), <b>Бол</b> (больничный), <b>Рем</b> (техника в ремонте), <b>—</b> (свободен).</p>
+                </>
+            ),
+        },
+        {
             id: 'pwa', icon: Smartphone, iconColor: 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
-            title: '15. Установка на телефон (PWA)', roleHint: 'Все роли',
+            title: '21. Установка на телефон (PWA)', roleHint: 'Все роли',
             keywords: 'установка телефон приложение pwa ios android iphone скачать домой экран',
             content: (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -358,7 +465,7 @@ export default function Guide() {
                     </h1>
                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 mb-8">
                         <p className="text-blue-100 text-sm md:text-base font-medium leading-relaxed max-w-xl flex-1">
-                            Полное руководство по платформе. 15 разделов, все функции от регистрации до администрирования.
+                            Полное руководство по платформе. 21 раздел, все функции от регистрации до администрирования.
                         </p>
                         <button
                             onClick={() => {
