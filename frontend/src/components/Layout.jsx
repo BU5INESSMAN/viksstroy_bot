@@ -5,6 +5,8 @@ import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+import { ShieldCheck } from 'lucide-react';
+import { ROLE_NAMES } from '../utils/roleConfig';
 import Header from '../features/layout/components/Header';
 import BottomNav from '../features/layout/components/BottomNav';
 import Sidebar from '../features/layout/components/Sidebar';
@@ -257,8 +259,23 @@ export default function Layout() {
 
     const sidebarWidth = sidebarCollapsed ? 64 : 256;
 
+    const handleReturnToRealRole = () => {
+        localStorage.setItem('user_role', realRole);
+        localStorage.removeItem('real_role');
+        window.location.reload();
+    };
+
     return (
-        <div className="flex min-h-screen w-full max-w-full bg-gray-50/50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-200">
+        <div className="flex flex-col min-h-screen w-full max-w-full bg-gray-50/50 dark:bg-gray-900 text-gray-800 dark:text-gray-100 transition-colors duration-200">
+            {/* Role test banner — visible on ALL screen sizes */}
+            {realRole && realRole !== role && (
+                <div className="bg-purple-600 text-white text-sm py-2 px-4 flex items-center justify-center gap-3 z-[60] w-full flex-shrink-0">
+                    <span className="flex items-center gap-1.5"><ShieldCheck className="w-4 h-4" /> Тест роли: <strong>{ROLE_NAMES[role] || role}</strong></span>
+                    <button onClick={handleReturnToRealRole} className="px-3 py-1 bg-white/20 rounded-lg hover:bg-white/30 text-xs font-medium transition-colors active:scale-95">Вернуться</button>
+                </div>
+            )}
+
+            <div className="flex flex-1 w-full max-w-full">
             {/* Sidebar — desktop only */}
             <div className="hidden lg:block">
                 <Sidebar
@@ -350,6 +367,7 @@ export default function Layout() {
                 tgId={tgId}
             />
             <OnlineUsersModal isOpen={showOnlineUsers} onClose={() => setShowOnlineUsers(false)} tgId={tgId} />
+            </div>
         </div>
     );
 }

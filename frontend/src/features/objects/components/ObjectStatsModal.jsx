@@ -44,8 +44,9 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                 </h4>
                                 {statsData.progress?.length > 0 ? (
                                     <div className="border border-gray-100 dark:border-gray-700 rounded-2xl overflow-hidden">
-                                        <div className="grid grid-cols-[1fr_80px_80px_60px] gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-900/50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                                        <div className="grid grid-cols-[1fr_50px_70px_70px_50px] gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-900/50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
                                             <span>Работа</span>
+                                            <span className="text-center">Ед.</span>
                                             <span className="text-right">Факт</span>
                                             <span className="text-right">План</span>
                                             <span className="text-right">%</span>
@@ -63,16 +64,19 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                                 return (
                                                     <div
                                                         key={i}
-                                                        className="grid grid-cols-[1fr_80px_80px_60px] gap-2 px-4 py-3 items-center"
+                                                        className="grid grid-cols-[1fr_50px_70px_70px_50px] gap-2 px-4 py-3 items-center"
                                                     >
                                                         <div>
                                                             <p className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-tight">
                                                                 {p.name}
                                                             </p>
                                                             <p className="text-[10px] text-gray-400 mt-0.5">
-                                                                {p.category} / {p.unit}
+                                                                {p.category}
                                                             </p>
                                                         </div>
+                                                        <span className="text-xs text-gray-400 text-center">
+                                                            {p.unit}
+                                                        </span>
                                                         <span className="text-sm font-bold text-right text-gray-800 dark:text-gray-200">
                                                             {p.completed_volume}
                                                         </span>
