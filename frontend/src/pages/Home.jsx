@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { AnimatePresence, motion } from 'framer-motion';
 import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, Send, Loader2 } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
 import ActiveApplicationsCard from '../features/applications/components/ActiveApplicationsCard';
 import MyTeamCard from '../features/applications/components/MyTeamCard';
 import CreateAppModal from '../features/applications/components/CreateAppModal';
+import DebtorsRestorePill from '../features/applications/components/DebtorsRestorePill';
 import EditAppModal from '../features/applications/components/EditAppModal';
 import ConfirmFreeModal from '../features/applications/components/ConfirmFreeModal';
 import ViewAppModal from '../features/applications/components/ViewAppModal';
@@ -32,7 +34,20 @@ export default function Home() {
     const [debtors, setDebtors] = useState([]);
     const [publishingTomorrow, setPublishingTomorrow] = useState(false);
     const [isArchiveOpen, setArchiveOpen] = useState(false);
+    // Server setting — persistent across devices, hides widget entirely
     const [hideDebtors, setHideDebtors] = useState(false);
+    // Session dismissal — this tab only, restorable via pill
+    const [debtorsHiddenSession, setDebtorsHiddenSession] = useState(() =>
+        sessionStorage.getItem('debtors_widget_hidden') === 'true'
+    );
+    const hideDebtorsForSession = () => {
+        sessionStorage.setItem('debtors_widget_hidden', 'true');
+        setDebtorsHiddenSession(true);
+    };
+    const showDebtorsForSession = () => {
+        sessionStorage.removeItem('debtors_widget_hidden');
+        setDebtorsHiddenSession(false);
+    };
 
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, in_progress: false, completed: false });
     const [freeModal, setFreeModal] = useState({ isOpen: false, type: '', app: null, teamId: null, inputValue: '' });
@@ -244,8 +259,25 @@ export default function Home() {
                 {myTeam && <MyTeamCard myTeam={myTeam} />}
             </div>
 
-            {!isWorkerOrDriver && !hideDebtors && (
-                <div data-tour="debtors-widget"><DebtorsWidget debtors={debtors} tgId={tgId} /></div>
+            {!isWorkerOrDriver && !hideDebtors && debtors.length > 0 && (
+                <div data-tour="debtors-widget">
+                    <AnimatePresence mode="wait" initial={false}>
+                        {debtorsHiddenSession ? (
+                            <DebtorsRestorePill key="debtors-pill" onRestore={showDebtorsForSession} />
+                        ) : (
+                            <motion.div
+                                key="debtors-widget"
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: 'auto' }}
+                                exit={{ opacity: 0, height: 0, transition: { duration: 0.2 } }}
+                                transition={{ duration: 0.3, ease: [0.23, 1, 0.32, 1] }}
+                                style={{ overflow: 'hidden' }}
+                            >
+                                <DebtorsWidget debtors={debtors} tgId={tgId} onHide={hideDebtorsForSession} />
+                            </motion.div>
+                        )}
+                    </AnimatePresence>
+                </div>
             )}
 
             {!isWorkerOrDriver && (

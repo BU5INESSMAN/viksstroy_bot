@@ -1,8 +1,12 @@
 import { useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { AlertTriangle, Bell, Loader2 } from 'lucide-react';
+import { AlertTriangle, Bell, Loader2, X } from 'lucide-react';
+import { motion } from 'framer-motion';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
+
+const prefersReducedMotion = typeof window !== 'undefined'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /**
  * Displays the SMR-debtors card on the Home page.
@@ -12,7 +16,7 @@ import ObjectDisplay from '../../../components/ui/ObjectDisplay';
  * @param {array}    props.debtors   - array of debtor groups from /api/system/debtors
  * @param {string}   props.tgId      - current user's Telegram ID
  */
-export default function DebtorsWidget({ debtors, tgId }) {
+export default function DebtorsWidget({ debtors, tgId, onHide }) {
     const [remindingForeman, setRemindingForeman] = useState(null);
 
     const totalDebtorSMR = debtors.reduce((sum, g) => sum + g.smrs.length, 0);
@@ -43,6 +47,19 @@ export default function DebtorsWidget({ debtors, tgId }) {
                         {totalDebtorSMR}
                     </span>
                 </h3>
+                {onHide && (
+                    <motion.button
+                        type="button"
+                        onClick={onHide}
+                        aria-label="Скрыть на эту сессию"
+                        title="Скрыть на эту сессию"
+                        whileTap={prefersReducedMotion ? {} : { scale: 0.9 }}
+                        transition={{ duration: 0.12, ease: [0.23, 1, 0.32, 1] }}
+                        className="p-1.5 rounded-lg text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 hover:bg-white/60 dark:hover:bg-white/5 transition-colors"
+                    >
+                        <X className="w-4 h-4" />
+                    </motion.button>
+                )}
             </div>
 
             <div className="space-y-3">
