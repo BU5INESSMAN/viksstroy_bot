@@ -57,10 +57,14 @@ export default function ObjectEditModal({
     const smrFileRef = useRef(null);
     const fileInputRef = useRef(null);
 
-    useEffect(() => { setActiveTab(initialTab); }, [initialTab]);
-
     const role = localStorage.getItem('user_role') || 'worker';
     const isOffice = ['moderator', 'boss', 'superadmin'].includes(role);
+
+    // Non-office users only see the Files tab — force-select it regardless
+    // of which tab the caller requested.
+    useEffect(() => {
+        setActiveTab(isOffice ? initialTab : 'files');
+    }, [initialTab, isOffice]);
 
     // Equipment grouped by category
     const equipByCategory = allEquips.reduce((acc, eq) => {
@@ -192,9 +196,12 @@ export default function ObjectEditModal({
                     <button onClick={onClose} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-1.5 border border-gray-100 dark:border-gray-700"><X className="w-5 h-5" /></button>
                 </div>
 
-                {/* Tabs */}
+                {/* Tabs — foreman/non-office sees Files only (read-only viewer) */}
                 <div className="flex border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
-                    {[['info', 'Инфо', 'blue'], ['resources', 'Ресурсы', 'indigo'], ['kp', 'План СМР', 'emerald'], ['files', 'Файлы', 'orange']].map(([key, label, color]) => (
+                    {(isOffice
+                        ? [['info', 'Инфо', 'blue'], ['resources', 'Ресурсы', 'indigo'], ['kp', 'План СМР', 'emerald'], ['files', 'Файлы', 'orange']]
+                        : [['files', 'Файлы', 'orange']]
+                    ).map(([key, label, color]) => (
                         <button key={key} onClick={() => setActiveTab(key)}
                             className={`flex-1 py-4 text-sm font-bold transition-colors ${activeTab === key ? `text-${color}-600 border-b-2 border-${color}-600 bg-white dark:bg-gray-800` : 'text-gray-500 hover:text-gray-700'}`}>
                             {label}

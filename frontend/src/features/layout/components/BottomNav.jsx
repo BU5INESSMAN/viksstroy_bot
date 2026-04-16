@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
-    Home, ClipboardList, Briefcase, Settings as SettingsIcon, User, Plus,
+    Home, ClipboardList, Briefcase, Settings as SettingsIcon, ShieldAlert, User, Plus,
     MapPin, FileText, Menu, X, BookOpen, Rocket, MessageCircle,
     Sun, Moon, Monitor
 } from 'lucide-react';
@@ -18,6 +18,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
     const canSeeObjectsKP = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeKP = ['brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canSeeAdmin = ['boss', 'superadmin'].includes(role);
 
     const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Monitor;
     const themeLabel = theme === 'light' ? 'Светлая' : theme === 'dark' ? 'Тёмная' : 'Авто';
@@ -62,6 +63,13 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
                 {canSeeKP && (
                     <NavBtn icon={FileText} label="СМР" path="/kp" current={location.pathname} onClick={() => navigate('/kp')} />
+                )}
+
+                {/* Stage 5: Settings (all roles) + Admin (boss+) */}
+                <NavBtn icon={SettingsIcon} label="Настройки" path="/settings" current={location.pathname} onClick={() => navigate('/settings')} />
+
+                {canSeeAdmin && (
+                    <NavBtn icon={ShieldAlert} label="Админка" path="/admin" current={location.pathname} onClick={() => navigate('/admin')} />
                 )}
 
                 <button data-tour="bottomnav-menu" onClick={() => setIsMenuOpen(true)} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2 h-full w-full transition-all active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>

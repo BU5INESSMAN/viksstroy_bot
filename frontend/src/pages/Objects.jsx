@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
@@ -19,9 +19,13 @@ import { ObjectsSkeleton } from '../components/ui/PageSkeletons';
 export default function Objects() {
     const [searchParams, setSearchParams] = useSearchParams();
     const role = localStorage.getItem('user_role') || 'Гость';
-    const canManage = ['moderator', 'boss', 'superadmin', 'foreman'].includes(role);
+    // Stage 5: brigadier/worker/driver have no business on this page
+    const canSeePage = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    // Only office roles can mutate objects (edit/archive/create/settings)
+    const canManage = ['moderator', 'boss', 'superadmin'].includes(role);
     const canCreate = ['moderator', 'boss', 'superadmin'].includes(role);
-    const canViewStats = ['moderator', 'boss', 'superadmin'].includes(role);
+    // Stats are read-only — foreman can inspect them too
+    const canViewStats = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const { confirm, ConfirmUI } = useConfirm();
 
     const [objects, setObjects] = useState([]);
@@ -190,6 +194,9 @@ export default function Objects() {
         }
         setStatsLoading(false);
     };
+
+    // Route guard — brigadier/worker/driver redirect to dashboard
+    if (!canSeePage) return <Navigate to="/dashboard" replace />;
 
     if (loading) return <ObjectsSkeleton />;
 
