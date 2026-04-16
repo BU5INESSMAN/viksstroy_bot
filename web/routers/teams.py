@@ -10,6 +10,7 @@ import logging
 from datetime import datetime
 from database_deps import db, TZ_BARNAUL
 from auth_deps import get_current_user, require_role
+from utils import normalize_invite_code
 from services.notifications import notify_users
 
 logger = logging.getLogger(__name__)
@@ -44,6 +45,7 @@ async def api_get_invite_info(invite_code: str):
 async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...),
                         current_user=Depends(get_current_user)):
     real_tg_id = current_user["tg_id"]
+    invite_code = normalize_invite_code(invite_code)
     team = await db.get_team_by_invite(invite_code)
     if not team:
         raise HTTPException(404, "Ссылка недействительна")

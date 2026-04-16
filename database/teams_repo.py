@@ -59,9 +59,10 @@ class TeamsRepoMixin:
             if row and row[0] and row[1]:
                 return row[0], row[1]
 
-        # Generate only missing codes
-        invite_code = row[0] if (row and row[0]) else str(uuid.uuid4())[:8]
-        join_password = row[1] if (row and row[1]) else ''.join(random.choices(string.digits, k=6))
+        # Generate only missing codes — strong 12-char Crockford-base32 (H-11)
+        from web.utils import generate_invite_code
+        invite_code = row[0] if (row and row[0]) else generate_invite_code(12)
+        join_password = row[1] if (row and row[1]) else generate_invite_code(8)
 
         await self.conn.execute(
             "UPDATE teams SET invite_code = ?, join_password = ? WHERE id = ?",
@@ -114,7 +115,8 @@ class TeamsRepoMixin:
             if row and row['invite_code']:
                 return row['invite_code']
 
-        new_code = ''.join(secrets.choice(string.ascii_uppercase + string.digits) for _ in range(8))
+        from web.utils import generate_invite_code
+        new_code = generate_invite_code(12)
         await self.conn.execute("UPDATE team_members SET invite_code = ? WHERE id = ?", (new_code, member_id))
         await self.conn.commit()
         return new_code

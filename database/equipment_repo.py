@@ -56,7 +56,7 @@ class EquipmentRepoMixin:
 
     async def get_or_create_equip_invite(self, equip_id: int):
         """Возвращает существующий код техники или создает новый (статичные ссылки)"""
-        import uuid
+        from web.utils import generate_invite_code
         async with self.conn.execute(
             "SELECT invite_code FROM equipment WHERE id = ?", (equip_id,)
         ) as cursor:
@@ -64,7 +64,7 @@ class EquipmentRepoMixin:
             if row and row[0]:
                 return row[0]
 
-        invite_code = str(uuid.uuid4())[:8]
+        invite_code = generate_invite_code(12)
         await self.conn.execute(
             "UPDATE equipment SET invite_code = ? WHERE id = ?",
             (invite_code, equip_id)

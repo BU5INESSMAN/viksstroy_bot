@@ -1,9 +1,31 @@
 import sys
 import os
+import secrets as _secrets
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from database_deps import db
+
+
+# ── Strong invite code generation (H-11) ────────────────────
+# Crockford Base32 minus ambiguous chars (0/O/1/I/L removed)
+_INVITE_ALPHABET = "ABCDEFGHJKMNPQRSTVWXYZ23456789"  # 30 symbols
+
+
+def generate_invite_code(length: int = 12) -> str:
+    """Generate a strong, human-typable invite code.
+
+    12 chars x 30 symbols = 30^12 ~ 5.3e17 combinations.
+    At 1000 req/s brute-force would take ~17 million years.
+    """
+    return "".join(_secrets.choice(_INVITE_ALPHABET) for _ in range(length))
+
+
+def normalize_invite_code(raw: str) -> str:
+    """Normalize user-entered code: uppercase + strip separators."""
+    if not raw:
+        return ""
+    return raw.upper().strip().replace(" ", "").replace("-", "").replace("_", "")
 
 
 async def resolve_id(raw_id: int):

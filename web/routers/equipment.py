@@ -11,6 +11,7 @@ import logging
 from datetime import datetime
 from database_deps import db, TZ_BARNAUL
 from auth_deps import get_current_user, require_role
+from utils import normalize_invite_code
 from services.notifications import notify_users, notify_group_chat
 from services.image_service import process_base64_image
 
@@ -360,6 +361,7 @@ async def get_equip_invite_info(invite_code: str):
 @router.post("/api/equipment/invite/join")
 async def join_equipment(invite_code: str = Form(...), current_user=Depends(get_current_user)):
     real_tg_id = current_user["tg_id"]
+    invite_code = normalize_invite_code(invite_code)
 
     async with db.conn.execute("SELECT id, name, driver_fio FROM equipment WHERE invite_code = ?", (invite_code,)) as cur:
         eq_row = await cur.fetchone()
