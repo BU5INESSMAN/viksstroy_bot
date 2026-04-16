@@ -27,7 +27,9 @@ export default function FileViewerModal({ isOpen, onClose, fileUrl, fileName }) 
 
     if (!isOpen || !fileUrl) return null;
 
-    const ext = (fileName || fileUrl || '').split('.').pop().toLowerCase();
+    // Detect extension from fileName (preferred) — fileUrl is /api/files/{id}/download so no extension there
+    const nameParts = (fileName || '').split('.');
+    const ext = nameParts.length > 1 ? nameParts.pop().toLowerCase() : '';
     const isPdf = ext === 'pdf';
     const isImage = ['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext);
 

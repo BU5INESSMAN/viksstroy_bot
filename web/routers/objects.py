@@ -398,9 +398,16 @@ async def api_download_file(file_id: int, download: int = Query(0),
     # Build Content-Disposition: inline for preview, attachment for download
     from urllib.parse import quote as url_quote
     disposition = "attachment" if download else "inline"
-    encoded_name = url_quote(display_name)
+
+    # ASCII-safe fallback for filename= (HTTP headers are latin-1 only)
+    ascii_fallback = re.sub(r'[^\x20-\x7E]', '_', display_name).replace('"', '').strip()
+    if not ascii_fallback or ascii_fallback == '_':
+        ascii_fallback = f"file_{file_id}"
+
+    # RFC 5987 UTF-8 encoded filename (modern browsers prefer this)
+    encoded_name = url_quote(display_name, safe='')
     headers = {
-        "Content-Disposition": f'{disposition}; filename="{display_name}"; filename*=UTF-8\'\'{encoded_name}'
+        "Content-Disposition": f"{disposition}; filename=\"{ascii_fallback}\"; filename*=UTF-8''{encoded_name}"
     }
 
     return FileResponse(
