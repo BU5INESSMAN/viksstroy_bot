@@ -23,6 +23,14 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Auth"])
 
 
+def _check_role_password(provided: str, env_var: str) -> bool:
+    """Timing-safe password comparison against an env var (M-08 fix)."""
+    expected = os.getenv(env_var, "")
+    if not expected or not provided:
+        return False
+    return secrets.compare_digest(provided, expected)
+
+
 def _make_auth_response(data: dict, session_token: str) -> JSONResponse:
     """Wrap auth response with an HttpOnly session cookie for PWA persistence."""
     response = JSONResponse(content=data)
@@ -173,13 +181,13 @@ async def api_max_auth(code: str = Form(...)):
 async def register_max(max_id: int = Form(...), first_name: str = Form(""), last_name: str = Form(""),
                        password: str = Form(...)):
     role = None
-    if password == os.getenv("FOREMAN_PASS"):
+    if _check_role_password(password, "FOREMAN_PASS"):
         role = "foreman"
-    elif password == os.getenv("MODERATOR_PASS"):
+    elif _check_role_password(password, "MODERATOR_PASS"):
         role = "moderator"
-    elif password == os.getenv("BOSS_PASS"):
+    elif _check_role_password(password, "BOSS_PASS"):
         role = "boss"
-    elif password == os.getenv("SUPERADMIN_PASS"):
+    elif _check_role_password(password, "SUPERADMIN_PASS"):
         role = "superadmin"
     if not role: raise HTTPException(status_code=401, detail="Неверный пароль")
     pseudo_tg_id = -int(max_id)
@@ -331,13 +339,13 @@ async def api_tma_auth(init_data: str = Form(...)):
 async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form(""),
                             password: str = Form(...), photo_url: str = Form("")):
     role = None
-    if password == os.getenv("FOREMAN_PASS"):
+    if _check_role_password(password, "FOREMAN_PASS"):
         role = "foreman"
-    elif password == os.getenv("MODERATOR_PASS"):
+    elif _check_role_password(password, "MODERATOR_PASS"):
         role = "moderator"
-    elif password == os.getenv("BOSS_PASS"):
+    elif _check_role_password(password, "BOSS_PASS"):
         role = "boss"
-    elif password == os.getenv("SUPERADMIN_PASS"):
+    elif _check_role_password(password, "SUPERADMIN_PASS"):
         role = "superadmin"
     if not role: raise HTTPException(status_code=401, detail="Неверный пароль")
     fio = f"{last_name} {first_name}".strip() or f"Пользователь {tg_id}"
