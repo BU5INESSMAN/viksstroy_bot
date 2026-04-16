@@ -5,6 +5,7 @@ import {
     CalendarCheck, X, User, AlertTriangle,
     Loader2, Users, CheckCircle
 } from 'lucide-react';
+import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 
 const MONTHS_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
     'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
@@ -146,7 +147,15 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
                                             {block.approved.map((app, i) => (
                                                 <div key={`a-${i}`} className="flex items-center gap-2 px-4 py-2.5 text-sm">
                                                     <CheckCircle className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
-                                                    <span className="truncate text-gray-700 dark:text-gray-300">{app.object_address}</span>
+                                                    <ObjectDisplay
+                                                        variant="inline"
+                                                        showIcon={false}
+                                                        name={app.object_name || app.object_address}
+                                                        address={app.object_name ? app.object_address : ''}
+                                                        className="truncate"
+                                                        nameClassName="text-gray-700 dark:text-gray-300 truncate"
+                                                        addressClassName="text-gray-500 dark:text-gray-400 truncate"
+                                                    />
                                                     <span className="text-gray-400 dark:text-gray-500 mx-1 flex-shrink-0">&mdash;</span>
                                                     <span className="text-gray-500 dark:text-gray-400 flex-shrink-0 text-xs">{app.foreman_name}</span>
                                                 </div>
@@ -154,7 +163,15 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
                                             {block.waiting.map((app, i) => (
                                                 <div key={`w-${i}`} className="flex items-center gap-2 px-4 py-2.5 text-sm bg-amber-100/60 dark:bg-amber-900/15">
                                                     <AlertTriangle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0" />
-                                                    <span className="truncate text-amber-800 dark:text-amber-300">{app.object_address}</span>
+                                                    <ObjectDisplay
+                                                        variant="inline"
+                                                        showIcon={false}
+                                                        name={app.object_name || app.object_address}
+                                                        address={app.object_name ? app.object_address : ''}
+                                                        className="truncate"
+                                                        nameClassName="text-amber-800 dark:text-amber-300 truncate"
+                                                        addressClassName="text-amber-600/80 dark:text-amber-400/80 truncate"
+                                                    />
                                                     <span className="text-amber-500 mx-1 flex-shrink-0">&mdash;</span>
                                                     <span className="text-amber-600 dark:text-amber-400 flex-shrink-0 text-xs">{app.foreman_name}</span>
                                                 </div>

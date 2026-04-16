@@ -130,12 +130,15 @@ async def get_debtors(current_user=Depends(_require_office)):
     today = datetime.now(TZ_BARNAUL).date()
     grace_str = (today - timedelta(days=1)).strftime("%Y-%m-%d")
     async with db.conn.execute(
-        "SELECT id, foreman_id, foreman_name, object_address, date_target, status FROM applications "
-        "WHERE status IN ('in_progress', 'completed') "
-        "AND date_target <= ? AND foreman_id IS NOT NULL "
-        "AND (kp_status IS NULL OR kp_status NOT IN ('approved', 'submitted')) "
-        "AND (kp_archived = 0 OR kp_archived IS NULL) "
-        "ORDER BY foreman_name, date_target ASC",
+        "SELECT a.id, a.foreman_id, a.foreman_name, a.object_address, a.date_target, a.status, "
+        "       o.name AS obj_name, o.address AS obj_address "
+        "FROM applications a "
+        "LEFT JOIN objects o ON a.object_id = o.id "
+        "WHERE a.status IN ('in_progress', 'completed') "
+        "AND a.date_target <= ? AND a.foreman_id IS NOT NULL "
+        "AND (a.kp_status IS NULL OR a.kp_status NOT IN ('approved', 'submitted')) "
+        "AND (a.kp_archived = 0 OR a.kp_archived IS NULL) "
+        "ORDER BY a.foreman_name, a.date_target ASC",
         (grace_str,)
     ) as cur:
         rows = await cur.fetchall()
@@ -151,9 +154,13 @@ async def get_debtors(current_user=Depends(_require_office)):
             days_overdue = 0
         if fid not in grouped:
             grouped[fid] = {"foreman_id": fid, "foreman_name": r[2] or "Неизвестный", "smrs": []}
+        legacy = r[3] or "—"
+        obj_name = r[6] or legacy
+        obj_address = r[7] or ""
         grouped[fid]["smrs"].append({
             "app_id": r[0],
-            "object_address": r[3] or "—",
+            "object_address": obj_address,
+            "object_name": obj_name,
             "date_target": date_target,
             "status": r[5],
             "days_overdue": days_overdue,

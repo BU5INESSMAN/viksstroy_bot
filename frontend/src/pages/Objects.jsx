@@ -13,6 +13,7 @@ import ObjectEditModal from '../features/objects/components/ObjectEditModal';
 import ObjectStatsModal from '../features/objects/components/ObjectStatsModal';
 import ObjectRequestModal from '../features/objects/components/ObjectRequestModal';
 import ObjectRequestsPanel from '../features/objects/components/ObjectRequestsPanel';
+import ObjectDisplay from '../components/ui/ObjectDisplay';
 import { ObjectsSkeleton } from '../components/ui/PageSkeletons';
 
 export default function Objects() {
@@ -245,19 +246,20 @@ export default function Objects() {
                         className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between hover:shadow-md transition-all"
                     >
                         <div className="mb-6">
-                            <div className="flex justify-between items-start mb-2">
-                                <h3 className="font-bold text-xl text-gray-800 dark:text-white leading-tight">
-                                    {obj.name}
-                                </h3>
+                            <div className="flex justify-between items-start mb-2 gap-2">
+                                <ObjectDisplay
+                                    name={obj.name}
+                                    address={obj.address}
+                                    showIcon={false}
+                                    nameClassName="font-bold text-xl text-gray-800 dark:text-white leading-tight truncate"
+                                    addressClassName="text-sm text-gray-500 dark:text-gray-400 truncate mt-1"
+                                />
                                 {obj.is_archived === 1 && (
-                                    <span className="bg-gray-100 text-gray-500 dark:bg-gray-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
+                                    <span className="flex-shrink-0 bg-gray-100 text-gray-500 dark:bg-gray-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
                                         Архив
                                     </span>
                                 )}
                             </div>
-                            <p className="text-sm text-gray-500 dark:text-gray-400 flex items-start gap-1.5 mt-2">
-                                <MapPin className="w-4 h-4 flex-shrink-0 mt-0.5" /> {obj.address}
-                            </p>
                         </div>
 
                         <div className="flex gap-2 border-t border-gray-100 dark:border-gray-700 pt-4">

@@ -4,6 +4,7 @@ import {
     ClipboardList, CheckCircle, Clock, ChevronDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -22,10 +23,12 @@ function AppCard({ a, role, tgId, openProfile, openFreeModal }) {
                     <Calendar className="w-3.5 h-3.5 text-blue-500" />
                     {a.date_target}
                 </div>
-                <div className="flex items-start gap-2">
-                    <MapPin className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                    <span className="font-bold text-gray-800 dark:text-gray-100 leading-snug">{a.object_address}</span>
-                </div>
+                <ObjectDisplay
+                    name={a.object_name || a.object_address}
+                    address={a.object_name ? a.object_address : ''}
+                    nameClassName="font-bold text-gray-800 dark:text-gray-100 leading-snug truncate"
+                />
+
             </div>
 
             {/* Foreman */}

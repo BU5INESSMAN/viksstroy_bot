@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { FolderGit2, Calendar as CalendarIcon, MapPin, Users, Truck, Search, Filter } from 'lucide-react';
 import { MyAppsSkeleton } from '../components/ui/PageSkeletons';
+import ObjectDisplay from '../components/ui/ObjectDisplay';
 
 export default function MyApps() {
     const tgId = localStorage.getItem('tg_id') || '0';
@@ -107,10 +108,11 @@ export default function MyApps() {
                                     <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 uppercase text-[10px] tracking-widest font-bold mb-1">
                                         <CalendarIcon className="w-3.5 h-3.5" /> {app.date_target}
                                     </div>
-                                    <p className="flex items-start gap-1.5 font-bold dark:text-white text-base leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                                        <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-500" />
-                                        <span>{app.object_address}</span>
-                                    </p>
+                                    <ObjectDisplay
+                                        name={app.object_name || app.object_address}
+                                        address={app.object_name ? app.object_address : ''}
+                                        nameClassName="font-bold dark:text-white text-base leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate"
+                                    />
 
                                     <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-6 mt-3 pt-3 border-t border-gray-200 dark:border-gray-600/50">
                                         <p className="flex items-center gap-1.5 text-gray-600 dark:text-gray-300">

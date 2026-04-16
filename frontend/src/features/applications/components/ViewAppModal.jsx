@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { getStatusBadge } from '../../../utils/statusConfig';
 import { motion } from 'framer-motion';
+import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -122,8 +123,9 @@ export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
     const st = getStatusBadge(app.status);
     const StIcon = statusIcons[app.status] || Clock;
 
-    // ── Object display: "Name (Address)" ──
-    const objectDisplay = buildObjectDisplay(app.obj_name, app.object_address);
+    // ── Object display fields (new: name + address separately) ──
+    const objName = app.object_name || app.obj_name || app.object_address;
+    const objAddress = (app.object_name || app.obj_name) ? app.object_address : '';
 
     // ── Equipment ──
     let eqList = [];
@@ -228,7 +230,13 @@ export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
                             {app.foreman_name || 'Не назначен'}
                         </InfoCell>
                         <InfoCell label="Объект" icon={MapPin} iconColor="text-red-500">
-                            {objectDisplay}
+                            <ObjectDisplay
+                                name={objName}
+                                address={objAddress}
+                                showIcon={false}
+                                nameClassName="font-semibold text-gray-900 dark:text-gray-100 leading-snug"
+                                addressClassName="text-xs text-gray-500 dark:text-gray-400 leading-snug mt-0.5"
+                            />
                         </InfoCell>
                     </div>
 

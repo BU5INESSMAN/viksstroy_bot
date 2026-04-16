@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { MapPin, ChevronDown, Search } from 'lucide-react';
+import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 
 export default function ObjectSelector({ objects, selectedId, disabled, onSelect }) {
     const [isOpen, setIsOpen] = useState(false);
@@ -27,9 +28,19 @@ export default function ObjectSelector({ objects, selectedId, disabled, onSelect
                 onClick={() => setIsOpen(!isOpen)}
                 className="w-full border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-3.5 rounded-xl font-bold text-left text-gray-800 dark:text-gray-100 shadow-inner disabled:opacity-80 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent flex items-center justify-between gap-2"
             >
-                <span className={`truncate ${!selected ? 'text-gray-400' : ''}`}>
-                    {selected ? `${selected.name} ${selected.address ? `(${selected.address})` : ''}` : '-- Выберите объект из списка --'}
-                </span>
+                {selected ? (
+                    <ObjectDisplay
+                        variant="inline"
+                        showIcon={false}
+                        name={selected.name}
+                        address={selected.address}
+                        className="truncate"
+                        nameClassName="font-bold truncate"
+                        addressClassName="text-gray-500 dark:text-gray-400 truncate"
+                    />
+                ) : (
+                    <span className="truncate text-gray-400">-- Выберите объект из списка --</span>
+                )}
                 <ChevronDown className={`w-5 h-5 text-gray-400 flex-shrink-0 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
             </button>
             {isOpen && (
@@ -62,8 +73,14 @@ export default function ObjectSelector({ objects, selectedId, disabled, onSelect
                                             : 'text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/50'
                                     }`}
                                 >
-                                    <MapPin className={`w-4 h-4 flex-shrink-0 ${parseInt(selectedId) === obj.id ? 'text-blue-500' : 'text-gray-400'}`} />
-                                    <span className="truncate">{obj.name} {obj.address ? `(${obj.address})` : ''}</span>
+                                    <ObjectDisplay
+                                        variant="inline"
+                                        name={obj.name}
+                                        address={obj.address}
+                                        className="truncate"
+                                        nameClassName={`truncate ${parseInt(selectedId) === obj.id ? 'font-bold' : 'font-medium'}`}
+                                        addressClassName="text-gray-500 dark:text-gray-400 truncate"
+                                    />
                                 </button>
                             ))
                         )}

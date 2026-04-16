@@ -2,6 +2,7 @@ import { useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Bell, Loader2 } from 'lucide-react';
+import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 
 /**
  * Displays the SMR-debtors card on the Home page.
@@ -76,9 +77,14 @@ export default function DebtorsWidget({ debtors, tgId }) {
                                             ) : (
                                                 <span className="flex-shrink-0 w-2 h-2 rounded-full bg-yellow-400" title="В работе" />
                                             )}
-                                            <span className="text-red-600/80 dark:text-red-400/80 truncate">
-                                                {s.object_address}
-                                            </span>
+                                            <ObjectDisplay
+                                                variant="inline"
+                                                showIcon={false}
+                                                name={s.object_name || s.object_address}
+                                                address={s.object_name ? s.object_address : ''}
+                                                nameClassName="text-red-600/80 dark:text-red-400/80 truncate"
+                                                addressClassName="text-red-400 dark:text-red-500/70 truncate"
+                                            />
                                         </div>
                                         <div className="flex items-center gap-2 flex-shrink-0">
                                             {d > 0 && <span className={`text-[10px] ${daysColor}`}>{daysLabel}</span>}

@@ -25,6 +25,26 @@ logger = logging.getLogger("SCHEDULE_GEN")
 # ─────────────────────────────────────────────
 # Шрифты
 # ─────────────────────────────────────────────
+def _object_cell(pairs: list[tuple[str, str]]):
+    """Collapse a list of (name, address) pairs into the cell value used by
+    the renderer. Single pair → dict with two lines; multiple → merged
+    names on one line (no room for N addresses)."""
+    if not pairs:
+        return ""
+    uniq: list[tuple[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for p in pairs:
+        if p not in seen:
+            seen.add(p)
+            uniq.append(p)
+    if len(uniq) == 1:
+        name, addr = uniq[0]
+        if addr:
+            return {"name": name, "address": addr}
+        return name
+    return ", ".join(p[0] for p in uniq)
+
+
 def _load_font(size: int, bold: bool = False):
     """Calibri → Arial → Roboto → default."""
     candidates = [
@@ -63,24 +83,42 @@ async def _fetch_schedule_sections(target_date: str) -> list:
                      f"foreman_id={app.get('foreman_id')} (type={type(app.get('foreman_id')).__name__}), "
                      f"object_address={app.get('object_address')!r}")
 
-    # Обратные индексы: кто на каком объекте
-    member_objs: dict[int, list[str]] = {}
-    equip_objs: dict[int, list[str]] = {}
-    foreman_objs: dict[int, list[str]] = {}
+    # Обратные индексы: кто на каком объекте — храним пары (name, address)
+    # чтобы рендер мог показать адрес отдельной серой строкой.
+    member_objs: dict[int, list[tuple[str, str]]] = {}
+    equip_objs: dict[int, list[tuple[str, str]]] = {}
+    foreman_objs: dict[int, list[tuple[str, str]]] = {}
+
+    # Batch-lookup objects table to split the legacy merged object_address
+    # into (name, address) pairs per app.
+    obj_id_to_pair: dict[int, tuple[str, str]] = {}
+    obj_ids = {int(a["object_id"]) for a in apps if a.get("object_id")}
+    if obj_ids:
+        pl = ",".join("?" * len(obj_ids))
+        async with db.conn.execute(
+            f"SELECT id, name, address FROM objects WHERE id IN ({pl})",
+            list(obj_ids),
+        ) as _oc:
+            for oid, oname, oaddr in await _oc.fetchall():
+                obj_id_to_pair[int(oid)] = ((oname or "").strip(), (oaddr or "").strip())
 
     for app in apps:
-        obj = app.get("object_address", "") or ""
+        legacy = (app.get("object_address", "") or "").strip()
+        if app.get("object_id") and int(app["object_id"]) in obj_id_to_pair:
+            pair = obj_id_to_pair[int(app["object_id"])]
+        else:
+            pair = (legacy, "")
 
         fid = app.get("foreman_id")
         if fid:
             fid = int(fid)
-            foreman_objs.setdefault(fid, []).append(obj)
+            foreman_objs.setdefault(fid, []).append(pair)
 
         sel = app.get("selected_members", "") or ""
         for s in sel.split(","):
             s = s.strip()
             if s.isdigit():
-                member_objs.setdefault(int(s), []).append(obj)
+                member_objs.setdefault(int(s), []).append(pair)
 
         eq_str = app.get("equipment_data", "") or ""
         if eq_str:
@@ -88,7 +126,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
                 for eq in json.loads(eq_str):
                     eid = eq.get("id")
                     if eid:
-                        equip_objs.setdefault(int(eid), []).append(obj)
+                        equip_objs.setdefault(int(eid), []).append(pair)
             except Exception:
                 pass
 
@@ -137,7 +175,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
                 "name": fio or "—",
                 "role": label,
                 "status": "Акт" if objs else "—",
-                "object": ", ".join(dict.fromkeys(objs)) if objs else "",
+                "object": _object_cell(objs),
             })
         sections.append({"title": "ПРОРАБЫ", "rows": rows})
 
@@ -171,7 +209,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
                 "name": fio or "—",
                 "role": pos or "—",
                 "status": display_status,
-                "object": ", ".join(dict.fromkeys(objs)) if objs else "",
+                "object": _object_cell(objs),
             })
         sections.append({"title": tname, "rows": rows})
 
@@ -196,7 +234,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
             "name": driver or "—",
             "role": ename or "—",
             "status": display_status,
-            "object": ", ".join(dict.fromkeys(objs)) if objs else "",
+            "object": _object_cell(objs),
         })
 
     for cat, rows in eq_cats.items():
@@ -228,13 +266,17 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
     """Рисует таблицу-расстановку в стиле Excel и возвращает PNG-буфер."""
     font = _load_font(14, bold=False)
     font_bold = _load_font(14, bold=True)
+    # Меньший шрифт для адреса под названием объекта
+    font_small = _load_font(11, bold=False)
 
     # Ширины колонок: ФИО | Должность | Статус | Объект
     COL_W = [200, 270, 50, 240]
     TABLE_W = sum(COL_W)
     ROW_H = 20
+    ROW_H_TALL = 34  # higher row when the object column shows name+address
     PX = 4   # padding-x
     PY = 2   # padding-y
+    GRAY = (120, 120, 120)
 
     YELLOW = (255, 242, 204)   # #FFF2CC
     BLACK = (0, 0, 0)
@@ -256,12 +298,18 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
     except ValueError:
         display_date = date_str
 
-    # Считаем строки: 1 (дата) + для каждой секции (1 заголовок + N строк)
-    total_rows = 1
-    for s in sections:
-        total_rows += 1 + len(s["rows"])
+    # Считаем высоту: 1 строка (дата) + для каждой секции (заголовок + строки).
+    # Высота строки зависит от того, нужна ли вторая линия (адрес).
+    def _row_h(val) -> int:
+        return ROW_H_TALL if isinstance(val, dict) and val.get("address") else ROW_H
 
-    img_h = total_rows * ROW_H + 1
+    img_h = ROW_H  # date row
+    for s in sections:
+        img_h += ROW_H  # section header
+        for r in s["rows"]:
+            img_h += _row_h(r.get("object"))
+    img_h += 1
+
     img = Image.new("RGB", (TABLE_W + 1, img_h), WHITE)
     draw = ImageDraw.Draw(img)
 
@@ -285,21 +333,34 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
 
         # ── Строки данных ──
         for row in section["rows"]:
+            obj_val = row.get("object", "")
+            this_row_h = ROW_H_TALL if isinstance(obj_val, dict) and obj_val.get("address") else ROW_H
+
             x = 0
-            vals = [row["name"], row["role"], str(row["status"]), row["object"]]
+            vals = [row["name"], row["role"], str(row["status"]), obj_val]
             for ci, val in enumerate(vals):
-                draw.rectangle([x, y, x + COL_W[ci], y + ROW_H], fill=WHITE, outline=BLACK)
-                clipped = _clip_text(draw, val, font, COL_W[ci] - PX * 2)
+                draw.rectangle([x, y, x + COL_W[ci], y + this_row_h], fill=WHITE, outline=BLACK)
                 if ci == 2:  # Status column — centered, color-coded
+                    clipped = _clip_text(draw, str(val), font, COL_W[ci] - PX * 2)
                     text_color = STATUS_COLORS.get(clipped, BLACK)
                     status_font = font_bold if clipped in ("Акт", "Отп", "Бол", "Рем") else font
                     bb = draw.textbbox((0, 0), clipped, font=status_font)
                     cx = x + (COL_W[ci] - (bb[2] - bb[0])) // 2
-                    draw.text((cx, y + PY), clipped, fill=text_color, font=status_font)
+                    cy = y + (this_row_h - (bb[3] - bb[1])) // 2 - 2
+                    draw.text((cx, cy), clipped, fill=text_color, font=status_font)
+                elif ci == 3 and isinstance(val, dict):
+                    # Object column: two lines — name (normal) + address (small gray)
+                    name_clipped = _clip_text(draw, val.get("name", ""), font, COL_W[ci] - PX * 2)
+                    addr_clipped = _clip_text(draw, val.get("address", ""), font_small, COL_W[ci] - PX * 2)
+                    draw.text((x + PX, y + PY), name_clipped, fill=BLACK, font=font)
+                    draw.text((x + PX, y + PY + 16), addr_clipped, fill=GRAY, font=font_small)
                 else:
-                    draw.text((x + PX, y + PY), clipped, fill=BLACK, font=font)
+                    clipped = _clip_text(draw, str(val), font, COL_W[ci] - PX * 2)
+                    # Vertically center single-line text when the row is tall
+                    y_text = y + PY if this_row_h == ROW_H else y + (this_row_h - 14) // 2
+                    draw.text((x + PX, y_text), clipped, fill=BLACK, font=font)
                 x += COL_W[ci]
-            y += ROW_H
+            y += this_row_h
 
     img = img.crop((0, 0, TABLE_W + 1, y + 1))
 

@@ -12,6 +12,7 @@ import { getTodayStr } from '../utils/dateUtils';
 import useConfirm from '../hooks/useConfirm';
 import ScheduleModal from '../features/applications/components/ScheduleModal';
 import { ReviewSkeleton } from '../components/ui/PageSkeletons';
+import ObjectDisplay from '../components/ui/ObjectDisplay';
 
 const ReviewSection = ({ title, icon: Icon, colorClass, titleColorClass, apps, statusType, renderAppCard }) => {
     const [showAll, setShowAll] = useState(false);
@@ -130,10 +131,13 @@ export default function Review() {
                         <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {app.date_target}</span>
                     </div>
 
-                    <p className="font-bold dark:text-white text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-start gap-1.5 leading-tight mb-3">
-                        <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-500" />
-                        <span>{app.object_address}</span>
-                    </p>
+                    <div className="mb-3">
+                        <ObjectDisplay
+                            name={app.object_name || app.object_address}
+                            address={app.object_name ? app.object_address : ''}
+                            nameClassName="font-bold dark:text-white text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate leading-tight"
+                        />
+                    </div>
 
                     <div className="bg-gray-50 dark:bg-gray-700/30 p-3 rounded-xl border border-gray-100 dark:border-gray-600/50 space-y-2.5">
                         <p className="text-xs text-gray-600 dark:text-gray-300 font-medium flex items-center gap-1.5">
@@ -266,7 +270,15 @@ export default function Review() {
                                         <label className="flex items-center gap-1.5 text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">
                                             <MapPin className="w-4 h-4" /> Адрес объекта
                                         </label>
-                                        <p className="font-bold text-gray-800 dark:text-gray-100 bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl border border-gray-100 dark:border-gray-600/50">{selectedApp.object_address}</p>
+                                        <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl border border-gray-100 dark:border-gray-600/50">
+                                            <ObjectDisplay
+                                                name={selectedApp.object_name || selectedApp.object_address}
+                                                address={selectedApp.object_name ? selectedApp.object_address : ''}
+                                                showIcon={false}
+                                                nameClassName="font-bold text-gray-800 dark:text-gray-100 leading-snug"
+                                                addressClassName="text-sm text-gray-500 dark:text-gray-400 leading-snug mt-1"
+                                            />
+                                        </div>
 
                                         <div className="mt-4 flex items-center p-4 bg-gray-50/80 dark:bg-gray-700/30 rounded-2xl border border-gray-200 dark:border-gray-600/50 shadow-sm">
                                             <div className="bg-blue-100 dark:bg-blue-900/30 p-2.5 rounded-full mr-4 text-blue-600 dark:text-blue-400">

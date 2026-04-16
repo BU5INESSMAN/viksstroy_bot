@@ -4,6 +4,7 @@ import {
     ChevronDown, ChevronUp, HardHat, CheckCircle, Search, Archive
 } from 'lucide-react';
 import { motion } from 'framer-motion';
+import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const staggerContainer = { animate: { transition: { staggerChildren: 0.04 } } };
@@ -44,10 +45,13 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
 
                     return (
                         <motion.div key={a.id} variants={prefersReducedMotion ? {} : staggerItem} transition={{ duration: 0.2 }} onClick={() => onAppClick(a)} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500 text-sm cursor-pointer transition-all duration-200 group active:scale-[0.98]">
-                            <p className="font-bold text-gray-800 dark:text-gray-100 mb-1.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 flex items-start gap-1.5 leading-tight">
-                                <MapPin className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-500" />
-                                <span>{a.object_address}</span>
-                            </p>
+                            <div className="mb-1.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                <ObjectDisplay
+                                    name={a.object_name || a.object_address}
+                                    address={a.object_name ? a.object_address : ''}
+                                    nameClassName="font-bold text-gray-800 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate leading-tight"
+                                />
+                            </div>
 
                             <p className="text-xs text-gray-600 dark:text-gray-400 mb-2 font-medium flex items-center gap-1.5">
                                 <HardHat className="w-3.5 h-3.5 text-gray-400" />

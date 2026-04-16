@@ -6,6 +6,7 @@ import {
     X, Search, ChevronDown, ChevronUp, RotateCcw
 } from 'lucide-react';
 import useConfirm from '../../../hooks/useConfirm';
+import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 
 export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
     const tgId = localStorage.getItem('tg_id') || '0';
@@ -140,10 +141,13 @@ export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
 
                                                 return (
                                                     <div key={a.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm">
-                                                        <p className="font-bold text-gray-800 dark:text-gray-100 mb-1 flex items-start gap-1.5">
-                                                            <MapPin className="w-4 h-4 mt-0.5 text-purple-500 flex-shrink-0" />
-                                                            {a.object_address}
-                                                        </p>
+                                                        <div className="mb-1">
+                                                            <ObjectDisplay
+                                                                name={a.object_name || a.object_address}
+                                                                address={a.object_name ? a.object_address : ''}
+                                                                nameClassName="font-bold text-gray-800 dark:text-gray-100 truncate"
+                                                            />
+                                                        </div>
                                                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-2 flex items-center gap-1.5">
                                                             <HardHat className="w-3.5 h-3.5" />
                                                             {a.foreman_name || 'Неизвестный'}

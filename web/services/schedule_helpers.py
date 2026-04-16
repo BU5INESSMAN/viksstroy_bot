@@ -17,25 +17,49 @@ async def get_smr_debtors():
     today_str = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
 
     async with db.conn.execute(
-        "SELECT DISTINCT foreman_id, foreman_name, object_address, date_target FROM applications "
-        "WHERE status = 'in_progress' AND date_target <= ? AND foreman_id IS NOT NULL "
-        "ORDER BY date_target ASC",
+        "SELECT DISTINCT a.foreman_id, a.foreman_name, a.object_address, a.date_target, "
+        "       o.name AS obj_name, o.address AS obj_address "
+        "FROM applications a "
+        "LEFT JOIN objects o ON a.object_id = o.id "
+        "WHERE a.status = 'in_progress' AND a.date_target <= ? AND a.foreman_id IS NOT NULL "
+        "ORDER BY a.date_target ASC",
         (today_str,)
     ) as cur:
         rows = await cur.fetchall()
 
-    return [{"foreman_id": r[0], "foreman_name": r[1] or "Неизвестный",
-             "object_address": r[2] or "—", "date_target": r[3]} for r in rows]
+    out = []
+    for r in rows:
+        legacy = r[2] or "—"
+        obj_name = (r[4] or legacy) if r[4] else legacy
+        obj_address = r[5] or ""
+        out.append({
+            "foreman_id": r[0],
+            "foreman_name": r[1] or "Неизвестный",
+            "object_address": obj_address,
+            "object_name": obj_name,
+            "date_target": r[3],
+        })
+    return out
 
 
 async def get_waiting_apps_for_date(target_date: str):
     """Получить непроверенные (waiting) заявки на дату для предупреждения."""
     if db.conn is None: await db.init_db()
     async with db.conn.execute(
-        "SELECT object_address, foreman_name FROM applications WHERE status = 'waiting' AND date_target = ?",
+        "SELECT a.object_address, a.foreman_name, o.name AS obj_name, o.address AS obj_address "
+        "FROM applications a LEFT JOIN objects o ON a.object_id = o.id "
+        "WHERE a.status = 'waiting' AND a.date_target = ?",
         (target_date,)
     ) as cur:
-        return [{"object_address": r[0] or "—", "foreman_name": r[1] or "—"} for r in await cur.fetchall()]
+        out = []
+        for r in await cur.fetchall():
+            legacy = r[0] or "—"
+            out.append({
+                "object_address": r[3] or "",
+                "object_name": r[2] or legacy,
+                "foreman_name": r[1] or "—",
+            })
+        return out
 
 
 async def get_schedule_dates():

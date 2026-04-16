@@ -19,6 +19,36 @@ async def ensure_app_columns():
     await db.conn.commit()
 
 
+async def enrich_app_with_object_fields(app_dict):
+    """Populate `object_name` and `object_address` on an application dict
+    from the linked `objects` row (via `a.object_id`).
+
+    Keeps the legacy merged `object_address` column intact for bot
+    notifications if `object_id` is NULL; otherwise overrides it with the
+    clean split (`objects.name`, `objects.address`). The frontend
+    `ObjectDisplay` uses the two fields separately.
+    """
+    obj_id = app_dict.get('object_id')
+    legacy = app_dict.get('object_address', '') or ''
+    if obj_id:
+        try:
+            async with db.conn.execute(
+                "SELECT name, address FROM objects WHERE id = ?", (obj_id,)
+            ) as cur:
+                row = await cur.fetchone()
+            if row:
+                name, address = row[0] or '', row[1] or ''
+                app_dict['object_name'] = name or legacy
+                app_dict['object_address'] = address
+                return
+        except Exception:
+            pass
+    # Fallback: no object_id or missing row — show whatever we have as
+    # the name and leave the address empty.
+    app_dict['object_name'] = legacy
+    app_dict['object_address'] = ''
+
+
 async def enrich_app_with_members_data(app_dict):
     selected_m = app_dict.get('selected_members')
     members_list = []

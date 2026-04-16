@@ -13,7 +13,7 @@ from utils import resolve_id, fetch_teams_dict, enrich_app_with_team_name
 from auth_deps import get_current_user, require_role
 from services.notifications import notify_users
 from services.app_service import (
-    ensure_app_columns, enrich_app_with_members_data, get_active_objects_list,
+    ensure_app_columns, enrich_app_with_members_data, enrich_app_with_object_fields, get_active_objects_list,
     create_application, update_application, delete_application,
     update_last_used_objects, get_last_used_objects,
 )
@@ -110,6 +110,7 @@ async def get_review_apps(current_user=Depends(get_current_user)):
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_object_fields(app_dict)
 
         if user_role in ('foreman', 'brigadier') and real_tg_id:
             if app_dict.get('foreman_id') != real_tg_id:
@@ -176,6 +177,7 @@ async def get_active_app(current_user=Depends(get_current_user)):
         app_dict = dict(zip([col[0] for col in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_object_fields(app_dict)
 
         involved = False
         if app_dict['foreman_id'] == real_tg_id:
@@ -223,6 +225,7 @@ async def get_my_apps(current_user=Depends(get_current_user)):
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_object_fields(app_dict)
 
         eq_data_str = app_dict.get('equipment_data', '')
         equip_text, equip_list = "", []
@@ -326,6 +329,7 @@ async def get_archived_apps(date_from: str = "", date_to: str = "", current_user
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_object_fields(app_dict)
         result.append(app_dict)
     return result
 
