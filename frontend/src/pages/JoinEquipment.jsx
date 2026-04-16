@@ -60,7 +60,6 @@ export default function JoinEquipment() {
       try {
           const fd = new FormData();
           fd.append('invite_code', code);
-          fd.append('tg_id', tgId);
           await axios.post('/api/equipment/invite/join', fd);
           toast.success("Успешно привязано!");
 

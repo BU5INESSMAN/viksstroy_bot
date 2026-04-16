@@ -4,15 +4,13 @@ import os
 # Переходим на уровень выше (в папку web), чтобы импорты сработали
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException, Request, Query
+from fastapi import APIRouter, Form, HTTPException, Request, Query, Depends
 import asyncio
-import uuid
-import random
 import json
 import logging
 from datetime import datetime
 from database_deps import db, TZ_BARNAUL
-from utils import resolve_id
+from auth_deps import get_current_user, require_role
 from services.notifications import notify_users, notify_group_chat
 from services.image_service import process_base64_image
 
@@ -20,44 +18,52 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Equipment"])
 
+_require_office = require_role("superadmin", "boss", "moderator")
+
 
 @router.post("/api/equipment/set_free")
-async def set_equipment_free(tg_id: int = Form(...)):
-    real_tg_id = await resolve_id(tg_id)
+async def set_equipment_free(current_user=Depends(get_current_user)):
+    real_tg_id = current_user["tg_id"]
     try:
         await db.conn.execute("UPDATE equipment SET status = 'free' WHERE tg_id = ?", (real_tg_id,))
         await db.conn.commit()
     except:
         await db.conn.rollback()
-    user = await db.get_user(real_tg_id)
-    if user:
-        fio = dict(user).get('fio', '')
-        await db.add_log(real_tg_id, fio, "Освободил свою технику", target_type='equipment')
 
-        now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+    fio = current_user.get('fio', '')
+    await db.add_log(real_tg_id, fio, "Освободил свою технику", target_type='equipment')
 
-        async def _send_free_notification():
-            try:
-                await notify_group_chat(
-                    f"🟢 <b>Техника освобождена</b>\n👤 Водитель: {fio}\n🕒 Время: {now}", "equipment")
-            except Exception as e:
-                logger.error(f"Equipment free notification error: {e}")
+    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
 
-        asyncio.create_task(_send_free_notification())
+    async def _send_free_notification():
+        try:
+            await notify_group_chat(
+                f"🟢 <b>Техника освобождена</b>\n👤 Водитель: {fio}\n🕒 Время: {now}", "equipment")
+        except Exception as e:
+            logger.error(f"Equipment free notification error: {e}")
+
+    asyncio.create_task(_send_free_notification())
     return {"status": "ok"}
 
 
 @router.get("/api/equipment/admin_list")
-async def admin_equip_list():
-    async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur: rows = await cur.fetchall()
-    return [dict(zip([c[0] for c in cur.description], r)) for r in rows]
+async def admin_equip_list(current_user=Depends(get_current_user)):
+    async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur:
+        rows = await cur.fetchall()
+        equip = [dict(zip([c[0] for c in cur.description], r)) for r in rows]
+
+    # Strip sensitive fields for non-office users
+    role = current_user.get("role")
+    if role not in ("superadmin", "boss", "moderator"):
+        for eq in equip:
+            eq.pop("invite_code", None)
+
+    return equip
 
 
 @router.get("/api/equipment/availability")
-async def equipment_availability(date: str = Query(...)):
+async def equipment_availability(date: str = Query(...), current_user=Depends(get_current_user)):
     """Returns all equipment with time-slot availability for a given date."""
-    if db.conn is None:
-        await db.init_db()
 
     # Get base hours from settings
     base_start = "08:00"
@@ -118,7 +124,7 @@ async def equipment_availability(date: str = Query(...)):
         pass
 
     # Build busy_slots per equipment
-    equip_busy = {}  # equip_id -> list of {app_id, foreman_name, object_address, time_start, time_end, app_status}
+    equip_busy = {}
     for a in apps:
         eq_data = a.get('equipment_data', '')
         if not eq_data:
@@ -135,7 +141,6 @@ async def equipment_availability(date: str = Query(...)):
                 continue
             ts = str(eq.get('time_start', '08'))
             te = str(eq.get('time_end', '17'))
-            # Normalize: if just hour number, add ":00"
             if ':' not in ts: ts = f"{int(ts):02d}:00"
             if ':' not in te: te = f"{int(te):02d}:00"
 
@@ -206,7 +211,8 @@ async def equipment_availability(date: str = Query(...)):
 
 @router.post("/api/equipment/create")
 @router.post("/api/equipment/add")
-async def add_equipment(name: str = Form(...), category: str = Form(...), driver: str = Form(""), tg_id: int = Form(0), license_plate: str = Form("")):
+async def add_equipment(name: str = Form(...), category: str = Form(...), driver: str = Form(""),
+                        license_plate: str = Form(""), current_user=Depends(_require_office)):
     try:
         await db.conn.execute("INSERT INTO equipment (name, category, driver, status, license_plate) VALUES (?, ?, ?, 'free', ?)",
                               (name, category, driver, license_plate))
@@ -214,8 +220,8 @@ async def add_equipment(name: str = Form(...), category: str = Form(...), driver
     except:
         await db.conn.rollback()
 
-    admin = await db.get_user(tg_id)
-    fio = dict(admin).get('fio', 'Админ') if admin else 'Админ'
+    fio = current_user.get('fio', 'Админ')
+    tg_id = current_user["tg_id"]
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
 
     async def _send_add_equip_notification():
@@ -231,7 +237,7 @@ async def add_equipment(name: str = Form(...), category: str = Form(...), driver
 
 
 @router.post("/api/equipment/bulk_add")
-async def bulk_add_equipment(request: Request):
+async def bulk_add_equipment(request: Request, current_user=Depends(_require_office)):
     data = await request.json()
     items = data.get("items", [])
     count = 0
@@ -258,16 +264,13 @@ async def bulk_add_equipment(request: Request):
             logger.error(f"Equipment bulk add notification error: {e}")
 
     asyncio.create_task(_send_bulk_equip_notification())
-    tg_id = data.get("tg_id", 0)
-    if tg_id:
-        user = await db.get_user(tg_id)
-        fio = dict(user).get('fio', 'Админ') if user else 'Админ'
-        await db.add_log(tg_id, fio, f"Массовая загрузка техники: {count} ед.", target_type='equipment')
+    fio = current_user.get('fio', 'Админ')
+    await db.add_log(current_user["tg_id"], fio, f"Массовая загрузка техники: {count} ед.", target_type='equipment')
     return {"status": "ok", "added": count}
 
 
 @router.post("/api/equipment/{equip_id}/update_photo")
-async def update_equip_photo(equip_id: int, photo_base64: str = Form(...), tg_id: int = Form(0)):
+async def update_equip_photo(equip_id: int, photo_base64: str = Form(...), current_user=Depends(get_current_user)):
     url = process_base64_image(photo_base64, f"equip_{equip_id}")
     if url:
         try:
@@ -280,11 +283,8 @@ async def update_equip_photo(equip_id: int, photo_base64: str = Form(...), tg_id
 
 
 @router.put("/api/equipment/{equip_id}")
-async def edit_equipment(equip_id: int, request: Request):
+async def edit_equipment(equip_id: int, request: Request, current_user=Depends(_require_office)):
     data = await request.json()
-    user = await db.get_user(data.get('tg_id', 0))
-    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']:
-        raise HTTPException(status_code=403, detail="Нет прав")
     name = data.get('name', '').strip()
     category = data.get('category', '').strip()
     driver_fio = data.get('driver_fio', '').strip()
@@ -302,14 +302,15 @@ async def edit_equipment(equip_id: int, request: Request):
         row = await cur.fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Техника не найдена")
-    admin_fio = dict(user).get('fio', 'Админ')
-    await db.add_log(data.get('tg_id', 0), admin_fio, f"Обновил технику: {name}", target_type='equipment', target_id=equip_id)
+    admin_fio = current_user.get('fio', 'Админ')
+    await db.add_log(current_user["tg_id"], admin_fio, f"Обновил технику: {name}", target_type='equipment', target_id=equip_id)
     return dict(zip([c[0] for c in cur.description], row))
 
 
 @router.post("/api/equipment/{equip_id}/update")
 async def update_equipment(equip_id: int, name: str = Form(...), category: str = Form(...), driver: str = Form(""),
-                           status: str = Form("free"), tg_id: int = Form(0), license_plate: str = Form("")):
+                           status: str = Form("free"), license_plate: str = Form(""),
+                           current_user=Depends(_require_office)):
     try:
         await db.conn.execute("UPDATE equipment SET name=?, category=?, driver=?, status=?, license_plate=? WHERE id=?",
                               (name, category, driver, status, license_plate, equip_id))
@@ -320,8 +321,7 @@ async def update_equipment(equip_id: int, name: str = Form(...), category: str =
 
 
 @router.post("/api/equipment/{equip_id}/delete")
-async def delete_equipment(equip_id: int, tg_id: int = Form(0)):
-    # Get name before delete
+async def delete_equipment(equip_id: int, current_user=Depends(_require_office)):
     eq_name = f"№{equip_id}"
     async with db.conn.execute("SELECT name FROM equipment WHERE id = ?", (equip_id,)) as cur:
         row = await cur.fetchone()
@@ -331,15 +331,13 @@ async def delete_equipment(equip_id: int, tg_id: int = Form(0)):
         await db.conn.commit()
     except:
         await db.conn.rollback()
-    if tg_id:
-        user = await db.get_user(tg_id)
-        fio = dict(user).get('fio', 'Адм��н') if user else 'Админ'
-        await db.add_log(tg_id, fio, f"Удалил технику: {eq_name}", target_type='equipment', target_id=equip_id)
+    fio = current_user.get('fio', 'Админ')
+    await db.add_log(current_user["tg_id"], fio, f"Удалил технику: {eq_name}", target_type='equipment', target_id=equip_id)
     return {"status": "ok"}
 
 
 @router.post("/api/equipment/{equip_id}/generate_invite")
-async def generate_equip_invite(equip_id: int):
+async def generate_equip_invite(equip_id: int, current_user=Depends(_require_office)):
     code = await db.get_or_create_equip_invite(equip_id)
     return {
         "invite_link": f"https://miniapp.viks22.ru/equip-invite/{code}",
@@ -351,31 +349,34 @@ async def generate_equip_invite(equip_id: int):
 
 @router.get("/api/equipment/invite/{invite_code}")
 async def get_equip_invite_info(invite_code: str):
-    async with db.conn.execute("SELECT * FROM equipment WHERE invite_code = ?", (invite_code,)) as cur:
+    """Public endpoint — invite landing page for drivers."""
+    async with db.conn.execute("SELECT id, name, category, license_plate FROM equipment WHERE invite_code = ?", (invite_code,)) as cur:
         row = await cur.fetchone()
-    if not row: raise HTTPException(status_code=404, detail="Ссылка недействительна")
-    return dict(zip([c[0] for c in cur.description], row))
+    if not row:
+        raise HTTPException(status_code=404, detail="Ссылка недействительна")
+    return {"id": row[0], "name": row[1], "category": row[2], "license_plate": row[3]}
 
 
 @router.post("/api/equipment/invite/join")
-async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
+async def join_equipment(invite_code: str = Form(...), current_user=Depends(get_current_user)):
+    real_tg_id = current_user["tg_id"]
+
     async with db.conn.execute("SELECT id, name, driver_fio FROM equipment WHERE invite_code = ?", (invite_code,)) as cur:
         eq_row = await cur.fetchone()
     if not eq_row: raise HTTPException(status_code=404, detail="Техника не найдена")
 
-    real_tg_id = await resolve_id(tg_id)
-    equip_driver_fio = eq_row[2] or ""  # driver_fio from equipment record
+    equip_driver_fio = eq_row[2] or ""
+    fio = current_user.get("fio", "")
+
     try:
         await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (real_tg_id, eq_row[0]))
         user = await db.get_user(real_tg_id)
         if not user:
-            # New user — use equipment's driver_fio if available, otherwise placeholder
             fio = equip_driver_fio if equip_driver_fio and equip_driver_fio != "Не указан" else f"Пользователь {real_tg_id}"
             await db.add_user(real_tg_id, fio, "driver")
         else:
             user_dict = dict(user)
             fio = user_dict.get('fio', '')
-            # Auto-assign FIO from equipment if user has a placeholder name
             if equip_driver_fio and equip_driver_fio != "Не указан":
                 if not fio or fio.startswith("Пользователь") or fio == "Не указан":
                     fio = equip_driver_fio
@@ -411,26 +412,25 @@ async def join_equipment(invite_code: str = Form(...), tg_id: int = Form(...)):
 
 
 @router.post("/api/equipment/{equip_id}/status")
-async def change_equip_status(equip_id: int, status: str = Form(...), tg_id: int = Form(0)):
-    # Проверяем права (менять статус могут только прорабы и офис)
-    user = await db.get_user(tg_id)
-    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator', 'foreman']:
+async def change_equip_status(equip_id: int, status: str = Form(...), current_user=Depends(get_current_user)):
+    role = current_user.get("role")
+    if role not in ('superadmin', 'boss', 'moderator', 'foreman'):
         raise HTTPException(status_code=403, detail="Нет прав")
 
     try:
-        # Обновляем статус в базе данных ('free', 'repair', 'work')
         await db.conn.execute("UPDATE equipment SET status = ? WHERE id = ?", (status, equip_id))
         await db.conn.commit()
-    except Exception as e:
+    except Exception:
         await db.conn.rollback()
         raise HTTPException(status_code=500, detail="Ошибка базы данных")
 
     return {"status": "ok"}
+
+
 @router.post("/api/equipment/{equip_id}/unlink")
-async def unlink_equipment(equip_id: int, tg_id: int = Form(0)):
-    user = await db.get_user(tg_id)
-    # Добавлена роль foreman для отвязки
-    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator', 'foreman']:
+async def unlink_equipment(equip_id: int, current_user=Depends(get_current_user)):
+    role = current_user.get("role")
+    if role not in ('superadmin', 'boss', 'moderator', 'foreman'):
         raise HTTPException(status_code=403, detail="Нет прав")
     try:
         await db.conn.execute("UPDATE equipment SET tg_id = NULL WHERE id = ?", (equip_id,))

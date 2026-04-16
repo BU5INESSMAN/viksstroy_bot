@@ -4,7 +4,6 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 
 export default function EditEquipmentModal({ equipment, categories, onClose, onUpdate }) {
-    const tgId = localStorage.getItem('tg_id') || '0';
     const [form, setForm] = useState({
         name: equipment.name || '',
         category: equipment.category || '',
@@ -20,10 +19,7 @@ export default function EditEquipmentModal({ equipment, categories, onClose, onU
         }
         setSaving(true);
         try {
-            await axios.put(`/api/equipment/${equipment.id}`, {
-                ...form,
-                tg_id: parseInt(tgId),
-            });
+            await axios.put(`/api/equipment/${equipment.id}`, form);
             toast.success("Техника обновлена");
             onUpdate();
             onClose();
@@ -37,9 +33,7 @@ export default function EditEquipmentModal({ equipment, categories, onClose, onU
     const handleDelete = async () => {
         setSaving(true);
         try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            await axios.post(`/api/equipment/${equipment.id}/delete`, fd);
+            await axios.post(`/api/equipment/${equipment.id}/delete`);
             toast.success("Техника удалена");
             onUpdate();
             onClose();

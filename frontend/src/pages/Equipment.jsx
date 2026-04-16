@@ -60,7 +60,6 @@ export default function Equipment() {
             fd.append('driver', newEquip.driver);
             fd.append('category', customCategory || newEquip.category);
             fd.append('license_plate', newEquip.license_plate || '');
-            fd.append('tg_id', tgId);
             await axios.post('/api/equipment/create', fd);
             setNewEquip({ name: '', driver: '', category: '', license_plate: '' });
             setCustomCategory('');
@@ -75,7 +74,6 @@ export default function Equipment() {
         try {
             const fd = new FormData();
             fd.append('text', bulkText);
-            fd.append('tg_id', tgId);
             const res = await axios.post('/api/equipment/bulk_upload', fd);
             setBulkText('');
             setActiveTab('list');
@@ -88,15 +86,14 @@ export default function Equipment() {
         const ok = await confirm("Удалить эту технику из базы?", { title: "Удаление техники", confirmText: "Удалить" });
         if (!ok) return;
         try {
-            const fd = new FormData(); fd.append('tg_id', tgId);
-            await axios.post(`/api/equipment/${id}/delete`, fd);
+            await axios.post(`/api/equipment/${id}/delete`);
             fetchData();
         } catch (e) { toast.error("Ошибка удаления"); }
     };
 
     const handleEquipStatusChange = async (id, newStatus) => {
         try {
-            const fd = new FormData(); fd.append('tg_id', tgId); fd.append('status', newStatus);
+            const fd = new FormData(); fd.append('status', newStatus);
             await axios.post(`/api/equipment/${id}/status`, fd);
             fetchData();
         } catch (e) { toast.error("Ошибка изменения статуса"); }
@@ -106,9 +103,7 @@ export default function Equipment() {
         const ok = await confirm("Отвязать Telegram/MAX аккаунт водителя от этой техники?", { title: "Отвязка аккаунта", variant: "warning", confirmText: "Отвязать" });
         if (!ok) return;
         try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            await axios.post(`/api/equipment/${equipId}/unlink`, fd);
+            await axios.post(`/api/equipment/${equipId}/unlink`);
             fetchData();
         } catch (e) {
             toast.error("Ошибка при отвязке аккаунта");
