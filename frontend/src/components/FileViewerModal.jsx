@@ -68,7 +68,7 @@ export default function FileViewerModal({ isOpen, onClose, fileUrl, fileName }) 
                                 </>
                             )}
 
-                            <a href={fileUrl} download={fileName} title="Скачать"
+                            <a href={fileUrl.includes('?') ? `${fileUrl}&download=1` : `${fileUrl}?download=1`} download={fileName} title="Скачать"
                                 className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center hover:bg-white/20 transition-colors active:scale-95">
                                 <Download className="w-4 h-4 text-white" />
                             </a>
@@ -113,7 +113,7 @@ export default function FileViewerModal({ isOpen, onClose, fileUrl, fileName }) 
                         {!isPdf && !isImage && (
                             <div className="text-center p-8">
                                 <p className="text-white/50 text-lg mb-4">Предпросмотр недоступен для этого типа файла</p>
-                                <a href={fileUrl} download={fileName}
+                                <a href={fileUrl.includes('?') ? `${fileUrl}&download=1` : `${fileUrl}?download=1`} download={fileName}
                                     className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-xl hover:bg-blue-500 transition-colors font-bold text-sm">
                                     <Download className="w-5 h-5" /> Скачать файл
                                 </a>

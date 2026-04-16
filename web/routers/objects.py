@@ -5,9 +5,10 @@ import uuid
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File, Depends
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File, Depends, Query
 from fastapi.responses import FileResponse
 from typing import List
+import mimetypes
 from pathlib import Path
 from database_deps import db
 from auth_deps import get_current_user, require_role
@@ -358,8 +359,11 @@ async def api_get_object_files(obj_id: int, current_user=Depends(get_current_use
 
 
 @router.get("/api/files/{file_id}/download")
-async def api_download_file(file_id: int, current_user=Depends(get_current_user)):
-    """C-08 fix: authenticated file download with path-traversal safety."""
+async def api_download_file(file_id: int, download: int = Query(0),
+                            current_user=Depends(get_current_user)):
+    """C-08 fix: authenticated file serving with path-traversal safety.
+    Default: inline (preview in browser). ?download=1: force save-as.
+    """
     async with db.conn.execute(
         "SELECT object_id, file_path, original_name FROM object_files WHERE id = ?", (file_id,)
     ) as cur:
@@ -373,7 +377,6 @@ async def api_download_file(file_id: int, current_user=Depends(get_current_user)
 
     # Path traversal safety — resolve inside data/ and verify
     try:
-        # file_path in DB looks like "/uploads/objects/3/abc.pdf"
         clean_rel = file_path_str.lstrip("/")
         if clean_rel.startswith("uploads/"):
             resolved = (Path("data") / clean_rel).resolve()
@@ -386,10 +389,24 @@ async def api_download_file(file_id: int, current_user=Depends(get_current_user)
     if not resolved.is_file():
         raise HTTPException(404, "Файл отсутствует на диске")
 
+    # Guess MIME from filename for proper inline rendering
+    display_name = original_name or resolved.name
+    mime_type, _ = mimetypes.guess_type(display_name)
+    if not mime_type:
+        mime_type = "application/octet-stream"
+
+    # Build Content-Disposition: inline for preview, attachment for download
+    from urllib.parse import quote as url_quote
+    disposition = "attachment" if download else "inline"
+    encoded_name = url_quote(display_name)
+    headers = {
+        "Content-Disposition": f'{disposition}; filename="{display_name}"; filename*=UTF-8\'\'{encoded_name}'
+    }
+
     return FileResponse(
         path=str(resolved),
-        filename=original_name or resolved.name,
-        media_type="application/octet-stream",
+        media_type=mime_type,
+        headers=headers,
     )
 
 
