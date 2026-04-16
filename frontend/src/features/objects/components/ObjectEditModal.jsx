@@ -100,13 +100,11 @@ export default function ObjectEditModal({
 
     const handleSaveInfo = async (e) => {
         e.preventDefault();
-        const tgId = localStorage.getItem('tg_id') || '0';
         try {
             const fd = new FormData();
             fd.append('name', editObj.name); fd.append('address', editObj.address);
             fd.append('default_teams', editObj.default_team_ids.join(','));
             fd.append('default_equip', editObj.default_equip_ids.join(','));
-            fd.append('tg_id', tgId);
             await axios.post(`/api/objects/${editObj.id}/update`, fd);
             onSaved(); toast.success('Настройки сохранены!');
         } catch { toast.error('Ошибка сохранения'); }
@@ -172,8 +170,7 @@ export default function ObjectEditModal({
             const addIds = smrPreview.new_works.map(w => w.kp_id);
             const volumes = {};
             smrPreview.new_works.forEach(w => { if (w.volume) volumes[w.kp_id] = w.volume; });
-            const tgId = localStorage.getItem('tg_id') || '0';
-            await axios.post(`/api/objects/${editObj.id}/smr/confirm`, { add_kp_ids: addIds, remove_kp_ids: [], volumes, tg_id: parseInt(tgId) });
+            await axios.post(`/api/objects/${editObj.id}/smr/confirm`, { add_kp_ids: addIds, remove_kp_ids: [], volumes });
             const res = await axios.get(`/api/objects/${editObj.id}/kp`);
             setObjectKpPlan(res.data.map(k => k.id) || []);
             const tvMap = {}; res.data.forEach(k => { tvMap[k.id] = k.target_volume || 0; }); setTargetVolumes(tvMap);

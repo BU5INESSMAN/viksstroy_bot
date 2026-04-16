@@ -97,7 +97,6 @@ export default function Objects() {
         try {
             await axios.post(`/api/object_requests/${reqId}/review`, {
                 action: 'reject',
-                tg_id: parseInt(tgId),
             });
             toast.success('Запрос отклонён');
             setObjectRequests(prev => prev.filter(r => r.id !== reqId));
@@ -116,7 +115,6 @@ export default function Objects() {
         if (!file) return;
         const fd = new FormData();
         fd.append('file', file);
-        fd.append('tg_id', tgId);
         try {
             await axios.post(`/api/objects/${objId}/upload_pdf`, fd);
             toast.success('Смета загружена!');
@@ -138,8 +136,7 @@ export default function Objects() {
         });
         if (!ok) return;
         try {
-            const fd = new FormData(); fd.append('tg_id', tgId);
-            await axios.post(`/api/objects/${objId}/${isCurrentlyArchived ? 'restore' : 'archive'}`, fd);
+            await axios.post(`/api/objects/${objId}/${isCurrentlyArchived ? 'restore' : 'archive'}`);
             fetchObjects();
         } catch (e) {
             toast.error('Ошибка смены статуса');

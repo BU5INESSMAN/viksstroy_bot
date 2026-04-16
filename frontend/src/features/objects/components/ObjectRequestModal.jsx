@@ -13,7 +13,6 @@ export default function ObjectRequestModal({ onClose, onSubmitted, tgId }) {
             fd.append('name', requestForm.name);
             fd.append('address', requestForm.address);
             fd.append('comment', requestForm.comment);
-            fd.append('tg_id', tgId);
             await axios.post('/api/object_requests/create', fd);
             toast.success('Запрос на объект отправлен!');
             onSubmitted();

@@ -1,29 +1,60 @@
 import sys
 import os
+import re
+import uuid
+
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Form, HTTPException, Request, UploadFile, File, Depends
+from fastapi.responses import FileResponse
 from typing import List
+from pathlib import Path
 from database_deps import db
-from utils import resolve_id
+from auth_deps import get_current_user, require_role
 import json
 import tempfile
 from datetime import datetime
 
 router = APIRouter(tags=["Objects"])
 
+_require_office = require_role("superadmin", "boss", "moderator")
+
+# ── Path safety ──────────────────────────────────────────────
+UPLOADS_ROOT = Path("data/uploads").resolve()
+
+
+def _safe_filename(raw: str) -> str:
+    """Strip path components, limit length, keep only safe chars."""
+    name = os.path.basename(raw or "")
+    name = re.sub(r"[^\w.\- ]", "_", name, flags=re.UNICODE)
+    name = re.sub(r"_+", "_", name).strip("._ ")
+    if not name:
+        name = "upload"
+    return name[:100]
+
+
+def _resolve_safe_path(rel_or_abs: str) -> Path:
+    """Resolve a file path and ensure it stays inside UPLOADS_ROOT."""
+    p = Path(rel_or_abs)
+    if not p.is_absolute():
+        p = UPLOADS_ROOT / p.lstrip("/\\")
+    resolved = p.resolve()
+    resolved.relative_to(UPLOADS_ROOT)  # raises ValueError if outside
+    return resolved
+
+
+# ── Objects CRUD ─────────────────────────────────────────────
+
 @router.get("/api/objects")
-async def api_get_objects(archived: int = 0):
-    if db.conn is None: await db.init_db()
+async def api_get_objects(archived: int = 0, current_user=Depends(get_current_user)):
     return await db.get_objects(include_archived=bool(archived))
 
+
 @router.post("/api/objects/create")
-async def api_create_object(request: Request):
-    if db.conn is None: await db.init_db()
+async def api_create_object(request: Request, current_user=Depends(_require_office)):
     data = await request.json()
     name = data.get("name", "")
     address = data.get("address", "")
-    tg_id = data.get("tg_id", 0)
     kp_ids = data.get("kp_ids", [])
     target_volumes = data.get("target_volumes", {})
 
@@ -32,36 +63,26 @@ async def api_create_object(request: Request):
     if not kp_ids:
         raise HTTPException(400, "КП обязательна при создании объекта")
 
-    if tg_id:
-        user = await db.get_user(tg_id)
-        if user and dict(user).get('role') in ('foreman', 'brigadier'):
-            raise HTTPException(status_code=403, detail="Нет прав на создание объектов")
-
     obj_id = await db.create_object(name, address)
     await db.add_kp_to_object(obj_id, kp_ids, target_volumes)
 
-    real_tg_id = await resolve_id(tg_id) if tg_id else 0
-    user = await db.get_user(real_tg_id) if real_tg_id else None
-    fio = dict(user).get('fio', 'Система') if user else 'Система'
-    await db.add_log(real_tg_id, fio, f"Создал объект: {name}", target_type='object', target_id=obj_id)
+    fio = current_user.get('fio', 'Система')
+    await db.add_log(current_user["tg_id"], fio, f"Создал объект: {name}", target_type='object', target_id=obj_id)
     return {"status": "ok", "id": obj_id}
 
+
 @router.post("/api/objects/{obj_id}/update")
-async def api_update_object(obj_id: int, name: str = Form(...), address: str = Form(...), default_teams: str = Form(""), default_equip: str = Form(""), tg_id: int = Form(0)):
-    if db.conn is None: await db.init_db()
+async def api_update_object(obj_id: int, name: str = Form(...), address: str = Form(...),
+                            default_teams: str = Form(""), default_equip: str = Form(""),
+                            current_user=Depends(_require_office)):
     await db.update_object(obj_id, name, address, default_teams, default_equip)
-    _uid, _fio = 0, "Система"
-    if tg_id:
-        _rid = await resolve_id(tg_id)
-        _u = await db.get_user(_rid)
-        if _u: _uid, _fio = _rid, dict(_u).get('fio', 'Система')
-    await db.add_log(_uid, _fio, f"Обновил объект «{name}»", target_type='object', target_id=obj_id)
+    await db.add_log(current_user["tg_id"], current_user.get('fio', 'Система'),
+                     f"Обновил объект «{name}»", target_type='object', target_id=obj_id)
     return {"status": "ok"}
 
+
 @router.post("/api/objects/{obj_id}/archive")
-async def api_archive_object(obj_id: int, tg_id: int = Form(0)):
-    if db.conn is None: await db.init_db()
-    # Get name before archiving
+async def api_archive_object(obj_id: int, current_user=Depends(_require_office)):
     _name = f"#{obj_id}"
     try:
         async with db.conn.execute("SELECT name FROM objects WHERE id = ?", (obj_id,)) as c:
@@ -69,17 +90,13 @@ async def api_archive_object(obj_id: int, tg_id: int = Form(0)):
             if r: _name = r[0]
     except Exception: pass
     await db.archive_object(obj_id)
-    _uid, _fio = 0, "Система"
-    if tg_id:
-        _rid = await resolve_id(tg_id)
-        _u = await db.get_user(_rid)
-        if _u: _uid, _fio = _rid, dict(_u).get('fio', 'Система')
-    await db.add_log(_uid, _fio, f"Архивировал объект «{_name}»", target_type='object', target_id=obj_id)
+    await db.add_log(current_user["tg_id"], current_user.get('fio', 'Система'),
+                     f"Архивировал объект «{_name}»", target_type='object', target_id=obj_id)
     return {"status": "ok"}
 
+
 @router.post("/api/objects/{obj_id}/restore")
-async def api_restore_object(obj_id: int, tg_id: int = Form(0)):
-    if db.conn is None: await db.init_db()
+async def api_restore_object(obj_id: int, current_user=Depends(_require_office)):
     _name = f"#{obj_id}"
     try:
         async with db.conn.execute("SELECT name FROM objects WHERE id = ?", (obj_id,)) as c:
@@ -87,43 +104,43 @@ async def api_restore_object(obj_id: int, tg_id: int = Form(0)):
             if r: _name = r[0]
     except Exception: pass
     await db.restore_object(obj_id)
-    _uid, _fio = 0, "Система"
-    if tg_id:
-        _rid = await resolve_id(tg_id)
-        _u = await db.get_user(_rid)
-        if _u: _uid, _fio = _rid, dict(_u).get('fio', 'Система')
-    await db.add_log(_uid, _fio, f"Восстановил объект «{_name}»", target_type='object', target_id=obj_id)
+    await db.add_log(current_user["tg_id"], current_user.get('fio', 'Система'),
+                     f"Восстановил объект «{_name}»", target_type='object', target_id=obj_id)
     return {"status": "ok"}
 
+
+# ── KP Catalog (was unprotected — BUG fix) ──────────────────
+
 @router.get("/api/kp/catalog")
-async def api_get_kp_catalog():
-    if db.conn is None: await db.init_db()
+async def api_get_kp_catalog(current_user=Depends(get_current_user)):
     return await db.get_kp_catalog()
 
+
 @router.get("/api/objects/{obj_id}/kp")
-async def api_get_object_kp(obj_id: int):
-    if db.conn is None: await db.init_db()
+async def api_get_object_kp(obj_id: int, current_user=Depends(get_current_user)):
     return await db.get_object_kp_plan(obj_id)
 
+
 @router.post("/api/objects/{obj_id}/kp/update")
-async def api_update_object_kp(obj_id: int, request: Request):
-    if db.conn is None: await db.init_db()
+async def api_update_object_kp(obj_id: int, request: Request, current_user=Depends(_require_office)):
     data = await request.json()
     kp_ids = data.get("kp_ids", [])
     target_volumes = data.get("target_volumes", {})
     await db.add_kp_to_object(obj_id, kp_ids, target_volumes)
     return {"status": "ok"}
 
-# ==========================================
-# ПАРСИНГ PDF СМЕТЫ
-# ==========================================
+
+# ── PDF parsing ──────────────────────────────────────────────
 
 @router.post("/api/objects/parse_pdf")
-async def api_parse_pdf(file: UploadFile = File(...)):
+async def api_parse_pdf(file: UploadFile = File(...), current_user=Depends(get_current_user)):
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Файл должен быть в формате PDF")
 
     content = await file.read()
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(413, "Файл слишком большой (максимум 25MB)")
+
     tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
     try:
         tmp.write(content)
@@ -133,19 +150,17 @@ async def api_parse_pdf(file: UploadFile = File(...)):
         result = parse_smr_pdf(tmp.name)
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ошибка парсинга PDF: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Ошибка парсинга PDF: {str(e)[:200]}")
     finally:
         try:
             os.unlink(tmp.name)
         except OSError:
             pass
 
-# ==========================================
-# УМНЫЙ ИМПОРТ СМР ИЗ PDF
-# ==========================================
+
+# ── SMR import from PDF ─────────────────────────────────────
 
 def _fuzzy_name_match(a: str, b: str) -> bool:
-    """Check if two names match loosely (50%+ significant word overlap)."""
     if not a or not b:
         return False
     a, b = a.lower().strip(), b.lower().strip()
@@ -159,8 +174,6 @@ def _fuzzy_name_match(a: str, b: str) -> bool:
 
 
 def _match_work_to_catalog(work: dict, catalog: list):
-    """Match a parsed work to the closest catalog entry.
-    Handles: exact, containment, prefix (truncated names), word overlap."""
     wn = (work.get("name") or "").lower().strip()
     if not wn:
         return None
@@ -169,16 +182,13 @@ def _match_work_to_catalog(work: dict, catalog: list):
         cn = (item.get("name") or "").lower().strip()
         if not cn:
             continue
-        # 1. Exact
         if wn == cn:
             return item
-        # 2. Containment
         if wn in cn or cn in wn:
             score = min(len(wn), len(cn)) / max(len(wn), len(cn))
             if score > best_score:
                 best_score, best = score, item
             continue
-        # 3. Prefix match — for truncated names from PDF
         min_len = min(len(wn), len(cn))
         if min_len >= 15:
             match_len = 0
@@ -192,7 +202,6 @@ def _match_work_to_catalog(work: dict, catalog: list):
                 if score > best_score:
                     best_score, best = score, item
                 continue
-        # 4. Word overlap
         words_w = {w for w in wn.split() if len(w) > 2}
         words_c = {w for w in cn.split() if len(w) > 2}
         if words_w and words_c:
@@ -203,46 +212,53 @@ def _match_work_to_catalog(work: dict, catalog: list):
 
 
 @router.post("/api/objects/{obj_id}/smr/import")
-async def api_import_smr_from_pdf(obj_id: int, file: UploadFile = File(...)):
+async def api_import_smr_from_pdf(obj_id: int, file: UploadFile = File(...),
+                                  current_user=Depends(_require_office)):
     """Parse PDF, save permanently, return comparison for confirmation."""
-    if db.conn is None: await db.init_db()
-
     content = await file.read()
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(413, "Файл слишком большой (максимум 25MB)")
 
-    # Save permanently to object's upload dir
-    upload_dir = os.path.join("data", "uploads", "objects", str(obj_id))
-    os.makedirs(upload_dir, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_name = f"{ts}_smr_{file.filename}"
-    perm_path = os.path.join(upload_dir, safe_name)
+    # H-08 fix: sanitize filename, use UUID prefix
+    orig_name = file.filename or "smr.pdf"
+    clean = _safe_filename(orig_name)
+    stored_name = f"{uuid.uuid4().hex[:12]}_smr_{clean}"
+
+    object_dir = UPLOADS_ROOT / "objects" / str(obj_id)
+    object_dir.mkdir(parents=True, exist_ok=True)
+    perm_path = object_dir / stored_name
+
+    # Path traversal safety
+    try:
+        perm_path.resolve().relative_to(UPLOADS_ROOT)
+    except ValueError:
+        raise HTTPException(400, "Недопустимое имя файла")
+
     with open(perm_path, "wb") as out:
         out.write(content)
 
-    rel_path = f"/uploads/objects/{obj_id}/{safe_name}"
-    # Add to object_files
+    rel_path = str(perm_path.relative_to(Path("data/uploads")))
+    db_path = f"/uploads/{rel_path.replace(os.sep, '/')}"
     try:
-        await db.add_object_file(obj_id, rel_path, original_name=f"СМР — {file.filename}", file_size=len(content))
+        await db.add_object_file(obj_id, db_path, original_name=f"СМР — {orig_name}", file_size=len(content))
     except Exception:
         pass
 
     try:
         from services.pdf_parser import parse_smr_pdf
-        parsed = parse_smr_pdf(perm_path)
+        parsed = parse_smr_pdf(str(perm_path))
     except Exception as e:
-        raise HTTPException(500, f"Ошибка парсинга PDF: {e}")
+        raise HTTPException(500, f"Ошибка парсинга PDF: {str(e)[:200]}")
 
-    # Get current object info
     objects = await db.get_objects(include_archived=True)
     obj = next((o for o in objects if o['id'] == obj_id), None)
     if not obj:
         raise HTTPException(404, "Объект не найден")
 
-    # Get current KP plan and catalog
     current_plan = await db.get_object_kp_plan(obj_id)
-    current_kp_ids = {p['id'] for p in current_plan}  # kp_catalog IDs in plan
+    current_kp_ids = {p['id'] for p in current_plan}
     catalog = await db.get_kp_catalog()
 
-    # Match parsed works to catalog
     new_works = []
     unmatched = []
     for work in parsed.get("works", []):
@@ -260,7 +276,6 @@ async def api_import_smr_from_pdf(obj_id: int, file: UploadFile = File(...)):
 
     new_kp_ids = {w["kp_id"] for w in new_works}
 
-    # Find works to remove
     to_remove = []
     for p in current_plan:
         if p['id'] not in new_kp_ids:
@@ -275,7 +290,6 @@ async def api_import_smr_from_pdf(obj_id: int, file: UploadFile = File(...)):
                 has_history = False
             to_remove.append({"kp_id": p['id'], "name": p.get("name", "?"), "has_history": has_history})
 
-    # Check for incomplete data (zero/missing volumes)
     warnings = list(parsed.get("errors", []))
     incomplete = [w.get("name", "?") for w in parsed.get("works", []) if not w.get("volume")]
     if incomplete:
@@ -298,9 +312,8 @@ async def api_import_smr_from_pdf(obj_id: int, file: UploadFile = File(...)):
 
 
 @router.post("/api/objects/{obj_id}/smr/confirm")
-async def api_confirm_smr_import(obj_id: int, request: Request):
-    """Apply SMR import: add new works, remove deselected (preserve application_kp history)."""
-    if db.conn is None: await db.init_db()
+async def api_confirm_smr_import(obj_id: int, request: Request, current_user=Depends(_require_office)):
+    """Apply SMR import: add new works, remove deselected."""
     data = await request.json()
     add_ids = data.get("add_kp_ids", [])
     remove_ids = data.get("remove_kp_ids", [])
@@ -328,118 +341,162 @@ async def api_confirm_smr_import(obj_id: int, request: Request):
             r = await c.fetchone()
             if r: _obj_name = r[0]
     except Exception: pass
-    _uid, _fio = 0, "Система"
-    _tg_id = data.get("tg_id", 0)
-    if _tg_id:
-        _rid = await resolve_id(_tg_id)
-        _u = await db.get_user(_rid)
-        if _u: _uid, _fio = _rid, dict(_u).get('fio', 'Система')
-    await db.add_log(_uid, _fio, f"Импорт СМР из PDF для «{_obj_name}»: +{len(add_ids)} / -{len(remove_ids)}", target_type='object', target_id=obj_id)
+    await db.add_log(current_user["tg_id"], current_user.get('fio', 'Система'),
+                     f"Импорт СМР из PDF для «{_obj_name}»: +{len(add_ids)} / -{len(remove_ids)}",
+                     target_type='object', target_id=obj_id)
     return {"status": "ok", "added": len(add_ids), "removed": len(remove_ids)}
 
 
-# ==========================================
-# ФАЙЛЫ ОБЪЕКТА
-# ==========================================
-
-@router.get("/api/objects/{obj_id}/files")
-async def api_get_object_files(obj_id: int):
-    if db.conn is None: await db.init_db()
-    return await db.get_object_files(obj_id)
+# ── Object files ─────────────────────────────────────────────
 
 ALLOWED_EXTENSIONS = {'.pdf', '.png', '.jpg', '.jpeg', '.gif', '.xlsx', '.xls', '.csv', '.doc', '.docx', '.dwg', '.zip'}
 
 
+@router.get("/api/objects/{obj_id}/files")
+async def api_get_object_files(obj_id: int, current_user=Depends(get_current_user)):
+    return await db.get_object_files(obj_id)
+
+
+@router.get("/api/files/{file_id}/download")
+async def api_download_file(file_id: int, current_user=Depends(get_current_user)):
+    """C-08 fix: authenticated file download with path-traversal safety."""
+    async with db.conn.execute(
+        "SELECT object_id, file_path, original_name FROM object_files WHERE id = ?", (file_id,)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Файл не найден")
+
+    obj_id = row[0]
+    file_path_str = row[1] or ""
+    original_name = row[2] or ""
+
+    # Path traversal safety — resolve inside data/ and verify
+    try:
+        # file_path in DB looks like "/uploads/objects/3/abc.pdf"
+        clean_rel = file_path_str.lstrip("/")
+        if clean_rel.startswith("uploads/"):
+            resolved = (Path("data") / clean_rel).resolve()
+        else:
+            resolved = (Path("data/uploads") / clean_rel).resolve()
+        resolved.relative_to(UPLOADS_ROOT)  # ValueError if outside
+    except (ValueError, OSError):
+        raise HTTPException(403, "Недопустимый путь файла")
+
+    if not resolved.is_file():
+        raise HTTPException(404, "Файл отсутствует на диске")
+
+    return FileResponse(
+        path=str(resolved),
+        filename=original_name or resolved.name,
+        media_type="application/octet-stream",
+    )
+
+
 @router.post("/api/objects/{obj_id}/files/upload")
-async def api_upload_object_files(obj_id: int, files: List[UploadFile] = File(...)):
-    if db.conn is None: await db.init_db()
-    upload_dir = os.path.join("data", "uploads", "objects", str(obj_id))
-    os.makedirs(upload_dir, exist_ok=True)
+async def api_upload_object_files(obj_id: int, files: List[UploadFile] = File(...),
+                                  current_user=Depends(_require_office)):
+    """H-08 fix: sanitized filenames with UUID prefix."""
+    object_dir = UPLOADS_ROOT / "objects" / str(obj_id)
+    object_dir.mkdir(parents=True, exist_ok=True)
     saved = []
     for f in files:
         ext = os.path.splitext(f.filename or '')[1].lower()
         if ext not in ALLOWED_EXTENSIONS:
             continue
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        safe_name = f"{ts}_{f.filename}"
-        dest = os.path.join(upload_dir, safe_name)
         content = await f.read()
+        if len(content) > 25 * 1024 * 1024:
+            continue  # skip oversized files silently
+
+        orig_name = f.filename or "upload"
+        clean = _safe_filename(orig_name)
+        stored_name = f"{uuid.uuid4().hex[:12]}_{clean}"
+        dest = object_dir / stored_name
+
+        # Path safety check
+        try:
+            dest.resolve().relative_to(UPLOADS_ROOT)
+        except ValueError:
+            continue
+
         with open(dest, "wb") as out:
             out.write(content)
-        rel_path = f"/uploads/objects/{obj_id}/{safe_name}"
-        await db.add_object_file(obj_id, rel_path, original_name=f.filename or '', file_size=len(content))
+        rel_path = f"/uploads/objects/{obj_id}/{stored_name}"
+        await db.add_object_file(obj_id, rel_path, original_name=orig_name, file_size=len(content))
         saved.append(rel_path)
     return {"status": "ok", "files": saved}
 
-@router.post("/api/objects/{obj_id}/upload_pdf")
-async def api_upload_object_pdf(obj_id: int, file: UploadFile = File(...), tg_id: int = Form(0)):
-    """Загружает основную смету (PDF) для объекта."""
-    if db.conn is None: await db.init_db()
-    if tg_id:
-        from utils import resolve_id
-        real_tg_id = await resolve_id(tg_id)
-        user = await db.get_user(real_tg_id)
-        if not user or dict(user).get('role') not in ('moderator', 'boss', 'superadmin'):
-            raise HTTPException(403, "Нет прав для загрузки сметы")
 
+@router.post("/api/objects/{obj_id}/upload_pdf")
+async def api_upload_object_pdf(obj_id: int, file: UploadFile = File(...),
+                                current_user=Depends(_require_office)):
+    """Upload main estimate PDF for object. H-08 fix: safe filename."""
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(400, "Файл должен быть в формате PDF")
 
-    upload_dir = os.path.join("data", "uploads", "objects", str(obj_id))
-    os.makedirs(upload_dir, exist_ok=True)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    safe_name = f"{ts}_{file.filename}"
-    dest = os.path.join(upload_dir, safe_name)
     content = await file.read()
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(413, "Файл слишком большой (максимум 25MB)")
+
+    orig_name = file.filename or "estimate.pdf"
+    clean = _safe_filename(orig_name)
+    stored_name = f"{uuid.uuid4().hex[:12]}_{clean}"
+
+    object_dir = UPLOADS_ROOT / "objects" / str(obj_id)
+    object_dir.mkdir(parents=True, exist_ok=True)
+    dest = object_dir / stored_name
+
+    try:
+        dest.resolve().relative_to(UPLOADS_ROOT)
+    except ValueError:
+        raise HTTPException(400, "Недопустимое имя файла")
+
     with open(dest, "wb") as out:
         out.write(content)
 
-    rel_path = f"/uploads/objects/{obj_id}/{safe_name}"
+    rel_path = f"/uploads/objects/{obj_id}/{stored_name}"
     await db.conn.execute("UPDATE objects SET pdf_file_path = ? WHERE id = ?", (rel_path, obj_id))
-    # Also add to object_files so it appears in the files list
     try:
         async with db.conn.execute("SELECT id FROM object_files WHERE object_id = ? AND file_path = ?", (obj_id, rel_path)) as cur:
             if not await cur.fetchone():
                 await db.conn.execute(
                     "INSERT INTO object_files (object_id, file_path, original_name, file_size) VALUES (?, ?, ?, ?)",
-                    (obj_id, rel_path, f"Смета КП — {file.filename}", len(content))
+                    (obj_id, rel_path, f"Смета КП — {orig_name}", len(content))
                 )
     except Exception:
         pass
     await db.conn.commit()
-    if tg_id:
-        user = await db.get_user(real_tg_id)
-        fio = dict(user).get('fio', '') if user else ''
-        _pname = f"#{obj_id}"
-        try:
-            async with db.conn.execute("SELECT name FROM objects WHERE id = ?", (obj_id,)) as _c:
-                _pr = await _c.fetchone()
-                if _pr: _pname = _pr[0]
-        except Exception: pass
-        await db.add_log(real_tg_id, fio, f"Загрузил PDF для объекта «{_pname}»", target_type='object', target_id=obj_id)
+
+    fio = current_user.get('fio', '')
+    _pname = f"#{obj_id}"
+    try:
+        async with db.conn.execute("SELECT name FROM objects WHERE id = ?", (obj_id,)) as _c:
+            _pr = await _c.fetchone()
+            if _pr: _pname = _pr[0]
+    except Exception: pass
+    await db.add_log(current_user["tg_id"], fio, f"Загрузил PDF для объекта «{_pname}»", target_type='object', target_id=obj_id)
     return {"status": "ok", "pdf_file_path": rel_path}
 
 
 @router.post("/api/objects/files/{file_id}/rename")
-async def api_rename_object_file(file_id: int, new_name: str = Form(...)):
-    """Rename a file (updates original_name in DB only, not the filesystem)."""
-    if db.conn is None: await db.init_db()
+async def api_rename_object_file(file_id: int, new_name: str = Form(...),
+                                 current_user=Depends(_require_office)):
+    """Rename a file (updates original_name in DB only)."""
     try:
-        await db.conn.execute("UPDATE object_files SET original_name = ? WHERE id = ?", (new_name.strip(), file_id))
+        await db.conn.execute("UPDATE object_files SET original_name = ? WHERE id = ?", (new_name.strip()[:200], file_id))
         await db.conn.commit()
         return {"status": "ok"}
-    except Exception as e:
-        raise HTTPException(500, str(e))
+    except Exception:
+        raise HTTPException(500, "Ошибка переименования")
 
 
 @router.delete("/api/objects/files/{file_id}")
-async def api_delete_object_file(file_id: int):
-    if db.conn is None: await db.init_db()
-    # Get file info before deleting
+async def api_delete_object_file(file_id: int, current_user=Depends(_require_office)):
+    """C-09 fix: file delete requires office role + audit log."""
     obj_id = None
     file_path = None
     try:
-        async with db.conn.execute("SELECT object_id, file_path FROM object_files WHERE id = ?", (file_id,)) as cur:
+        async with db.conn.execute("SELECT object_id, file_path, original_name FROM object_files WHERE id = ?", (file_id,)) as cur:
             row = await cur.fetchone()
             if row:
                 obj_id = row[0]
@@ -460,33 +517,44 @@ async def api_delete_object_file(file_id: int):
         except Exception:
             pass
 
-    # Delete physical file
+    # Delete physical file with path safety
     effective_path = path or file_path
     if effective_path:
         try:
-            real = os.path.join("data", effective_path.lstrip("/"))
-            if os.path.exists(real):
-                os.remove(real)
-        except Exception:
+            real = Path("data") / effective_path.lstrip("/")
+            resolved = real.resolve()
+            resolved.relative_to(UPLOADS_ROOT)  # safety check
+            if resolved.is_file():
+                os.remove(resolved)
+        except (ValueError, OSError):
             pass
+
+    await db.add_log(current_user["tg_id"], current_user.get("fio", "Система"),
+                     f"Удалил файл #{file_id}" + (f" объекта #{obj_id}" if obj_id else ""),
+                     target_type='object', target_id=obj_id or 0)
     return {"status": "ok"}
 
-# ==========================================
-# СТАТИСТИКА ОБЪЕКТА
-# ==========================================
 
-# ==========================================
-# ЗАПРОСЫ НА СОЗДАНИЕ ОБЪЕКТОВ (FOREMAN -> MODERATOR)
-# ==========================================
+# ── Object stats ─────────────────────────────────────────────
+
+@router.get("/api/objects/{obj_id}/stats")
+async def api_get_object_stats(obj_id: int, current_user=Depends(get_current_user)):
+    progress = await db.get_object_stats(obj_id)
+    history = await db.get_object_history(obj_id)
+    objects = await db.get_objects(include_archived=True)
+    obj_data = next((o for o in objects if o['id'] == obj_id), None)
+    created_at = obj_data.get('created_at', '') if obj_data else ''
+    return {"progress": progress, "history": history, "created_at": created_at}
+
+
+# ── Object requests (foreman → moderator) ────────────────────
 
 @router.post("/api/object_requests/create")
-async def api_create_object_request(name: str = Form(...), address: str = Form(""), comment: str = Form(""), tg_id: int = Form(0)):
-    """Прораб запрашивает создание нового объекта."""
-    if db.conn is None: await db.init_db()
-    from utils import resolve_id
-    real_tg_id = await resolve_id(tg_id)
-    user = await db.get_user(real_tg_id)
-    fio = dict(user).get('fio', 'Пользователь') if user else 'Пользователь'
+async def api_create_object_request(name: str = Form(...), address: str = Form(""), comment: str = Form(""),
+                                    current_user=Depends(get_current_user)):
+    """Foreman requests creation of a new object."""
+    real_tg_id = current_user["tg_id"]
+    fio = current_user.get('fio', 'Пользователь')
 
     await db.conn.execute(
         "INSERT INTO object_requests (name, address, comment, requested_by, requested_by_name) VALUES (?, ?, ?, ?, ?)",
@@ -506,9 +574,8 @@ async def api_create_object_request(name: str = Form(...), address: str = Form("
 
 
 @router.get("/api/object_requests")
-async def api_get_object_requests(status: str = "pending"):
-    """Получить список запросов на объекты."""
-    if db.conn is None: await db.init_db()
+async def api_get_object_requests(status: str = "pending", current_user=Depends(_require_office)):
+    """List object requests. Office only."""
     async with db.conn.execute(
         "SELECT * FROM object_requests WHERE status = ? ORDER BY created_at DESC", (status,)
     ) as cur:
@@ -516,22 +583,15 @@ async def api_get_object_requests(status: str = "pending"):
 
 
 @router.post("/api/object_requests/{req_id}/review")
-async def api_review_object_request(req_id: int, request: Request):
-    """Модератор одобряет или отклоняет запрос на объект. Approve accepts JSON with full object data + KP."""
-    if db.conn is None: await db.init_db()
-    from utils import resolve_id
+async def api_review_object_request(req_id: int, request: Request, current_user=Depends(_require_office)):
+    """Moderator approves or rejects object request."""
     from services.notifications import notify_users
     import asyncio
 
     data = await request.json()
     action = data.get("action", "")
-    tg_id = data.get("tg_id", 0)
-
-    real_tg_id = await resolve_id(tg_id)
-    user = await db.get_user(real_tg_id)
-    if not user or dict(user).get('role') not in ('moderator', 'boss', 'superadmin'):
-        raise HTTPException(403, "Нет прав")
-    mod_fio = dict(user).get('fio', 'Модератор')
+    mod_fio = current_user.get('fio', 'Модератор')
+    real_tg_id = current_user["tg_id"]
 
     async with db.conn.execute("SELECT * FROM object_requests WHERE id = ?", (req_id,)) as cur:
         req_row = await cur.fetchone()
@@ -577,44 +637,29 @@ async def api_review_object_request(req_id: int, request: Request):
     return {"status": "ok"}
 
 
-# ==========================================
-# ДОПОЛНИТЕЛЬНЫЕ РАБОТЫ
-# ==========================================
+# ── Extra works ──────────────────────────────────────────────
 
 @router.get("/api/extra_works/catalog")
-async def api_get_extra_works_catalog():
-    """Получить справочник дополнительных работ."""
-    if db.conn is None: await db.init_db()
+async def api_get_extra_works_catalog(current_user=Depends(get_current_user)):
     async with db.conn.execute("SELECT * FROM extra_works_catalog ORDER BY name") as cur:
         return [dict(row) for row in await cur.fetchall()]
 
 
 @router.post("/api/extra_works/catalog/create")
-async def api_create_extra_work(name: str = Form(...), unit: str = Form("шт"), salary: float = Form(0), price: float = Form(0), tg_id: int = Form(0)):
-    """Добавить позицию в справочник дополнительных работ (модератор+)."""
-    if db.conn is None: await db.init_db()
-    if tg_id:
-        from utils import resolve_id
-        real_tg_id = await resolve_id(tg_id)
-        user = await db.get_user(real_tg_id)
-        if not user or dict(user).get('role') not in ('moderator', 'boss', 'superadmin'):
-            raise HTTPException(403, "Нет прав")
+async def api_create_extra_work(name: str = Form(...), unit: str = Form("шт"),
+                                salary: float = Form(0), price: float = Form(0),
+                                current_user=Depends(_require_office)):
     await db.conn.execute(
         "INSERT INTO extra_works_catalog (name, unit, salary, price) VALUES (?, ?, ?, ?)",
         (name, unit, salary, price)
     )
     await db.conn.commit()
-    if tg_id:
-        user = await db.get_user(real_tg_id)
-        fio = dict(user).get('fio', '') if user else ''
-        await db.add_log(real_tg_id, fio, f"Добавил доп. работу: {name}", target_type='object')
+    await db.add_log(current_user["tg_id"], current_user.get('fio', ''), f"Добавил доп. работу: {name}", target_type='object')
     return {"status": "ok"}
 
 
 @router.get("/api/kp/apps/{app_id}/extra_works")
-async def api_get_app_extra_works(app_id: int, tg_id: int = 0):
-    """Получить доп. работы заявки."""
-    if db.conn is None: await db.init_db()
+async def api_get_app_extra_works(app_id: int, current_user=Depends(get_current_user)):
     async with db.conn.execute("""
         SELECT aew.*, ewc.name as catalog_name, ewc.unit as catalog_unit
         FROM application_extra_works aew
@@ -624,23 +669,16 @@ async def api_get_app_extra_works(app_id: int, tg_id: int = 0):
     """, (app_id,)) as cur:
         items = [dict(row) for row in await cur.fetchall()]
 
-    # Strip financial data for non-office roles
-    if tg_id:
-        from utils import resolve_id
-        real_tg_id = await resolve_id(tg_id)
-        user = await db.get_user(real_tg_id)
-        role = dict(user).get('role', 'worker') if user else 'worker'
-        if role not in ('moderator', 'boss', 'superadmin'):
-            for item in items:
-                item.pop('salary', None)
-                item.pop('price', None)
+    role = current_user.get('role', 'worker')
+    if role not in ('moderator', 'boss', 'superadmin'):
+        for item in items:
+            item.pop('salary', None)
+            item.pop('price', None)
     return items
 
 
 @router.post("/api/kp/apps/{app_id}/extra_works/submit")
-async def api_submit_app_extra_works(app_id: int, request: Request):
-    """Сохранить доп. работы заявки."""
-    if db.conn is None: await db.init_db()
+async def api_submit_app_extra_works(app_id: int, request: Request, current_user=Depends(get_current_user)):
     data = await request.json()
     items = data.get('items', [])
 
@@ -660,15 +698,3 @@ async def api_submit_app_extra_works(app_id: int, request: Request):
             ))
     await db.conn.commit()
     return {"status": "ok"}
-
-
-@router.get("/api/objects/{obj_id}/stats")
-async def api_get_object_stats(obj_id: int):
-    if db.conn is None: await db.init_db()
-    progress = await db.get_object_stats(obj_id)
-    history = await db.get_object_history(obj_id)
-    # Get object creation date
-    objects = await db.get_objects(include_archived=True)
-    obj_data = next((o for o in objects if o['id'] == obj_id), None)
-    created_at = obj_data.get('created_at', '') if obj_data else ''
-    return {"progress": progress, "history": history, "created_at": created_at}

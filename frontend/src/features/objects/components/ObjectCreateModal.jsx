@@ -78,7 +78,6 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
             if (isRequestMode) {
                 await axios.post(`/api/object_requests/${requestData.id}/review`, {
                     action: 'approve',
-                    tg_id: parseInt(tgId),
                     name: newObj.name,
                     address: newObj.address,
                     kp_ids: selectedKp,
@@ -90,7 +89,6 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
                 await axios.post('/api/objects/create', {
                     name: newObj.name,
                     address: newObj.address,
-                    tg_id: parseInt(tgId),
                     kp_ids: selectedKp,
                     target_volumes: targetVolumes,
                 });
