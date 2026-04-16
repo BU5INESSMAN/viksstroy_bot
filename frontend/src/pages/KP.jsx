@@ -7,6 +7,7 @@ import {
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive
 } from 'lucide-react';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
+import TabBadge from '../components/ui/TabBadge';
 
 export default function KP() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -216,10 +217,32 @@ export default function KP() {
                 )}
             </div>
 
-            <div className="flex bg-gray-100 dark:bg-gray-800 rounded-2xl p-1.5 overflow-x-auto custom-scrollbar" data-tour="kp-tabs">
-                <button onClick={() => setActiveTab('to_fill')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'to_fill' ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>К заполнению ({data.to_fill.length})</button>
-                {(isForemanOrBrigadier || isOffice) && <button onClick={() => setActiveTab('pending_review')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'pending_review' ? 'bg-white dark:bg-gray-700 text-yellow-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>На проверку ({data.pending_review.length})</button>}
-                {(isForemanOrBrigadier || isOffice) && <button onClick={() => setActiveTab('approved')} className={`flex-1 min-w-[120px] py-3 rounded-xl text-sm font-bold transition-colors ${activeTab === 'approved' ? 'bg-white dark:bg-gray-700 text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}>Готовые ({data.approved.length})</button>}
+            <div className="flex bg-gray-100 dark:bg-gray-800 rounded-2xl p-1.5 overflow-x-auto custom-scrollbar gap-1" data-tour="kp-tabs">
+                <button
+                    onClick={() => setActiveTab('to_fill')}
+                    className={`relative flex-1 min-w-[100px] py-3 px-3 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'to_fill' ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                >
+                    К заполнению
+                    <TabBadge count={data.to_fill.length} active={activeTab === 'to_fill'} />
+                </button>
+                {(isForemanOrBrigadier || isOffice) && (
+                    <button
+                        onClick={() => setActiveTab('pending_review')}
+                        className={`relative flex-1 min-w-[100px] py-3 px-3 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'pending_review' ? 'bg-white dark:bg-gray-700 text-yellow-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        На проверку
+                        <TabBadge count={data.pending_review.length} active={activeTab === 'pending_review'} />
+                    </button>
+                )}
+                {(isForemanOrBrigadier || isOffice) && (
+                    <button
+                        onClick={() => setActiveTab('approved')}
+                        className={`relative flex-1 min-w-[100px] py-3 px-3 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'approved' ? 'bg-white dark:bg-gray-700 text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        Готовые
+                        <TabBadge count={data.approved.length} active={activeTab === 'approved'} />
+                    </button>
+                )}
             </div>
 
             {activeTab === 'approved' && isOffice && data.approved.length > 0 && (
