@@ -1,6 +1,16 @@
 import { useState } from 'react';
 import { X, BarChart3, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 
+/** Render a catalog unit string safely. Hides empties and purely
+ *  numeric values (catalog sometimes has stray numbers in the unit
+ *  column — we defend against that). */
+function formatUnit(raw) {
+    const s = (raw || '').toString().trim();
+    if (!s) return '—';
+    if (!Number.isNaN(Number(s.replace(',', '.')))) return '—';
+    return s;
+}
+
 export default function ObjectStatsModal({ statsObj, statsData, statsLoading, onClose }) {
     const [expandedDates, setExpandedDates] = useState({});
 
@@ -74,8 +84,8 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                                                 {p.category}
                                                             </p>
                                                         </div>
-                                                        <span className="text-xs text-gray-400 text-center">
-                                                            {p.unit && isNaN(p.unit) ? p.unit : '—'}
+                                                        <span className="text-xs text-gray-400 text-center whitespace-nowrap">
+                                                            {formatUnit(p.unit)}
                                                         </span>
                                                         <span className="text-sm font-bold text-right text-gray-800 dark:text-gray-200">
                                                             {p.completed_volume}
@@ -146,12 +156,13 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                                                         className="flex justify-between px-4 py-2 text-sm"
                                                                     >
                                                                         <span className="text-gray-700 dark:text-gray-300">
-                                                                            {h.name}{' '}
-                                                                            {h.unit && isNaN(h.unit) && (
-                                                                                <span className="text-gray-400 text-xs">
-                                                                                    ({h.unit})
-                                                                                </span>
-                                                                            )}
+                                                                            {h.name}
+                                                                            {(() => {
+                                                                                const u = formatUnit(h.unit);
+                                                                                return u && u !== '—' ? (
+                                                                                    <span className="text-gray-400 text-xs ml-1">({u})</span>
+                                                                                ) : null;
+                                                                            })()}
                                                                         </span>
                                                                         <span className="font-bold text-gray-800 dark:text-gray-200">
                                                                             {h.volume}

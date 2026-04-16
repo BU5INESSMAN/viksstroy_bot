@@ -117,6 +117,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.migrate_estimate_pdfs_to_files()
         await self.upgrade_db_for_user_fio_split()
         await self.upgrade_db_for_icon_settings()
+        await self.upgrade_db_for_smr_units()
 
         # Employee status columns on team_members
         for col_stmt in [
@@ -364,6 +365,57 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             ON user_notifications(user_id, is_read, created_at DESC)
         """)
         await self.conn.commit()
+
+    async def upgrade_db_for_smr_units(self):
+        """Stage 10: denormalize `unit` onto object_kp_plan + application_kp
+        so that UI reads don't require a JOIN and legacy rows keep their
+        unit even if the catalog entry is later edited. Idempotent — the
+        backfill only touches rows whose unit is empty/NULL."""
+        for col_stmt in [
+            "ALTER TABLE object_kp_plan ADD COLUMN unit TEXT DEFAULT ''",
+            "ALTER TABLE application_kp ADD COLUMN unit TEXT DEFAULT ''",
+        ]:
+            try:
+                await self.conn.execute(col_stmt)
+            except Exception:
+                pass
+        await self.conn.commit()
+
+        # Backfill object_kp_plan from kp_catalog via the kp_id FK
+        try:
+            cur = await self.conn.execute(
+                """UPDATE object_kp_plan
+                   SET unit = COALESCE(
+                       (SELECT kc.unit FROM kp_catalog kc WHERE kc.id = object_kp_plan.kp_id),
+                       ''
+                   )
+                   WHERE (unit IS NULL OR unit = '')
+                     AND kp_id IS NOT NULL"""
+            )
+            plan_n = cur.rowcount if cur.rowcount is not None else 0
+            await self.conn.commit()
+            if plan_n:
+                logging.info(f"SMR units migration: backfilled {plan_n} rows in object_kp_plan")
+        except Exception as e:
+            logging.error(f"SMR units migration (object_kp_plan) failed: {e}")
+
+        # Backfill application_kp the same way
+        try:
+            cur = await self.conn.execute(
+                """UPDATE application_kp
+                   SET unit = COALESCE(
+                       (SELECT kc.unit FROM kp_catalog kc WHERE kc.id = application_kp.kp_id),
+                       ''
+                   )
+                   WHERE (unit IS NULL OR unit = '')
+                     AND kp_id IS NOT NULL"""
+            )
+            app_n = cur.rowcount if cur.rowcount is not None else 0
+            await self.conn.commit()
+            if app_n:
+                logging.info(f"SMR units migration: backfilled {app_n} rows in application_kp")
+        except Exception as e:
+            logging.error(f"SMR units migration (application_kp) failed: {e}")
 
     async def upgrade_db_for_icon_settings(self):
         """Stage 6: icon column on teams + equipment_category_settings table."""

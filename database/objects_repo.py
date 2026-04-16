@@ -51,15 +51,31 @@ class ObjectsRepoMixin:
             return [dict(row) for row in await cur.fetchall()]
 
     async def add_kp_to_object(self, object_id: int, kp_ids: list, target_volumes: dict = None):
-        """Полностью перезаписывает план КП для объекта с плановыми объемами"""
+        """Полностью перезаписывает план КП для объекта с плановыми объемами.
+
+        Копирует unit из kp_catalog в момент вставки, чтобы строка плана
+        сохраняла единицу измерения даже если справочник позже изменится.
+        """
         if target_volumes is None:
             target_volumes = {}
+
+        # Batch-lookup units for the given kp_ids
+        units: dict[int, str] = {}
+        if kp_ids:
+            pl = ",".join("?" * len(kp_ids))
+            async with self.conn.execute(
+                f"SELECT id, unit FROM kp_catalog WHERE id IN ({pl})", list(kp_ids)
+            ) as cur:
+                for r in await cur.fetchall():
+                    units[int(r[0])] = (r[1] or '').strip()
+
         await self.conn.execute("DELETE FROM object_kp_plan WHERE object_id = ?", (object_id,))
         for kp_id in kp_ids:
             tv = target_volumes.get(str(kp_id), 0)
+            unit = units.get(int(kp_id), '')
             await self.conn.execute(
-                "INSERT INTO object_kp_plan (object_id, kp_id, target_volume) VALUES (?, ?, ?)",
-                (object_id, kp_id, tv)
+                "INSERT INTO object_kp_plan (object_id, kp_id, target_volume, unit) VALUES (?, ?, ?, ?)",
+                (object_id, kp_id, tv, unit)
             )
         await self.conn.commit()
 
@@ -95,8 +111,11 @@ class ObjectsRepoMixin:
 
     async def get_object_stats(self, object_id: int):
         """Возвращает сводную статистику: план vs факт по каждому виду работ"""
+        # Stage 10: unit prefers the denormalized plan.unit, falls back to
+        # catalog when the plan row's unit is still empty.
         query = """
-            SELECT k.id as kp_id, k.category, k.name, k.unit,
+            SELECT k.id as kp_id, k.category, k.name,
+                   COALESCE(NULLIF(TRIM(okp.unit), ''), k.unit, '') as unit,
                    okp.target_volume,
                    COALESCE(SUM(akp.volume), 0) as completed_volume
             FROM object_kp_plan okp

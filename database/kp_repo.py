@@ -70,13 +70,26 @@ class KpRepoMixin:
             return [dict(row) for row in await cur.fetchall()]
 
     async def submit_kp_report(self, app_id: int, items: list, role: str):
+        # Batch-lookup units from kp_catalog by kp_id so the denormalized
+        # unit column stays in sync with the catalog at insertion time.
+        kp_ids = [int(i['kp_id']) for i in items if int(i.get('kp_id') or 0) > 0]
+        units: dict[int, str] = {}
+        if kp_ids:
+            pl = ",".join("?" * len(kp_ids))
+            async with self.conn.execute(
+                f"SELECT id, unit FROM kp_catalog WHERE id IN ({pl})", kp_ids
+            ) as cur:
+                for r in await cur.fetchall():
+                    units[int(r[0])] = (r[1] or '').strip()
+
         await self.conn.execute("DELETE FROM application_kp WHERE application_id = ?", (app_id,))
         for item in items:
             if float(item['volume']) > 0:
+                unit = units.get(int(item['kp_id']), '')
                 await self.conn.execute("""
-                                        INSERT INTO application_kp (application_id, kp_id, volume, current_salary, current_price)
-                                        VALUES (?, ?, ?, ?, ?)
-                                        """, (app_id, item['kp_id'], item['volume'], item['salary'], item['price']))
+                                        INSERT INTO application_kp (application_id, kp_id, volume, unit, current_salary, current_price)
+                                        VALUES (?, ?, ?, ?, ?, ?)
+                                        """, (app_id, item['kp_id'], item['volume'], unit, item['salary'], item['price']))
 
         new_status = 'approved' if role in ['foreman', 'moderator', 'boss', 'superadmin'] else 'submitted'
         await self.conn.execute("UPDATE applications SET kp_status = ? WHERE id = ?", (new_status, app_id))

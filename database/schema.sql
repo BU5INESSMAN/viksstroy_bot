@@ -194,6 +194,7 @@ CREATE TABLE IF NOT EXISTS object_kp_plan (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     object_id INTEGER,
     kp_id INTEGER,
+    unit TEXT DEFAULT '',
     FOREIGN KEY (object_id) REFERENCES objects(id),
     FOREIGN KEY (kp_id) REFERENCES kp_catalog(id)
 );
@@ -213,6 +214,7 @@ CREATE TABLE IF NOT EXISTS application_kp (
     application_id INTEGER,
     kp_id INTEGER,
     volume REAL DEFAULT 0,
+    unit TEXT DEFAULT '',
     current_salary REAL,
     current_price REAL,
     status TEXT DEFAULT 'pending',

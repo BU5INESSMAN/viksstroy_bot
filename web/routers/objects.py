@@ -325,7 +325,17 @@ async def api_confirm_smr_import(obj_id: int, request: Request, current_user=Dep
             async with db.conn.execute("SELECT id FROM object_kp_plan WHERE object_id = ? AND kp_id = ?", (obj_id, kp_id)) as cur:
                 if not await cur.fetchone():
                     vol = volumes.get(str(kp_id), 0)
-                    await db.conn.execute("INSERT INTO object_kp_plan (object_id, kp_id, target_volume) VALUES (?, ?, ?)", (obj_id, kp_id, vol))
+                    # Copy unit from the catalog entry so the plan row stays
+                    # self-contained after import.
+                    async with db.conn.execute(
+                        "SELECT unit FROM kp_catalog WHERE id = ?", (kp_id,)
+                    ) as uc:
+                        u_row = await uc.fetchone()
+                    unit = (u_row[0] or '').strip() if u_row else ''
+                    await db.conn.execute(
+                        "INSERT INTO object_kp_plan (object_id, kp_id, target_volume, unit) VALUES (?, ?, ?, ?)",
+                        (obj_id, kp_id, vol, unit),
+                    )
         except Exception:
             pass
 
