@@ -25,8 +25,11 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
     return (
         <>
-            <div className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 z-40 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors h-[60px] sm:h-[68px]">
-            <div className="max-w-5xl mx-auto flex justify-around items-end h-full pt-2 pb-safe px-1 sm:px-4">
+            <div
+                className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 z-40 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors"
+                style={{ height: 'calc(80px + env(safe-area-inset-bottom))', paddingBottom: 'env(safe-area-inset-bottom)' }}
+            >
+            <div className="max-w-5xl mx-auto flex justify-around items-stretch h-full px-1 sm:px-4">
 
                 <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} dataTour="bottomnav-home" />
 
@@ -39,17 +42,17 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                 )}
 
                 {canCreateApp && (
-                    <div className="relative w-full flex flex-col justify-center items-center sm:justify-end sm:pb-2 h-full" data-tour="bottomnav-create">
+                    <div className="relative flex flex-col items-center justify-center h-full flex-1" data-tour="bottomnav-create">
                         <motion.button
                             onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
-                            className="absolute -top-4 sm:-top-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center shadow-[0_8px_20px_-6px_rgba(37,99,235,0.5)] border-[3px] border-white dark:border-gray-800 transition-colors z-50"
+                            className="absolute -top-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-[0_10px_24px_-8px_rgba(37,99,235,0.55)] border-[3px] border-white dark:border-gray-800 transition-colors z-50"
                             whileHover={prefersReducedMotion ? {} : { scale: 1.05 }}
                             whileTap={prefersReducedMotion ? {} : { scale: 0.92 }}
                             transition={{ duration: 0.15 }}
                         >
-                            <Plus className="w-5 h-5 sm:w-6 sm:h-6" strokeWidth={2.5} />
+                            <Plus className="w-7 h-7" strokeWidth={2.5} />
                         </motion.button>
-                        <span className="hidden sm:block text-[10px] font-extrabold text-blue-600 dark:text-blue-400 uppercase tracking-wide mt-6 sm:mt-0">Создать</span>
+                        <span className="hidden sm:block text-[11px] font-extrabold text-blue-600 dark:text-blue-400 uppercase tracking-wide mt-9">Создать</span>
                     </div>
                 )}
 
@@ -65,16 +68,17 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                     <NavBtn icon={FileText} label="СМР" path="/kp" current={location.pathname} onClick={() => navigate('/kp')} />
                 )}
 
-                {/* Stage 5: Settings (all roles) + Admin (boss+) */}
-                <NavBtn icon={SettingsIcon} label="Настройки" path="/settings" current={location.pathname} onClick={() => navigate('/settings')} />
+                {/* Stage 7: Settings + Admin moved to Sidebar (burger menu)
+                    to keep BottomNav compact. The burger below opens the
+                    sidebar where both items live. */}
 
-                {canSeeAdmin && (
-                    <NavBtn icon={ShieldAlert} label="Админка" path="/admin" current={location.pathname} onClick={() => navigate('/admin')} />
-                )}
-
-                <button data-tour="bottomnav-menu" onClick={() => setIsMenuOpen(true)} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2 h-full w-full transition-all active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
-                    <Menu className="w-5 h-5 sm:w-5 sm:h-5 sm:mb-1" strokeWidth={2.5} />
-                    <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">Меню</span>
+                <button
+                    data-tour="bottomnav-menu"
+                    onClick={() => setIsMenuOpen(true)}
+                    className={`flex flex-col items-center justify-center gap-1 h-full flex-1 min-w-[44px] transition-colors active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+                >
+                    <Menu className="w-7 h-7" strokeWidth={2.4} />
+                    <span className="hidden sm:block text-[11px] font-extrabold uppercase tracking-wide">Меню</span>
                 </button>
 
             </div>
@@ -108,6 +112,10 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
                         {/* Main items — full width */}
                         <div className="space-y-2 mb-4">
+                            <MenuRow icon={SettingsIcon} color="blue" label="Настройки" onClick={() => { setIsMenuOpen(false); navigate('/settings'); }} />
+                            {canSeeAdmin && (
+                                <MenuRow icon={ShieldAlert} color="indigo" label="Админка" onClick={() => { setIsMenuOpen(false); navigate('/admin'); }} />
+                            )}
                             <MenuRow icon={User} color="indigo" label="Мой Профиль" onClick={() => { setIsMenuOpen(false); openProfile(tgId); }} />
                         </div>
 
@@ -162,14 +170,26 @@ function GridItem({ icon: Icon, color, label, onClick }) {
 function NavBtn({ icon: Icon, label, path, current, onClick, dataTour }) {
     const isActive = current === path;
     return (
-        <button onClick={onClick} data-tour={dataTour} className={`flex flex-col items-center justify-center sm:justify-end sm:pb-2 h-full w-full transition-all active:scale-95 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}>
+        <button
+            onClick={onClick}
+            data-tour={dataTour}
+            className={`relative flex flex-col items-center justify-center gap-1 h-full flex-1 min-w-[44px] transition-colors active:scale-95 ${isActive ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+        >
             <motion.div
-                animate={prefersReducedMotion ? {} : { scale: isActive ? 1.1 : 1 }}
+                animate={prefersReducedMotion ? {} : { scale: isActive ? 1.08 : 1 }}
                 transition={{ type: 'spring', duration: 0.25, bounce: 0.15 }}
             >
-                <Icon className="w-5 h-5 sm:w-5 sm:h-5 sm:mb-1" strokeWidth={isActive ? 2.8 : 2.2} />
+                <Icon className="w-7 h-7" strokeWidth={isActive ? 2.6 : 2.1} />
             </motion.div>
-            <span className="hidden sm:block text-[10px] font-extrabold uppercase tracking-wide">{label}</span>
+            <span className="hidden sm:block text-[11px] font-extrabold uppercase tracking-wide">{label}</span>
+            {/* Active-route dot — centered under the icon */}
+            {isActive && (
+                <motion.span
+                    layoutId="bottomnav-indicator"
+                    className="absolute bottom-1 w-1.5 h-1.5 rounded-full bg-blue-500 dark:bg-blue-400"
+                    transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', duration: 0.3, bounce: 0.2 }}
+                />
+            )}
         </button>
     );
 }
