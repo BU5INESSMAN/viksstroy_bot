@@ -95,11 +95,10 @@ async function cacheClear() {
  * Save auth credentials to all three storage layers.
  * Call after every successful login / registration.
  */
-export async function saveAuthData(tgId, role, sessionToken) {
+export async function saveAuthData(tgId, role) {
   const data = {
     tg_id: String(tgId),
     user_role: role,
-    session_token: sessionToken,
     saved_at: Date.now(),
   };
 
@@ -107,8 +106,10 @@ export async function saveAuthData(tgId, role, sessionToken) {
   try {
     localStorage.setItem('tg_id', data.tg_id);
     localStorage.setItem('user_role', data.user_role);
-    localStorage.setItem('session_token', data.session_token);
   } catch { /* quota / private-mode */ }
+
+  // Session token lives ONLY in the HttpOnly cookie (set by server).
+  // It is NOT stored in localStorage/IndexedDB/Cache API.
 
   // Layer 2 + 3 — async, fire in parallel
   await Promise.all([idbSet(data), cacheSet(data)]);
@@ -119,12 +120,11 @@ export async function saveAuthData(tgId, role, sessionToken) {
  * Returns { tg_id, user_role, session_token } or null.
  */
 export async function loadAuthData() {
-  // Layer 1 — localStorage (role + tgId required; token optional for backward compat)
+  // Layer 1 — localStorage (role + tgId required)
   const role = localStorage.getItem('user_role');
   const tgId = localStorage.getItem('tg_id');
-  const token = localStorage.getItem('session_token');
   if (role && tgId) {
-    return { tg_id: tgId, user_role: role, session_token: token || null };
+    return { tg_id: tgId, user_role: role };
   }
 
   // Layer 2 — IndexedDB
@@ -134,9 +134,8 @@ export async function loadAuthData() {
     try {
       localStorage.setItem('tg_id', idbData.tg_id);
       localStorage.setItem('user_role', idbData.user_role);
-      if (idbData.session_token) localStorage.setItem('session_token', idbData.session_token);
     } catch { /* silent */ }
-    return idbData;
+    return { tg_id: idbData.tg_id, user_role: idbData.user_role };
   }
 
   // Layer 3 — Cache API
@@ -146,10 +145,9 @@ export async function loadAuthData() {
     try {
       localStorage.setItem('tg_id', cacheData.tg_id);
       localStorage.setItem('user_role', cacheData.user_role);
-      if (cacheData.session_token) localStorage.setItem('session_token', cacheData.session_token);
     } catch { /* silent */ }
     await idbSet(cacheData);
-    return cacheData;
+    return { tg_id: cacheData.tg_id, user_role: cacheData.user_role };
   }
 
   return null;
@@ -163,7 +161,7 @@ export async function clearAuthData() {
   try {
     localStorage.removeItem('tg_id');
     localStorage.removeItem('user_role');
-    localStorage.removeItem('session_token');
+    localStorage.removeItem('session_token'); // cleanup legacy entries
   } catch { /* silent */ }
   await Promise.all([idbClear(), cacheClear()]);
 }

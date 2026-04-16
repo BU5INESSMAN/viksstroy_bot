@@ -39,7 +39,7 @@ export default function Login() {
           const res = await axios.post('/api/auth/code', fd);
 
           if (res.data.status === 'ok') {
-              await saveAuthData(res.data.tg_id, res.data.role, res.data.session_token);
+              await saveAuthData(res.data.tg_id, res.data.role);
               navigate('/dashboard');
           }
       } catch (err) {

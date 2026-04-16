@@ -33,7 +33,7 @@ export default function TMAAuth() {
         .then(async (res) => {
           if (cancelled) return;
           if (res.data.status === 'ok') {
-            await saveAuthData(res.data.tg_id, res.data.role, res.data.session_token);
+            await saveAuthData(res.data.tg_id, res.data.role);
             navigate(returnUrl);
           } else if (res.data.status === 'needs_password') {
             setTgUser(res.data);
@@ -80,7 +80,7 @@ export default function TMAAuth() {
 
       const response = await axios.post('/api/register_telegram', formData);
       if (response.data.status === 'ok') {
-        await saveAuthData(response.data.tg_id, response.data.role, response.data.session_token);
+        await saveAuthData(response.data.tg_id, response.data.role);
         const searchParams = new URLSearchParams(location.search);
         const returnUrl = searchParams.get('return_to') || '/dashboard';
         navigate(returnUrl);

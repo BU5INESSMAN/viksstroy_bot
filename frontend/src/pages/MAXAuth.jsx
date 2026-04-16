@@ -85,7 +85,7 @@ export default function MAXAuth() {
 
       const res = await axios.post('/api/max/auth', formData);
       if (res.data.status === 'ok') {
-        await saveAuthData(res.data.tg_id, res.data.role, res.data.session_token);
+        await saveAuthData(res.data.tg_id, res.data.role);
         const returnUrl = getParam('return_to') || '/dashboard';
         navigate(returnUrl);
       } else if (res.data.status === 'needs_password') {
@@ -117,7 +117,7 @@ export default function MAXAuth() {
       formData.append('password', password);
 
       const response = await axios.post('/api/max/register', formData);
-      await saveAuthData(response.data.tg_id, response.data.role, response.data.session_token);
+      await saveAuthData(response.data.tg_id, response.data.role);
 
       const returnUrl = getParam('return_to') || '/dashboard';
       navigate(returnUrl);

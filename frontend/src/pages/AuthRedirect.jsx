@@ -20,7 +20,7 @@ export default function AuthRedirect() {
         axios.get(`/api/auth/session?token=${encodeURIComponent(token)}`)
             .then(async (res) => {
                 if (res.data.status === 'ok') {
-                    await saveAuthData(res.data.tg_id, res.data.role, token);
+                    await saveAuthData(res.data.tg_id, res.data.role);
                     navigate(redirect, { replace: true });
                 }
             })

@@ -39,9 +39,8 @@ function ProtectedRoute({ children }) {
     if (authState === 'authenticated') {
       const role = localStorage.getItem('user_role');
       const tgId = localStorage.getItem('tg_id');
-      const token = localStorage.getItem('session_token');
       if (role && tgId) {
-        saveAuthData(tgId, role, token || '');  // fire-and-forget
+        saveAuthData(tgId, role);  // fire-and-forget
       }
       return;
     }
@@ -51,32 +50,25 @@ function ProtectedRoute({ children }) {
       const stored = await loadAuthData();
 
       if (stored?.user_role && stored?.tg_id) {
-        if (stored.session_token) {
-          // Validate the token on the server
-          try {
-            const res = await axios.get(`/api/auth/session?token=${encodeURIComponent(stored.session_token)}`);
-            if (res.data?.tg_id) {
-              await saveAuthData(res.data.tg_id, res.data.role, stored.session_token);
-              setAuthState('authenticated');
-              return;
-            }
-          } catch {
-            // Token expired — clear all layers
-            await clearAuthData();
+        // Validate session via HttpOnly cookie (sent automatically by browser)
+        try {
+          const res = await axios.get('/api/auth/session');
+          if (res.data?.tg_id) {
+            await saveAuthData(res.data.tg_id, res.data.role);
+            setAuthState('authenticated');
+            return;
           }
-        } else {
-          // Have role+tgId but no token (old login) — trust it
-          await saveAuthData(stored.tg_id, stored.user_role, '');
-          setAuthState('authenticated');
-          return;
+        } catch {
+          // Session expired — clear all layers
+          await clearAuthData();
         }
       }
 
-      // Step 2: Try HttpOnly cookie (browser sends it automatically)
+      // Step 2: Try HttpOnly cookie with no stored data (fresh tab)
       try {
         const res = await axios.get('/api/auth/session');
         if (res.data?.tg_id) {
-          await saveAuthData(res.data.tg_id, res.data.role, res.data.session_token || '');
+          await saveAuthData(res.data.tg_id, res.data.role);
           setAuthState('authenticated');
           return;
         }

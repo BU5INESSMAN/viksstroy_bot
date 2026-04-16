@@ -102,7 +102,7 @@ async def api_auth_by_code(code: str = Form(...)):
 
     token = await _create_session(primary_id)
     return _make_auth_response(
-        {"status": "ok", "role": user_dict['role'], "tg_id": primary_id, "session_token": token}, token)
+        {"status": "ok", "role": user_dict['role'], "tg_id": primary_id}, token)
 
 
 @router.post("/api/max/web_auth")
@@ -120,7 +120,7 @@ async def max_web_auth(code: str = Form(...)):
 
     token = await _create_session(real_tg_id)
     return _make_auth_response(
-        {"status": "ok", "role": dict(user)['role'], "tg_id": real_tg_id, "session_token": token}, token)
+        {"status": "ok", "role": dict(user)['role'], "tg_id": real_tg_id}, token)
 
 
 @router.post("/api/max/auth")
@@ -161,7 +161,7 @@ async def api_max_auth(code: str = Form(...)):
         user_dict = dict(user)
         return _make_auth_response(
             {"status": "ok", "role": user_dict["role"], "fio": user_dict["fio"],
-             "tg_id": real_tg_id, "session_token": token},
+             "tg_id": real_tg_id},
             token,
         )
 
@@ -200,7 +200,7 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
 
     token = await _create_session(pseudo_tg_id)
     return _make_auth_response(
-        {"status": "ok", "role": role, "tg_id": pseudo_tg_id, "session_token": token}, token)
+        {"status": "ok", "role": role, "tg_id": pseudo_tg_id}, token)
 
 
 @router.post("/api/telegram_auth")
@@ -228,7 +228,7 @@ async def telegram_auth(data: dict):
             token = await _create_session(real_tg_id)
             return _make_auth_response(
                 {"status": "ok", "role": user_dict['role'], "fio": user_dict['fio'], "tg_id": real_tg_id,
-                 "avatar_url": user_dict.get('avatar_url', photo_url), "session_token": token}, token)
+                 "avatar_url": user_dict.get('avatar_url', photo_url)}, token)
         return {"status": "needs_password", "tg_id": raw_id, "first_name": data.get('first_name', ''),
                 "last_name": data.get('last_name', ''), "photo_url": photo_url}
     except HTTPException:
@@ -316,7 +316,7 @@ async def api_tma_auth(init_data: str = Form(...)):
         user_dict = dict(user)
         return _make_auth_response(
             {"status": "ok", "role": user_dict["role"], "fio": user_dict["fio"],
-             "tg_id": real_tg_id, "session_token": token},
+             "tg_id": real_tg_id},
             token,
         )
 
@@ -358,7 +358,7 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
 
     token = await _create_session(tg_id)
     return _make_auth_response(
-        {"status": "ok", "role": role, "tg_id": tg_id, "session_token": token}, token)
+        {"status": "ok", "role": role, "tg_id": tg_id}, token)
 
 
 @router.get("/api/auth/session")
