@@ -180,7 +180,7 @@ export default function Layout() {
     // Push notification subscription — delayed to not interrupt initial load
     useEffect(() => {
         if (!tgId) return;
-        const timer = setTimeout(() => { subscribeToPush(tgId); }, 3000);
+        const timer = setTimeout(() => { subscribeToPush(); }, 3000);
         return () => clearTimeout(timer);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

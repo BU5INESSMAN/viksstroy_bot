@@ -120,7 +120,6 @@ function DialogList({ dialogs, selected, onSelect, onMyChat, loading }) {
 
 /* ───── Main component ───── */
 export default function Support() {
-    const tgId = localStorage.getItem('tg_id') || '0';
     const role = localStorage.getItem('user_role') || '';
     const isBoss = role === 'superadmin' || role === 'boss';
 
@@ -145,7 +144,7 @@ export default function Support() {
     // Load own history + support links + dialogs (for boss)
     useEffect(() => {
         const promises = [
-            axios.get(`/api/support/history?tg_id=${tgId}`).then(res => {
+            axios.get('/api/support/history').then(res => {
                 if (viewMode === 'my') {
                     setMessages((res.data || []).map(m => ({ from: m.from, text: m.text })));
                 }
@@ -157,13 +156,13 @@ export default function Support() {
         if (isBoss) {
             setDialogsLoading(true);
             promises.push(
-                axios.get(`/api/support/all_dialogs?tg_id=${tgId}`).then(res => {
+                axios.get('/api/support/all_dialogs').then(res => {
                     setDialogs(res.data || []);
                 }).catch(() => {}).finally(() => setDialogsLoading(false))
             );
         }
         Promise.all(promises).finally(() => setHistoryLoading(false));
-    }, [tgId]);
+    }, []);
 
     // Auto-scroll
     useEffect(() => {
@@ -173,7 +172,7 @@ export default function Support() {
     const loadUserHistory = async (userId) => {
         setHistoryLoading(true);
         try {
-            const res = await axios.get(`/api/support/user_history?tg_id=${tgId}&target_user_id=${userId}`);
+            const res = await axios.get(`/api/support/user_history?target_user_id=${userId}`);
             setMessages((res.data || []).map(m => ({ from: m.from, text: m.text })));
         } catch {
             setMessages([]);
@@ -184,7 +183,7 @@ export default function Support() {
     const loadMyHistory = async () => {
         setHistoryLoading(true);
         try {
-            const res = await axios.get(`/api/support/history?tg_id=${tgId}`);
+            const res = await axios.get('/api/support/history');
             setMessages((res.data || []).map(m => ({ from: m.from, text: m.text })));
         } catch {
             setMessages([]);
@@ -221,7 +220,6 @@ export default function Support() {
         try {
             const res = await axios.post('/api/support/chat', {
                 message: text,
-                tg_id: parseInt(tgId),
                 history: newMessages.slice(-10)
             });
             setMessages(prev => [...prev, { from: 'assistant', text: res.data.reply }]);

@@ -3,7 +3,7 @@
  * Requests permission, subscribes to push, sends subscription to backend.
  */
 
-export async function subscribeToPush(tgId) {
+export async function subscribeToPush() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         return false;
     }
@@ -30,7 +30,6 @@ export async function subscribeToPush(tgId) {
 
         const subJson = subscription.toJSON();
         const formData = new URLSearchParams();
-        formData.append('tg_id', String(tgId));
         formData.append('endpoint', subJson.endpoint);
         formData.append('p256dh', subJson.keys.p256dh);
         formData.append('auth', subJson.keys.auth);

@@ -7,9 +7,9 @@ import random
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import aiohttp
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
 from database_deps import db
-from utils import resolve_id
+from auth_deps import get_current_user, require_role
 from services.ai_context import build_user_context
 
 router = APIRouter(tags=["Support"])
@@ -141,33 +141,25 @@ async def _call_ai(messages: list, api_key: str, user_id: int = 0) -> str:
 
 
 @router.get("/api/support/history")
-async def support_history(tg_id: int = 0):
-    """Return last 50 messages for this user."""
-    if not tg_id:
-        raise HTTPException(400, "tg_id required")
-
-    resolved_user_id = await resolve_id(tg_id)
+async def support_history(current_user=Depends(get_current_user)):
+    """Return last 50 messages for the authenticated user. Users see ONLY their own."""
+    user_id = current_user["tg_id"]
 
     async with db.conn.execute(
         "SELECT role, message, created_at FROM support_chats WHERE user_id = ? ORDER BY id DESC LIMIT 50",
-        (resolved_user_id,)
+        (user_id,)
     ) as cur:
         rows = await cur.fetchall()
 
     return [{"from": r[0], "text": r[1], "time": r[2]} for r in reversed(rows)]
 
 
+_require_boss_plus = require_role("superadmin", "boss")
+
+
 @router.get("/api/support/all_dialogs")
-async def all_dialogs(tg_id: int = 0):
+async def all_dialogs(current_user=Depends(_require_boss_plus)):
     """Boss+ endpoint: return all users who have support dialogs."""
-    if not tg_id:
-        raise HTTPException(400, "tg_id required")
-
-    real_id = await resolve_id(tg_id)
-    user = await db.get_user(real_id)
-    if not user or dict(user).get('role') not in ['superadmin', 'boss']:
-        raise HTTPException(403, "Нет прав")
-
     async with db.conn.execute("""
         SELECT sc.user_id,
                COALESCE(u.fio, 'Пользователь #' || sc.user_id) as fio,
@@ -192,15 +184,10 @@ async def all_dialogs(tg_id: int = 0):
 
 
 @router.get("/api/support/user_history")
-async def user_history(tg_id: int = 0, target_user_id: int = 0):
+async def user_history(target_user_id: int = 0, current_user=Depends(_require_boss_plus)):
     """Boss+ endpoint: return chat history for a specific user."""
-    if not tg_id or not target_user_id:
-        raise HTTPException(400, "tg_id and target_user_id required")
-
-    real_id = await resolve_id(tg_id)
-    user = await db.get_user(real_id)
-    if not user or dict(user).get('role') not in ['superadmin', 'boss']:
-        raise HTTPException(403, "Нет прав")
+    if not target_user_id:
+        raise HTTPException(400, "target_user_id required")
 
     async with db.conn.execute(
         "SELECT role, message, created_at FROM support_chats WHERE user_id = ? ORDER BY id DESC LIMIT 100",
@@ -212,16 +199,18 @@ async def user_history(tg_id: int = 0, target_user_id: int = 0):
 
 
 @router.post("/api/support/chat")
-async def support_chat(request: Request):
+async def support_chat(request: Request, current_user=Depends(get_current_user)):
+    """Send message to AI support. Uses authenticated user's identity."""
     data = await request.json()
     user_message = data.get("message", "")
-    tg_id = data.get("tg_id", 0)
     history = data.get("history", [])
 
     if not user_message.strip():
         raise HTTPException(400, "Пустое сообщение")
 
-    resolved_user_id = await resolve_id(tg_id) if tg_id else tg_id
+    resolved_user_id = current_user["tg_id"]
+    user_role = current_user.get("role", "worker")
+    fio = current_user.get("fio", "Неизвестный")
 
     # Save user message
     await db.conn.execute(
@@ -232,8 +221,6 @@ async def support_chat(request: Request):
 
     # Log every support message
     try:
-        user_obj = await db.get_user(resolved_user_id)
-        fio = dict(user_obj).get('fio', 'Неизвестный') if user_obj else 'Неизвестный'
         await db.add_log(
             resolved_user_id,
             fio,
@@ -242,7 +229,7 @@ async def support_chat(request: Request):
             target_id=resolved_user_id
         )
     except Exception:
-        fio = 'Неизвестный'
+        pass
 
     # Smart notification: only notify on new conversations (>30 min gap)
     should_notify = await _should_notify(resolved_user_id)
@@ -272,8 +259,6 @@ async def support_chat(request: Request):
         dynamic_context = await build_user_context(db, resolved_user_id, user_message)
     except Exception as e:
         logger.warning(f"AI context build failed (non-fatal): {e}")
-
-    user_role = dict(user_obj).get("role", "worker") if user_obj else "worker"
 
     dynamic_section = ""
     if dynamic_context:
