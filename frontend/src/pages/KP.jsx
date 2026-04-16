@@ -49,7 +49,7 @@ export default function KP() {
     const fetchApps = async () => {
         setLoading(true);
         try {
-            const res = await axios.get(`/api/kp/dashboard?tg_id=${tgId}`);
+            const res = await axios.get('/api/kp/dashboard');
             setData(res.data);
             if (res.data[activeTab]?.length === 0) {
                 if (res.data.to_fill.length > 0) setActiveTab('to_fill');
@@ -62,7 +62,7 @@ export default function KP() {
 
     const fetchArchived = async () => {
         try {
-            const res = await axios.get(`/api/kp/archived?tg_id=${tgId}`);
+            const res = await axios.get('/api/kp/archived');
             setArchivedApps(res.data || []);
         } catch { setArchivedApps([]); }
     };
@@ -88,8 +88,8 @@ export default function KP() {
         setExtraWorks([]);
         try {
             const [res, ewRes, catRes] = await Promise.all([
-                axios.get(`/api/kp/apps/${app.id}/items?tg_id=${tgId}`),
-                axios.get(`/api/kp/apps/${app.id}/extra_works?tg_id=${tgId}`),
+                axios.get(`/api/kp/apps/${app.id}/items`),
+                axios.get(`/api/kp/apps/${app.id}/extra_works`),
                 axios.get('/api/extra_works/catalog'),
             ]);
             setKpItems(res.data.map(i => ({
@@ -119,7 +119,6 @@ export default function KP() {
         try {
             await Promise.all([
                 axios.post(`/api/kp/apps/${modalApp.id}/submit`, {
-                    tg_id: tgId, role: role,
                     items: kpItems.map(i => ({ kp_id: i.kp_id, volume: i.volume || 0, ...(isOffice ? { salary: i.current_salary, price: i.current_price } : {}) }))
                 }),
                 axios.post(`/api/kp/apps/${modalApp.id}/extra_works/submit`, {
@@ -242,7 +241,7 @@ export default function KP() {
                                             e.stopPropagation();
                                             if (!window.confirm(`Архивировать СМР: ${app.obj_name || 'Объект'} (${app.date_target})?`)) return;
                                             try {
-                                                await axios.post(`/api/kp/apps/${app.id}/archive`, { tg_id: parseInt(tgId) });
+                                                await axios.post(`/api/kp/apps/${app.id}/archive`);
                                                 toast.success('СМР перемещена в архив');
                                                 fetchApps();
                                             } catch { toast.error('Ошибка архивации'); }
@@ -448,7 +447,7 @@ export default function KP() {
                                             <button
                                                 onClick={async () => {
                                                     try {
-                                                        await axios.post(`/api/kp/apps/${app.id}/restore`, { tg_id: parseInt(tgId) });
+                                                        await axios.post(`/api/kp/apps/${app.id}/restore`);
                                                         toast.success('СМР восстановлена');
                                                         fetchArchived();
                                                         fetchApps();
