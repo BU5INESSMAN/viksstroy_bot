@@ -52,7 +52,7 @@ export default function Review() {
     const approvedRef = useRef(null);
 
     const fetchData = () => {
-        axios.get(`/api/applications/review?tg_id=${tgId}`)
+        axios.get('/api/applications/review')
             .then(res => { setReviewApps(res.data || []); setLoading(false); })
             .catch(() => { setLoading(false); });
     };
@@ -85,7 +85,6 @@ export default function Review() {
         try {
             const fd = new FormData();
             fd.append('new_status', status);
-            fd.append('tg_id', tgId);
             if (reason) fd.append('reason', reason);
 
             await axios.post(`/api/applications/${selectedApp.id}/review`, fd);

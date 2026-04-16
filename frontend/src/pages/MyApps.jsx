@@ -13,7 +13,7 @@ export default function MyApps() {
     const [customEnd, setCustomEnd] = useState('');
 
     const fetchData = () => {
-        axios.get(`/api/applications/my?tg_id=${tgId}`).then(res => {
+        axios.get('/api/applications/my').then(res => {
             setApps(res.data || []);
             setLoading(false);
         }).catch(() => setLoading(false));

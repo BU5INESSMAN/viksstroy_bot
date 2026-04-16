@@ -323,7 +323,6 @@ export default function useAppForm({
         setIsSubmitting(true);
         try {
             const fd = new FormData();
-            fd.append('tg_id', tgId);
             fd.append('date_target', appForm.date_target);
             fd.append('object_id', appForm.object_id);
             fd.append('object_address', appForm.object_address);
@@ -378,9 +377,7 @@ export default function useAppForm({
         if (!ok) return;
         setIsSubmitting(true);
         try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            await axios.post(`/api/applications/${appForm.id}/delete`, fd);
+            await axios.post(`/api/applications/${appForm.id}/delete`);
             toast.success('Заявка успешно удалена!');
             setGlobalCreateAppOpen(false);
             fetchData();

@@ -13,7 +13,7 @@ export default function EquipmentStatsModal({ isOpen, onClose, equipment, tgId }
     useEffect(() => {
         if (isOpen && equipment?.id) {
             setLoading(true);
-            axios.get(`/api/applications/review?tg_id=${tgId}`)
+            axios.get('/api/applications/review')
                 .then(res => {
                     const allApps = res.data || [];
                     const eqId = equipment.id;

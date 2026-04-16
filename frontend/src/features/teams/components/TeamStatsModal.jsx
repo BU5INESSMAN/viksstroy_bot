@@ -13,7 +13,7 @@ export default function TeamStatsModal({ isOpen, onClose, team, tgId }) {
     useEffect(() => {
         if (isOpen && team?.id) {
             setLoading(true);
-            axios.get(`/api/applications/review?tg_id=${tgId}`)
+            axios.get('/api/applications/review')
                 .then(res => {
                     const allApps = res.data || [];
 

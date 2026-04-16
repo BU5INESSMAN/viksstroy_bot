@@ -408,7 +408,6 @@ export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
                             try {
                                 const fd = new FormData();
                                 fd.append('new_status', selectedStatus);
-                                fd.append('tg_id', tgId);
                                 await axios.post(`/api/applications/${app.id}/change_status`, fd);
                                 toast.success('Статус изменён');
                                 onUpdate ? onUpdate() : onClose();

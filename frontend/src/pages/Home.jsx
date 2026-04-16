@@ -65,7 +65,7 @@ export default function Home() {
 
     function fetchData() {
         axios.get('/api/dashboard').then(res => setData(res.data)).catch(() => {});
-        axios.get(`/api/applications/active?tg_id=${tgId}`)
+        axios.get('/api/applications/active')
             .then(res => { setActiveApps(res.data || []); setLoading(false); })
             .catch(() => { setActiveApps([]); setLoading(false); });
         if (['moderator', 'boss', 'superadmin'].includes(role)) {

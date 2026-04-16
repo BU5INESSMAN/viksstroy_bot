@@ -258,7 +258,6 @@ export default function EditAppModal({
         setIsSubmitting(true);
         try {
             const fd = new FormData();
-            fd.append('tg_id', tgId);
             fd.append('date_target', form.date_target);
             fd.append('object_id', form.object_id);
             fd.append('object_address', form.object_address);

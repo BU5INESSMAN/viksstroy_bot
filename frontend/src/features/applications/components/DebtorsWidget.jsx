@@ -20,7 +20,6 @@ export default function DebtorsWidget({ debtors, tgId }) {
         setRemindingForeman(group.foreman_id);
         try {
             await axios.post('/api/system/remind_smr', {
-                tg_id: parseInt(tgId),
                 foreman_id: group.foreman_id,
                 app_ids: group.smrs.map(s => s.app_id),
             });

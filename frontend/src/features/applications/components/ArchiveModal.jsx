@@ -44,9 +44,7 @@ export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
         if (!ok) return;
         setRestoringId(appId);
         try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            await axios.post(`/api/applications/${appId}/unarchive`, fd);
+            await axios.post(`/api/applications/${appId}/unarchive`);
             toast.success('Заявка восстановлена из архива');
             fetchArchive();
             if (onDataChanged) onDataChanged();
