@@ -33,7 +33,6 @@ export default function MemberStatusModal({ isOpen, onClose, member, tgId, onSav
         try {
             const fd = new FormData();
             fd.append('status', status);
-            fd.append('tg_id', tgId);
             if (status !== 'available') {
                 fd.append('status_from', dateFrom);
                 fd.append('status_until', dateUntil);

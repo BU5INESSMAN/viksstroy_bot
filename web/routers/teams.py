@@ -4,21 +4,23 @@ import os
 # Переходим на уровень выше (в папку web), чтобы импорты сработали
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Depends
 import asyncio
 import logging
 from datetime import datetime
 from database_deps import db, TZ_BARNAUL
-from utils import resolve_id
+from auth_deps import get_current_user, require_role
 from services.notifications import notify_users
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Teams"])
 
+_require_office = require_role("superadmin", "boss", "moderator")
+
 
 @router.post("/api/teams/{team_id}/generate_invite")
-async def api_generate_invite(team_id: int):
+async def api_generate_invite(team_id: int, current_user=Depends(get_current_user)):
     invite_code, join_password = await db.generate_team_invite(team_id)
     return {
         "invite_link": f"https://miniapp.viks22.ru/invite/{invite_code}",
@@ -30,6 +32,7 @@ async def api_generate_invite(team_id: int):
 
 @router.get("/api/invite/{invite_code}")
 async def api_get_invite_info(invite_code: str):
+    """Public endpoint — returns team name + unclaimed workers for invite page."""
     team = await db.get_team_by_invite(invite_code)
     if not team: raise HTTPException(status_code=404, detail="Ссылка недействительна")
     return {"team_name": team['name'],
@@ -38,9 +41,13 @@ async def api_get_invite_info(invite_code: str):
 
 
 @router.post("/api/invite/join")
-async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...), tg_id: int = Form(...)):
+async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...),
+                        current_user=Depends(get_current_user)):
+    real_tg_id = current_user["tg_id"]
     team = await db.get_team_by_invite(invite_code)
-    real_tg_id = await resolve_id(tg_id)
+    if not team:
+        raise HTTPException(404, "Ссылка недействительна")
+
     await db.conn.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (real_tg_id, worker_id))
     user = await db.get_user(real_tg_id)
     async with db.conn.execute("SELECT fio FROM team_members WHERE id = ?", (worker_id,)) as cur:
@@ -73,8 +80,11 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
 
 
 @router.post("/api/teams/create")
-async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Form("Пользователь")):
-    cursor = await db.conn.execute("INSERT INTO teams (name) VALUES (?)", (name,))
+async def create_team(name: str = Form(...), current_user=Depends(_require_office)):
+    fio = current_user.get("fio", "Пользователь")
+    tg_id = current_user["tg_id"]
+
+    cursor = await db.conn.execute("INSERT INTO teams (name, creator_id) VALUES (?, ?)", (name, tg_id))
     new_team_id = cursor.lastrowid
     await db.conn.commit()
 
@@ -88,15 +98,16 @@ async def create_team(name: str = Form(...), tg_id: int = Form(0), fio: str = Fo
             logger.error(f"Team create notification error: {e}")
 
     asyncio.create_task(_send_create_team_notification())
-    real_tg_id = await resolve_id(tg_id) if tg_id else 0
-    await db.add_log(real_tg_id, fio, f"Создал бригаду: {name}", target_type='team', target_id=new_team_id)
+    await db.add_log(tg_id, fio, f"Создал бригаду: {name}", target_type='team', target_id=new_team_id)
     return {"status": "ok"}
 
 
 @router.get("/api/teams/{team_id}/details")
-async def get_team_details(team_id: int):
+async def get_team_details(team_id: int, current_user=Depends(get_current_user)):
     async with db.conn.execute("SELECT name FROM teams WHERE id = ?",
                                (team_id,)) as cur: team_row = await cur.fetchone()
+    if not team_row:
+        raise HTTPException(404, "Бригада не найдена")
     async with db.conn.execute(
             "SELECT id, fio, position, tg_user_id, is_foreman, status, status_from, status_until, status_reason FROM team_members WHERE team_id = ? ORDER BY is_foreman DESC, id ASC",
             (team_id,)) as cur:
@@ -109,25 +120,34 @@ async def get_team_details(team_id: int):
 
 @router.post("/api/teams/{team_id}/members/add")
 async def add_team_member(team_id: int, fio: str = Form(...), position: str = Form(...), is_foreman: int = Form(0),
-                          tg_id: int = Form(0)):
+                          current_user=Depends(get_current_user)):
+    role = current_user.get("role")
+    is_office = role in ("superadmin", "boss", "moderator")
+    if not is_office and role != "foreman":
+        raise HTTPException(403, "Недостаточно прав")
+
     await db.conn.execute("INSERT INTO team_members (team_id, fio, position, is_foreman) VALUES (?, ?, ?, ?)",
                           (team_id, fio, position, is_foreman))
     await db.conn.commit()
-    real_tg_id = await resolve_id(tg_id) if tg_id else 0
-    user = await db.get_user(real_tg_id) if real_tg_id else None
-    admin_fio = dict(user).get('fio', 'Система') if user else 'Система'
+
+    admin_fio = current_user.get("fio", "Система")
     _t_name = f"#{team_id}"
     try:
         async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as c:
             r = await c.fetchone()
             if r: _t_name = r[0]
     except Exception: pass
-    await db.add_log(real_tg_id, admin_fio, f"Добавил участника «{fio}» в бригаду «{_t_name}»", target_type='team', target_id=team_id)
+    await db.add_log(current_user["tg_id"], admin_fio, f"Добавил участника «{fio}» в бригаду «{_t_name}»", target_type='team', target_id=team_id)
     return {"status": "ok"}
 
 
 @router.post("/api/teams/members/{member_id}/toggle_foreman")
-async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int = Form(0)):
+async def toggle_foreman(member_id: int, is_foreman: int = Form(...), current_user=Depends(get_current_user)):
+    role = current_user.get("role")
+    is_office = role in ("superadmin", "boss", "moderator")
+    if not is_office and role != "foreman":
+        raise HTTPException(403, "Недостаточно прав")
+
     await db.conn.execute("UPDATE team_members SET is_foreman = ? WHERE id = ?", (is_foreman, member_id))
     # Update global user role in DB
     async with db.conn.execute("SELECT tg_user_id FROM team_members WHERE id = ?", (member_id,)) as cur:
@@ -149,47 +169,47 @@ async def toggle_foreman(member_id: int, is_foreman: int = Form(...), tg_id: int
 
 
 @router.post("/api/teams/members/{member_id}/unlink")
-async def unlink_team_member(member_id: int, tg_id: int = Form(0)):
-    user = await db.get_user(tg_id)
-    # Добавил 'foreman' в проверку прав
-    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator', 'foreman']:
+async def unlink_team_member(member_id: int, current_user=Depends(get_current_user)):
+    role = current_user.get("role")
+    if role not in ('superadmin', 'boss', 'moderator', 'foreman'):
         raise HTTPException(status_code=403, detail="Нет прав")
     try:
         await db.conn.execute("UPDATE team_members SET tg_user_id = NULL WHERE id = ?", (member_id,))
         await db.conn.commit()
     except Exception as e:
         await db.conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Ошибка при отвязке")
     return {"status": "ok"}
 
 
 @router.post("/api/teams/members/{member_id}/delete")
-async def delete_team_member(member_id: int, tg_id: int = Form(0)):
+async def delete_team_member(member_id: int, current_user=Depends(get_current_user)):
+    role = current_user.get("role")
+    is_office = role in ("superadmin", "boss", "moderator")
+    if not is_office and role != "foreman":
+        raise HTTPException(403, "Недостаточно прав")
+
     async with db.conn.execute("SELECT team_id, fio FROM team_members WHERE id = ?", (member_id,)) as cur:
         m_row = await cur.fetchone()
     m_team_id = m_row[0] if m_row else 0
     m_fio = m_row[1] if m_row else ''
     await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
     await db.conn.commit()
-    real_tg_id = await resolve_id(tg_id) if tg_id else 0
-    user = await db.get_user(real_tg_id) if real_tg_id else None
-    admin_fio = dict(user).get('fio', 'Система') if user else 'Система'
+
+    admin_fio = current_user.get("fio", "Система")
     _t_name = f"#{m_team_id}"
     try:
         async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (m_team_id,)) as c:
             r = await c.fetchone()
             if r: _t_name = r[0]
     except Exception: pass
-    await db.add_log(real_tg_id, admin_fio, f"Удалил участника «{m_fio}» из бригады «{_t_name}»", target_type='team', target_id=m_team_id)
+    await db.add_log(current_user["tg_id"], admin_fio, f"Удалил участника «{m_fio}» из бригады «{_t_name}»", target_type='team', target_id=m_team_id)
     return {"status": "ok"}
 
 
 @router.post("/api/teams/{team_id}/delete")
-async def delete_entire_team(team_id: int, tg_id: int = Form(0)):
-    user = await db.get_user(tg_id)
-    # Удаление всей бригады по-прежнему доступно только руководству!
-    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(
-        status_code=403, detail="Нет прав")
+async def delete_entire_team(team_id: int, current_user=Depends(_require_office)):
+    """Delete entire team. Office (moderator+) only."""
     async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
         t_row = await cur.fetchone()
         t_name = t_row[0] if t_row else f"ID:{team_id}"
@@ -200,7 +220,7 @@ async def delete_entire_team(team_id: int, tg_id: int = Form(0)):
         await db.conn.commit()
     except:
         await db.conn.rollback()
-    await db.add_log(tg_id, dict(user).get('fio', 'Система'), f"Удалил бригаду «{t_name}»", target_type='team', target_id=team_id)
+    await db.add_log(current_user["tg_id"], current_user.get('fio', 'Система'), f"Удалил бригаду «{t_name}»", target_type='team', target_id=team_id)
     return {"status": "ok"}
 
 
@@ -211,12 +231,11 @@ async def update_member_status(
     status_from: str = Form(""),
     status_until: str = Form(""),
     status_reason: str = Form(""),
-    tg_id: int = Form(0),
+    current_user=Depends(get_current_user),
 ):
     """Update team member availability status (available / vacation / sick)."""
-    real_tg_id = await resolve_id(tg_id) if tg_id else 0
-    user = await db.get_user(real_tg_id) if real_tg_id else None
-    if not user or dict(user).get('role') not in ('foreman', 'moderator', 'boss', 'superadmin'):
+    role = current_user.get("role")
+    if role not in ('foreman', 'moderator', 'boss', 'superadmin'):
         raise HTTPException(403, "Недостаточно прав")
 
     if status not in ('available', 'vacation', 'sick'):
@@ -242,11 +261,11 @@ async def update_member_status(
 
     status_labels = {"available": "Доступен", "vacation": "Отпуск", "sick": "Больничный"}
     status_label = status_labels.get(status, status)
-    fio = dict(user).get('fio', 'Система')
+    fio = current_user.get('fio', 'Система')
     period = f" ({status_from} — {status_until})" if status_from and status_until and status != 'available' else ""
 
     await db.add_log(
-        real_tg_id, fio,
+        current_user["tg_id"], fio,
         f"Изменил статус {member_fio} ({team_name}): {status_label}{period}",
         target_type='team', target_id=team_id,
     )

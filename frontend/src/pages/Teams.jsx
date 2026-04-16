@@ -40,7 +40,6 @@ export default function Teams() {
         try {
             const fd = new FormData();
             fd.append('name', newTeamName);
-            fd.append('tg_id', tgId);
             await axios.post('/api/teams/create', fd);
             setTeamModalOpen(false);
             setNewTeamName('');
@@ -52,8 +51,7 @@ export default function Teams() {
         const ok = await confirm("Удалить бригаду и отвязать всех участников?", { title: "Удаление бригады", confirmText: "Удалить" });
         if (!ok) return;
         try {
-            const fd = new FormData(); fd.append('tg_id', tgId);
-            await axios.post(`/api/teams/${id}/delete`, fd);
+            await axios.post(`/api/teams/${id}/delete`);
             fetchData();
         } catch(e) { toast.error("Ошибка удаления"); }
     };
@@ -73,7 +71,6 @@ export default function Teams() {
             fd.append('fio', newMember.fio);
             fd.append('position', newMember.position);
             fd.append('is_foreman', newMember.is_foreman ? 1 : 0);
-            fd.append('tg_id', tgId);
             await axios.post(`/api/teams/${manageTeamData.id}/members/add`, fd);
             setNewMember({ fio: '', position: 'Рабочий', is_foreman: false });
             openManageModal(manageTeamData.id);
@@ -84,7 +81,6 @@ export default function Teams() {
         try {
             const fd = new FormData();
             fd.append('is_foreman', is_foreman);
-            fd.append('tg_id', tgId);
             await axios.post(`/api/teams/members/${memberId}/toggle_foreman`, fd);
             openManageModal(manageTeamData.id);
         } catch (e) { toast.error("Ошибка обновления роли"); }
@@ -94,9 +90,7 @@ export default function Teams() {
         const ok = await confirm("Отвязать Telegram/MAX аккаунт от этого рабочего?", { title: "Отвязка аккаунта", variant: "warning", confirmText: "Отвязать" });
         if (!ok) return;
         try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            await axios.post(`/api/teams/members/${memberId}/unlink`, fd);
+            await axios.post(`/api/teams/members/${memberId}/unlink`);
             openManageModal(manageTeamData.id);
         } catch (e) { toast.error("Ошибка при отвязке аккаунта"); }
     };
@@ -105,8 +99,7 @@ export default function Teams() {
         const ok = await confirm("Удалить участника из бригады?", { title: "Удаление участника", confirmText: "Удалить" });
         if (!ok) return;
         try {
-            const fd = new FormData(); fd.append('tg_id', tgId);
-            await axios.post(`/api/teams/members/${memberId}/delete`, fd);
+            await axios.post(`/api/teams/members/${memberId}/delete`);
             openManageModal(manageTeamData.id);
         } catch (e) { toast.error("Ошибка удаления участника"); }
     };

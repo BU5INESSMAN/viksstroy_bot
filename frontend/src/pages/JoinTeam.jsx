@@ -61,7 +61,6 @@ export default function JoinTeam() {
         const fd = new FormData();
         fd.append('invite_code', code);
         fd.append('worker_id', selectedWorker.id);
-        fd.append('tg_id', tgId);
 
         await axios.post('/api/invite/join', fd);
 
