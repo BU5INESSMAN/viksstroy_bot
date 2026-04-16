@@ -17,6 +17,10 @@ import OnlineUsersModal from '../features/layout/components/OnlineUsersModal';
 import OnboardingTour from './OnboardingTour';
 import { getFullTourSteps } from '../utils/tourSteps';
 import { subscribeToPush } from '../utils/pushSubscription';
+import PWAInstallBanner from './PWAInstallBanner';
+import PWAUpdateModal from './PWAUpdateModal';
+import UpdatePill from './UpdatePill';
+import { initPWAUpdate } from '../utils/pwaUpdate';
 
 function MaintenanceOverlay() {
     const [serverBack, setServerBack] = useState(false);
@@ -183,6 +187,16 @@ export default function Layout() {
         const timer = setTimeout(() => { subscribeToPush(); }, 3000);
         return () => clearTimeout(timer);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // PWA update detection
+    const [updateWorker, setUpdateWorker] = useState(null);
+    const [updateDeferred, setUpdateDeferred] = useState(false);
+    useEffect(() => {
+        initPWAUpdate((worker) => {
+            setUpdateWorker(worker);
+            setUpdateDeferred(false);
+        });
+    }, []);
 
     // Continuous onboarding tour — show once on first authenticated visit
     useEffect(() => {
@@ -374,6 +388,17 @@ export default function Layout() {
                 }}
             />
             <OnlineUsersModal isOpen={showOnlineUsers} onClose={() => setShowOnlineUsers(false)} />
+
+            {/* PWA install banner (bottom) */}
+            <PWAInstallBanner />
+
+            {/* PWA update flow: modal (with 30s countdown) then pill once deferred */}
+            <PWAUpdateModal
+                worker={updateWorker}
+                isOpen={Boolean(updateWorker) && !updateDeferred}
+                onDefer={() => setUpdateDeferred(true)}
+            />
+            {updateWorker && updateDeferred && <UpdatePill worker={updateWorker} />}
             </div>
         </div>
     );

@@ -1,5 +1,6 @@
-const CACHE_VERSION = Date.now();
-const CACHE_NAME = 'viks-cache-' + CACHE_VERSION;
+// Bump this integer whenever sw.js or cache strategy changes.
+const CACHE_VERSION = 2;
+const CACHE_NAME = 'viks-cache-v' + CACHE_VERSION;
 
 const MAINTENANCE_HTML = `
 <!DOCTYPE html>
@@ -91,11 +92,21 @@ self.addEventListener('activate', (event) => {
 
 // Message listener for frontend-triggered actions
 self.addEventListener('message', (event) => {
-  if (event.data === 'skipWaiting') {
+  const data = event.data;
+  // String-form legacy signals
+  if (data === 'skipWaiting') {
     self.skipWaiting();
+    return;
   }
-  if (event.data === 'clearCache') {
+  if (data === 'clearCache') {
     caches.keys().then(keys => Promise.all(keys.filter(k => k !== AUTH_CACHE).map(k => caches.delete(k))));
+    return;
+  }
+  // Object-form signals (preferred)
+  if (data && typeof data === 'object') {
+    if (data.type === 'SKIP_WAITING') {
+      self.skipWaiting();
+    }
   }
 });
 
@@ -114,35 +125,36 @@ function safeCachePut(request, response) {
 self.addEventListener('push', function(event) {
   if (!event.data) return;
   try {
-    const data = event.data.json();
+    const payload = event.data.json();
     const options = {
-      body: data.body || '',
-      icon: data.icon || '/icon-192.png',
-      badge: data.badge || '/icon-192.png',
-      data: { url: data.url || '/dashboard' },
+      body: payload.body || '',
+      icon: payload.icon || '/push-icons/app-new.png',
+      badge: payload.badge || '/push-icons/badge.png',
+      data: { url: payload.url || '/' },
       vibrate: [200, 100, 200],
-      tag: 'viks-notification',
+      tag: payload.tag || 'viks-notification',
       renotify: true,
     };
     event.waitUntil(
-      self.registration.showNotification(data.title || 'ВиКС', options)
+      self.registration.showNotification(payload.title || 'ВиКС Расписание', options)
     );
   } catch (e) {
-    // Fallback for non-JSON payloads
     event.waitUntil(
-      self.registration.showNotification('ВиКС', { body: event.data.text() })
+      self.registration.showNotification('ВиКС Расписание', { body: event.data.text() })
     );
   }
 });
 
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
-  const url = event.notification.data?.url || '/dashboard';
+  const url = event.notification.data?.url || '/';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
       for (const client of clientList) {
         if ('focus' in client) {
-          client.navigate(url);
+          if ('navigate' in client) {
+            try { client.navigate(url); } catch (_) { /* cross-origin safety */ }
+          }
           return client.focus();
         }
       }

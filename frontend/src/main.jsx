@@ -3,9 +3,13 @@ import ReactDOM from 'react-dom/client'
 import axios from 'axios'
 import App from './App.jsx'
 import './index.css'
+import { initPWAInstall } from './utils/pwaInstall'
 
 // Send HttpOnly cookies on all requests (required for session persistence)
 axios.defaults.withCredentials = true;
+
+// Capture beforeinstallprompt + appinstalled early so the banner/sidebar can offer install.
+initPWAInstall();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

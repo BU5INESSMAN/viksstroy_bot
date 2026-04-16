@@ -12,6 +12,7 @@ from utils import get_all_linked_ids, resolve_id
 from services.image_service import strip_html
 from services.max_api import get_max_group_id, send_max_text, get_max_dm_chat_id
 from services.tg_session import get_tg_session
+from services.push_templates import build_push_payload
 
 from datetime import datetime, timedelta
 from database_deps import TZ_BARNAUL
@@ -99,9 +100,12 @@ async def notify_group_chat(text: str, url_path: str = "dashboard", target_platf
 
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
                        target_platform: str = "all", category: str = None,
-                       tg_reply_markup: dict = None, max_attachments: list = None):
+                       tg_reply_markup: dict = None, max_attachments: list = None,
+                       push_type: str = None, push_body: str = None):
     """Универсальная рассылка уведомлений в личные DM (Telegram и MAX) с учетом настроек пользователя.
     category: 'new_users' | 'orders' | 'reports' | 'errors' | None (None = всегда отправлять)
+    push_type: typed push notification key (e.g. 'app_approved'); forwarded to build_push_payload.
+    push_body: single-line push body (no emojis, ' • ' separators); falls back to stripped text.
     """
     if db.conn is None: await db.init_db()
 
@@ -249,13 +253,18 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     try:
         push_user_ids = list(raw_user_ids)
         if push_user_ids:
-            asyncio.create_task(_send_web_push_safe(push_user_ids, _notif_title, _notif_body, redirect))
+            final_push_body = push_body or _notif_body
+            asyncio.create_task(_send_web_push_safe(
+                push_user_ids, _notif_title, final_push_body, redirect,
+                push_type=push_type,
+            ))
     except Exception:
         pass
 
 
-async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = "/dashboard"):
-    """Send web push to all subscriptions for given user_ids. Fire-and-forget."""
+async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = "/dashboard",
+                              push_type: str = None):
+    """Send typed web push to all subscriptions for given user_ids. Fire-and-forget."""
     vapid_private = os.getenv("VAPID_PRIVATE_KEY", "")
     vapid_public = os.getenv("VAPID_PUBLIC_KEY", "")
     if not vapid_private or not vapid_public:
@@ -285,13 +294,11 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
     if not subscriptions:
         return
 
-    payload = json.dumps({
-        "title": title[:100],
-        "body": body[:200],
-        "url": url,
-        "icon": "/icon-192.png",
-        "badge": "/icon-192.png",
-    })
+    payload = json.dumps(build_push_payload(
+        push_type or "",
+        body[:200],
+        url,
+    ))
 
     expired_ids = []
     for sub in subscriptions:

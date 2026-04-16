@@ -5,10 +5,17 @@ import {
     Home, MapPin, Briefcase, ClipboardList, FileText,
     Settings as SettingsIcon, User, BookOpen, Rocket,
     MessageCircle, Plus, ChevronLeft, ChevronDown,
-    Sun, Moon, Monitor, Headphones, Bell
+    Sun, Moon, Monitor, Headphones, Bell, Download
 } from 'lucide-react';
 import axios from 'axios';
 import { ROLE_NAMES } from '../../../utils/roleConfig';
+import {
+    isStandalone,
+    getBrowserSupport,
+    triggerInstall,
+} from '../../../utils/pwaInstall';
+import AnimatedModal from '../../../components/ui/AnimatedModal';
+import InstallInstructions from '../../../components/InstallInstructions';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const anim = (props) => prefersReducedMotion ? {} : props;
@@ -22,6 +29,34 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
     const [openMenus, setOpenMenus] = useState({});
     const [counts, setCounts] = useState({});
     const [userFio, setUserFio] = useState('');
+
+    // Install — evaluates on mount and when beforeinstallprompt fires
+    const [installCan, setInstallCan] = useState(false);
+    const [installMode, setInstallMode] = useState('unsupported');
+    const [installModalOpen, setInstallModalOpen] = useState(false);
+    useEffect(() => {
+        const evalInstall = () => {
+            if (isStandalone()) { setInstallCan(false); return; }
+            const s = getBrowserSupport();
+            setInstallMode(s.mode);
+            setInstallCan(s.mode !== 'unsupported');
+        };
+        evalInstall();
+        window.addEventListener('pwa-install-available', evalInstall);
+        window.addEventListener('pwa-installed', evalInstall);
+        return () => {
+            window.removeEventListener('pwa-install-available', evalInstall);
+            window.removeEventListener('pwa-installed', evalInstall);
+        };
+    }, []);
+
+    const handleInstallClick = async () => {
+        if (installMode === 'native') {
+            await triggerInstall();
+            return;
+        }
+        setInstallModalOpen(true);
+    };
 
     useEffect(() => { localStorage.setItem('sidebar_collapsed', collapsed); }, [collapsed]);
 
@@ -224,6 +259,18 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                         <NavItem icon={ThemeIcon} label="Тема" collapsed={collapsed}
                             isActive={false} onClick={toggleTheme} secondary />
 
+                        {installCan && (
+                            <NavItem
+                                icon={Download}
+                                label="Установить приложение"
+                                collapsed={collapsed}
+                                isActive={false}
+                                onClick={handleInstallClick}
+                                secondary
+                                installAccent
+                            />
+                        )}
+
                         {/* Profile — bottom: FIO + role */}
                         {collapsed ? (
                             <NavItem icon={User} label={userFio || 'Профиль'} collapsed={collapsed}
@@ -246,6 +293,13 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                 </nav>
             </motion.aside>
 
+            {/* Install instructions modal (for non-native install flows) */}
+            <AnimatedModal isOpen={installModalOpen} onClose={() => setInstallModalOpen(false)}>
+                <div className="w-[92vw] max-w-sm rounded-2xl bg-white dark:bg-gray-800 border border-white/10 shadow-2xl overflow-hidden">
+                    <InstallInstructions variant="modal" onDismiss={() => setInstallModalOpen(false)} />
+                </div>
+            </AnimatedModal>
+
             {/* Collapse button — outside sidebar */}
             <motion.button
                 onClick={() => setCollapsed(!collapsed)}
@@ -265,7 +319,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
 }
 
 /* ───── Nav item ───── */
-function NavItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, accent, hasSubItems, isOpen, onToggle, dataTour }) {
+function NavItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, accent, installAccent, hasSubItems, isOpen, onToggle, dataTour }) {
     const base = accent
         ? 'bg-blue-600 text-white hover:bg-blue-700'
         : isActive
@@ -273,6 +327,7 @@ function NavItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, a
             : secondary
                 ? 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800/50'
                 : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800/50 hover:text-gray-900 dark:hover:text-gray-200';
+    const iconAccent = installAccent ? 'text-blue-600 dark:text-blue-400' : '';
 
     return (
         <motion.div
@@ -289,7 +344,7 @@ function NavItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, a
                     transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', duration: 0.3, bounce: 0.15 }}
                 />
             )}
-            <Icon className={`w-5 h-5 flex-shrink-0 ${isActive && !accent ? 'stroke-[2.5]' : ''}`} />
+            <Icon className={`w-5 h-5 flex-shrink-0 ${isActive && !accent ? 'stroke-[2.5]' : ''} ${iconAccent}`} />
             <AnimatePresence>
                 {!collapsed && (
                     <motion.span
