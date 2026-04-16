@@ -6,6 +6,46 @@ from utils import resolve_id, get_all_linked_ids
 logger = logging.getLogger(__name__)
 
 
+# ─────────────────────────────────────────────────────────
+# Role-change guardrails (Stage 2)
+# ─────────────────────────────────────────────────────────
+ROLE_RANKS = {
+    'driver': 1,
+    'worker': 2,
+    'brigadier': 3,
+    'foreman': 4,
+    'moderator': 5,
+    'boss': 6,
+    'superadmin': 7,
+}
+
+
+async def can_change_role(actor: dict, target: dict, new_role: str, db_manager) -> tuple[bool, str]:
+    """Authorize a role change. Returns (allowed, reason_if_not_allowed)."""
+    if new_role not in ROLE_RANKS:
+        return False, "Неизвестная роль"
+    if actor.get('user_id') == target.get('user_id'):
+        return False, "Нельзя изменять свою роль"
+
+    actor_role = actor.get('role')
+    target_role = target.get('role')
+    if actor_role not in ('boss', 'superadmin'):
+        return False, "Недостаточно прав"
+
+    if actor_role == 'superadmin':
+        # Prevent demoting the last superadmin
+        if target_role == 'superadmin' and new_role != 'superadmin':
+            count = await db_manager.count_users_by_role('superadmin')
+            if count <= 1:
+                return False, "Нельзя понизить последнего супер-админа"
+        return True, ""
+
+    # actor_role == 'boss'
+    if target_role == 'superadmin' or new_role == 'superadmin':
+        return False, "Недостаточно прав для работы с супер-админом"
+    return True, ""
+
+
 async def delete_user_cascade(admin_id: int, target_id: int):
     """Delete user with cascade cleanup. Returns or raises HTTPException."""
     from fastapi import HTTPException

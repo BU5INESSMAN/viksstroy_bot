@@ -13,7 +13,8 @@ const MAXAuth = lazy(() => import('./pages/MAXAuth'));
 const Home = lazy(() => import('./pages/Home'));
 const Guide = lazy(() => import('./pages/Guide'));
 const Updates = lazy(() => import('./pages/Updates'));
-const System = lazy(() => import('./pages/System'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Admin = lazy(() => import('./pages/Admin'));
 const MyApps = lazy(() => import('./pages/MyApps'));
 const Review = lazy(() => import('./pages/Review'));
 const Resources = lazy(() => import('./pages/Resources'));
@@ -170,7 +171,10 @@ export default function App() {
             <Route path="/dashboard" element={<Home />} />
             <Route path="/guide" element={<Guide />} />
             <Route path="/updates" element={<Updates />} />
-            <Route path="/system" element={<System />} />
+            <Route path="/settings" element={<Settings />} />
+            <Route path="/admin" element={<Admin />} />
+            {/* Legacy /system redirect → /admin */}
+            <Route path="/system" element={<Navigate to="/admin" replace />} />
             <Route path="/my-apps" element={<MyApps />} />
             <Route path="/review" element={<Review />} />
             <Route path="/resources" element={<Resources />} />

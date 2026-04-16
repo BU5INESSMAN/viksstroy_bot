@@ -2,6 +2,11 @@
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     fio TEXT,
+    last_name TEXT DEFAULT '',
+    first_name TEXT DEFAULT '',
+    middle_name TEXT DEFAULT '',
+    specialty TEXT DEFAULT '',
+    settings TEXT DEFAULT '{}',
     role TEXT,
     is_active INTEGER DEFAULT 0,
     is_blacklisted INTEGER DEFAULT 0,

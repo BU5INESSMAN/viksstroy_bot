@@ -222,17 +222,14 @@ export default function Layout() {
             if (!newProfileData.unregistered) {
                 setEditProfile({
                     fio: res.data.profile.fio,
+                    last_name: res.data.profile.last_name || '',
+                    first_name: res.data.profile.first_name || '',
+                    middle_name: res.data.profile.middle_name || '',
+                    specialty: res.data.profile.specialty || '',
                     role: res.data.profile.role,
                     team_id: res.data.profile.team_id || '',
                     position: res.data.profile.position || '',
                     max_invite_link: res.data.profile.max_invite_link || '',
-                    notify_tg: res.data.profile.notify_tg !== 0,
-                    notify_max: res.data.profile.notify_max !== 0,
-                    notify_new_users: res.data.profile.notify_new_users !== 0,
-                    notify_orders: res.data.profile.notify_orders !== 0,
-                    notify_reports: res.data.profile.notify_reports !== 0,
-                    notify_errors: res.data.profile.notify_errors !== 0,
-                    notify_exchange: res.data.profile.notify_exchange !== 0,
                 });
             }
             setProfileModalOpen(true);

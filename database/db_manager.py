@@ -115,6 +115,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_sessions()
         await self.upgrade_db_for_online_and_notifications()
         await self.migrate_estimate_pdfs_to_files()
+        await self.upgrade_db_for_user_fio_split()
 
         # Employee status columns on team_members
         for col_stmt in [
@@ -362,6 +363,55 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             ON user_notifications(user_id, is_read, created_at DESC)
         """)
         await self.conn.commit()
+
+    async def upgrade_db_for_user_fio_split(self):
+        """Stage 2: add last_name/first_name/middle_name/specialty/settings
+        columns and one-time split existing fio values into the new fields.
+        Idempotent — safe on every restart."""
+        for col_stmt in [
+            "ALTER TABLE users ADD COLUMN last_name TEXT DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN first_name TEXT DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN middle_name TEXT DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN specialty TEXT DEFAULT ''",
+            "ALTER TABLE users ADD COLUMN settings TEXT DEFAULT '{}'",
+        ]:
+            try:
+                await self.conn.execute(col_stmt)
+            except Exception:
+                pass
+        await self.conn.commit()
+
+        # One-time FIO split: runs only for rows where all three name parts
+        # are empty AND fio is non-empty. Second run finds nothing → no-op.
+        try:
+            async with self.conn.execute(
+                """SELECT user_id, fio FROM users
+                   WHERE (last_name IS NULL OR last_name = '')
+                     AND (first_name IS NULL OR first_name = '')
+                     AND fio IS NOT NULL AND fio != ''"""
+            ) as cur:
+                rows = await cur.fetchall()
+
+            count = 0
+            for row in rows:
+                uid = row[0]
+                fio = (row[1] or '').strip()
+                if not fio:
+                    continue
+                parts = fio.split()
+                last_name = parts[0] if len(parts) > 0 else ''
+                first_name = parts[1] if len(parts) > 1 else ''
+                middle_name = parts[2] if len(parts) > 2 else ''
+                await self.conn.execute(
+                    "UPDATE users SET last_name = ?, first_name = ?, middle_name = ? WHERE user_id = ?",
+                    (last_name, first_name, middle_name, uid),
+                )
+                count += 1
+            await self.conn.commit()
+            if count:
+                logging.info(f"FIO migration: split {count} users into last/first/middle")
+        except Exception as e:
+            logging.error(f"FIO migration failed: {e}")
 
     async def migrate_estimate_pdfs_to_files(self):
         """One-time migration: copy existing objects.pdf_file_path into object_files table."""

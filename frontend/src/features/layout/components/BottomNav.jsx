@@ -100,9 +100,6 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
                         {/* Main items — full width */}
                         <div className="space-y-2 mb-4">
-                            {isModOrBoss && (
-                                <MenuRow icon={SettingsIcon} color="blue" label="Система и Настройки" onClick={() => { setIsMenuOpen(false); navigate('/system'); }} />
-                            )}
                             <MenuRow icon={User} color="indigo" label="Мой Профиль" onClick={() => { setIsMenuOpen(false); openProfile(tgId); }} />
                         </div>
 

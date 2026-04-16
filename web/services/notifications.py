@@ -13,6 +13,40 @@ from services.image_service import strip_html
 from services.max_api import get_max_group_id, send_max_text, get_max_dm_chat_id
 from services.tg_session import get_tg_session
 from services.push_templates import build_push_payload
+from utils_fio import get_user_settings
+
+
+# Maps channel name → settings key used by Settings page toggles
+CHANNEL_KEY = {
+    'telegram': 'notify_telegram',
+    'max': 'notify_max',
+    'pwa': 'notify_pwa',
+}
+
+# Maps notification type → settings key for per-type filtering
+TYPE_KEY = {
+    'app_new': 'notify_new_apps',
+    'smr_debt': 'notify_smr_debtors',
+    'object_request': 'notify_object_requests',
+    'exchange_request': 'notify_exchanges',
+}
+
+
+def should_send(user: dict, channel: str, notification_type: str | None = None) -> bool:
+    """Check Settings-page toggles before dispatching a notification to a user.
+
+    Layered on TOP of legacy notify_tg / notify_max columns (both must pass).
+    """
+    if not user:
+        return True
+    settings = get_user_settings(user.get('settings') if isinstance(user, dict) else '{}')
+    ck = CHANNEL_KEY.get(channel)
+    if ck and not settings.get(ck, True):
+        return False
+    tk = TYPE_KEY.get(notification_type)
+    if tk and not settings.get(tk, True):
+        return False
+    return True
 
 from datetime import datetime, timedelta
 from database_deps import TZ_BARNAUL
@@ -137,28 +171,40 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     cat_col = NOTIFY_CATEGORY_COLUMNS.get(category) if category else None
 
     user_prefs = {}
+    user_settings_by_id: dict[int, dict] = {}
     if raw_user_ids:
         pl_ids = ','.join(['?'] * len(raw_user_ids))
         try:
             cat_select = f", {cat_col}" if cat_col else ""
-            async with db.conn.execute(f"SELECT user_id, notify_tg, notify_max{cat_select} FROM users WHERE user_id IN ({pl_ids})",
+            async with db.conn.execute(f"SELECT user_id, notify_tg, notify_max{cat_select}, settings FROM users WHERE user_id IN ({pl_ids})",
                                        list(raw_user_ids)) as cur:
                 for row in await cur.fetchall():
                     cat_enabled = row[3] != 0 if cat_col else True
+                    settings_json = row[-1]  # last column
                     user_prefs[row[0]] = {"tg": row[1] != 0, "max": row[2] != 0, "cat": cat_enabled}
-        except:
+                    user_settings_by_id[row[0]] = get_user_settings(settings_json)
+        except Exception:
             pass
 
     for uid in raw_user_ids:
         prefs = user_prefs.get(uid, {"tg": True, "max": True, "cat": True})
         if not prefs["cat"]:
             continue  # Пользователь отключил эту категорию — пропускаем
+        # New settings-page toggles layered on top (Stage 2)
+        user_settings = user_settings_by_id.get(uid, get_user_settings('{}'))
+        type_key = TYPE_KEY.get(push_type)
+        if type_key and not user_settings.get(type_key, True):
+            logger.debug(f"notify: user {uid} opted out of type {push_type}")
+            continue
         linked_ids = await get_all_linked_ids(uid)
 
+        tg_allowed = prefs["tg"] and user_settings.get("notify_telegram", True)
+        max_allowed = prefs["max"] and user_settings.get("notify_max", True)
+
         for lid in linked_ids:
-            if lid > 0 and prefs["tg"]:
+            if lid > 0 and tg_allowed:
                 final_tg_ids.add(lid)
-            elif lid < 0 and prefs["max"]:
+            elif lid < 0 and max_allowed:
                 final_max_ids.add(abs(lid))
 
     # ── Save to notification center (one entry per user, before platform split) ──
@@ -294,6 +340,25 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
     if not subscriptions:
         return
 
+    # Filter by notify_pwa + per-type toggle from user settings (Stage 2)
+    pwa_opted_out: set[int] = set()
+    try:
+        placeholders = ",".join("?" * len(user_ids))
+        async with db.conn.execute(
+            f"SELECT user_id, settings FROM users WHERE user_id IN ({placeholders})",
+            tuple(user_ids),
+        ) as cur:
+            for row in await cur.fetchall():
+                s = get_user_settings(row[1])
+                if not s.get("notify_pwa", True):
+                    pwa_opted_out.add(int(row[0]))
+                    continue
+                type_key = TYPE_KEY.get(push_type)
+                if type_key and not s.get(type_key, True):
+                    pwa_opted_out.add(int(row[0]))
+    except Exception:
+        pass
+
     payload = json.dumps(build_push_payload(
         push_type or "",
         body[:200],
@@ -303,6 +368,9 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
     expired_ids = []
     for sub in subscriptions:
         sub_id, sub_uid, endpoint, p256dh, auth_key = sub[0], sub[1], sub[2], sub[3], sub[4]
+        if int(sub_uid) in pwa_opted_out:
+            logger.debug(f"PUSH — user {sub_uid} opted out of PWA/{push_type}")
+            continue
         sub_info = {"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth_key}}
         try:
             webpush(

@@ -6,11 +6,17 @@ class UsersRepoMixin:
 
     async def add_user(self, user_id: int, fio: str, role: str):
         if not self.conn: await self.init_db()
+        # Разбиваем ФИО на составляющие чтобы сохранить согласованность
+        # денормализованного поля fio с last/first/middle_name
+        parts = (fio or '').strip().split()
+        last_name = parts[0] if len(parts) > 0 else ''
+        first_name = parts[1] if len(parts) > 1 else ''
+        middle_name = parts[2] if len(parts) > 2 else ''
         # Используем INSERT OR REPLACE, чтобы избежать ошибки UNIQUE constraint failed
         await self.conn.execute("""
-            INSERT OR REPLACE INTO users (user_id, fio, role, is_active)
-            VALUES (?, ?, ?, 1)
-        """, (user_id, fio, role))
+            INSERT OR REPLACE INTO users (user_id, fio, last_name, first_name, middle_name, role, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, 1)
+        """, (user_id, fio, last_name, first_name, middle_name, role))
         await self.conn.commit()
 
     async def get_all_users(self):
@@ -61,10 +67,39 @@ class UsersRepoMixin:
         return user_data
 
     async def update_user_profile_data(self, target_id: int, fio: str, role: str):
-        """Обновляет ФИО и Роль в главной таблице"""
-        await self.conn.execute("UPDATE users SET fio = ?, role = ? WHERE user_id = ?", (fio, role, target_id))
+        """Обновляет ФИО и Роль в главной таблице.
+
+        Также обновляет last_name/first_name/middle_name на основе fio,
+        чтобы денормализованное поле fio оставалось в синхронизации с
+        новыми полями (см. web/utils_fio.py).
+        """
+        parts = (fio or '').strip().split()
+        last_name = parts[0] if len(parts) > 0 else ''
+        first_name = parts[1] if len(parts) > 1 else ''
+        middle_name = parts[2] if len(parts) > 2 else ''
+        await self.conn.execute(
+            "UPDATE users SET fio = ?, last_name = ?, first_name = ?, middle_name = ?, role = ? WHERE user_id = ?",
+            (fio, last_name, first_name, middle_name, role, target_id),
+        )
         await self.conn.execute("UPDATE team_members SET fio = ? WHERE tg_id = ?",
                                 (fio, target_id))  # Синхронизируем ФИО в бригаде
+        await self.conn.commit()
+
+    async def count_users_by_role(self, role: str) -> int:
+        """Возвращает количество активных (не в черном списке) пользователей с ролью."""
+        async with self.conn.execute(
+            "SELECT COUNT(*) FROM users WHERE role = ? AND is_blacklisted = 0",
+            (role,),
+        ) as cur:
+            row = await cur.fetchone()
+        return int(row[0]) if row else 0
+
+    async def update_user_settings(self, user_id: int, settings_json: str) -> None:
+        """Сохраняет JSON-настройки пользователя."""
+        await self.conn.execute(
+            "UPDATE users SET settings = ? WHERE user_id = ?",
+            (settings_json, user_id),
+        )
         await self.conn.commit()
 
     async def update_user_avatar(self, tg_id: int, avatar_url: str):

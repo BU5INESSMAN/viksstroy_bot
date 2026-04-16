@@ -32,6 +32,7 @@ export default function Home() {
     const [debtors, setDebtors] = useState([]);
     const [publishingTomorrow, setPublishingTomorrow] = useState(false);
     const [isArchiveOpen, setArchiveOpen] = useState(false);
+    const [hideDebtors, setHideDebtors] = useState(false);
 
     const [openKanban, setOpenKanban] = useState({ waiting: true, approved: false, in_progress: false, completed: false });
     const [freeModal, setFreeModal] = useState({ isOpen: false, type: '', app: null, teamId: null, inputValue: '' });
@@ -81,6 +82,13 @@ export default function Home() {
     }
 
     useEffect(() => { fetchData(); }, [tgId, role]);
+
+    // User settings → hide_smr_debtors toggle
+    useEffect(() => {
+        axios.get('/api/users/me')
+            .then((res) => setHideDebtors(!!res.data?.user?.settings?.hide_smr_debtors))
+            .catch(() => {});
+    }, []);
 
     useEffect(() => {
         if (isGlobalCreateAppOpen) {
@@ -236,7 +244,7 @@ export default function Home() {
                 {myTeam && <MyTeamCard myTeam={myTeam} />}
             </div>
 
-            {!isWorkerOrDriver && (
+            {!isWorkerOrDriver && !hideDebtors && (
                 <div data-tour="debtors-widget"><DebtorsWidget debtors={debtors} tgId={tgId} /></div>
             )}
 

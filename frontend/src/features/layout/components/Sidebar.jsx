@@ -3,12 +3,13 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
     Home, MapPin, Briefcase, ClipboardList, FileText,
-    Settings as SettingsIcon, User, BookOpen, Rocket,
+    Settings as SettingsIcon, ShieldAlert, User, BookOpen, Rocket,
     MessageCircle, Plus, ChevronLeft, ChevronDown,
     Sun, Moon, Monitor, Headphones, Bell, Download
 } from 'lucide-react';
 import axios from 'axios';
 import { ROLE_NAMES } from '../../../utils/roleConfig';
+import { displayFio } from '../../../utils/fioFormat';
 import {
     isStandalone,
     getBrowserSupport,
@@ -70,7 +71,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
     useEffect(() => {
         if (tgId && tgId !== '0') {
             axios.get(`/api/users/${tgId}/profile`)
-                .then(r => setUserFio(r.data?.profile?.fio || ''))
+                .then(r => setUserFio(displayFio(r.data?.profile) || r.data?.profile?.fio || ''))
                 .catch(() => {});
         }
     }, [tgId]);
@@ -122,15 +123,9 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                 { label: 'Готовые', nav: '/kp?tab=approved', countKey: 'kp_done' },
             ],
         },
-        {
-            id: 'system', icon: SettingsIcon, label: 'Настройки', path: '/system', visible: isModOrBoss,
-            subItems: [
-                { label: 'Пользователи', nav: '/system?section=users' },
-                { label: 'Рассылка', nav: '/system?section=broadcast' },
-                { label: 'Журнал', nav: '/system?section=logs' },
-            ],
-        },
     ].filter(i => i.visible);
+
+    const canSeeAdmin = ['boss', 'superadmin'].includes(role);
 
     const secondaryNav = [
         { icon: BookOpen, label: 'Гайд', path: '/guide' },
@@ -268,6 +263,26 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                                 onClick={handleInstallClick}
                                 secondary
                                 installAccent
+                            />
+                        )}
+
+                        {/* Settings (all roles) + Admin (boss+) — just above profile */}
+                        <NavItem
+                            icon={SettingsIcon}
+                            label="Настройки"
+                            collapsed={collapsed}
+                            isActive={location.pathname === '/settings'}
+                            onClick={() => navigate('/settings')}
+                            secondary
+                        />
+                        {canSeeAdmin && (
+                            <NavItem
+                                icon={ShieldAlert}
+                                label="Админка"
+                                collapsed={collapsed}
+                                isActive={location.pathname === '/admin'}
+                                onClick={() => navigate('/admin')}
+                                secondary
                             />
                         )}
 

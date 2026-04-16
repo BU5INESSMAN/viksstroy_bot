@@ -115,11 +115,27 @@ async def _fetch_schedule_sections(target_date: str) -> list:
     logger.info(f"  foremen from users table: {[(r[0], r[1]) for r in foremen_rows]}")
     if foremen_rows:
         rows = []
+        # Batch lookup specialty for each foreman so the label under FIO
+        # reflects what the user actually entered in their profile.
+        foreman_ids = [r[0] for r in foremen_rows]
+        specialties: dict[int, str] = {}
+        if foreman_ids:
+            pl = ",".join("?" * len(foreman_ids))
+            async with db.conn.execute(
+                f"SELECT user_id, specialty FROM users WHERE user_id IN ({pl})",
+                foreman_ids,
+            ) as sp_cur:
+                for sp_row in await sp_cur.fetchall():
+                    specialties[sp_row[0]] = (sp_row[1] or "").strip()
+
         for uid, fio, role in foremen_rows:
             objs = foreman_objs.get(uid, [])
+            specialty = specialties.get(uid, "")
+            # Prefer specialty; fall back to role label only if empty.
+            label = specialty or ROLE_MAP.get(role, role or "—")
             rows.append({
                 "name": fio or "—",
-                "role": ROLE_MAP.get(role, role or "—"),
+                "role": label,
                 "status": "Акт" if objs else "—",
                 "object": ", ".join(dict.fromkeys(objs)) if objs else "",
             })
