@@ -382,8 +382,8 @@ export default function ObjectEditModal({
                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                     {filteredFiles.map(file => (
                                         <div key={file.id} className="relative group rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 aspect-square cursor-pointer"
-                                            onClick={() => setViewingFile({ url: file.file_path, name: file.original_name })}>
-                                            <img src={file.file_path} alt={file.original_name} className="w-full h-full object-cover" loading="lazy" />
+                                            onClick={() => setViewingFile({ url: `/api/files/${file.id}/download`, name: file.original_name })}>
+                                            <img src={`/api/files/${file.id}/download`} alt={file.original_name} className="w-full h-full object-cover" loading="lazy" />
                                             <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-end">
                                                 <div className="w-full p-2 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity">
                                                     <p className="text-xs text-white truncate">{file.original_name}</p>
@@ -412,10 +412,10 @@ export default function ObjectEditModal({
                                                             className="text-sm bg-transparent border-b border-blue-500/50 text-gray-800 dark:text-white outline-none w-full" autoFocus />
                                                     ) : (
                                                         <p className="text-sm font-medium text-blue-600 dark:text-blue-400 truncate cursor-pointer hover:underline"
-                                                            onClick={() => setViewingFile({ url: f.file_path, name: f.original_name })}
+                                                            onClick={() => setViewingFile({ url: `/api/files/${f.id}/download`, name: f.original_name })}
                                                             onDoubleClick={(e) => { e.stopPropagation(); startRename(f); }}
                                                             title="Двойной клик — переименовать">
-                                                            {f.original_name || f.file_path.split('/').pop()}
+                                                            {f.original_name || (f.file_path || '').split('/').pop()}
                                                         </p>
                                                     )}
                                                     {f.file_size > 0 && <p className="text-xs text-gray-400">{formatFileSize(f.file_size)}</p>}
