@@ -114,7 +114,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                         <div className="space-y-2 mb-4">
                             <MenuRow icon={SettingsIcon} color="blue" label="Настройки" onClick={() => { setIsMenuOpen(false); navigate('/settings'); }} />
                             {canSeeAdmin && (
-                                <MenuRow icon={ShieldAlert} color="indigo" label="Админка" onClick={() => { setIsMenuOpen(false); navigate('/admin'); }} />
+                                <MenuRow icon={ShieldAlert} color="red" label="Админка" onClick={() => { setIsMenuOpen(false); navigate('/admin'); }} />
                             )}
                             <MenuRow icon={User} color="indigo" label="Мой Профиль" onClick={() => { setIsMenuOpen(false); openProfile(tgId); }} />
                         </div>
@@ -141,6 +141,7 @@ function MenuRow({ icon: Icon, color, label, onClick }) {
         blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
         indigo: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
         emerald: 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400',
+        red: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',
     };
     return (
         <button onClick={onClick} className="w-full flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors font-semibold text-sm text-gray-800 dark:text-white border border-gray-100 dark:border-gray-700 active:scale-[0.98]">
