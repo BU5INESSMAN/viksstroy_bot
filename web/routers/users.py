@@ -3,21 +3,24 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException, Depends
+from fastapi import APIRouter, Form, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import Optional
 from database_deps import db
 from utils import resolve_id, get_all_linked_ids
 from services.user_service import delete_user_cascade, unlink_user_platform
 from services.account_link_service import link_account, admin_link_accounts
-from auth_deps import get_current_user
+from auth_deps import get_current_user, require_role
 
 router = APIRouter(tags=["Users"])
 
+_require_office = require_role("superadmin", "boss", "moderator")
+_require_boss_plus = require_role("superadmin", "boss")
+
 
 @router.get("/api/users")
-async def get_users():
-    if db.conn is None: await db.init_db()
+async def get_users(current_user=Depends(_require_office)):
+    """List all users. Office (moderator+) only."""
     async with db.conn.execute(
         "SELECT user_id, fio, role, is_blacklisted, linked_user_id FROM users"
     ) as cur:
@@ -50,9 +53,11 @@ async def get_users():
 
 
 @router.get("/api/users/{target_id}/profile")
-async def get_profile(target_id: int, member_id: int = 0, equip_id: int = 0):
-    if db.conn is None: await db.init_db()
-
+async def get_profile(target_id: int, member_id: int = 0, equip_id: int = 0,
+                      current_user=Depends(get_current_user)):
+    """Get user profile. Self or office can view registered profiles.
+    member_id/equip_id lookups for unregistered workers/drivers also allowed.
+    """
     if target_id != 0:
         real_tg_id = await resolve_id(target_id)
         async with db.conn.execute(
@@ -87,9 +92,6 @@ async def get_profile(target_id: int, member_id: int = 0, equip_id: int = 0):
                 eq = await cur.fetchone()
                 if eq:
                     profile["equip_id"] = eq[0]
-                    # Only fall back to equipment category if team_members
-                    # didn't already provide a position (avoids overwriting
-                    # the user's saved specialty with equipment type).
                     if not profile.get("position"):
                         profile["position"] = eq[2] or ''
 
@@ -136,25 +138,20 @@ async def update_profile(target_id: int, fio: str = Form(...), role: str = Form(
     """Update user profile. Users can edit own fio/notifications.
     Only boss+ can change roles. Self-role escalation is blocked.
     """
-    if db.conn is None: await db.init_db()
-
     current_role = current_user.get("role")
     is_self = current_user["user_id"] == target_id
     is_admin = current_role in ("superadmin", "boss")
     is_moderator = current_role in ("superadmin", "boss", "moderator")
 
-    # Authorization: self or moderator+
     if not is_self and not is_moderator:
         raise HTTPException(403, "Нет прав для изменения этого профиля")
 
-    # Determine effective role — prevent self-escalation
     target_user = await db.get_user(target_id)
     if not target_user:
         raise HTTPException(404, "Пользователь не найден")
     existing_role = dict(target_user).get("role", "worker")
 
     if role and is_admin and not is_self:
-        # Admin editing another user's role — validate
         allowed_roles = {"superadmin", "boss", "moderator", "foreman", "brigadier", "worker", "driver"}
         if role not in allowed_roles:
             raise HTTPException(400, "Недопустимая роль")
@@ -162,7 +159,6 @@ async def update_profile(target_id: int, fio: str = Form(...), role: str = Form(
             raise HTTPException(403, "Только superadmin может назначать superadmin")
         effective_role = role
     else:
-        # Self-edit or non-admin edit — keep existing role
         effective_role = existing_role
 
     try:
@@ -177,24 +173,22 @@ async def update_profile(target_id: int, fio: str = Form(...), role: str = Form(
         )
 
         await db.conn.commit()
-    except Exception as e:
+    except Exception:
         await db.conn.rollback()
         raise HTTPException(500, "Ошибка сохранения профиля")
 
-    admin_fio = current_user.get("fio", "")
-    await db.add_log(current_user["user_id"], admin_fio, f"Обновил профиль пользователя {fio}", target_type='user', target_id=target_id)
+    await db.add_log(current_user["user_id"], current_user.get("fio", ""), f"Обновил профиль пользователя {fio}", target_type='user', target_id=target_id)
     return {"status": "ok"}
 
 
 @router.post("/api/users/{target_id}/update_avatar")
-async def update_avatar(target_id: int, tg_id: int = Form(...), avatar_base64: str = Form(...)):
-    if db.conn is None: await db.init_db()
-    admin_id = await resolve_id(tg_id)
-
-    if admin_id != target_id:
-        user = await db.get_user(admin_id)
-        if not user or dict(user).get('role') not in ['boss', 'superadmin', 'moderator']:
-            raise HTTPException(403, "Нет прав")
+async def update_avatar(target_id: int, avatar_base64: str = Form(...),
+                        current_user=Depends(get_current_user)):
+    """Update user avatar. Self or office."""
+    is_self = current_user["tg_id"] == target_id
+    is_office = current_user.get("role") in ("superadmin", "boss", "moderator")
+    if not is_self and not is_office:
+        raise HTTPException(403, "Нет прав")
 
     from services.image_service import process_base64_image
     url = process_base64_image(avatar_base64, f"avatar_{target_id}")
@@ -210,54 +204,57 @@ async def update_avatar(target_id: int, tg_id: int = Form(...), avatar_base64: s
 
 
 @router.post("/api/users/{target_id}/delete")
-async def delete_user(target_id: int, tg_id: int = Form(...)):
-    if db.conn is None: await db.init_db()
-    admin_id = await resolve_id(tg_id)
-    await delete_user_cascade(admin_id, target_id)
+async def delete_user(target_id: int, current_user=Depends(_require_boss_plus)):
+    """Delete user with cascade. Boss+ only."""
+    if current_user["tg_id"] == target_id:
+        raise HTTPException(400, "Нельзя удалить свой собственный аккаунт")
+
+    target = await db.get_user(target_id)
+    if target and dict(target).get("role") == "superadmin" and current_user.get("role") != "superadmin":
+        raise HTTPException(403, "Только superadmin может удалить superadmin")
+
+    await delete_user_cascade(current_user["tg_id"], target_id)
+
+    await db.add_log(current_user["tg_id"], current_user.get("fio", "Система"),
+                     f"Удалил пользователя #{target_id}", target_type='user', target_id=target_id)
     return {"status": "ok"}
 
 
 @router.post("/api/users/unlink_platform")
-async def unlink_platform(tg_id: int = Form(...), platform: str = Form(...)):
-    if db.conn is None: await db.init_db()
-    await unlink_user_platform(tg_id, platform)
+async def unlink_platform(platform: str = Form(...), current_user=Depends(get_current_user)):
+    """Unlink a platform (TG or MAX) from own account."""
+    await unlink_user_platform(current_user["tg_id"], platform)
     return {"status": "ok"}
 
 
 # =============================================
-# Account linking models (kept for FastAPI)
+# Account linking
 # =============================================
 
 class LinkAccountRequest(BaseModel):
-    current_user_id: int
     link_code: str
 
 
 class AdminLinkRequest(BaseModel):
-    admin_id: int
     user_id_1: int
     user_id_2: int
 
 
 @router.post("/api/users/link-account")
-async def link_account_v2(body: LinkAccountRequest):
+async def link_account_v2(body: LinkAccountRequest, current_user=Depends(get_current_user)):
     """Связывание аккаунтов через одноразовый код."""
-    if db.conn is None: await db.init_db()
-    return await link_account(body.current_user_id, body.link_code)
+    return await link_account(current_user["tg_id"], body.link_code)
 
 
 @router.post("/api/users/admin-link")
-async def admin_link(body: AdminLinkRequest):
+async def admin_link(body: AdminLinkRequest, current_user=Depends(_require_boss_plus)):
     """Принудительное связывание аккаунтов администратором."""
-    if db.conn is None: await db.init_db()
-    return await admin_link_accounts(body.admin_id, body.user_id_1, body.user_id_2)
+    return await admin_link_accounts(current_user["tg_id"], body.user_id_1, body.user_id_2)
 
 
 @router.get("/api/users/{user_id}/linked")
-async def get_linked_account(user_id: int):
+async def get_linked_account(user_id: int, current_user=Depends(get_current_user)):
     """Возвращает информацию о связанном аккаунте."""
-    if db.conn is None: await db.init_db()
-
     real_id = await resolve_id(user_id)
     user = await db.get_user(real_id)
     if not user:
@@ -291,13 +288,9 @@ async def get_linked_account(user_id: int):
 async def set_user_role(user_id: int, role: str = Form(...),
                         current_user=Depends(get_current_user)):
     """Установка роли пользователя. Только boss+ может менять роли."""
-    if db.conn is None: await db.init_db()
-
-    # Auth: only boss and superadmin can change roles
     if current_user.get("role") not in ("superadmin", "boss"):
         raise HTTPException(403, "Недостаточно прав")
 
-    # Only superadmin can promote to superadmin
     if role == "superadmin" and current_user["role"] != "superadmin":
         raise HTTPException(403, "Только superadmin может назначать superadmin")
 

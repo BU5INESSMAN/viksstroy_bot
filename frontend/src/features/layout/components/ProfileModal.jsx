@@ -39,7 +39,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
         if(!file) return;
         const reader = new FileReader();
         reader.onloadend = async () => {
-            const fd = new FormData(); fd.append('avatar_base64', reader.result); fd.append('tg_id', tgId);
+            const fd = new FormData(); fd.append('avatar_base64', reader.result);
             try {
                 const res = await axios.post(`/api/users/${profileData.user_id}/update_avatar`, fd);
                 setProfileData({...profileData, avatar_url: res.data.avatar_url});
@@ -51,7 +51,6 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
     const handleSaveProfile = async () => {
         try {
             const fd = new FormData();
-            fd.append('tg_id', tgId);
             fd.append('fio', editProfile.fio);
             fd.append('role', editProfile.role);
             fd.append('team_id', editProfile.team_id);
@@ -74,9 +73,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
         const ok = await confirm(`Вы уверены, что хотите полностью удалить пользователя ${profileData.fio}? Это действие нельзя отменить.`, { title: "Удаление пользователя", confirmText: "Удалить" });
         if (!ok) return;
         try {
-            const fd = new FormData();
-            fd.append('tg_id', tgId);
-            await axios.post(`/api/users/${profileData.user_id}/delete`, fd);
+            await axios.post(`/api/users/${profileData.user_id}/delete`);
             toast.success("Пользователь успешно удален из системы.");
             setProfileModalOpen(false);
             window.location.reload();
@@ -87,7 +84,6 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
         if (!linkCode) return;
         try {
             const res = await axios.post('/api/users/link-account', {
-                current_user_id: profileData.user_id,
                 link_code: linkCode
             });
 
@@ -112,7 +108,6 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
         if (!ok) return;
         try {
             const fd = new FormData();
-            fd.append('tg_id', tgId);
             fd.append('platform', platform);
             await axios.post('/api/users/unlink_platform', fd);
             toast.success(`Мессенджер ${platformName} успешно отвязан.`);
@@ -132,7 +127,6 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
         setLinkingInProgress(true);
         try {
             const res = await axios.post('/api/users/admin-link', {
-                admin_id: parseInt(tgId),
                 user_id_1: profileData.user_id,
                 user_id_2: targetUserId
             });
