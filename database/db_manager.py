@@ -116,6 +116,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_online_and_notifications()
         await self.migrate_estimate_pdfs_to_files()
         await self.upgrade_db_for_user_fio_split()
+        await self.upgrade_db_for_icon_settings()
 
         # Employee status columns on team_members
         for col_stmt in [
@@ -362,6 +363,23 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             CREATE INDEX IF NOT EXISTS idx_user_notif_user
             ON user_notifications(user_id, is_read, created_at DESC)
         """)
+        await self.conn.commit()
+
+    async def upgrade_db_for_icon_settings(self):
+        """Stage 6: icon column on teams + equipment_category_settings table."""
+        try:
+            await self.conn.execute("ALTER TABLE teams ADD COLUMN icon TEXT DEFAULT NULL")
+        except Exception:
+            pass
+        try:
+            await self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS equipment_category_settings (
+                    category TEXT PRIMARY KEY,
+                    icon TEXT DEFAULT NULL
+                )
+            """)
+        except Exception:
+            pass
         await self.conn.commit()
 
     async def upgrade_db_for_user_fio_split(self):

@@ -5,6 +5,8 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Form, HTTPException, Depends
+from pydantic import BaseModel
+from typing import Optional
 import asyncio
 import logging
 from datetime import datetime
@@ -272,3 +274,45 @@ async def update_member_status(
         target_type='team', target_id=team_id,
     )
     return {"status": "ok"}
+
+
+# =============================================
+# Stage 6: team icon update
+# =============================================
+
+class TeamPatch(BaseModel):
+    name: Optional[str] = None
+    icon: Optional[str] = None
+
+
+@router.patch("/api/teams/{team_id}")
+async def api_update_team(team_id: int, body: TeamPatch, current_user=Depends(_require_office)):
+    """Update team name and/or icon. Moderator+ only."""
+    updates: dict = {}
+    if body.name is not None:
+        n = body.name.strip()
+        if not n:
+            raise HTTPException(400, "Имя бригады не может быть пустым")
+        updates["name"] = n
+    if body.icon is not None:
+        updates["icon"] = body.icon.strip() or None
+
+    if not updates:
+        return {"status": "ok"}
+
+    fields = ", ".join(f"{k} = ?" for k in updates)
+    values = list(updates.values()) + [team_id]
+    try:
+        await db.conn.execute(f"UPDATE teams SET {fields} WHERE id = ?", values)
+        await db.conn.commit()
+    except Exception as e:
+        logger.error(f"Team {team_id} update failed: {e}")
+        raise HTTPException(500, "Ошибка сохранения")
+
+    fio = current_user.get("fio", "")
+    await db.add_log(
+        current_user["tg_id"], fio,
+        f"Обновил бригаду #{team_id}: {list(updates.keys())}",
+        target_type="team", target_id=team_id,
+    )
+    return {"status": "ok", "updates": updates}

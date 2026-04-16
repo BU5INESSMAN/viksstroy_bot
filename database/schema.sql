@@ -28,10 +28,17 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS teams (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
+    icon TEXT DEFAULT NULL,
     creator_id INTEGER,
     invite_code TEXT,
     join_password TEXT,
     FOREIGN KEY (creator_id) REFERENCES users (user_id)
+);
+
+-- Настройки иконок для категорий техники
+CREATE TABLE IF NOT EXISTS equipment_category_settings (
+    category TEXT PRIMARY KEY,
+    icon TEXT DEFAULT NULL
 );
 
 -- Состав бригад

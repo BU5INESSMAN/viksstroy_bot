@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Upload, Search } from 'lucide-react';
+import { Plus, Upload, Search, Cog } from 'lucide-react';
 
 import EquipmentCard from '../features/equipment/components/EquipmentCard';
 import AddEquipForm from '../features/equipment/components/AddEquipForm';
@@ -10,6 +10,7 @@ import BulkUploadForm from '../features/equipment/components/BulkUploadForm';
 import EquipmentInviteModal from '../features/equipment/components/EquipmentInviteModal';
 import EditEquipmentModal from '../features/equipment/components/EditEquipmentModal';
 import EquipmentStatsModal from '../features/equipment/components/EquipmentStatsModal';
+import CategorySettingsModal from '../features/equipment/components/CategorySettingsModal';
 import useConfirm from '../hooks/useConfirm';
 import { EquipmentSkeleton } from '../components/ui/PageSkeletons';
 
@@ -35,6 +36,21 @@ export default function Equipment() {
 
     const canManageEquipment = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canDeleteEquipment = ['moderator', 'boss', 'superadmin'].includes(role);
+    const isOffice = ['moderator', 'boss', 'superadmin'].includes(role);
+    const [isCategorySettingsOpen, setCategorySettingsOpen] = useState(false);
+    const [categoryIcons, setCategoryIcons] = useState({});
+
+    // Fetch category→icon map once, refresh when modal saves
+    const fetchCategoryIcons = async () => {
+        try {
+            const res = await axios.get('/api/equipment/category-settings');
+            const map = {};
+            (res.data || []).forEach((r) => { if (r.icon) map[r.category] = r.icon; });
+            setCategoryIcons(map);
+        } catch {}
+    };
+    useEffect(() => { fetchCategoryIcons(); }, []);
+
     const { confirm, ConfirmUI } = useConfirm();
 
     const fetchData = async () => {
@@ -126,6 +142,15 @@ export default function Equipment() {
             {/* Кнопки управления теперь выровнены по правому краю */}
             {canManageEquipment && (
                 <div className="flex justify-end gap-2.5 mb-2">
+                    {isOffice && (
+                        <button
+                            onClick={() => setCategorySettingsOpen(true)}
+                            className="bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 px-4 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700"
+                            title="Иконки категорий"
+                        >
+                            <Cog className="w-4 h-4" /> Иконки
+                        </button>
+                    )}
                     <button data-tour="equip-add-btn" onClick={() => setActiveTab('new')} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
                         <Plus className="w-4 h-4" /> Добавить
                     </button>
@@ -147,7 +172,7 @@ export default function Equipment() {
                     {equipment.filter(e => activeTab === 'list' || e.category === activeTab).map(eq => (
                         <EquipmentCard
                             key={eq.id}
-                            eq={eq}
+                            eq={{ ...eq, category_icon: categoryIcons[eq.category] || '' }}
                             canManageEquipment={canManageEquipment}
                             canDeleteEquipment={canDeleteEquipment}
                             openProfile={openProfile}
@@ -206,6 +231,12 @@ export default function Equipment() {
                 setCopiedLink={setCopiedLink}
             />
             <EquipmentStatsModal isOpen={!!statsEquip} onClose={() => setStatsEquip(null)} equipment={statsEquip} tgId={tgId} />
+            {isCategorySettingsOpen && (
+                <CategorySettingsModal
+                    onClose={() => setCategorySettingsOpen(false)}
+                    onSaved={fetchCategoryIcons}
+                />
+            )}
             {ConfirmUI}
         </div>
     );

@@ -1,8 +1,12 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import axios from 'axios';
+import toast from 'react-hot-toast';
 import {
-    Users, Link, UserPlus, User, UserMinus, Star, Trash2, X
+    Users, Link, UserPlus, User, UserMinus, Star, Trash2, X, Palette
 } from 'lucide-react';
 import MemberStatusModal from './MemberStatusModal';
+import IconPicker from '../../../components/ui/IconPicker';
+import { TEAM_ICONS, getIconComponent, DEFAULT_TEAM_ICON } from '../../../utils/iconConfig';
 
 const STATUS_BADGES = {
     vacation: { label: 'Отпуск', className: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-700' },
@@ -18,23 +22,75 @@ const formatShortDate = (dateStr) => {
 
 export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen, manageTeamData, canManage, generateInvite, newMember, setNewMember, handleAddMember, toggleForeman, handleUnlinkMember, deleteMember, openProfile, tgId, onRefresh }) {
     const [statusMember, setStatusMember] = useState(null);
+    const [iconKey, setIconKey] = useState(manageTeamData?.icon || null);
+    const [iconPickerOpen, setIconPickerOpen] = useState(false);
+
+    useEffect(() => { setIconKey(manageTeamData?.icon || null); }, [manageTeamData?.id]);
 
     if (!isManageModalOpen || !manageTeamData) return null;
+
+    const CurrentTeamIcon = getIconComponent(iconKey, TEAM_ICONS)
+        || getIconComponent(DEFAULT_TEAM_ICON, TEAM_ICONS);
+
+    const saveIcon = async (key) => {
+        const prev = iconKey;
+        setIconKey(key);
+        try {
+            await axios.patch(`/api/teams/${manageTeamData.id}`, { icon: key });
+            toast.success('Иконка обновлена');
+            onRefresh?.();
+        } catch (e) {
+            setIconKey(prev);
+            toast.error(e?.response?.data?.detail || 'Ошибка сохранения');
+        }
+    };
 
     return (
         <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                 <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden border border-gray-100 dark:border-gray-700">
                     <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
-                        <h3 className="text-xl font-bold dark:text-white flex items-center gap-2">
-                            <Users className="w-6 h-6 text-indigo-500" /> Бригада: {manageTeamData.name}
+                        <h3 className="text-xl font-bold dark:text-white flex items-center gap-2 min-w-0">
+                            <CurrentTeamIcon className="w-6 h-6 text-indigo-500 flex-shrink-0" />
+                            <span className="truncate">Бригада: {manageTeamData.name}</span>
                         </h3>
-                        <button onClick={() => setManageModalOpen(false)} className="text-gray-400 hover:text-red-500 transition-colors bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-sm border border-gray-100 dark:border-gray-700">
+                        <button onClick={() => setManageModalOpen(false)} className="text-gray-400 hover:text-red-500 transition-colors bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-sm border border-gray-100 dark:border-gray-700 flex-shrink-0">
                             <X className="w-5 h-5" />
                         </button>
                     </div>
 
                     <div className="p-6 space-y-6">
+                        {canManage && (
+                            <div className="rounded-2xl border border-gray-100 dark:border-gray-700">
+                                <button
+                                    type="button"
+                                    onClick={() => setIconPickerOpen((o) => !o)}
+                                    className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors rounded-2xl"
+                                >
+                                    <span className="inline-flex items-center justify-center w-9 h-9 rounded-lg bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 flex-shrink-0">
+                                        <Palette className="w-4 h-4" />
+                                    </span>
+                                    <span className="flex-1 min-w-0">
+                                        <div className="font-semibold text-sm text-gray-900 dark:text-gray-100">Иконка бригады</div>
+                                        <div className="text-[11px] text-gray-500 dark:text-gray-400">
+                                            {iconKey ? (TEAM_ICONS[iconKey]?.label || iconKey) : 'Не выбрана'}
+                                        </div>
+                                    </span>
+                                    <span className="text-xs font-bold text-indigo-500">{iconPickerOpen ? 'Скрыть' : 'Выбрать'}</span>
+                                </button>
+                                {iconPickerOpen && (
+                                    <div className="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/20">
+                                        <IconPicker
+                                            value={iconKey}
+                                            onChange={saveIcon}
+                                            icons={TEAM_ICONS}
+                                            columns={5}
+                                        />
+                                    </div>
+                                )}
+                            </div>
+                        )}
+
                         <div>
                             <h4 className="font-bold text-gray-800 dark:text-gray-200 mb-4 flex items-center gap-2">
                                 <Users className="w-5 h-5 text-gray-400" /> Состав ({manageTeamData.members.length})

@@ -5,6 +5,8 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from fastapi import APIRouter, Form, HTTPException, Request, Query, Depends
+from pydantic import BaseModel
+from typing import Optional
 import asyncio
 import json
 import logging
@@ -440,3 +442,67 @@ async def unlink_equipment(equip_id: int, current_user=Depends(get_current_user)
     except:
         await db.conn.rollback()
     return {"status": "ok"}
+
+
+# =============================================
+# Stage 6: category icon settings
+# =============================================
+
+class CategoryIconPatch(BaseModel):
+    icon: Optional[str] = None
+
+
+@router.get("/api/equipment/category-settings")
+async def get_category_settings(current_user=Depends(get_current_user)):
+    """Return a flat {category_name: icon_key} map merged with every
+    currently-used category so the frontend can render rows for all of
+    them."""
+    used: set[str] = set()
+    async with db.conn.execute(
+        "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''"
+    ) as cur:
+        for row in await cur.fetchall():
+            if row[0]:
+                used.add(row[0])
+
+    saved: dict[str, str] = {}
+    try:
+        async with db.conn.execute(
+            "SELECT category, icon FROM equipment_category_settings"
+        ) as cur:
+            for row in await cur.fetchall():
+                if row[0]:
+                    saved[row[0]] = row[1] or ""
+    except Exception:
+        pass
+
+    categories = sorted(used | set(saved.keys()))
+    return [{"category": c, "icon": saved.get(c, "")} for c in categories]
+
+
+@router.patch("/api/equipment/category-settings/{category_name}")
+async def set_category_icon(category_name: str, body: CategoryIconPatch,
+                            current_user=Depends(_require_office)):
+    """Set (or clear) the icon for an equipment category."""
+    category = (category_name or "").strip()
+    if not category:
+        raise HTTPException(400, "Категория не указана")
+    icon = (body.icon or "").strip() or None
+    try:
+        await db.conn.execute(
+            "INSERT INTO equipment_category_settings (category, icon) VALUES (?, ?) "
+            "ON CONFLICT(category) DO UPDATE SET icon = excluded.icon",
+            (category, icon),
+        )
+        await db.conn.commit()
+    except Exception as e:
+        logger.error(f"Category icon save failed: {e}")
+        raise HTTPException(500, "Ошибка сохранения")
+
+    fio = current_user.get("fio", "")
+    await db.add_log(
+        current_user["tg_id"], fio,
+        f"Установил иконку «{icon or '—'}» для категории «{category}»",
+        target_type='equipment',
+    )
+    return {"status": "ok", "category": category, "icon": icon or ""}
