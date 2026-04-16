@@ -1,23 +1,27 @@
 {
-  "name": "ВИКС Расписание",
-  "short_name": "ВИКС",
-  "description": "Платформа управления строительными нарядами",
+  "name": "ВиКС — Управление строительством",
+  "short_name": "ВиКС",
+  "description": "Платформа управления строительными заявками, бригадами и техникой",
   "start_url": "/",
   "display": "standalone",
-  "orientation": "portrait",
-  "background_color": "#1f2937",
-  "theme_color": "#3b82f6",
+  "background_color": "#1F253A",
+  "theme_color": "#1F253A",
   "icons": [
     {
-      "src": "/main.png",
-      "sizes": "165x165",
-      "type": "image/png",
-      "purpose": "any maskable"
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
     },
     {
-      "src": "/apple-touch-icon.png",
-      "sizes": "180x180",
+      "src": "/icon-512.png",
+      "sizes": "512x512",
       "type": "image/png"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }

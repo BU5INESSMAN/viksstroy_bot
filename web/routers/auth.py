@@ -124,16 +124,49 @@ async def max_web_auth(code: str = Form(...)):
 
 
 @router.post("/api/max/auth")
-async def api_max_auth(max_id: int = Form(...), first_name: str = Form(""), last_name: str = Form("")):
+async def api_max_auth(code: str = Form(...)):
+    """MAX web auth via one-time code from bot.
+
+    SECURITY: Requires a verified one-time code from the web_codes table.
+    Never trusts raw max_id from the client.
+
+    Flow:
+    1. User sends /login to the MAX bot
+    2. Bot generates a short-lived code and stores it in web_codes
+    3. User enters the code on the web login page
+    4. This endpoint validates the code and creates a session
+    """
+    async with db.conn.execute(
+        "SELECT max_id, expires FROM web_codes WHERE code = ?", (code,)
+    ) as cur:
+        row = await cur.fetchone()
+
+    if not row or time.time() > row[1]:
+        raise HTTPException(400, "Код недействителен или истёк")
+
+    max_id = row[0]
+
+    # Consume the code (one-time use)
+    await db.conn.execute("DELETE FROM web_codes WHERE code = ?", (code,))
+    await db.conn.commit()
+
     pseudo_tg_id = -int(max_id)
     real_tg_id = await resolve_id(pseudo_tg_id)
     user = await db.get_user(real_tg_id)
+
     if user:
-        if dict(user).get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
+        if dict(user).get("is_blacklisted"):
+            raise HTTPException(status_code=403, detail="Заблокирован")
         token = await _create_session(real_tg_id)
+        user_dict = dict(user)
         return _make_auth_response(
-            {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id, "session_token": token}, token)
-    return {"status": "needs_password", "max_id": max_id, "first_name": first_name, "last_name": last_name}
+            {"status": "ok", "role": user_dict["role"], "fio": user_dict["fio"],
+             "tg_id": real_tg_id, "session_token": token},
+            token,
+        )
+
+    # User not registered — return max_id for registration form
+    return {"status": "needs_password", "max_id": max_id}
 
 
 @router.post("/api/max/register")
@@ -205,15 +238,93 @@ async def telegram_auth(data: dict):
 
 
 @router.post("/api/tma/auth")
-async def api_tma_auth(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form("")):
+async def api_tma_auth(init_data: str = Form(...)):
+    """Telegram Mini App auth via initData HMAC verification.
+
+    SECURITY: Verifies HMAC-SHA256 signature using the WebAppData scheme.
+    Never trusts raw tg_id — extracts it from cryptographically verified data.
+    """
+    import json
+    from urllib.parse import parse_qsl
+
+    bot_token = os.getenv("BOT_TOKEN", "")
+    if not bot_token:
+        raise HTTPException(500, "Auth not configured")
+
+    try:
+        # Parse initData query string
+        pairs = parse_qsl(init_data, keep_blank_values=True)
+        received_hash = None
+        check_pairs = []
+        raw_data = {}
+
+        for k, v in pairs:
+            if k == "hash":
+                received_hash = v
+            else:
+                check_pairs.append(f"{k}={v}")
+                raw_data[k] = v
+
+        if not received_hash:
+            raise HTTPException(401, "Отсутствует hash в initData")
+
+        # Build data-check-string (sorted alphabetically by key)
+        check_pairs.sort()
+        data_check_string = "\n".join(check_pairs)
+
+        # WebAppData HMAC scheme (different from Login Widget!)
+        secret_key = hmac.new(
+            b"WebAppData",
+            bot_token.encode(),
+            hashlib.sha256,
+        ).digest()
+
+        expected_hash = hmac.new(
+            secret_key,
+            data_check_string.encode(),
+            hashlib.sha256,
+        ).hexdigest()
+
+        if not secrets.compare_digest(received_hash, expected_hash):
+            raise HTTPException(401, "Недействительная подпись initData")
+
+        # Verify auth_date is recent (24 h window to prevent replay)
+        auth_date = int(raw_data.get("auth_date", "0"))
+        if time.time() - auth_date > 86400:
+            raise HTTPException(401, "Данные initData устарели")
+
+        # Extract verified user
+        user_json = raw_data.get("user", "{}")
+        user_data = json.loads(user_json)
+        tg_id = int(user_data.get("id", 0))
+        if not tg_id:
+            raise HTTPException(401, "Не удалось извлечь user.id из initData")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(401, f"Ошибка валидации initData: {str(e)[:100]}")
+
+    # Resolve linked accounts and look up user
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
+
     if user:
-        if dict(user).get('is_blacklisted'): raise HTTPException(status_code=403, detail="Заблокирован")
+        if dict(user).get("is_blacklisted"):
+            raise HTTPException(status_code=403, detail="Заблокирован")
         token = await _create_session(real_tg_id)
+        user_dict = dict(user)
         return _make_auth_response(
-            {"status": "ok", "role": dict(user)['role'], "fio": dict(user)['fio'], "tg_id": real_tg_id, "session_token": token}, token)
-    return {"status": "needs_password", "tg_id": tg_id, "first_name": first_name, "last_name": last_name}
+            {"status": "ok", "role": user_dict["role"], "fio": user_dict["fio"],
+             "tg_id": real_tg_id, "session_token": token},
+            token,
+        )
+
+    # User not found — return verified data for registration form
+    first_name = user_data.get("first_name", "")
+    last_name = user_data.get("last_name", "")
+    return {"status": "needs_password", "tg_id": tg_id,
+            "first_name": first_name, "last_name": last_name}
 
 
 @router.post("/api/register_telegram")
@@ -281,3 +392,19 @@ async def validate_session(
         raise HTTPException(status_code=401, detail="Пользователь не найден")
     user_dict = dict(user)
     return {"status": "ok", "tg_id": user_id, "role": user_dict['role'], "fio": user_dict.get('fio', '')}
+
+
+@router.post("/api/auth/logout")
+async def api_logout(request: Request):
+    """Logout: invalidate session server-side and clear cookie."""
+    token = request.cookies.get("session_token")
+    if token:
+        try:
+            await db.conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+            await db.conn.commit()
+        except Exception:
+            pass
+
+    resp = JSONResponse(content={"status": "ok"})
+    resp.delete_cookie("session_token", path="/")
+    return resp

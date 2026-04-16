@@ -18,20 +18,16 @@ export default function TMAAuth() {
 
     function tryAuth() {
       const tg = window.Telegram?.WebApp;
-      if (!tg || !tg.initDataUnsafe?.user?.id) return false;
+      if (!tg || !tg.initData || !tg.initDataUnsafe?.user?.id) return false;
 
       tg.ready();
       tg.expand();
-
-      const user = tg.initDataUnsafe.user;
 
       const searchParams = new URLSearchParams(location.search);
       const returnUrl = searchParams.get('return_to') || '/dashboard';
 
       const formData = new FormData();
-      formData.append('tg_id', user.id);
-      formData.append('first_name', user.first_name || '');
-      formData.append('last_name', user.last_name || '');
+      formData.append('init_data', tg.initData);
 
       axios.post('/api/tma/auth', formData)
         .then(async (res) => {

@@ -5,21 +5,32 @@
 
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 
-    <link rel="icon" href="/favicon.ico" sizes="32x32" />
-    <link rel="icon" href="/icon.svg" type="image/svg+xml" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/x-icon" href="/favicon.ico" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/manifest.json" />
 
-    <meta name="theme-color" content="#3b82f6">
-
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
-    <meta name="apple-mobile-web-app-title" content="ВИКС" />
+    <meta name="theme-color" content="#1F253A" />
+    <meta name="apple-mobile-web-app-title" content="ВиКС" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
-    <title>ВИКС Расписание</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script type="module" crossorigin src="/assets/index-BDzmtfJs.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-voOZzJnc.css">
+    <title>ВиКС</title>
+    <script>
+      // Load Telegram SDK only inside TG Mini App — telegram.org is throttled by RU ISPs
+      if (window.TelegramWebviewProxy || window.Telegram || location.hash.includes('tgWebApp')) {
+        var s = document.createElement('script');
+        s.src = 'https://telegram.org/js/telegram-web-app.js';
+        document.head.appendChild(s);
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-CsOeFCrT.js"></script>
+    <link rel="modulepreload" crossorigin href="/assets/vendor-react-B1yv2nUE.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-motion-1mMudu-s.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-axios-42ANG6Sg.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-toast-oj1DTh_u.js">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-icons-D5q2t2Go.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-D7uwRZqC.css">
   </head>
   <body>
     <div id="root"></div>

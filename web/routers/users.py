@@ -3,13 +3,14 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Depends
 from pydantic import BaseModel
 from typing import Optional
 from database_deps import db
 from utils import resolve_id, get_all_linked_ids
 from services.user_service import delete_user_cascade, unlink_user_platform
 from services.account_link_service import link_account, admin_link_accounts
+from auth_deps import get_current_user
 
 router = APIRouter(tags=["Users"])
 
@@ -125,24 +126,49 @@ async def get_profile(target_id: int, member_id: int = 0, equip_id: int = 0):
 
 
 @router.post("/api/users/{target_id}/update_profile")
-async def update_profile(target_id: int, tg_id: int = Form(...), fio: str = Form(...), role: str = Form(...),
+async def update_profile(target_id: int, fio: str = Form(...), role: str = Form(""),
                          team_id: str = Form(""), position: str = Form(""), max_invite_link: str = Form(""),
                          notify_tg: int = Form(1), notify_max: int = Form(1),
                          notify_new_users: int = Form(1), notify_orders: int = Form(1),
                          notify_reports: int = Form(1), notify_errors: int = Form(1),
-                         notify_exchange: int = Form(1)):
+                         notify_exchange: int = Form(1),
+                         current_user=Depends(get_current_user)):
+    """Update user profile. Users can edit own fio/notifications.
+    Only boss+ can change roles. Self-role escalation is blocked.
+    """
     if db.conn is None: await db.init_db()
-    admin_id = await resolve_id(tg_id)
-    user = await db.get_user(admin_id)
 
-    is_admin = dict(user).get('role') in ['boss', 'superadmin', 'moderator'] if user else False
-    if admin_id != target_id and not is_admin:
+    current_role = current_user.get("role")
+    is_self = current_user["user_id"] == target_id
+    is_admin = current_role in ("superadmin", "boss")
+    is_moderator = current_role in ("superadmin", "boss", "moderator")
+
+    # Authorization: self or moderator+
+    if not is_self and not is_moderator:
         raise HTTPException(403, "Нет прав для изменения этого профиля")
+
+    # Determine effective role — prevent self-escalation
+    target_user = await db.get_user(target_id)
+    if not target_user:
+        raise HTTPException(404, "Пользователь не найден")
+    existing_role = dict(target_user).get("role", "worker")
+
+    if role and is_admin and not is_self:
+        # Admin editing another user's role — validate
+        allowed_roles = {"superadmin", "boss", "moderator", "foreman", "brigadier", "worker", "driver"}
+        if role not in allowed_roles:
+            raise HTTPException(400, "Недопустимая роль")
+        if role == "superadmin" and current_role != "superadmin":
+            raise HTTPException(403, "Только superadmin может назначать superadmin")
+        effective_role = role
+    else:
+        # Self-edit or non-admin edit — keep existing role
+        effective_role = existing_role
 
     try:
         await db.conn.execute(
             "UPDATE users SET fio=?, role=?, notify_tg=?, notify_max=?, notify_new_users=?, notify_orders=?, notify_reports=?, notify_errors=?, notify_exchange=? WHERE user_id=?",
-            (fio, role, notify_tg, notify_max, notify_new_users, notify_orders, notify_reports, notify_errors, notify_exchange, target_id)
+            (fio, effective_role, notify_tg, notify_max, notify_new_users, notify_orders, notify_reports, notify_errors, notify_exchange, target_id)
         )
 
         await db.conn.execute(
@@ -153,10 +179,10 @@ async def update_profile(target_id: int, tg_id: int = Form(...), fio: str = Form
         await db.conn.commit()
     except Exception as e:
         await db.conn.rollback()
-        raise HTTPException(500, f"Ошибка сохранения: {e}")
+        raise HTTPException(500, "Ошибка сохранения профиля")
 
-    admin_fio = dict(user).get('fio', '') if user else ''
-    await db.add_log(admin_id, admin_fio, f"Обновил профиль пользователя {fio}", target_type='user', target_id=target_id)
+    admin_fio = current_user.get("fio", "")
+    await db.add_log(current_user["user_id"], admin_fio, f"Обновил профиль пользователя {fio}", target_type='user', target_id=target_id)
     return {"status": "ok"}
 
 
@@ -262,30 +288,35 @@ async def get_linked_account(user_id: int):
 
 
 @router.put("/api/users/{user_id}/role")
-async def set_user_role(user_id: int, role: str = Form(...), admin_id: int = Form(0)):
-    """Установка роли пользователя."""
+async def set_user_role(user_id: int, role: str = Form(...),
+                        current_user=Depends(get_current_user)):
+    """Установка роли пользователя. Только boss+ может менять роли."""
     if db.conn is None: await db.init_db()
 
-    if admin_id:
-        admin = await db.get_user(admin_id)
-        if not admin or dict(admin).get('role') not in ['superadmin', 'boss', 'moderator']:
-            raise HTTPException(403, "Недостаточно прав")
+    # Auth: only boss and superadmin can change roles
+    if current_user.get("role") not in ("superadmin", "boss"):
+        raise HTTPException(403, "Недостаточно прав")
 
-    valid_roles = ['superadmin', 'boss', 'moderator', 'foreman', 'brigadier', 'worker', 'driver', 'viewer']
+    # Only superadmin can promote to superadmin
+    if role == "superadmin" and current_user["role"] != "superadmin":
+        raise HTTPException(403, "Только superadmin может назначать superadmin")
+
+    valid_roles = ['superadmin', 'boss', 'moderator', 'foreman', 'brigadier', 'worker', 'driver']
     if role not in valid_roles:
         raise HTTPException(400, f"Недопустимая роль: {role}")
 
     await db.conn.execute("UPDATE users SET role = ? WHERE user_id = ?", (role, user_id))
     await db.conn.commit()
 
-    if admin_id:
-        admin_user = await db.get_user(admin_id)
-        admin_fio = dict(admin_user).get('fio', 'Админ') if admin_user else 'Админ'
-        _target_fio = ''
-        try:
-            _tu = await db.get_user(user_id)
-            if _tu: _target_fio = dict(_tu).get('fio', '')
-        except Exception: pass
-        await db.add_log(admin_id, admin_fio, f"Изменил роль {_target_fio or f'#{user_id}'}: {role}", target_type='user', target_id=user_id)
+    admin_fio = current_user.get("fio", "Админ")
+    _target_fio = ''
+    try:
+        _tu = await db.get_user(user_id)
+        if _tu: _target_fio = dict(_tu).get('fio', '')
+    except Exception:
+        pass
+    await db.add_log(current_user["user_id"], admin_fio,
+                     f"Изменил роль {_target_fio or f'#{user_id}'}: {role}",
+                     target_type='user', target_id=user_id)
 
     return {"status": "ok", "user_id": user_id, "role": role}
