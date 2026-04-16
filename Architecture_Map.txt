@@ -1,6 +1,6 @@
 ================================================================================
                     VIKSSTROY BOT -- ARCHITECTURE MAP
-              (generated 2026-04-14, graphify 831 nodes / 863 edges / 137 communities)
+          (generated 2026-04-16, graphify 1080 nodes / 1236 edges / 155 communities)
 ================================================================================
 
 --- APP OVERVIEW ---
@@ -19,15 +19,19 @@ Key capabilities:
   - Team/brigade management with invite codes and passwords
   - PDF SMR parsing for auto-populating KP catalogs
   - Daily schedule image generation (PNG via Pillow) and auto-publish
-  - Role-based access control (7 roles)
+  - Role-based access control (7 roles) with session-cookie auth
   - Unified color system: roleConfig.js, statusConfig.js (Stage 6.4)
   - Framer-motion animations: modals, kanban, page transitions (Stage 6.5)
   - Desktop/mobile responsive adaptation (Stage 6.6)
-  - PWA: installable app, service worker, offline mode (Stage 6.7)
+  - PWA: installable app, service worker, push notifications (Stage 6.7 + v2.2)
+  - Employee status system: vacation/sick leave tracking (v2.2)
+  - FileViewerModal: PDF/image viewer with zoom and rotation (v2.2)
   - Comprehensive Guide (14 sections) and Updates changelog (Stage 6.8)
   - Complete action logging: 70+ log points with retention setting (Stage 6.9)
+  - AI support chat with rate limiting (v2.2 + v2.3)
+  - Full security audit: session auth on all ~120 endpoints (v2.3)
 
-Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind + framer-motion | aiogram (TG) + maxapi (MAX)
+Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + framer-motion | aiogram 3.27 (TG) + maxapi 1.0 (MAX)
 
 --- KEY FILE MAP ---
 
@@ -47,7 +51,7 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind + framer-moti
   | System.jsx (335 lines)   | Users table + 4 extracted admin panels            |
   | Guide.jsx (381 lines)    | Full knowledge base: 14 sections, collapsible,    |
   |                          | search, role hints, GlassCard + AnimatePresence   |
-  | Updates.jsx (186 lines)  | Changelog: 6 version blocks, feat/fix/refactor    |
+  | Updates.jsx              | Changelog: version blocks, feat/fix/refactor      |
   |                          | badges, stagger animation, GlassCard              |
   | JoinTeam.jsx             | Team invite acceptance page                       |
   | JoinEquipment.jsx        | Equipment invite acceptance page                  |
@@ -71,7 +75,7 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind + framer-moti
   |   hooks/                 | equipment/team selection, submit/delete logic       |
   | features/objects/        | ObjectEditModal (406), ObjectCreateModal (321),    |
   |   components/            | ObjectStatsModal (174), ObjectRequestModal (85),   |
-  |                          | ObjectRequestsPanel (56)                           |
+  |                          | ObjectRequestsPanel (56), FileViewerModal          |
   | features/system/         | SystemSettings (154), BroadcastPanel (129),        |
   |   components/            | LogViewer (94), NotificationTesting (84),          |
   |                          | UIHelpers: re-exports from roleConfig + GlassCard  |
@@ -89,39 +93,57 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind + framer-moti
   | utils/statusConfig.js    | STATUS_CONFIG + getStatusBadge() helper             |
   | utils/animations.js      | Shared framer-motion variants: fadeIn, slideUp,    |
   |                          | scaleIn, stagger, getMotionProps                   |
+  | utils/tokenStorage.js    | saveAuthData(tgId, role) -- UI metadata only,      |
+  |                          | no session_token in JS-accessible storage           |
   +--------------------------+--------------------------------------------------+
 
   BACKEND ROUTERS (web/routers/)
   +--------------------------+--------------------------------------------------+
   | auth.py                  | Login via link codes, account linking (TG<->MAX), |
-  |                          | FIO auto-match, TMA auth, MAX web auth            |
-  | users.py (274 lines)     | Profiles, notifications. Delegates to              |
+  |                          | FIO auto-match, TMA auth, MAX web auth, logout    |
+  | users.py                 | Profiles, notifications. Delegates to              |
   |                          | account_link_service + user_service                |
-  | applications.py (333)    | Order endpoints. Delegates to                      |
+  |                          | Auth: get_current_user on all endpoints            |
+  | applications.py          | Order endpoints. Delegates to                      |
   |                          | app_service + app_workflow                          |
+  |                          | Auth: get_current_user + ownership checks          |
   | teams.py                 | Team CRUD, invite generation, member management   |
+  |                          | Auth: get_current_user + role checks               |
   | equipment.py             | Equipment CRUD, time-slot availability, status    |
-  | exchange.py (93 lines)   | Exchange endpoints. Delegates to exchange_service  |
-  | objects.py               | Construction site CRUD, PDF upload, extra works   |
+  |                          | Auth: get_current_user + role checks               |
+  | exchange.py              | Exchange endpoints. Delegates to exchange_service  |
+  |                          | Auth: get_current_user + ownership checks          |
+  | objects.py               | Construction site CRUD, PDF upload, extra works,  |
+  |                          | file serving with auth + path traversal guard      |
   | kp.py                    | KP items, dashboard, catalog upload/download,     |
-  |                          | mass export to Excel                              |
+  |                          | mass export to Excel. Catalog: require_superadmin  |
   | dashboard.py             | Stats, daily report, cron jobs (start/end day,    |
-  |                          | timeout checks)                                   |
-  | system.py (341 lines)    | Admin settings, logs, schedule. Delegates to       |
-  |                          | broadcast_service                                  |
+  |                          | timeout checks). Auth: get_current_user,           |
+  |                          | require_boss_plus for logs, cron secret for jobs  |
+  | system.py                | Admin settings, logs, schedule. Delegates to       |
+  |                          | broadcast_service. Auth: require_office+           |
+  | support.py               | AI support chat. Auth: get_current_user.           |
+  |                          | Rate limited: 10/min, 3 concurrent                 |
+  | push.py                  | PWA push notification subscription management.    |
+  |                          | Auth: get_current_user                             |
   +--------------------------+--------------------------------------------------+
 
   CORE SERVICES (web/)
   +--------------------------+--------------------------------------------------+
-  | api_main.py              | FastAPI app factory, lifespan, CORS, exception    |
-  |                          | handlers, router registration                     |
+  | api_main.py              | FastAPI app factory, lifespan, CORS (env-aware),  |
+  |                          | exception handlers, router registration            |
+  | auth_deps.py             | get_current_user, get_current_user_optional,      |
+  |                          | require_role() factory, pre-built: require_office,|
+  |                          | require_boss_plus, require_superadmin              |
+  | rate_limit.py            | UserRateLimiter (in-memory sliding window).       |
+  |                          | Global support_limiter: 10/min, 3 concurrent       |
   | schedule_generator.py    | Renders daily schedule as PNG (Excel-like table)  |
   |                          | via Pillow with font rendering (SACRED FILE)      |
   | scheduler.py             | APScheduler 3 jobs: daily publish, reminders,     |
   |                          | auto-start orders, equipment timeout checks       |
-  | utils.py                 | Thin helpers: resolve_id, get_all_linked_ids,     |
-  |                          | fetch_teams_dict, enrich_app_with_team_name,      |
-  |                          | verify_moderator_plus (~62 lines)                 |
+  | utils.py                 | generate_invite_code (Crockford base32),          |
+  |                          | normalize_invite_code, resolve_id,                |
+  |                          | _check_role_password (timing-safe), ~62 lines     |
   | database_deps.py         | FastAPI dependency injection for DB manager        |
   +--------------------------+--------------------------------------------------+
 
@@ -167,55 +189,90 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind + framer-moti
   | kp_repo.py               | KpRepoMixin: KP catalog, application KP items     |
   | exchange_repo.py         | ExchangeRepoMixin: exchange requests, timeouts    |
   | logs_repo.py             | LogsRepoMixin: audit log insert/query             |
-  | schema.sql               | Full DDL: 19 tables                               |
+  | schema.sql               | Full DDL: 19+ tables (includes sessions,          |
+  |                          | web_codes, account_links, push_subscriptions)     |
   +--------------------------+--------------------------------------------------+
 
   BOT ENTRY POINTS
   +--------------------------+--------------------------------------------------+
-  | main.py                  | Telegram bot (aiogram): TMA integration, FSM,     |
+  | main.py                  | Telegram bot (aiogram 3.27): TMA integration, FSM|
   |                          | group publishing, equipment timeout checks,        |
   |                          | daily schedule commands, database backup           |
-  | main_max.py              | MAX bot (maxapi): webhook callbacks, message       |
+  | main_max.py              | MAX bot (maxapi 1.0): webhook callbacks, message   |
   |                          | handler, ID extraction, notifications              |
   +--------------------------+--------------------------------------------------+
   Both share the same DB (data/viksstroy.db) and call FastAPI at localhost:8000
 
   PWA & STATIC
   +--------------------------+--------------------------------------------------+
-  | frontend/public/         | manifest.json, sw.js (service worker),             |
+  | frontend/public/         | manifest.json, sw.js (service worker + push),     |
   |                          | apple-touch-icon.png, main.png, icon.svg           |
   | frontend/index.html      | PWA meta tags, theme-color, apple-mobile-web-app   |
+  +--------------------------+--------------------------------------------------+
+
+  SECURITY LAYER
+  +--------------------------+--------------------------------------------------+
+  | web/auth_deps.py         | get_current_user, get_current_user_optional,      |
+  |                          | require_role() factory, pre-built: require_office,|
+  |                          | require_boss_plus, require_superadmin              |
+  | web/rate_limit.py        | UserRateLimiter (in-memory sliding window)        |
+  |                          | Global support_limiter: 10/min, 3 concurrent       |
+  | web/utils.py             | generate_invite_code (Crockford base32),          |
+  |                          | normalize_invite_code, _check_role_password        |
+  |                          | (timing-safe via secrets.compare_digest)           |
+  | Dockerfile               | Non-root: groupadd viks, useradd viks, USER viks  |
+  | docker-compose.yml       | Port 8000 bound to 127.0.0.1 only                 |
+  | requirements.txt         | All 16 packages pinned (== versions)               |
+  | .gitignore               | .env, .env.* excluded from version control         |
   +--------------------------+--------------------------------------------------+
 
 --- CORE FLOW ---
 
   1. AUTH: User opens Telegram/MAX -> link code generated -> auth router
-     validates -> session created. Account linking (Stage 5B): FIO auto-match
-     detects same person on both platforms, admin can force-link in profile.
-     Merged accounts share role, orders, and team memberships.
+     validates -> session created (HttpOnly cookie).
+     [SECURITY: HMAC verification for TMA (C-02), one-time codes for MAX
+     (C-03), secrets.compare_digest for all token comparisons (M-08)]
+     Account linking (Stage 5B): FIO auto-match detects same person on
+     both platforms, admin can force-link in profile. Merged accounts
+     share role, orders, and team memberships.
 
-  2. CREATE ORDER: Foreman opens Kanban UI -> CreateAppModal -> selects object,
-     team, equipment, date, time slot -> applications router validates resource
-     availability (time-overlap detection) -> stores order as "pending".
+  2. CREATE ORDER: Foreman opens Kanban UI -> CreateAppModal -> selects
+     object, team, equipment, date, time slot -> applications router
+     validates resource availability (time-overlap detection) -> stores
+     order as "pending".
+     [SECURITY: Depends(get_current_user) on all endpoints, ownership
+     checks for edit/delete (C-01)]
 
-  3. REVIEW: Admin opens Review page -> approves/rejects -> bot notifications
-     sent to foreman via Telegram and/or MAX. Rejection requires reason.
+  3. REVIEW: Admin opens Review page -> approves/rejects -> bot
+     notifications sent to foreman via Telegram and/or MAX. Rejection
+     requires reason.
+     [SECURITY: Depends(require_office) for review actions]
 
-  4. PUBLISH: Approved orders -> schedule_generator renders PNG (Excel-like
-     daily table with teams, equipment, sites) -> bots post image to
-     Telegram group and MAX group chat. APScheduler handles auto-publish.
+  4. PUBLISH: Approved orders -> schedule_generator renders PNG
+     (Excel-like daily table with teams, equipment, sites) -> bots post
+     image to Telegram group and MAX group chat. APScheduler handles
+     auto-publish.
 
-  5. EXECUTION: Workers view assignments via bot or web. Equipment exchange
-     (Stage 5A) allows foremen to swap equipment between active orders.
-     Time-based free-slot system prevents double-booking.
+  5. EXECUTION: Workers view assignments via bot or web. Equipment
+     exchange (Stage 5A) allows foremen to swap equipment between active
+     orders. Time-based free-slot system prevents double-booking.
+     Employee status (vacation/sick) tracked in schedule (v2.2).
 
   6. COST TRACKING: KP cost estimation workflow per order and per site.
-     KP catalog uploadable via Excel. PDF SMR parser auto-extracts works.
-     Mass export to Excel for reporting.
+     KP catalog uploadable via Excel (superadmin only). PDF SMR parser
+     auto-extracts works. Mass export to Excel for reporting.
+     [SECURITY: Depends(require_superadmin) for catalog upload (C-10)]
 
-  7. DASHBOARD: Aggregates daily stats (total/approved/rejected orders,
-     top equipment usage, foremen activity). Cron jobs handle day start/end
-     transitions, equipment timeout checks, and reminders.
+  7. FILES: Upload with safe_filename + UUID prefix + size/extension
+     check + path traversal guard. Serve via /api/files/{id}/download
+     with auth + ownership. FileViewerModal for PDF/image preview (v2.2).
+     [SECURITY: .resolve().relative_to(UPLOADS_ROOT) on every path (H-08)]
+
+  8. DASHBOARD: Aggregates daily stats (total/approved/rejected orders,
+     top equipment usage, foremen activity). Cron jobs handle day
+     start/end transitions, equipment timeout checks, and reminders.
+     [SECURITY: Depends(get_current_user), PII stripped for non-office
+     (H-04), cron endpoints behind HMAC-verified CRON_SECRET (H-10)]
 
 --- ROLES ---
 
@@ -231,103 +288,114 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind + framer-moti
 
 --- GOD NODES (highest connectivity, from graphify analysis) ---
 
-  1. DatabaseManager        (36 edges) -- database/db_manager.py
-  2. TeamsRepoMixin         (27 edges) -- database/teams_repo.py
-  3. ObjectsRepoMixin       (21 edges) -- database/objects_repo.py
-  4. AppsRepoMixin          (19 edges) -- database/apps_repo.py
-  5. EquipmentRepoMixin     (19 edges) -- database/equipment_repo.py
-  6. UsersRepoMixin         (19 edges) -- database/users_repo.py
-  7. KpRepoMixin            (17 edges) -- database/kp_repo.py
-  8. ExchangeRepoMixin      (15 edges) -- database/exchange_repo.py
-  9. Refactoring Plan 6.3   (13 edges) -- REFACTORING_PLAN.md
- 10. LogsRepoMixin          (11 edges) -- database/logs_repo.py
+   1. DatabaseManager          (41 edges) -- database/db_manager.py
+   2. TeamsRepoMixin           (30 edges) -- database/teams_repo.py
+   3. ObjectsRepoMixin         (24 edges) -- database/objects_repo.py
+   4. AppsRepoMixin            (22 edges) -- database/apps_repo.py
+   5. EquipmentRepoMixin       (22 edges) -- database/equipment_repo.py
+   6. UsersRepoMixin           (22 edges) -- database/users_repo.py
+   7. KpRepoMixin              (20 edges) -- database/kp_repo.py
+   8. ExchangeRepoMixin        (18 edges) -- database/exchange_repo.py
+   9. handle_order_callback()  (14 edges) -- main.py
+  10. LogsRepoMixin            (14 edges) -- database/logs_repo.py
 
 --- ARCHITECTURAL INSIGHTS ---
 
-  1. GOD MODULE RESOLVED: web/utils.py decomposed from 875 -> 62 lines.
-     11 service modules now in web/services/ with clear domain boundaries.
-     Routers are thin HTTP layers delegating to services.
+   1. GOD MODULE RESOLVED: web/utils.py decomposed from 875 -> 62 lines.
+      11 service modules now in web/services/ with clear domain boundaries.
+      Routers are thin HTTP layers delegating to services.
 
-  2. FRONTEND DECOMPOSED (Stage 6.3 Phase 6-9):
-     - Home.jsx 588 -> 358 lines: useAppForm hook (369) + DebtorsWidget (104)
-     - Objects.jsx 851 -> 362 lines: 5 modals extracted
-     - System.jsx 770 -> 335 lines: 4 panels extracted
-     - CreateAppModal 706 -> 394 lines: 3 shared selectors extracted
+   2. FRONTEND DECOMPOSED (Stage 6.3 Phase 6-9):
+      - Home.jsx 588 -> 358 lines: useAppForm hook (369) + DebtorsWidget (104)
+      - Objects.jsx 851 -> 362 lines: 5 modals extracted
+      - System.jsx 770 -> 335 lines: 4 panels extracted
+      - CreateAppModal 706 -> 394 lines: 3 shared selectors extracted
 
-  3. UNIFIED DESIGN SYSTEM (Stage 6.4):
-     - roleConfig.js: single source of truth for ROLE_ORDER/NAMES/COLORS
-     - statusConfig.js: STATUS_CONFIG + getStatusBadge() helper
-     - GlassCard: shared glassmorphism component
-     - Semantic Tailwind tokens: primary/success/warning/danger/info
+   3. UNIFIED DESIGN SYSTEM (Stage 6.4):
+      - roleConfig.js: single source of truth for ROLE_ORDER/NAMES/COLORS
+      - statusConfig.js: STATUS_CONFIG + getStatusBadge() helper
+      - GlassCard: shared glassmorphism component
+      - Semantic Tailwind tokens: primary/success/warning/danger/info
 
-  4. ANIMATIONS (Stage 6.5): framer-motion with Emil Kowalski principles.
-     10 imports across: modals (5), kanban stagger, page transitions,
-     FAB micro-interaction, bottom sheet, collapsible sections.
-     All respect prefers-reduced-motion.
+   4. ANIMATIONS (Stage 6.5): framer-motion with Emil Kowalski principles.
+      10 imports across: modals (5), kanban stagger, page transitions,
+      FAB micro-interaction, bottom sheet, collapsible sections.
+      All respect prefers-reduced-motion.
 
-  5. RESPONSIVE (Stage 6.6): max-w-7xl containers, 2-col modal forms,
-     BottomNav max-w-5xl inner wrapper, Teams grid lg:grid-cols-3.
+   5. RESPONSIVE (Stage 6.6): max-w-7xl containers, 2-col modal forms,
+      BottomNav max-w-5xl inner wrapper, Teams grid lg:grid-cols-3.
 
-  6. PWA (Stage 6.7): manifest.json, sw.js service worker with cache-first
-     for static + network-first for API, offline fallback to index.html.
+   6. PWA + PUSH (Stage 6.7 + v2.2): manifest.json, sw.js with
+      cache-first for static + network-first for API, offline fallback,
+      web push notifications via pywebpush, splash screen on launch.
 
-  7. TOKEN REDUCTION: graphify graph provides 209.0x fewer tokens per query
-     vs reading raw files. Best: "how are errors handled" = 2535.1x.
+   7. FILE MANAGEMENT (v2.2): Objects files tab with subtabs, drag-drop
+      upload, FileViewerModal (PDF/image with zoom/rotation), inline
+      preview, SMR import with fuzzy parser matching. Code splitting for
+      vendor chunks (react, framer-motion, lucide, axios).
 
-  8. OBSIDIAN VAULT: 968 notes in graphify-out/obsidian/ with graph.canvas.
-     Wiki: 137 articles in graphify-out/wiki/ with index.md.
+   8. SECURITY HARDENING (v2.3): Comprehensive 18-commit sprint.
+      Session-cookie auth on all ~120 endpoints. HMAC verification for
+      TMA/MAX auth. Privilege escalation blocked. API keys filtered.
+      Rate limiting on expensive endpoints. Timing-safe comparisons.
+      Docker non-root. All dependencies pinned. Git history scrubbed.
 
-  9. GIT HISTORY: 177 commits across v1.0-v2.1. Full changelog in Updates.jsx.
+   9. TOKEN REDUCTION: graphify graph provides 185.1x fewer tokens per
+      query vs reading raw files. 1080 nodes, 1236 edges, 155 communities.
 
- 10. NEW SERVICES DISCOVERED (v2.1):
-     - tg_session.py: TG proxy for all API calls (centralized session)
-     - Sidebar component: expandable submenus with API counters
-     - AI support: knowledge base with 15 guide sections
-     - Support chat page with typing indicator
+  10. DATABASE DOMINANCE: All 10 god nodes are in the database layer or
+      bot entry point. DatabaseManager (41 edges) composes 7 repo mixins.
+      handle_order_callback (14 edges) is the main TG bot dispatch point.
 
 --- SECURITY LAYER (v2.3) ---
 
   AUTH INFRASTRUCTURE
   +--------------------------+--------------------------------------------------+
-  | web/auth_deps.py         | get_current_user, get_current_user_optional,     |
-  |                          | require_role() factory, pre-built: require_office|
-  |                          | require_boss_plus, require_superadmin            |
-  | web/rate_limit.py        | UserRateLimiter (in-memory sliding window)       |
-  |                          | Global support_limiter: 10/min, 3 concurrent     |
-  | web/utils.py             | generate_invite_code (Crockford base32),         |
-  |                          | normalize_invite_code, resolve_id,               |
-  |                          | _check_role_password (timing-safe)               |
+  | web/auth_deps.py         | get_current_user: validates session_token HttpOnly|
+  |                          | cookie against sessions table with expiration.    |
+  |                          | get_current_user_optional: returns None if no     |
+  |                          | session. require_role() factory for role gates.   |
+  |                          | Pre-built: require_office, require_boss_plus,     |
+  |                          | require_superadmin                                 |
+  | web/rate_limit.py        | UserRateLimiter (in-memory sliding window)        |
+  |                          | Global support_limiter: 10/min, 3 concurrent       |
+  | web/utils.py             | generate_invite_code (Crockford base32, 30-char   |
+  |                          | alphabet, 12 chars = 5.3e17 combos),              |
+  |                          | normalize_invite_code (uppercase + strip),         |
+  |                          | _check_role_password (secrets.compare_digest)      |
   +--------------------------+--------------------------------------------------+
 
   BOUNDARIES
   +--------------------------+--------------------------------------------------+
   | nginx                    | TLS termination, rate limits (30 r/s api, 5 r/s  |
-  |                          | auth), security headers, /uploads/ blocked,      |
-  |                          | client_max_body_size 25M                         |
-  | docker-compose           | API port bound 127.0.0.1 only                    |
-  | Container                | Runs as viks (non-root)                          |
-  | File system              | .env + .db should be 0600, data/ owned by viks   |
+  |                          | auth), security headers, /uploads/ blocked (403), |
+  |                          | client_max_body_size 25M                          |
+  | docker-compose           | API port bound 127.0.0.1:8000 only                |
+  | Container                | Runs as viks (non-root, Dockerfile USER viks)     |
+  | File system              | .env + .db should be 0600, data/ owned by viks    |
+  | CORS                     | Env-aware: localhost only when ENV=development     |
+  | Dependencies             | All 16 packages pinned == in requirements.txt     |
   +--------------------------+--------------------------------------------------+
 
   AUTHENTICATION FLOWS
   +--------------------------+--------------------------------------------------+
-  | /api/telegram_auth       | Widget HMAC via secrets.compare_digest            |
-  | /api/tma/auth            | initData HMAC-SHA256 verified with bot_token      |
-  | /api/max/auth            | One-time code from web_codes table (consumed)     |
-  | /api/auth/code           | One-time link code binding user to session        |
-  | /api/auth/session        | Validates HttpOnly cookie (query token sets       |
-  |                          | cookie on redirect flow only)                    |
-  | /api/auth/logout         | Deletes session server-side + clears cookie       |
+  | /api/telegram_auth       | Widget HMAC via secrets.compare_digest             |
+  | /api/tma/auth            | initData HMAC-SHA256 verified with bot_token,     |
+  |                          | auth_date freshness (24h window)                   |
+  | /api/max/auth            | One-time code from web_codes table (consumed)      |
+  | /api/auth/code           | One-time link code binding user to session         |
+  | /api/auth/session        | Validates HttpOnly cookie (session_token)          |
+  | /api/auth/logout         | Deletes session server-side + clears cookie        |
   +--------------------------+--------------------------------------------------+
 
   FILE SERVING FLOW
   +--------------------------+--------------------------------------------------+
   | Upload                   | safe_filename + UUID prefix + size/ext check +    |
-  |                          | .resolve().relative_to(UPLOADS_ROOT)              |
+  |                          | .resolve().relative_to(UPLOADS_ROOT)               |
   | Serve                    | /api/files/{id}/download: auth + ownership +      |
-  |                          | MIME detection + inline default, ?download=1      |
-  |                          | for attachment                                    |
-  | Delete                   | /api/objects/files/{id}: require_office + audit   |
+  |                          | MIME detection + inline default, ?download=1       |
+  |                          | for attachment                                     |
+  | Delete                   | /api/objects/files/{id}: require_office + audit    |
   +--------------------------+--------------------------------------------------+
 
 ================================================================================

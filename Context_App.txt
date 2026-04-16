@@ -1,17 +1,19 @@
 ================================================================================
                     VIKSSTROY BOT -- CONTEXT & STAGE TRACKER
-                              (updated 2026-04-14)
+                              (updated 2026-04-16)
 ================================================================================
 
 --- PROJECT SUMMARY ---
 
 Construction workforce management platform (Kanban orders, scheduling,
-equipment exchange, cost estimation) with dual-bot architecture (TG + MAX),
-React frontend, FastAPI backend, SQLite database.
+equipment exchange, cost estimation, PWA push notifications, AI support)
+with dual-bot architecture (TG + MAX), React frontend, FastAPI backend,
+SQLite database, and session-cookie auth on all endpoints.
 
-Stack: FastAPI + SQLite (WAL) | React + Vite + Tailwind + framer-motion | aiogram (TG) + maxapi (MAX)
-Graph: 831 nodes, 863 edges, 137 communities (graphify)
-Git: 177 commits across v1.0-v2.1
+Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + framer-motion | aiogram 3.27 (TG) + maxapi 1.0 (MAX)
+Graph: 1080 nodes, 1236 edges, 155 communities (graphify)
+Git: 412 commits across v1.0-v2.3
+Deps: 16 packages pinned (requirements.txt)
 
 --- COMPLETED STAGES ---
 
@@ -67,7 +69,7 @@ Git: 177 commits across v1.0-v2.1
 
   Stage 6.8: Guide.jsx + Updates.jsx                                       [OK]
     Guide (381 lines, 14 sections). Updates (194 lines, 7 version blocks).
-    Full git history analyzed (177 commits), color-coded badges.
+    Full git history analyzed, color-coded badges.
 
   Stage 6.9: Complete action logging (70 log points, retention setting)     [OK]
     Audit all endpoints. target_type/target_id. Auto-cleanup via APScheduler.
@@ -76,20 +78,14 @@ Git: 177 commits across v1.0-v2.1
     Debtors persist until filled, remind button, KP archive/restore.
     24h grace period before debtors appear. Days overdue with color scale.
 
-  Final fixes (v2.1)                                                       [OK]
-    Removed "Publish" button and modal from Review.jsx (duplicated schedule).
-    Mobile layout: compact buttons, stacked inputs, viewport-fit=cover.
-    iPhone safe area: .pb-safe CSS utility for BottomNav.
-    BottomNav: icons only on mobile, text labels on sm+ screens.
-
-  v2.1 Fixes (comprehensive)                                                [OK]
+  v2.1 Fixes (comprehensive)                                              [OK]
     - Equipment create 405 fixed (API endpoint routing)
     - TG proxy for all API calls (tg_session.py centralized session)
     - Review publish button removed (duplicated schedule_generator flow)
     - Mobile layout fixes (compact buttons, viewport-fit, safe area insets)
     - SMR 24h grace period + days overdue display with color scale
     - BottomNav icons only on mobile, text labels on sm+ screens
-    - Updates.jsx rewritten with full git history (177 commits, 7 versions)
+    - Updates.jsx rewritten with full git history (7 versions)
     - Nginx gzip + cache configured (static assets, API responses)
     - update.sh script rewritten (zero-downtime deploy)
     - Sidebar expandable submenus with API counters, profile bottom, collapse
@@ -97,12 +93,50 @@ Git: 177 commits across v1.0-v2.1
     - AI model fallback on 400/503 errors, removed incompatible gemma-12b
     - Disable browser autofill on support settings inputs
 
+  v2.2 Features                                                            [OK]
+    - Objects files tab: subtabs, drag-drop upload, viewer, rename
+    - SMR import + category-sorted resources + clean plan display
+    - FileViewerModal: PDF/image viewer with zoom, rotation, swipe protect
+    - Employee status system: vacation/sick, schedule status column
+    - Members grouped by brigade in selector + cross-brigade SMR warning
+    - PWA push notifications: backend, service worker, web push sending
+    - PWA push subscription + splash screen on app launch
+    - Code splitting: vendor chunks for react, framer-motion, lucide, axios
+    - Log improvements: readable names, user attribution, proper grouping
+    - File persistence across Docker restarts + estimate PDFs
+    - Fuzzy parser matching for truncated names + incomplete data warnings
+    - Latin-1 header crash fix + PDF preview in FileViewerModal
+    - Inline preview vs ?download=1 attachment + proper MIME detection
+
+  v2.3 Security Sprint (18 commits)                                        [OK]
+    Full security audit and remediation. SECURITY_AUDIT_v2.3.md produced.
+    36 findings: 30 FIXED, 2 PARTIAL, 2 NOT FIXED (low), 4 server-verify.
+    - C-01: Session-cookie auth on all ~120 endpoints across 12 routers
+    - C-02: TMA auth hardened (HMAC-SHA256 + secrets.compare_digest)
+    - C-03: MAX auth hardened (one-time codes from web_codes table)
+    - C-04/C-05: Privilege escalation eliminated (role changes need boss+)
+    - C-06: API keys filtered from settings for non-superadmin
+    - C-07: Git history scrubbed (no secrets in any commit)
+    - C-08/C-09: Files authenticated + path-traversal protection
+    - C-10: KP catalog upload restricted to superadmin
+    - H-01: Port 8000 bound to 127.0.0.1 only (docker-compose)
+    - H-08: Path traversal: safe_filename + UUID + relative_to guard
+    - H-09: Logout endpoint (session delete + cookie clear)
+    - H-10: Cron endpoints protected by HMAC-verified CRON_SECRET
+    - H-11: Strong invite codes (12-char Crockford base32, 5.3e17 combos)
+    - H-12: Session token removed from JSON (cookie-only)
+    - M-03: CORS env-aware (localhost only in development)
+    - M-07: AI chat rate limited (10/min, 3 concurrent)
+    - M-08: Timing-safe password comparison (secrets.compare_digest)
+    - L-01: Docker non-root (viks user)
+    - L-02: All 16 dependencies pinned in requirements.txt
+    - N-01/N-02/L-03/L-05: Final low-risk items closed
+
 --- CURRENT STATUS ---
 
-  ALL STAGES COMPLETE. Stage 6 (Global Polish) fully delivered:
-  6.1 through 6.9, all 9 substages done. v2.1 fixes applied.
-
-  Current: v2.1 fixes in progress, next batch pending.
+  ALL STAGES COMPLETE. v2.3 security sprint delivered.
+  Production ready: all critical and high findings resolved.
+  412 commits across v1.0-v2.3.
 
 --- TOOLING ---
 
@@ -115,10 +149,10 @@ Git: 177 commits across v1.0-v2.1
     graphify-out/graph.html            -- Interactive graph (browser)
     graphify-out/GRAPH_REPORT.md       -- Audit report
     graphify-out/graph.json            -- Queryable graph data
-    graphify-out/obsidian/             -- Obsidian vault (968 notes + canvas)
-    graphify-out/wiki/                 -- Agent-crawlable wiki (137 articles)
+    graphify-out/obsidian/             -- Obsidian vault (notes + canvas)
+    graphify-out/wiki/                 -- Agent-crawlable wiki (155 articles)
 
-  Token reduction: 209.0x avg (best: 2535.1x for error handling queries)
+  Token reduction: 185.1x avg (graphify 1080 nodes / 1236 edges / 155 communities)
 
 --- SECURITY POSTURE (v2.3, 2026-04-16) ---
 
@@ -173,6 +207,7 @@ Git: 177 commits across v1.0-v2.1
     - .env and data/viksstroy.db should be 0600
     - CRON_SECRET required in .env for cron endpoints
     - ENV=production (default); ENV=development enables localhost CORS
+    - All 16 deps pinned in requirements.txt
 
   FILES TO CONSULT:
     web/auth_deps.py         -- auth dependency helpers
