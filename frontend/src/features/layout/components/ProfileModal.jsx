@@ -319,7 +319,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                             <Field label="Фамилия" value={lastName} onChange={setLastName} disabled={!canEditUsers && !isMyProfile} />
                                             <Field label="Имя" value={firstName} onChange={setFirstName} disabled={!canEditUsers && !isMyProfile} />
-                                            <Field label="Отчество (необязательно)" value={middleName} onChange={setMiddleName} disabled={!canEditUsers && !isMyProfile} />
+                                            <Field label="Отчество" placeholder="необязательно" value={middleName} onChange={setMiddleName} disabled={!canEditUsers && !isMyProfile} />
                                         </div>
 
                                         <Field label="Специальность" value={specialty} onChange={setSpecialty} disabled={!canEditUsers && !isMyProfile} />
