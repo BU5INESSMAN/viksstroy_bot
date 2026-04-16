@@ -17,8 +17,12 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем все файлы проекта в контейнер
 COPY . .
 
-# Создаем папку для базы данных (чтобы она не удалилась при перезагрузке)
-RUN mkdir -p data
+# L-01: Security — run as non-root user
+RUN mkdir -p data data/uploads data/uploads/objects data/backups data/kp_catalogs data/fonts \
+    && groupadd -r viks && useradd -r -g viks -d /app -s /sbin/nologin viks \
+    && chown -R viks:viks /app
+
+USER viks
 
 # Запускаем бота
 CMD ["python", "main.py", "main_max.py"]

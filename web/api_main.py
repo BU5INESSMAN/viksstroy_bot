@@ -25,11 +25,11 @@ logging.getLogger().addHandler(file_handler)
 
 app = FastAPI(title="VIKS API")
 
-origins = [
-    "https://miniapp.viks22.ru",
-    "http://localhost:5173",
-    "http://localhost:3000",
-]
+# M-03: Environment-aware CORS origins — localhost only in dev mode
+_prod_origins = ["https://miniapp.viks22.ru"]
+_dev_origins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+_is_dev = os.getenv("ENV", "production").lower() in ("dev", "development", "local")
+origins = _prod_origins + (_dev_origins if _is_dev else [])
 app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
 
 os.makedirs("data/uploads", exist_ok=True)
