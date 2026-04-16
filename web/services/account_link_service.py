@@ -10,33 +10,37 @@ logger = logging.getLogger(__name__)
 
 
 async def determine_primary(user1_id: int, user2_id: int) -> tuple[int, int]:
-    """Определяет primary аккаунт по created_at, затем по количеству заявок."""
-    async with db.conn.execute(
-        "SELECT user_id, created_at FROM users WHERE user_id IN (?, ?)",
-        (user1_id, user2_id)
-    ) as cur:
-        rows = {r[0]: r[1] for r in await cur.fetchall()}
+    """Определяет primary аккаунт. Критерии в порядке убывания приоритета:
+    1. Больше заявок как foreman → primary.
+    2. Если заявки равны, меньший id (создан раньше) → primary.
 
-    created1 = rows.get(user1_id)
-    created2 = rows.get(user2_id)
-
-    if created1 and created2 and created1 != created2:
-        if created1 <= created2:
-            return user1_id, user2_id
-        else:
-            return user2_id, user1_id
-
-    async with db.conn.execute(
-        "SELECT foreman_id, COUNT(*) as cnt FROM applications "
-        "WHERE foreman_id IN (?, ?) GROUP BY foreman_id",
-        (user1_id, user2_id)
-    ) as cur:
-        counts = {r[0]: r[1] for r in await cur.fetchall()}
+    Исторически здесь использовался users.created_at, но эта колонка
+    отсутствует в базах, созданных до миграции upgrade_db_for_account_linking,
+    поэтому она исключена из логики — достаточно резервного порядка по id.
+    """
+    # Критерий 1: количество заявок как прораб
+    try:
+        async with db.conn.execute(
+            "SELECT foreman_id, COUNT(*) as cnt FROM applications "
+            "WHERE foreman_id IN (?, ?) GROUP BY foreman_id",
+            (user1_id, user2_id)
+        ) as cur:
+            counts = {r[0]: r[1] for r in await cur.fetchall()}
+    except Exception as e:
+        logger.warning(f"determine_primary: app count lookup failed: {e}")
+        counts = {}
 
     cnt1 = counts.get(user1_id, 0)
     cnt2 = counts.get(user2_id, 0)
 
-    if cnt1 >= cnt2:
+    if cnt1 != cnt2:
+        if cnt1 > cnt2:
+            return user1_id, user2_id
+        return user2_id, user1_id
+
+    # Критерий 2: меньший id = создан раньше. Используем модуль, т.к. MAX
+    # пользователи хранятся с отрицательным user_id.
+    if abs(user1_id) <= abs(user2_id):
         return user1_id, user2_id
     return user2_id, user1_id
 
