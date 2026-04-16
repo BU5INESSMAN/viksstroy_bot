@@ -10,6 +10,7 @@ import aiohttp
 from fastapi import APIRouter, HTTPException, Request, Depends
 from database_deps import db
 from auth_deps import get_current_user, require_role
+from rate_limit import support_limiter
 from services.ai_context import build_user_context
 
 router = APIRouter(tags=["Support"])
@@ -201,14 +202,27 @@ async def user_history(target_user_id: int = 0, current_user=Depends(_require_bo
 @router.post("/api/support/chat")
 async def support_chat(request: Request, current_user=Depends(get_current_user)):
     """Send message to AI support. Uses authenticated user's identity."""
+    resolved_user_id = current_user["tg_id"]
+
+    # M-07: per-user rate limit (10/min, 3 concurrent)
+    ok, reason = await support_limiter.acquire(resolved_user_id)
+    if not ok:
+        raise HTTPException(status_code=429, detail=reason)
+
+    try:
+        return await _do_support_chat(request, current_user, resolved_user_id)
+    finally:
+        await support_limiter.release(resolved_user_id)
+
+
+async def _do_support_chat(request: Request, current_user: dict, resolved_user_id: int):
+    """Inner handler extracted for rate-limit finally block."""
     data = await request.json()
     user_message = data.get("message", "")
     history = data.get("history", [])
 
     if not user_message.strip():
         raise HTTPException(400, "Пустое сообщение")
-
-    resolved_user_id = current_user["tg_id"]
     user_role = current_user.get("role", "worker")
     fio = current_user.get("fio", "Неизвестный")
 

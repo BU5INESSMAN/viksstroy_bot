@@ -223,8 +223,12 @@ export default function Support() {
                 history: newMessages.slice(-10)
             });
             setMessages(prev => [...prev, { from: 'assistant', text: res.data.reply }]);
-        } catch {
-            setMessages(prev => [...prev, { from: 'assistant', text: 'Ошибка отправки. Попробуйте ещё раз.' }]);
+        } catch (err) {
+            const detail = err?.response?.data?.detail;
+            const msg = err?.response?.status === 429
+                ? (detail || 'Слишком много сообщений. Попробуйте позже.')
+                : 'Ошибка отправки. Попробуйте ещё раз.';
+            setMessages(prev => [...prev, { from: 'assistant', text: msg }]);
         }
         setLoading(false);
     };
