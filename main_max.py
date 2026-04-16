@@ -24,6 +24,7 @@ sys.path.append(web_dir)
 
 from database_deps import db, TZ_BARNAUL
 from services.notifications import notify_users, notify_fio_match
+from services.bot_commands import format_commands_message, warn_missing_commands
 
 load_dotenv()
 
@@ -49,6 +50,21 @@ dp = Dispatcher()
 
 WEB_APP_URL = "https://miniapp.viks22.ru/"
 USER_STATES = {}
+
+# Stage 3 — commands registered in the MAX bot dispatcher. Pruned after
+# audit (see web/services/bot_commands.py). MAX currently mirrors the TG
+# set; this may legitimately diverge if a handler is added to only one
+# bot. Commands absent here are silently omitted from the output.
+MAX_AVAILABLE_COMMANDS = {"/start", "/order", "/schedule"}
+
+
+async def _resolve_user_role_max(pseudo_tg_id: int) -> str:
+    """Look up role for a MAX user (pseudo_tg_id = -max_user_id)."""
+    real_id = await resolve_id(pseudo_tg_id)
+    user = await db.get_user(real_id)
+    if not user:
+        return "driver"
+    return dict(user).get("role") or "driver"
 
 
 async def resolve_id(raw_id: int):
@@ -312,6 +328,9 @@ async def message_handler(event: MessageCreated):
                 USER_STATES.pop(max_id_str, None)
                 msg = f"С возвращением, {dict(user)['fio']}!\n\nИспользуйте кнопку ниже для запуска платформы:"
                 await send_max_msg(event, msg, target_url=WEB_APP_URL)
+                # Stage 3: append role-aware command list
+                role = await _resolve_user_role_max(pseudo_tg_id)
+                await send_max_msg(event, format_commands_message(role, MAX_AVAILABLE_COMMANDS))
         else:
             USER_STATES[max_id_str] = {"state": "waiting_for_password"}
             msg = "🔐 Добро пожаловать в ВиКС!\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль или 6-значный код привязки (если аккаунт уже есть в Telegram).\nЕсли вы рабочий или водитель, используйте команду /join [код]"
@@ -397,10 +416,15 @@ async def message_handler(event: MessageCreated):
             await send_max_msg(event, "❌ Произошла ошибка при сохранении данных.")
         return
 
-    if user:
-        await send_max_msg(event, f"Все функции доступны внутри платформы 👇", target_url=WEB_APP_URL)
-    else:
+    # Stage 3: unknown-command / unparsed-text fallback.
+    # Skip if the user is mid-wizard so we don't hijack FSM-like flows.
+    if current_state:
+        return
+    if not user:
         await send_max_msg(event, "Для начала работы введите команду /start или /join [код]")
+        return
+    role = await _resolve_user_role_max(pseudo_tg_id)
+    await send_max_msg(event, format_commands_message(role, MAX_AVAILABLE_COMMANDS))
 
 
 @dp.message_callback()
@@ -1071,6 +1095,7 @@ async def clear_webhook():
 async def main():
     await db.init_db()
     await clear_webhook()
+    warn_missing_commands(logger, "MAX", MAX_AVAILABLE_COMMANDS)
     logger.info(">>> Бот MAX успешно запущен (Исправлен баг с Chat ID) <<<")
     await dp.start_polling(bot)
 

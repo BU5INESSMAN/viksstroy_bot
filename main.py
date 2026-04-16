@@ -25,6 +25,7 @@ sys.path.append(web_dir)
 
 from database_deps import db, TZ_BARNAUL
 from services.notifications import notify_users, notify_fio_match
+from services.bot_commands import format_commands_message, warn_missing_commands
 load_dotenv()
 
 API_URL = os.getenv("API_URL", "http://api:8000")
@@ -43,6 +44,20 @@ db_path = os.getenv("DB_PATH", "data/viksstroy.db")
 db = DatabaseManager(db_path)
 
 WEB_APP_URL = "https://miniapp.viks22.ru"
+
+# Stage 3 — commands actually registered in this bot. Pruned after audit
+# (see web/services/bot_commands.py for the intended map). Commands in the
+# intended map but absent here are silently omitted from the /start and
+# fallback-handler output; a warning is logged at startup.
+TG_AVAILABLE_COMMANDS = {"/start", "/order", "/schedule"}
+
+
+async def _resolve_user_role_tg(tg_id: int) -> str:
+    real_id = await resolve_id(tg_id)
+    user = await db.get_user(real_id)
+    if not user:
+        return "driver"
+    return dict(user).get("role") or "driver"
 
 
 class Socks5Session(AiohttpSession):
@@ -106,11 +121,14 @@ async def cmd_start(message: types.Message, command: CommandObject, state: FSMCo
     if user:
         if dict(user).get('is_blacklisted'):
             await message.answer("❌ Ваш аккаунт заблокирован. Обратитесь к руководству.")
-        else:
-            await state.clear()
-            await message.answer(
-                f"С возвращением, <b>{dict(user)['fio']}</b>!\n\nИспользуйте кнопку ниже для запуска платформы:",
-                reply_markup=get_webapp_keyboard(), parse_mode="html")
+            return
+        await state.clear()
+        await message.answer(
+            f"С возвращением, <b>{dict(user)['fio']}</b>!\n\nИспользуйте кнопку ниже для запуска платформы:",
+            reply_markup=get_webapp_keyboard(), parse_mode="html")
+        # Stage 3: append role-aware command list
+        role = await _resolve_user_role_tg(raw_id)
+        await message.answer(format_commands_message(role, TG_AVAILABLE_COMMANDS))
     else:
         await state.set_state(RegState.waiting_for_password)
         await message.answer(
@@ -1214,9 +1232,27 @@ async def backup_database():
         logger.error(f"Ошибка бэкапа: {e}")
 
 
+# ─────────────────────────────────────────────────────────────
+# Stage 3: catch-all fallback. MUST stay the LAST @dp.message
+# registration so aiogram falls through to it only when no other
+# handler (command, FSM state) matched first. Respects active FSM
+# state to avoid hijacking multi-step wizards.
+# ─────────────────────────────────────────────────────────────
+@dp.message()
+async def _fallback_commands_list(message: types.Message, state: FSMContext):
+    if await state.get_state() is not None:
+        return
+    try:
+        role = await _resolve_user_role_tg(message.from_user.id)
+    except Exception:
+        role = "driver"
+    await message.answer(format_commands_message(role, TG_AVAILABLE_COMMANDS))
+
+
 async def main():
     await db.init_db()
     logger.info("База данных готова.")
+    warn_missing_commands(logger, "TG", TG_AVAILABLE_COMMANDS)
 
     TG_PROXY_URL = os.getenv("TG_PROXY_URL")
     session = None
