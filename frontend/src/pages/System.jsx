@@ -147,7 +147,6 @@ export default function System() {
     const testExtended = async (testType) => {
         try {
             const formData = new FormData();
-            formData.append('tg_id', tgId);
             formData.append('test_type', testType);
             formData.append('platform', testPlatform);
             await axios.post('/api/system/test_notification_extended', formData);
@@ -164,7 +163,7 @@ export default function System() {
     const fetchServerLogs = useCallback(async () => {
         setServerLogsLoading(true);
         try {
-            const res = await axios.get(`/api/system/server-logs?tg_id=${tgId}`);
+            const res = await axios.get('/api/system/server-logs');
             setServerLogs(res.data.lines || []);
         } catch { setServerLogs(['[Ошибка загрузки логов]']); }
         setServerLogsLoading(false);
@@ -174,7 +173,7 @@ export default function System() {
         if (!broadcastText.trim()) return;
         setBroadcastLoading(true);
         try {
-            await axios.post('/api/system/broadcast/group', { tg_id: parseInt(tgId), message: broadcastText });
+            await axios.post('/api/system/broadcast/group', { message: broadcastText });
             toast.success('Сообщение отправлено в группу!');
             setBroadcastText('');
         } catch { toast.error('Ошибка отправки.'); }
@@ -185,7 +184,6 @@ export default function System() {
         setBroadcastLoading(true);
         try {
             await axios.post('/api/system/broadcast/dm', {
-                tg_id: parseInt(tgId),
                 message: broadcastText,
                 mode: dmMode,
                 roles: dmMode === 'roles' ? dmSelectedRoles : undefined,

@@ -4,12 +4,13 @@ import logging
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Depends, Request
 from pydantic import BaseModel
 from typing import List, Optional
 from database_deps import db, TZ_BARNAUL
 from datetime import datetime, timedelta
-from utils import resolve_id, get_all_linked_ids, verify_moderator_plus
+from utils import get_all_linked_ids
+from auth_deps import get_current_user, require_role
 from services.notifications import notify_users, send_schedule_notifications
 from services.image_service import strip_html
 from services.schedule_helpers import get_waiting_apps_for_date, get_schedule_dates
@@ -25,16 +26,17 @@ logger = logging.getLogger("SYSTEM")
 
 LOG_FILE_PATH = os.path.join("data", "server.log")
 
+_require_office = require_role("superadmin", "boss", "moderator")
+_require_superadmin = require_role("superadmin")
+
 
 # --- Models ---
 
 class BroadcastGroupRequest(BaseModel):
-    tg_id: int
     message: str
 
 
 class BroadcastDMRequest(BaseModel):
-    tg_id: int
     message: str
     mode: str  # "roles" or "users"
     roles: Optional[List[str]] = None
@@ -44,26 +46,32 @@ class BroadcastDMRequest(BaseModel):
 # --- Broadcast Endpoints ---
 
 @router.post("/api/system/broadcast/group")
-async def broadcast_to_group(req: BroadcastGroupRequest):
+async def broadcast_to_group(req: BroadcastGroupRequest, current_user=Depends(_require_office)):
     """Send a broadcast message to the group chat."""
-    real_id, user = await verify_moderator_plus(req.tg_id)
     if not req.message.strip():
         raise HTTPException(400, "Сообщение не может быть пустым")
-    asyncio.create_task(broadcast_group(real_id, user.get('fio', 'Администратор'), req.message))
+    real_id = current_user["tg_id"]
+    fio = current_user.get('fio', 'Администратор')
+    asyncio.create_task(broadcast_group(real_id, fio, req.message))
     return {"status": "ok"}
 
 
 @router.post("/api/system/broadcast/dm")
-async def broadcast_to_dm(req: BroadcastDMRequest):
+async def broadcast_to_dm(req: BroadcastDMRequest, current_user=Depends(_require_office)):
     """Send a broadcast message to DMs — by roles or specific users."""
-    real_id, user = await verify_moderator_plus(req.tg_id)
     if not req.message.strip():
         raise HTTPException(400, "Сообщение не может быть пустым")
-    fio = user.get('fio', 'Администратор')
+    real_id = current_user["tg_id"]
+    fio = current_user.get('fio', 'Администратор')
 
     if req.mode == "roles":
         if not req.roles:
             raise HTTPException(400, "Не выбраны роли")
+        # Moderator cannot broadcast to boss/superadmin
+        if current_user.get("role") == "moderator":
+            forbidden = {"superadmin", "boss"} & set(req.roles)
+            if forbidden:
+                raise HTTPException(403, f"Модератор не может рассылать роли: {', '.join(forbidden)}")
         asyncio.create_task(broadcast_dm_roles(real_id, fio, req.message, req.roles))
     elif req.mode == "users":
         if not req.user_ids:
@@ -78,10 +86,8 @@ async def broadcast_to_dm(req: BroadcastDMRequest):
 # --- Server Logs Endpoint ---
 
 @router.get("/api/system/server-logs")
-async def get_server_logs(tg_id: int = 0):
+async def get_server_logs(current_user=Depends(_require_office)):
     """Read last 100 lines of the server log file."""
-    await verify_moderator_plus(tg_id)
-
     if not os.path.exists(LOG_FILE_PATH):
         return {"lines": ["[Лог-файл не найден. Убедитесь, что серверное логирование настроено.]"]}
 
@@ -98,14 +104,11 @@ async def get_server_logs(tg_id: int = 0):
 # --- Extended Test Notifications ---
 
 @router.post("/api/system/test_notification_extended")
-async def test_notification_extended(tg_id: int = Form(...), test_type: str = Form(...), platform: str = Form("all")):
-    """Extended test notifications for specific scenarios."""
-    real_tg_id = await resolve_id(tg_id)
-    user = await db.get_user(real_tg_id)
-    if not user or dict(user).get('role') != 'superadmin':
-        raise HTTPException(403, "Нет прав")
-
-    fio = dict(user).get('fio', 'Супер-Админ')
+async def test_notification_extended(test_type: str = Form(...), platform: str = Form("all"),
+                                     current_user=Depends(_require_superadmin)):
+    """Extended test notifications for specific scenarios. Superadmin only."""
+    real_tg_id = current_user["tg_id"]
+    fio = current_user.get('fio', 'Супер-Админ')
 
     async def _run_test():
         try:
@@ -122,13 +125,9 @@ async def test_notification_extended(tg_id: int = Form(...), test_type: str = Fo
 # --- Debtors Endpoint ---
 
 @router.get("/api/system/debtors")
-async def get_debtors(tg_id: int = 0):
+async def get_debtors(current_user=Depends(_require_office)):
     """Должники СМР: прорабы с незаполненным СМР, сгруппированные по прорабу."""
-    if tg_id:
-        await verify_moderator_plus(tg_id)
-
     today = datetime.now(TZ_BARNAUL).date()
-    today_str = today.strftime("%Y-%m-%d")
     grace_str = (today - timedelta(days=1)).strftime("%Y-%m-%d")
     async with db.conn.execute(
         "SELECT id, foreman_id, foreman_name, object_address, date_target, status FROM applications "
@@ -164,15 +163,15 @@ async def get_debtors(tg_id: int = 0):
 
 
 class RemindSMRRequest(BaseModel):
-    tg_id: int
     foreman_id: int
     app_ids: List[int]
 
 
 @router.post("/api/system/remind_smr")
-async def remind_smr(req: RemindSMRRequest):
+async def remind_smr(req: RemindSMRRequest, current_user=Depends(_require_office)):
     """Отправить напоминание прорабу о незаполненных СМР."""
-    real_id, user = await verify_moderator_plus(req.tg_id)
+    real_id = current_user["tg_id"]
+    fio = current_user.get('fio', 'Администратор')
 
     if not req.app_ids:
         raise HTTPException(400, "Нет заявок для напоминания")
@@ -205,7 +204,7 @@ async def remind_smr(req: RemindSMRRequest):
                         dm_chat_id = await get_max_dm_chat_id(str(mid))
                         if dm_chat_id:
                             await send_max_message(max_bot_token, dm_chat_id, strip_html(message))
-            await db.add_log(real_id, user.get('fio'),
+            await db.add_log(real_id, fio,
                              f"Напомнил о СМР прорабу (ID: {req.foreman_id}, {len(req.app_ids)} заявок)",
                              target_type='smr')
         except Exception as e:
@@ -218,11 +217,8 @@ async def remind_smr(req: RemindSMRRequest):
 # --- Smart Scheduling Endpoints ---
 
 @router.get("/api/system/schedule_dates")
-async def api_schedule_dates(tg_id: int = 0):
+async def api_schedule_dates(current_user=Depends(_require_office)):
     """Даты с группировкой заявок по статусу (approved / waiting)."""
-    if tg_id:
-        await verify_moderator_plus(tg_id)
-
     dates = await get_schedule_dates()
     result = []
     for d in dates:
@@ -247,19 +243,18 @@ async def api_schedule_dates(tg_id: int = 0):
 
 
 @router.get("/api/system/schedule_warnings")
-async def api_schedule_warnings(tg_id: int = 0, date: str = ""):
+async def api_schedule_warnings(date: str = "", current_user=Depends(_require_office)):
     """Получить непроверенные заявки на дату."""
-    if tg_id:
-        await verify_moderator_plus(tg_id)
     if not date:
         raise HTTPException(400, "Не указана дата")
     return await get_waiting_apps_for_date(date)
 
 
 @router.post("/api/system/send_schedule_group")
-async def api_send_schedule_group(tg_id: int = Form(0), date: str = Form("")):
+async def api_send_schedule_group(date: str = Form(""), current_user=Depends(_require_office)):
     """Отправить расстановку-картинку в групповой чат (TG + MAX)."""
-    real_id, user_info = await verify_moderator_plus(tg_id)
+    real_id = current_user["tg_id"]
+    user_fio = current_user.get('fio', 'Модератор')
     if not date:
         raise HTTPException(400, "Не указана дата")
 
@@ -272,7 +267,7 @@ async def api_send_schedule_group(tg_id: int = Form(0), date: str = Form("")):
                 await db.conn.commit()
             except:
                 pass
-            await db.add_log(real_id, user_info.get('fio'),
+            await db.add_log(real_id, user_fio,
                              f"Отправил расстановку на {date} в группу ({count} нарядов)",
                              target_type='system')
         except Exception as e:
@@ -283,9 +278,10 @@ async def api_send_schedule_group(tg_id: int = Form(0), date: str = Form("")):
 
 
 @router.post("/api/system/send_schedule_self")
-async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
+async def api_send_schedule_self(date: str = Form(""), current_user=Depends(_require_office)):
     """Отправить расстановку-картинку в ЛС запрашивающему пользователю."""
-    real_id, user_info = await verify_moderator_plus(tg_id)
+    real_id = current_user["tg_id"]
+    user_fio = current_user.get('fio', 'Модератор')
     if not date:
         raise HTTPException(400, "Не указана дата")
 
@@ -330,7 +326,7 @@ async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
                     await send_max_message(max_bot_token, dm_chat_id,
                                            f"📋 Расстановка на {date}", filepath)
 
-            await db.add_log(real_id, user_info.get('fio'),
+            await db.add_log(real_id, user_fio,
                              f"Запросил расстановку на {date} себе в ЛС",
                              target_type='system')
         except Exception as e:
@@ -341,10 +337,9 @@ async def api_send_schedule_self(tg_id: int = Form(0), date: str = Form("")):
 
 
 @router.post("/api/system/delay_publish")
-async def api_delay_publish(tg_id: int = Form(0)):
+async def api_delay_publish(current_user=Depends(_require_office)):
     """Delay auto-publish by 10 minutes."""
-    if tg_id:
-        real_id, user_info = await verify_moderator_plus(tg_id)
+    real_id = current_user["tg_id"]
 
     new_time = datetime.now(TZ_BARNAUL) + timedelta(minutes=10)
     new_time_str = new_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -354,7 +349,6 @@ async def api_delay_publish(tg_id: int = Form(0)):
         (new_time_str,))
     await db.conn.commit()
 
-    if tg_id:
-        await db.add_log(real_id, user_info.get('fio'), "Отложил авто-публикацию на 10 минут", target_type='system')
+    await db.add_log(real_id, current_user.get('fio', 'Модератор'), "Отложил авто-публикацию на 10 минут", target_type='system')
 
     return {"status": "ok", "publish_at": new_time_str}

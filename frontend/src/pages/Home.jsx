@@ -94,7 +94,7 @@ export default function Home() {
         const tomorrowStr = tomorrow.toISOString().split('T')[0];
 
         try {
-            const warnRes = await axios.get(`/api/system/schedule_warnings?tg_id=${tgId}&date=${tomorrowStr}`);
+            const warnRes = await axios.get(`/api/system/schedule_warnings?date=${tomorrowStr}`);
             const warnings = warnRes.data || [];
             if (warnings.length > 0) {
                 const warningList = warnings.map(w => `  - ${w.object_address} (${w.foreman_name})`).join('\n');

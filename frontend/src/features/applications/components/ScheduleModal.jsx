@@ -28,7 +28,7 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
             setConfirmWarning(false);
             setSending(false);
             setLoading(true);
-            axios.get(`/api/system/schedule_dates?tg_id=${tgId}`)
+            axios.get('/api/system/schedule_dates')
                 .then(res => {
                     const blocks = (res.data || []).filter(b => b.approved.length > 0 || b.waiting.length > 0);
                     setDateBlocks(blocks);
@@ -55,7 +55,6 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
         setSending(true);
         try {
             const fd = new FormData();
-            fd.append('tg_id', tgId);
             fd.append('date', selectedDate);
 
             const endpoint = target === 'group'
