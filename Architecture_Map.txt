@@ -285,4 +285,49 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React + Vite + Tailwind + framer-moti
      - AI support: knowledge base with 15 guide sections
      - Support chat page with typing indicator
 
+--- SECURITY LAYER (v2.3) ---
+
+  AUTH INFRASTRUCTURE
+  +--------------------------+--------------------------------------------------+
+  | web/auth_deps.py         | get_current_user, get_current_user_optional,     |
+  |                          | require_role() factory, pre-built: require_office|
+  |                          | require_boss_plus, require_superadmin            |
+  | web/rate_limit.py        | UserRateLimiter (in-memory sliding window)       |
+  |                          | Global support_limiter: 10/min, 3 concurrent     |
+  | web/utils.py             | generate_invite_code (Crockford base32),         |
+  |                          | normalize_invite_code, resolve_id,               |
+  |                          | _check_role_password (timing-safe)               |
+  +--------------------------+--------------------------------------------------+
+
+  BOUNDARIES
+  +--------------------------+--------------------------------------------------+
+  | nginx                    | TLS termination, rate limits (30 r/s api, 5 r/s  |
+  |                          | auth), security headers, /uploads/ blocked,      |
+  |                          | client_max_body_size 25M                         |
+  | docker-compose           | API port bound 127.0.0.1 only                    |
+  | Container                | Runs as viks (non-root)                          |
+  | File system              | .env + .db should be 0600, data/ owned by viks   |
+  +--------------------------+--------------------------------------------------+
+
+  AUTHENTICATION FLOWS
+  +--------------------------+--------------------------------------------------+
+  | /api/telegram_auth       | Widget HMAC via secrets.compare_digest            |
+  | /api/tma/auth            | initData HMAC-SHA256 verified with bot_token      |
+  | /api/max/auth            | One-time code from web_codes table (consumed)     |
+  | /api/auth/code           | One-time link code binding user to session        |
+  | /api/auth/session        | Validates HttpOnly cookie (query token sets       |
+  |                          | cookie on redirect flow only)                    |
+  | /api/auth/logout         | Deletes session server-side + clears cookie       |
+  +--------------------------+--------------------------------------------------+
+
+  FILE SERVING FLOW
+  +--------------------------+--------------------------------------------------+
+  | Upload                   | safe_filename + UUID prefix + size/ext check +    |
+  |                          | .resolve().relative_to(UPLOADS_ROOT)              |
+  | Serve                    | /api/files/{id}/download: auth + ownership +      |
+  |                          | MIME detection + inline default, ?download=1      |
+  |                          | for attachment                                    |
+  | Delete                   | /api/objects/files/{id}: require_office + audit   |
+  +--------------------------+--------------------------------------------------+
+
 ================================================================================

@@ -6,7 +6,6 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 from fastapi.responses import JSONResponse
 import asyncio
 
@@ -34,7 +33,7 @@ app.add_middleware(CORSMiddleware, allow_origins=origins, allow_credentials=True
 
 os.makedirs("data/uploads", exist_ok=True)
 os.makedirs("data/uploads/objects", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="data/uploads"), name="uploads")
+# N-01: Static mount removed — files served via authenticated /api/files/{id}/download only
 
 _last_active_cache = {}  # tg_id → last_update_time (throttle to 1 update per 60s)
 

@@ -120,4 +120,64 @@ Git: 177 commits across v1.0-v2.1
 
   Token reduction: 209.0x avg (best: 2535.1x for error handling queries)
 
+--- SECURITY POSTURE (v2.3, 2026-04-16) ---
+
+  Audit: SECURITY_AUDIT_v2.3.md
+  Status: PRODUCTION READY (all critical/high findings fixed, 0 remaining)
+
+  MANDATORY PATTERNS FOR FUTURE DEVELOPMENT:
+
+  AUTHENTICATION
+    Every new endpoint MUST use one of these dependencies:
+      Depends(get_current_user)    -- any authenticated user
+      Depends(require_office)       -- moderator+ (office roles)
+      Depends(require_boss_plus)    -- boss or superadmin only
+      Depends(require_superadmin)   -- superadmin only
+    NEVER accept tg_id as a request parameter for identity.
+    Frontend sends nothing for auth -- HttpOnly cookie handles it.
+
+  FILE UPLOADS
+    - Size limit enforced in handler (MAX_SIZE check)
+    - Extension whitelist (ALLOWED_EXTENSIONS)
+    - safe_filename() to strip path traversal
+    - UUID prefix for uniqueness
+    - .resolve().relative_to(UPLOADS_ROOT) for every path
+    - Store relative path in DB
+    - Serve via /api/files/{id}/download only (never direct /uploads/)
+
+  INVITE CODES
+    Use web.utils.generate_invite_code(length) + normalize_invite_code(input).
+    Never uuid4()[:N] or random.randint.
+    Default length 12 for invites, 8 for passwords.
+    Alphabet: Crockford base32 (no 0/O/1/I/L).
+
+  RATE LIMITING
+    For expensive endpoints (AI, external APIs):
+    Import web.rate_limit.UserRateLimiter or global limiters.
+    Wrap handler with acquire/release in try/finally.
+    Return HTTP 429 with user-friendly message.
+
+  SECRET COMPARISON
+    Always use secrets.compare_digest or hmac.compare_digest.
+    NEVER use == for passwords, tokens, HMACs, or hashes.
+
+  FRONTEND AUTH
+    - axios.defaults.withCredentials = true (set in main.jsx)
+    - Cookie session_token is HttpOnly -- JS cannot read it
+    - localStorage has only tg_id and user_role (UI metadata only)
+    - Never store session_token in any JS-accessible storage
+
+  DEPLOYMENT
+    - docker-compose: port 8000 bound to 127.0.0.1 only
+    - Container runs as viks user (non-root)
+    - .env and data/viksstroy.db should be 0600
+    - CRON_SECRET required in .env for cron endpoints
+    - ENV=production (default); ENV=development enables localhost CORS
+
+  FILES TO CONSULT:
+    web/auth_deps.py         -- auth dependency helpers
+    web/rate_limit.py        -- in-memory rate limiter
+    web/utils.py             -- generate_invite_code, normalize_invite_code
+    SECURITY_AUDIT_v2.3.md   -- full audit report
+
 ================================================================================

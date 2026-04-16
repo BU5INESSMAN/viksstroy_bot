@@ -28,11 +28,8 @@ def download_font(url, filename):
     if not os.path.exists(filename) or os.path.getsize(filename) < 10000:
         os.makedirs(os.path.dirname(filename), exist_ok=True)
         try:
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
             req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-            with urllib.request.urlopen(req, context=ctx) as response, open(filename, 'wb') as out_file:
+            with urllib.request.urlopen(req, timeout=30) as response, open(filename, 'wb') as out_file:
                 out_file.write(response.read())
         except Exception:
             pass

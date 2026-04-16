@@ -221,7 +221,7 @@ async def telegram_auth(data: dict):
         data_check_string = "\n".join([f"{k}={data[k]}" for k in sorted(data.keys()) if data[k] is not None])
         secret_key = hashlib.sha256(bot_token.encode()).digest()
         hash_calc = hmac.new(secret_key, data_check_string.encode(), hashlib.sha256).hexdigest()
-        if hash_calc != received_hash: raise HTTPException(status_code=403, detail="Неверная подпись")
+        if not secrets.compare_digest(hash_calc, received_hash): raise HTTPException(status_code=403, detail="Неверная подпись")
         raw_id = int(data['id'])
         real_tg_id = await resolve_id(raw_id)
         photo_url = data.get('photo_url', '')
@@ -374,8 +374,11 @@ async def validate_session(
     token: str = Query(default=None),
     session_token: str = Cookie(default=None),
 ):
-    """Validate a browser session token (query param or HttpOnly cookie)."""
-    effective_token = token or session_token
+    """Validate session. Prefers HttpOnly cookie; query ?token= accepted only
+    for the bot deep-link redirect flow (sets cookie on success so subsequent
+    requests use cookie only — L-05 mitigation)."""
+    # Prefer cookie; fall back to query token for initial auth redirect
+    effective_token = session_token or token
     if not effective_token:
         raise HTTPException(status_code=401, detail="No session token")
     if db.conn is None:
@@ -386,7 +389,6 @@ async def validate_session(
     ) as cur:
         row = await cur.fetchone()
     if not row:
-        # Clean up expired token if it exists
         try:
             await db.conn.execute("DELETE FROM sessions WHERE token = ?", (effective_token,))
             await db.conn.commit()
@@ -399,7 +401,21 @@ async def validate_session(
     if not user:
         raise HTTPException(status_code=401, detail="Пользователь не найден")
     user_dict = dict(user)
-    return {"status": "ok", "tg_id": user_id, "role": user_dict['role'], "fio": user_dict.get('fio', '')}
+
+    data = {"status": "ok", "tg_id": user_id, "role": user_dict['role'], "fio": user_dict.get('fio', '')}
+
+    # If token came via query param (redirect flow), set HttpOnly cookie
+    # so subsequent requests use cookie only (token no longer in URL)
+    if token and not session_token:
+        resp = JSONResponse(content=data)
+        resp.set_cookie(
+            key="session_token", value=effective_token,
+            max_age=30 * 24 * 3600, httponly=True, secure=True,
+            samesite="lax", path="/",
+        )
+        return resp
+
+    return data
 
 
 @router.post("/api/auth/logout")

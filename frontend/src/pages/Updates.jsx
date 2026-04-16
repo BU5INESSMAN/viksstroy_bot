@@ -15,9 +15,10 @@ const badgeColors = {
     fix: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400 border-blue-200 dark:border-blue-800/50',
     refactor: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 border-amber-200 dark:border-amber-800/50',
     chore: 'bg-gray-100 text-gray-600 dark:bg-gray-700/30 dark:text-gray-400 border-gray-200 dark:border-gray-600/50',
+    security: 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400 border-red-200 dark:border-red-800/50',
 };
 
-const badgeLabels = { feat: 'feat', fix: 'fix', refactor: 'refactor', chore: 'chore' };
+const badgeLabels = { feat: 'feat', fix: 'fix', refactor: 'refactor', chore: 'chore', security: 'security' };
 
 const versionColor = (v) => {
     const parts = v.split('.');
@@ -28,7 +29,21 @@ const versionColor = (v) => {
 
 const CHANGELOG = [
     {
-        version: '2.2', date: '2026-04-15', title: 'Масштабное обновление платформы', current: true,
+        version: '2.3', date: '2026-04-16', title: 'Security Sprint — Production Hardening', current: true,
+        commits: 18,
+        changes: [
+            { type: 'security', text: 'C-01..C-10: все 10 критических уязвимостей закрыты (auth bypass, role escalation, file serving, cron auth, KP catalog auth)' },
+            { type: 'security', text: 'H-01..H-12: порт 8000 → localhost, path traversal guard, cron secret, сильные invite-коды (12 символов base32), session_token только в cookie' },
+            { type: 'security', text: 'nginx: HSTS, CSP, X-Frame-Options, rate limiting (30 r/s api, 5 r/s auth)' },
+            { type: 'security', text: 'Docker: non-root user (viks), pinned dependencies, env-aware CORS' },
+            { type: 'security', text: 'ИИ-поддержка: rate limit 10 сообщений/мин + 3 одновременных на пользователя' },
+            { type: 'security', text: 'Аудит: 36/36 находок обработано, 0 критических/высоких осталось. См. SECURITY_AUDIT_v2.3.md' },
+            { type: 'refactor', text: '80+ API эндпоинтов мигрированы с forgeable tg_id на session-cookie аутентификацию' },
+            { type: 'refactor', text: 'Эндпоинт скачивания файлов с MIME-детекцией + UTF-8 RFC 5987 Content-Disposition' },
+        ],
+    },
+    {
+        version: '2.2', date: '2026-04-15', title: 'Масштабное обновление платформы',
         commits: 22,
         changes: [
             { type: 'feat', text: 'Skeleton-загрузка на всех страницах вместо текста «Загрузка...»' },
