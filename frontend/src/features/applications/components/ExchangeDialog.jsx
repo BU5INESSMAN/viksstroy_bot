@@ -74,7 +74,6 @@ export default function ExchangeDialog({ info, equipment, appEquipment, appId, t
         setSending(true);
         try {
             const res = await axios.post('/api/exchange/request', {
-                requester_tg_id: tgId,
                 requester_app_id: appId,
                 requested_equip_id: info.equipId,
                 offered_equip_id: offeredEquipId,

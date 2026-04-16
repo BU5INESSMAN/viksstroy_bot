@@ -10,7 +10,8 @@ import logging
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Request, Depends
+from auth_deps import get_current_user
 from services.exchange_service import (
     create_exchange, send_create_notifications,
     respond_to_exchange, send_respond_notifications,
@@ -24,9 +25,9 @@ router = APIRouter(prefix="/api/exchange", tags=["exchange"])
 
 
 @router.post("/request")
-async def create_exchange_request(request: Request):
+async def create_exchange_request(request: Request, current_user=Depends(get_current_user)):
     data = await request.json()
-    requester_tg_id = data.get("requester_tg_id")
+    requester_tg_id = current_user["tg_id"]
     requester_app_id = data.get("requester_app_id")
     requested_equip_id = data.get("requested_equip_id")
     offered_equip_id = data.get("offered_equip_id")
@@ -34,7 +35,7 @@ async def create_exchange_request(request: Request):
     logger.info(f"Exchange request: requester={requester_tg_id}, app={requester_app_id}, "
                 f"wants={requested_equip_id}, offers={offered_equip_id}")
 
-    if not all([requester_tg_id, requester_app_id, requested_equip_id, offered_equip_id]):
+    if not all([requester_app_id, requested_equip_id, offered_equip_id]):
         return {"error": "Не все поля заполнены."}
 
     result = await create_exchange(requester_tg_id, requester_app_id, requested_equip_id, offered_equip_id)
@@ -48,9 +49,9 @@ async def create_exchange_request(request: Request):
 
 
 @router.post("/{exchange_id}/respond")
-async def respond_exchange(exchange_id: int, request: Request):
+async def respond_exchange(exchange_id: int, request: Request, current_user=Depends(get_current_user)):
     data = await request.json()
-    tg_id = data.get("tg_id")
+    tg_id = current_user["tg_id"]
     action = data.get("action")
 
     logger.info(f"Exchange {exchange_id} response: {action} by user {tg_id}")
@@ -58,6 +59,8 @@ async def respond_exchange(exchange_id: int, request: Request):
     if action not in ("accept", "reject"):
         return {"error": "Неверное действие."}
 
+    # Ownership check is enforced inside respond_to_exchange():
+    # it verifies ex['donor_id'] == real_tg_id
     result = await respond_to_exchange(exchange_id, tg_id, action)
 
     if "error" in result:
@@ -69,12 +72,14 @@ async def respond_exchange(exchange_id: int, request: Request):
 
 
 @router.post("/{exchange_id}/cancel")
-async def cancel_exchange(exchange_id: int, request: Request):
+async def cancel_exchange(exchange_id: int, request: Request, current_user=Depends(get_current_user)):
     data = await request.json()
-    tg_id = data.get("tg_id")
+    tg_id = current_user["tg_id"]
 
     logger.info(f"Exchange {exchange_id} cancel by user {tg_id}")
 
+    # Ownership check is enforced inside cancel_exchange_request():
+    # it verifies ex['requester_id'] == real_tg_id
     result = await cancel_exchange_request(exchange_id, tg_id)
 
     if "error" in result:
@@ -86,7 +91,7 @@ async def cancel_exchange(exchange_id: int, request: Request):
 
 
 @router.get("/check_equip/{equip_id}")
-async def check_equip_for_exchange(equip_id: int, date: str = ""):
+async def check_equip_for_exchange(equip_id: int, date: str = "", current_user=Depends(get_current_user)):
     if not date:
         return {"error": "Дата не указана."}
 

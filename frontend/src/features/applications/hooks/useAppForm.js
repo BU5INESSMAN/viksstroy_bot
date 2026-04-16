@@ -343,7 +343,6 @@ export default function useAppForm({
                 if (appForm.pendingExchange && createRes.data?.id) {
                     try {
                         const exRes = await axios.post('/api/exchange/request', {
-                            requester_tg_id: tgId,
                             requester_app_id: createRes.data.id,
                             requested_equip_id: appForm.pendingExchange.requested_equip_id,
                             offered_equip_id: appForm.pendingExchange.offered_equip_id,
