@@ -108,6 +108,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 async def startup():
     await db.init_db()
     try:
+        from services.notifications import validate_vapid_keys
+        validate_vapid_keys()
+    except Exception:
+        pass
+    try:
         await db.conn.execute("CREATE TABLE IF NOT EXISTS web_codes (code TEXT, max_id INTEGER, expires REAL)")
         await db.conn.execute("CREATE TABLE IF NOT EXISTS account_links (primary_id INTEGER, secondary_id INTEGER UNIQUE)")
         await db.conn.execute("CREATE TABLE IF NOT EXISTS link_codes (code TEXT UNIQUE, user_id INTEGER, expires REAL)")

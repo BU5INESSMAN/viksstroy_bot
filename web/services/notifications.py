@@ -308,11 +308,31 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         pass
 
 
+def validate_vapid_keys() -> None:
+    """Startup diagnostic: try to parse the VAPID private key and log the
+    result. No-op if keys are unset. Called from api_main on lifespan
+    startup so ops gets a clear signal before the first push fires."""
+    priv = os.getenv("VAPID_PRIVATE_KEY", "").strip()
+    if not priv:
+        logger.warning("VAPID_PRIVATE_KEY is unset — PWA push disabled")
+        return
+    try:
+        import py_vapid
+        vapid = py_vapid.Vapid.from_raw(priv.encode() if isinstance(priv, str) else priv)
+        pub_len = len(vapid.public_key.public_bytes_raw()) if hasattr(vapid.public_key, 'public_bytes_raw') else -1
+        logger.info(f"VAPID keys validated OK (public key bytes={pub_len})")
+    except Exception as e:
+        logger.error(
+            f"VAPID keys INVALID: {e}. "
+            f"Regenerate with: vapid --gen  (output: public_key / private_key as base64url)."
+        )
+
+
 async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = "/dashboard",
                               push_type: str = None):
     """Send typed web push to all subscriptions for given user_ids. Fire-and-forget."""
-    vapid_private = os.getenv("VAPID_PRIVATE_KEY", "")
-    vapid_public = os.getenv("VAPID_PUBLIC_KEY", "")
+    vapid_private = os.getenv("VAPID_PRIVATE_KEY", "").strip()
+    vapid_public = os.getenv("VAPID_PUBLIC_KEY", "").strip()
     if not vapid_private or not vapid_public:
         return
 
@@ -321,7 +341,12 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
     except ImportError:
         return
 
-    vapid_claims = {"sub": os.getenv("VAPID_CLAIM_EMAIL", "mailto:admin@viks22.ru")}
+    # BadJwtToken on iOS is almost always a claims problem — the `sub`
+    # MUST start with "mailto:" (some push servers 403 on plain emails).
+    raw_sub = os.getenv("VAPID_CLAIM_EMAIL", "admin@viks22.ru").strip()
+    if not raw_sub.startswith("mailto:") and not raw_sub.startswith("https:"):
+        raw_sub = "mailto:" + raw_sub
+    vapid_claims = {"sub": raw_sub}
 
     if not user_ids:
         return
@@ -383,6 +408,22 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
             if e.response and e.response.status_code in (404, 410):
                 expired_ids.append(sub_id)
                 logger.info(f"PUSH — Subscription expired for user {sub_uid}, removing")
+            elif e.response and e.response.status_code == 403:
+                # iOS APNs returns 403 BadJwtToken when the VAPID JWT is
+                # malformed (wrong key format, missing mailto: sub, etc.).
+                body_text = ""
+                try:
+                    body_text = e.response.text
+                except Exception:
+                    pass
+                logger.error(
+                    f"PUSH VAPID 403 for user {sub_uid}: "
+                    f"sub={vapid_claims.get('sub')!r}, "
+                    f"key_len={len(vapid_private)}, "
+                    f"key_prefix={vapid_private[:10]!r}, "
+                    f"endpoint_host={endpoint.split('/')[2] if '/' in endpoint else '?'}, "
+                    f"body={body_text[:200]}"
+                )
             else:
                 logger.warning(f"PUSH — Failed for user {sub_uid}: {e}")
         except Exception as e:
