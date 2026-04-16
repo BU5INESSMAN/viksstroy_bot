@@ -64,12 +64,12 @@ export default function Home() {
     });
 
     function fetchData() {
-        axios.get(`/api/dashboard?tg_id=${tgId}`).then(res => setData(res.data)).catch(() => {});
+        axios.get('/api/dashboard').then(res => setData(res.data)).catch(() => {});
         axios.get(`/api/applications/active?tg_id=${tgId}`)
             .then(res => { setActiveApps(res.data || []); setLoading(false); })
             .catch(() => { setActiveApps([]); setLoading(false); });
         if (['moderator', 'boss', 'superadmin'].includes(role)) {
-            axios.get(`/api/system/debtors?tg_id=${tgId}`).then(res => setDebtors(res.data || [])).catch(() => {});
+            axios.get('/api/system/debtors').then(res => setDebtors(res.data || [])).catch(() => {});
         }
         if (['worker', 'foreman', 'boss', 'superadmin'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {

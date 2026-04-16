@@ -27,10 +27,10 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
 
     // Fetch sidebar counts + user FIO
     const fetchCounts = useCallback(() => {
-        axios.get(`/api/dashboard/sidebar_counts?tg_id=${tgId}`)
+        axios.get('/api/dashboard/sidebar_counts')
             .then(r => setCounts(r.data || {}))
             .catch(() => {});
-    }, [tgId]);
+    }, []);
 
     useEffect(() => {
         if (tgId && tgId !== '0') {

@@ -8,19 +8,19 @@ const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia(
 const ROLE_NAMES = { superadmin: 'Супер-Админ', boss: 'Директор', moderator: 'Модератор', foreman: 'Прораб', brigadier: 'Бригадир', worker: 'Рабочий', driver: 'Водитель' };
 const ROLE_COLORS = { superadmin: 'text-red-500', boss: 'text-orange-500', moderator: 'text-yellow-600 dark:text-yellow-400', foreman: 'text-blue-500', brigadier: 'text-cyan-500', worker: 'text-emerald-500', driver: 'text-emerald-600 dark:text-emerald-400' };
 
-export default function OnlineUsersModal({ isOpen, onClose, tgId }) {
+export default function OnlineUsersModal({ isOpen, onClose }) {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (isOpen && tgId) {
+        if (isOpen) {
             setLoading(true);
-            axios.get(`/api/online?tg_id=${tgId}`)
+            axios.get('/api/online')
                 .then(r => setUsers(r.data.users || []))
                 .catch(() => {})
                 .finally(() => setLoading(false));
         }
-    }, [isOpen, tgId]);
+    }, [isOpen]);
 
     if (!isOpen) return null;
 

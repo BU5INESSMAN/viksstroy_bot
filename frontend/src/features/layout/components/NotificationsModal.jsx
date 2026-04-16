@@ -5,24 +5,24 @@ import axios from 'axios';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export default function NotificationsModal({ isOpen, onClose, tgId }) {
+export default function NotificationsModal({ isOpen, onClose }) {
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (isOpen && tgId) {
+        if (isOpen) {
             setLoading(true);
-            axios.get(`/api/notifications/my?tg_id=${tgId}&limit=50`)
+            axios.get('/api/notifications/my?limit=50')
                 .then(r => { setNotifications(r.data.notifications || []); setUnreadCount(r.data.unread_count || 0); })
                 .catch(() => {})
                 .finally(() => setLoading(false));
         }
-    }, [isOpen, tgId]);
+    }, [isOpen]);
 
     const markAllRead = async () => {
         try {
-            const fd = new URLSearchParams(); fd.append('tg_id', tgId); fd.append('notification_ids', 'all');
+            const fd = new URLSearchParams(); fd.append('notification_ids', 'all');
             await axios.post('/api/notifications/read', fd);
             setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
             setUnreadCount(0);
@@ -31,7 +31,7 @@ export default function NotificationsModal({ isOpen, onClose, tgId }) {
 
     const markRead = async (id) => {
         try {
-            const fd = new URLSearchParams(); fd.append('tg_id', tgId); fd.append('notification_ids', String(id));
+            const fd = new URLSearchParams(); fd.append('notification_ids', String(id));
             await axios.post('/api/notifications/read', fd);
             setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: true } : n));
             setUnreadCount(prev => Math.max(0, prev - 1));

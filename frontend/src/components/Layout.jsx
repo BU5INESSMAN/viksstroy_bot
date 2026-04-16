@@ -165,8 +165,8 @@ export default function Layout() {
         const fetchCounts = async () => {
             try {
                 const [nRes, oRes] = await Promise.all([
-                    axios.get(`/api/notifications/my?tg_id=${tgId}&limit=1`),
-                    axios.get(`/api/online?tg_id=${tgId}`),
+                    axios.get('/api/notifications/my?limit=1'),
+                    axios.get('/api/online'),
                 ]);
                 setUnreadCount(nRes.data.unread_count || 0);
                 setOnlineCount(oRes.data.count || 0);
@@ -370,11 +370,10 @@ export default function Layout() {
                 isOpen={showNotifications}
                 onClose={() => {
                     setShowNotifications(false);
-                    if (tgId) axios.get(`/api/notifications/my?tg_id=${tgId}&limit=1`).then(r => setUnreadCount(r.data.unread_count || 0)).catch(() => {});
+                    if (tgId) axios.get('/api/notifications/my?limit=1').then(r => setUnreadCount(r.data.unread_count || 0)).catch(() => {});
                 }}
-                tgId={tgId}
             />
-            <OnlineUsersModal isOpen={showOnlineUsers} onClose={() => setShowOnlineUsers(false)} tgId={tgId} />
+            <OnlineUsersModal isOpen={showOnlineUsers} onClose={() => setShowOnlineUsers(false)} />
             </div>
         </div>
     );

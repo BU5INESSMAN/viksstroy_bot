@@ -1,9 +1,10 @@
 import sys
 import os
+import hmac as _hmac
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException
+from fastapi import APIRouter, Form, HTTPException, Depends, Request
 import asyncio
 import logging
 from database_deps import db, TZ_BARNAUL
@@ -11,15 +12,23 @@ from datetime import datetime, timedelta
 from utils import resolve_id, fetch_teams_dict, enrich_app_with_team_name
 from services.notifications import notify_users
 from services.publish_service import execute_app_publish
+from auth_deps import get_current_user, require_role
 
 logger = logging.getLogger(__name__)
 from routers.applications import enrich_app_with_members_data
 
 router = APIRouter(tags=["Dashboard"])
 
+# ── Role group deps ──
+_require_office = require_role("superadmin", "boss", "moderator")
+_require_boss_plus = require_role("superadmin", "boss")
+
 
 @router.get("/api/dashboard")
-async def get_dashboard_data(tg_id: int = 0):
+async def get_dashboard_data(current_user=Depends(get_current_user)):
+    tg_id = current_user["tg_id"]
+    user_role = current_user.get("role")
+
     stats = await db.get_general_statistics()
     teams = await db.get_all_teams()
     teams_dict = {t['id']: t['name'] for t in teams}
@@ -62,17 +71,12 @@ async def get_dashboard_data(tg_id: int = 0):
         await enrich_app_with_members_data(a)
 
     recent_addresses = []
-    real_tg_id = None
-    user_role = None
-    if tg_id != 0:
-        real_tg_id = await resolve_id(tg_id)
-        user = await db.get_user(real_tg_id)
-        user_role = dict(user).get('role') if user else None
-        async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
-                                   (real_tg_id,)) as cur:
-            for r in await cur.fetchall():
-                if r[0] and r[0] not in recent_addresses: recent_addresses.append(r[0])
-                if len(recent_addresses) >= 5: break
+    real_tg_id = tg_id
+    async with db.conn.execute("SELECT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC",
+                               (real_tg_id,)) as cur:
+        for r in await cur.fetchall():
+            if r[0] and r[0] not in recent_addresses: recent_addresses.append(r[0])
+            if len(recent_addresses) >= 5: break
 
     # Фильтрация для прорабов и бригадиров: только свои заявки
     if user_role in ('foreman', 'brigadier') and real_tg_id:
@@ -95,25 +99,28 @@ async def get_dashboard_data(tg_id: int = 0):
             pass
         enriched_teams.append(team_info)
 
+    is_office = user_role in ("superadmin", "boss", "moderator")
+
+    # Strip sensitive fields from non-office users
+    if not is_office:
+        for eq in equip:
+            eq.pop("invite_code", None)
+            eq.pop("tg_id", None)
+
     return {"stats": stats, "teams": enriched_teams, "equipment": equip,
             "equip_categories": list(set(categories)), "kanban_apps": all_apps, "recent_addresses": recent_addresses}
 
 
 @router.get("/api/logs")
-async def get_logs(): return await db.get_recent_logs(50)
+async def get_logs(current_user=Depends(_require_boss_plus)):
+    return await db.get_recent_logs(50)
 
 
 # ── Online users ──
 
 @router.get("/api/online")
-async def get_online_users(tg_id: int = 0):
+async def get_online_users(current_user=Depends(get_current_user)):
     """Returns users active in the last 5 minutes."""
-    if tg_id:
-        real_id = await resolve_id(tg_id)
-        user = await db.get_user(real_id)
-        if not user:
-            raise HTTPException(401, "Not authenticated")
-
     cutoff = (datetime.now() - timedelta(minutes=5)).strftime("%Y-%m-%d %H:%M:%S")
     async with db.conn.execute(
         "SELECT user_id, fio, role, last_active FROM users WHERE last_active > ? AND is_blacklisted = 0 ORDER BY last_active DESC",
@@ -128,10 +135,8 @@ async def get_online_users(tg_id: int = 0):
 # ── Notification center ──
 
 @router.get("/api/notifications/my")
-async def get_my_notifications(tg_id: int = 0, limit: int = 50):
-    if not tg_id:
-        raise HTTPException(401, "Not authenticated")
-    real_id = await resolve_id(tg_id)
+async def get_my_notifications(limit: int = 50, current_user=Depends(get_current_user)):
+    real_id = current_user["tg_id"]
 
     async with db.conn.execute(
         "SELECT id, type, title, body, is_read, created_at, link_url FROM user_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
@@ -151,10 +156,8 @@ async def get_my_notifications(tg_id: int = 0, limit: int = 50):
 
 
 @router.post("/api/notifications/read")
-async def mark_notifications_read(tg_id: int = Form(...), notification_ids: str = Form("")):
-    if not tg_id:
-        raise HTTPException(401, "Not authenticated")
-    real_id = await resolve_id(tg_id)
+async def mark_notifications_read(notification_ids: str = Form(""), current_user=Depends(get_current_user)):
+    real_id = current_user["tg_id"]
 
     if notification_ids == "all":
         await db.conn.execute("UPDATE user_notifications SET is_read = 1 WHERE user_id = ? AND is_read = 0", (real_id,))
@@ -168,11 +171,30 @@ async def mark_notifications_read(tg_id: int = Form(...), notification_ids: str 
     return {"status": "ok"}
 
 
+# ── Settings ──
+
+SENSITIVE_SETTINGS = {
+    "gemini_api_key",
+    "openrouter_api_key",
+    "vapid_private_key",
+    "bot_token",
+    "telegram_bot_token",
+}
+
+
 @router.get("/api/settings")
-async def get_settings():
+async def get_settings(current_user=Depends(get_current_user)):
+    """Return settings. Sensitive fields only visible to superadmin."""
     async with db.conn.execute("SELECT key, value FROM settings") as cur:
         rows = await cur.fetchall()
-    return {r[0]: r[1] for r in rows}
+
+    result = {r[0]: r[1] for r in rows}
+
+    if current_user.get("role") != "superadmin":
+        for key in SENSITIVE_SETTINGS:
+            result.pop(key, None)
+
+    return result
 
 
 @router.get("/api/settings/support")
@@ -204,11 +226,7 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
                           support_tg_link: str = Form(""),
                           support_max_link: str = Form(""),
                           gemini_api_key: str = Form(""),
-                          tg_id: int = Form(0)):
-    user = await db.get_user(tg_id)
-    if not user or dict(user).get('role') not in ['superadmin', 'boss', 'moderator']: raise HTTPException(403,
-                                                                                                          "Нет прав")
-
+                          current_user=Depends(_require_office)):
     pairs = [
         ('auto_publish_time', auto_publish_time),
         ('auto_publish_enabled', auto_publish_enabled),
@@ -227,8 +245,8 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
         ('log_retention_days', log_retention_days),
     ]
 
-    # Support settings — superadmin only
-    if dict(user).get('role') == 'superadmin':
+    # Support settings + API key — superadmin only
+    if current_user.get('role') == 'superadmin':
         pairs.extend([
             ('support_tg_link', support_tg_link),
             ('support_max_link', support_max_link),
@@ -243,14 +261,32 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
         await db.conn.commit()
     except Exception as e:
         await db.conn.rollback()
-        raise HTTPException(500, f"Database error: {e}")
+        raise HTTPException(500, "Ошибка сохранения настроек")
 
-    await db.add_log(tg_id, dict(user).get('fio'), "Обновил системные настройки", target_type='settings')
+    await db.add_log(current_user["tg_id"], current_user.get('fio'), "Обновил системные настройки", target_type='settings')
     return {"status": "ok"}
 
 
+# ── Cron endpoints (internal only — require secret header) ──
+
+def _verify_cron_secret(request: Request):
+    """Check X-Cron-Secret header matches CRON_SECRET env var.
+    Falls through if CRON_SECRET is empty (legacy: not yet configured).
+    """
+    cron_secret = os.getenv("CRON_SECRET", "")
+    if not cron_secret:
+        # Not configured yet — allow but log a warning
+        logger.warning("CRON_SECRET not set — cron endpoints are unprotected")
+        return
+    provided = request.headers.get("X-Cron-Secret", "")
+    if not provided or not _hmac.compare_digest(cron_secret, provided):
+        raise HTTPException(403, "Forbidden")
+
+
 @router.post("/api/cron/start_day")
-async def cron_start_day():
+async def cron_start_day(request: Request):
+    _verify_cron_secret(request)
+
     # Проверяем, включена ли автопубликация
     async with db.conn.execute("SELECT value FROM settings WHERE key = 'auto_publish_enabled'") as cur:
         row = await cur.fetchone()
@@ -297,21 +333,24 @@ async def cron_start_day():
 
 
 @router.post("/api/cron/end_day")
-async def cron_end_day(): return {"status": "ok"}
+async def cron_end_day(request: Request):
+    _verify_cron_secret(request)
+    return {"status": "ok"}
 
 
 @router.post("/api/cron/check_timeouts")
-async def cron_check_timeouts(): return {"status": "ok"}
+async def cron_check_timeouts(request: Request):
+    _verify_cron_secret(request)
+    return {"status": "ok"}
 
 
 @router.post("/api/system/test_notification")
-async def test_notification(tg_id: int = Form(...), platform: str = Form("all")):
-    real_tg_id = await resolve_id(tg_id)
-    user = await db.get_user(real_tg_id)
-    if not user or dict(user).get('role') != 'superadmin':
+async def test_notification(platform: str = Form("all"), current_user=Depends(get_current_user)):
+    if current_user.get('role') != 'superadmin':
         raise HTTPException(403, "Нет прав")
 
-    fio = dict(user).get('fio', 'Супер-Админ')
+    real_tg_id = current_user["tg_id"]
+    fio = current_user.get('fio', 'Супер-Админ')
     platform_name = "MAX" if platform == "max" else "Telegram"
 
     fake_app = {
@@ -344,11 +383,8 @@ async def test_notification(tg_id: int = Form(...), platform: str = Form("all"))
 
 
 @router.get("/api/dashboard/sidebar_counts")
-async def sidebar_counts(tg_id: int = 0):
+async def sidebar_counts(current_user=Depends(get_current_user)):
     """Counts for sidebar badges."""
-    if db.conn is None:
-        await db.init_db()
-
     counts = {
         "object_requests": 0,
         "approved_apps": 0,

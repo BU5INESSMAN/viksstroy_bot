@@ -130,7 +130,6 @@ export default function System() {
                 support_tg_link: settings.support_tg_link,
                 support_max_link: settings.support_max_link,
                 gemini_api_key: settings.gemini_api_key,
-                tg_id: tgId
             }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
             toast.success('Настройки успешно сохранены!');
         } catch { toast.error('Ошибка при сохранении настроек.'); }
@@ -139,7 +138,6 @@ export default function System() {
     const testNotification = async () => {
         try {
             const formData = new FormData();
-            formData.append('tg_id', tgId);
             formData.append('platform', testPlatform);
             await axios.post('/api/system/test_notification', formData);
             toast.success("Тестовые уведомления успешно отправлены!");
