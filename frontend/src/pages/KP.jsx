@@ -195,16 +195,29 @@ export default function KP() {
         setIsSubmitting(false);
     };
 
+    // v2.4.6: bulk download uses the NEW /smr/download endpoint per app,
+    // so every file follows the clean format (Часы / Работы / Доп. работы)
+    // with no salary or price columns. The old /api/kp/export endpoint
+    // still exists for legacy callers but is no longer used here.
     const handleExportReport = async (appIds) => {
+        if (!appIds?.length) return;
         setIsSubmitting(true);
-        try {
-            const res = await axios.post('/api/kp/export', { app_ids: appIds }, { responseType: 'blob' });
-            const url = window.URL.createObjectURL(new Blob([res.data]));
-            const link = document.createElement('a');
-            link.href = url;
-            link.setAttribute('download', `Отчет_работы_${new Date().toLocaleDateString()}.xlsx`);
-            document.body.appendChild(link); link.click(); link.remove();
-        } catch (e) { toast.error("Ошибка генерации Excel"); }
+        let ok = 0;
+        for (const id of appIds) {
+            try {
+                const res = await axios.get(`/api/kp/apps/${id}/smr/download`, { responseType: 'blob' });
+                const url = window.URL.createObjectURL(new Blob([res.data]));
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', `smr_${id}.xlsx`);
+                document.body.appendChild(link); link.click(); link.remove();
+                window.URL.revokeObjectURL(url);
+                ok += 1;
+            } catch { /* keep going; show aggregate result below */ }
+        }
+        if (ok === appIds.length) toast.success(`Скачано отчётов: ${ok}`);
+        else if (ok > 0) toast.success(`Скачано: ${ok} из ${appIds.length}`);
+        else toast.error('Не удалось скачать отчёты');
         setIsSubmitting(false);
     };
 
