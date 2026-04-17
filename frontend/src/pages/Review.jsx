@@ -180,21 +180,26 @@ export default function Review() {
                         </div>
 
                         {equipList.length > 0 && (
-                            <div className="pt-1 space-y-1.5 border-t border-gray-200 dark:border-gray-600/50">
+                            <div className="pt-2 space-y-2 border-t border-gray-200 dark:border-gray-600/50">
                                 {equipList.map((eq, idx) => {
                                     const driverMatch = (eq.name || '').match(/\(([^)]+)\)\s*$/);
                                     const driverFio = driverMatch && driverMatch[1] !== 'Не указан' ? driverMatch[1] : null;
                                     const displayName = driverFio ? eq.name.replace(/\s*\([^)]+\)\s*$/, '') : eq.name;
                                     const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || IconTruck;
                                     return (
-                                        <div key={idx}>
-                                            <p className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400 font-medium'}`}>
-                                                <EqIcon className={`w-3.5 h-3.5 ${eq.is_freed ? 'text-gray-400' : 'text-blue-400'}`} stroke={2} />
-                                                <span>{displayName}</span>
-                                                {eq.is_freed && <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />}
-                                            </p>
+                                        <div key={idx} className="py-1">
+                                            <div className={`flex items-center justify-between text-xs font-medium ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                <span className="truncate">{displayName}</span>
+                                                {eq.is_freed && <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0 ml-2" />}
+                                            </div>
+                                            <div className="flex justify-center my-1">
+                                                <EqIcon
+                                                    className={`w-8 h-8 ${eq.is_freed ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400/60 dark:text-gray-500/60'}`}
+                                                    stroke={1.5}
+                                                />
+                                            </div>
                                             {driverFio && !eq.is_freed && (
-                                                <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate ml-5">{driverFio}</p>
+                                                <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate text-center">{driverFio}</p>
                                             )}
                                         </div>
                                     );

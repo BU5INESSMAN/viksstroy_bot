@@ -194,7 +194,7 @@ async def generate_smr_excel_bytes(db, app_id: int) -> tuple[bytes, str]:
 
     obj_name = _sanitize_filename(app_meta.get('object_name') or f"app_{app_id}")
     date = (app_meta.get('date_target') or datetime.now().strftime('%Y-%m-%d'))
-    filename = f"СМР_{obj_name}_{date}.xlsx"
+    filename = f"{obj_name}_{date}.xlsx"
 
     return blob, filename
 

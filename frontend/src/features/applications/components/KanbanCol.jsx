@@ -101,7 +101,7 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                             </div>
 
                             {equipList.length > 0 && (
-                                <div className="mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700 space-y-1">
+                                <div className="mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700 space-y-2">
                                     {equipList.map((eq, idx) => {
                                         // Compact: first word of name + license plate in brackets
                                         const fullName = eq.name || '';
@@ -114,15 +114,27 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                                         const label = plate ? `${firstWord} ${plate.replace(/\s+/g, '')}` : firstWord;
                                         const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || IconTruck;
                                         return (
-                                            <div key={idx}>
-                                                <p className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
-                                                    <EqIcon className="w-3 h-3 flex-shrink-0" stroke={2} />
-                                                    <span>{label}</span>
-                                                    {eq.time_start != null && <span className="text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">{eq.time_start}–{eq.time_end}</span>}
-                                                    {eq.is_freed && <CheckCircle className="w-3 h-3 text-emerald-500 flex-shrink-0" />}
-                                                </p>
+                                            <div key={idx} className="py-1">
+                                                {/* Top row: name left, time right */}
+                                                <div className={`flex items-center justify-between text-xs ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                    <span className="font-medium truncate">{label}</span>
+                                                    <div className="flex items-center gap-1 shrink-0 ml-2">
+                                                        {eq.time_start != null && (
+                                                            <span className="text-gray-400 dark:text-gray-500">{eq.time_start}–{eq.time_end}</span>
+                                                        )}
+                                                        {eq.is_freed && <CheckCircle className="w-3 h-3 text-emerald-500" />}
+                                                    </div>
+                                                </div>
+                                                {/* Big centered category icon — subtle, not dominant */}
+                                                <div className="flex justify-center my-1">
+                                                    <EqIcon
+                                                        className={`w-8 h-8 ${eq.is_freed ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400/60 dark:text-gray-500/60'}`}
+                                                        stroke={1.5}
+                                                    />
+                                                </div>
+                                                {/* Driver — centered under the icon */}
                                                 {driverFio && !eq.is_freed && (
-                                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate ml-[18px]">{driverFio}</p>
+                                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate text-center">{driverFio}</p>
                                                 )}
                                             </div>
                                         );

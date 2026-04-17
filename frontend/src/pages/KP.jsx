@@ -13,6 +13,23 @@ import ExtraWorksPicker from '../features/kp/components/ExtraWorksPicker';
 import SMRWizard from '../features/kp/components/SMRWizard';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
 
+// Pull the server-supplied filename out of a Content-Disposition header.
+// Honours both `filename*=UTF-8''<pct-encoded>` and plain `filename="…"`.
+function parseFilenameFromCD(header, fallback) {
+    if (!header) return fallback;
+    const star = /filename\*\s*=\s*([^;]+)/i.exec(header);
+    if (star) {
+        const raw = star[1].trim();
+        const m = /^UTF-8''(.+)$/i.exec(raw);
+        if (m) {
+            try { return decodeURIComponent(m[1].replace(/^"|"$/g, '')); } catch { /* fall through */ }
+        }
+    }
+    const plain = /filename\s*=\s*"?([^";]+)"?/i.exec(header);
+    if (plain) return plain[1].trim();
+    return fallback;
+}
+
 // v2.4.6 — group flat list of SMR apps by object → date for cleaner scanning.
 function groupByObjectAndDate(items) {
     const objMap = new Map();
@@ -206,10 +223,11 @@ export default function KP() {
         for (const id of appIds) {
             try {
                 const res = await axios.get(`/api/kp/apps/${id}/smr/download`, { responseType: 'blob' });
+                const name = parseFilenameFromCD(res.headers?.['content-disposition'], `smr_${id}.xlsx`);
                 const url = window.URL.createObjectURL(new Blob([res.data]));
                 const link = document.createElement('a');
                 link.href = url;
-                link.setAttribute('download', `smr_${id}.xlsx`);
+                link.setAttribute('download', name);
                 document.body.appendChild(link); link.click(); link.remove();
                 window.URL.revokeObjectURL(url);
                 ok += 1;
@@ -354,10 +372,11 @@ export default function KP() {
                 onDownload={async (app) => {
                     try {
                         const res = await axios.get(`/api/kp/apps/${app.id}/smr/download`, { responseType: 'blob' });
+                        const name = parseFilenameFromCD(res.headers?.['content-disposition'], `smr_${app.id}.xlsx`);
                         const url = window.URL.createObjectURL(new Blob([res.data]));
                         const link = document.createElement('a');
                         link.href = url;
-                        link.setAttribute('download', `smr_${app.id}.xlsx`);
+                        link.setAttribute('download', name);
                         document.body.appendChild(link); link.click(); link.remove();
                         window.URL.revokeObjectURL(url);
                     } catch { toast.error('Не удалось скачать отчёт'); }
