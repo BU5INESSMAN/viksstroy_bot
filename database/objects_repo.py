@@ -113,17 +113,20 @@ class ObjectsRepoMixin:
         """Возвращает сводную статистику: план vs факт по каждому виду работ"""
         # Stage 10: unit prefers the denormalized plan.unit, falls back to
         # catalog when the plan row's unit is still empty.
-        # v2.4.2 FIX 3: explicitly filter out 'nan'/'none'/'null' junk that
-        # legacy Excel imports left in the column, so the UI never sees them.
+        # v2.4.2/v2.4.3: filter 'nan'/'none'/'null' AND purely numeric
+        # junk left by the old parser bug (unit was read from the salary
+        # column, so many rows have values like "320" or "400").
         query = """
             SELECT k.id as kp_id, k.category, k.name,
                    COALESCE(
                        NULLIF(
-                           CASE WHEN LOWER(TRIM(okp.unit)) IN ('nan','none','null') THEN ''
+                           CASE WHEN LOWER(TRIM(okp.unit)) IN ('nan','none','null')
+                                  OR TRIM(okp.unit) GLOB '[0-9]*' THEN ''
                                 ELSE TRIM(okp.unit) END,
                            ''),
                        NULLIF(
-                           CASE WHEN LOWER(TRIM(k.unit)) IN ('nan','none','null') THEN ''
+                           CASE WHEN LOWER(TRIM(k.unit)) IN ('nan','none','null')
+                                  OR TRIM(k.unit) GLOB '[0-9]*' THEN ''
                                 ELSE TRIM(k.unit) END,
                            ''),
                        ''
@@ -153,11 +156,13 @@ class ObjectsRepoMixin:
             SELECT a.id as app_id, a.date_target, k.category, k.name,
                    COALESCE(
                        NULLIF(
-                           CASE WHEN LOWER(TRIM(akp.unit)) IN ('nan','none','null') THEN ''
+                           CASE WHEN LOWER(TRIM(akp.unit)) IN ('nan','none','null')
+                                  OR TRIM(akp.unit) GLOB '[0-9]*' THEN ''
                                 ELSE TRIM(akp.unit) END,
                            ''),
                        NULLIF(
-                           CASE WHEN LOWER(TRIM(k.unit)) IN ('nan','none','null') THEN ''
+                           CASE WHEN LOWER(TRIM(k.unit)) IN ('nan','none','null')
+                                  OR TRIM(k.unit) GLOB '[0-9]*' THEN ''
                                 ELSE TRIM(k.unit) END,
                            ''),
                        ''
