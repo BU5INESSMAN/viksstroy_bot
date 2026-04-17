@@ -411,6 +411,35 @@ async def get_smr_list(current_user=Depends(get_current_user)):
     }
 
 
+@router.get("/api/kp/apps/{app_id}/smr/download")
+async def download_smr_report(app_id: int, current_user=Depends(get_current_user)):
+    """Download the SMR report as an .xlsx — hours + works + extras, no pricing.
+    Access: any authenticated user who can see the application on the
+    KP page (same scope as /api/kp/smr/list)."""
+    from services.smr_report import generate_smr_excel_bytes
+
+    if db.conn is None:
+        await db.init_db()
+    async with db.conn.execute(
+        "SELECT id FROM applications WHERE id = ?", (app_id,)
+    ) as cur:
+        if not await cur.fetchone():
+            raise HTTPException(404, "Заявка не найдена")
+
+    blob, filename = await generate_smr_excel_bytes(db, app_id)
+    headers = {
+        "Content-Disposition": (
+            f"attachment; filename*=UTF-8''{quote(filename)}"
+        ),
+    }
+    import io
+    return StreamingResponse(
+        io.BytesIO(blob),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers=headers,
+    )
+
+
 @router.post("/api/kp/apps/{app_id}/submit")
 async def submit_app_kp(app_id: int, request: Request, current_user=Depends(get_current_user)):
     data = await request.json()
