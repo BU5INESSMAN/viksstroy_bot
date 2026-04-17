@@ -259,6 +259,10 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             except:
                 pass
 
+    # v2.4.1 FIX 2: collect per-recipient lines into one grouped log entry
+    # rather than writing a row per channel.
+    _event_lines: list[str] = []
+
     # Личные сообщения — MAX DM (с персональными auth-токенами)
     if target_platform in ["all", "max"] and max_bot_token:
         for mid in final_max_ids:
@@ -269,30 +273,29 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
                 auth_url = await _generate_auth_url(-int(mid), url_path)
                 max_btn = [[LinkButton(text="📱 Открыть платформу", url=auth_url)]]
                 att = [ButtonsPayload(buttons=max_btn).pack()]
-            await send_max_text(max_bot_token, dm_chat_id, max_plain_text, attachments=att)
+            ok = True
             try:
-                fio = _fio_cache.get(-int(mid), f'MAX#{mid}')
-                await db.add_log(0, 'Система', f"📨 MAX → {fio}: {short_text}", target_type='notification', target_id=int(mid))
+                await send_max_text(max_bot_token, dm_chat_id, max_plain_text, attachments=att)
             except Exception:
-                pass
+                ok = False
+            fio = _fio_cache.get(-int(mid), f'MAX#{mid}')
+            _event_lines.append(f"MAX → {fio}" + ("" if ok else " · ОШИБКА"))
 
     if target_platform in ["all", "tg"] and bot_token:
         try:
             async with await get_tg_session() as session:
                 for tid in final_tg_ids:
+                    ok = True
                     try:
                         await session.post(
                             f"https://api.telegram.org/bot{bot_token}/sendMessage",
                             json={"chat_id": tid, "text": text, "parse_mode": "HTML", "reply_markup": markup}
                         )
-                        try:
-                            fio = _fio_cache.get(tid, f'TG#{tid}')
-                            await db.add_log(0, 'Система', f"📨 TG → {fio}: {short_text}", target_type='notification', target_id=tid)
-                        except Exception:
-                            pass
-                    except:
-                        pass
-        except:
+                    except Exception:
+                        ok = False
+                    fio = _fio_cache.get(tid, f'TG#{tid}')
+                    _event_lines.append(f"TG → {fio}" + ("" if ok else " · ОШИБКА"))
+        except Exception:
             pass
 
     # ── Web Push (fire-and-forget, never blocks TG/MAX flow) ──
@@ -300,12 +303,34 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         push_user_ids = list(raw_user_ids)
         if push_user_ids:
             final_push_body = push_body or _notif_body
+            # For the grouped log, mark every enrolled user — actual delivery
+            # success per endpoint is handled inside _send_web_push_safe.
+            for uid in push_user_ids:
+                fio = _fio_cache.get(uid, f"#{uid}")
+                _event_lines.append(f"Push → {fio}")
             asyncio.create_task(_send_web_push_safe(
                 push_user_ids, _notif_title, final_push_body, redirect,
                 push_type=push_type,
             ))
     except Exception:
         pass
+
+    # v2.4.1 FIX 2: single grouped log entry for the whole dispatch
+    if _event_lines:
+        unique_lines = sorted(set(_event_lines))
+        try:
+            recipients_count = len(set(final_tg_ids) | set(final_max_ids) | set(push_user_ids if 'push_user_ids' in dir() else []))
+        except Exception:
+            recipients_count = len(unique_lines)
+        summary = f"📨 Уведомление ({recipients_count} получ.): {short_text}"
+        try:
+            await db.add_log(
+                0, 'Система', summary,
+                target_type='notification',
+                details="\n".join(unique_lines),
+            )
+        except Exception:
+            pass
 
 
 def validate_vapid_keys() -> None:

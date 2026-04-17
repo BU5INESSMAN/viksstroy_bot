@@ -140,15 +140,32 @@ export default function LogViewer({ logs, serverLogs, fetchServerLogs, serverLog
                                 }
 
                                 const isError = log.action && (log.action.includes('Ошибка') || log.action.includes('ошибка') || log.action.includes('ERROR'));
+                                const hasDetails = Boolean(log.details && log.details.trim());
+                                const isOpen = expanded[log.id];
                                 return (
                                     <tr key={log.id} className={`transition-colors ${isError ? 'bg-red-50/50 dark:bg-red-900/10' : 'hover:bg-gray-50/50 dark:hover:bg-gray-700/20'}`}>
-                                        <td className="px-4 py-3 whitespace-nowrap text-[11px] font-mono text-gray-400">{formatLogTime(log.timestamp)}</td>
-                                        <td className="px-4 py-3 font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap text-xs">{log.fio || 'Система'}</td>
+                                        <td className="px-4 py-3 whitespace-nowrap text-[11px] font-mono text-gray-400 align-top">{formatLogTime(log.timestamp)}</td>
+                                        <td className="px-4 py-3 font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap text-xs align-top">{log.fio || 'Система'}</td>
                                         <td className="px-4 py-3 text-sm font-medium text-gray-600 dark:text-gray-400">
-                                            {isError && <AlertTriangle className="w-3.5 h-3.5 text-red-500 inline mr-1.5 -mt-0.5" />}
-                                            {log.action}
+                                            <div
+                                                className={hasDetails ? 'cursor-pointer select-none flex items-start gap-2' : ''}
+                                                onClick={hasDetails ? () => toggleExpand(log.id) : undefined}
+                                            >
+                                                {hasDetails && (
+                                                    <ChevronRight className={`w-3.5 h-3.5 text-gray-400 mt-0.5 transition-transform flex-shrink-0 ${isOpen ? 'rotate-90' : ''}`} />
+                                                )}
+                                                <div className="min-w-0 flex-1">
+                                                    {isError && <AlertTriangle className="w-3.5 h-3.5 text-red-500 inline mr-1.5 -mt-0.5" />}
+                                                    {log.action}
+                                                    {hasDetails && isOpen && (
+                                                        <pre className="mt-2 ml-1 text-[11px] font-mono text-gray-500 dark:text-gray-400 whitespace-pre-wrap border-l border-gray-200 dark:border-white/10 pl-3">
+{log.details}
+                                                        </pre>
+                                                    )}
+                                                </div>
+                                            </div>
                                         </td>
-                                        <td className="px-4 py-3 text-[11px] font-mono text-gray-400">
+                                        <td className="px-4 py-3 text-[11px] font-mono text-gray-400 align-top">
                                             {formatContext(log)}
                                         </td>
                                     </tr>

@@ -315,10 +315,13 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             pass
 
     async def upgrade_db_for_log_columns(self):
-        """Stage 6.9: Добавляет target_type/target_id в таблицу логов + настройку хранения"""
+        """Stage 6.9: Добавляет target_type/target_id в таблицу логов + настройку хранения.
+        v2.4.1 FIX 2: добавляет details для раскрываемого списка получателей.
+        """
         for col_stmt in [
             "ALTER TABLE logs ADD COLUMN target_type TEXT DEFAULT NULL",
             "ALTER TABLE logs ADD COLUMN target_id INTEGER DEFAULT NULL",
+            "ALTER TABLE logs ADD COLUMN details TEXT DEFAULT ''",
         ]:
             try:
                 await self.conn.execute(col_stmt)

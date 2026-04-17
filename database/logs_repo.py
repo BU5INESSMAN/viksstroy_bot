@@ -1,10 +1,16 @@
 class LogsRepoMixin:
 
-    async def add_log(self, tg_id: int, fio: str, action: str, target_type: str = None, target_id: int = None):
-        """Добавляет запись в журнал действий"""
+    async def add_log(self, tg_id: int, fio: str, action: str, target_type: str = None,
+                      target_id: int = None, details: str = None):
+        """Добавляет запись в журнал действий.
+
+        `details` (v2.4.1 FIX 2) — произвольный многострочный текст, раскрываемый
+        в UI (например, полный список получателей уведомления).
+        """
         await self.conn.execute(
-            "INSERT INTO logs (tg_id, fio, action, timestamp, target_type, target_id) VALUES (?, ?, ?, datetime('now', 'localtime'), ?, ?)",
-            (tg_id, fio, action, target_type, target_id)
+            "INSERT INTO logs (tg_id, fio, action, timestamp, target_type, target_id, details) "
+            "VALUES (?, ?, ?, datetime('now', 'localtime'), ?, ?, ?)",
+            (tg_id, fio, action, target_type, target_id, details or '')
         )
         await self.conn.commit()
 
