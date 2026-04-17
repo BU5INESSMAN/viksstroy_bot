@@ -47,9 +47,19 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
                 return fio.includes(debouncedSearch) || spec.includes(debouncedSearch);
             });
         }
+        // v2.4 FIX 8: sort by role rank first, then alphabetically within role
+        const ROLE_SORT_ORDER = {
+            superadmin: 0, boss: 1, moderator: 2, foreman: 3,
+            brigadier: 4, worker: 5, driver: 6,
+        };
         list.sort((a, b) => {
-            const al = (a.last_name || '').localeCompare(b.last_name || '', 'ru');
-            if (al !== 0) return al;
+            const roleA = ROLE_SORT_ORDER[a.role] ?? 99;
+            const roleB = ROLE_SORT_ORDER[b.role] ?? 99;
+            if (roleA !== roleB) return roleA - roleB;
+            const al = (a.last_name || a.fio || '').toLowerCase();
+            const bl = (b.last_name || b.fio || '').toLowerCase();
+            const cmp = al.localeCompare(bl, 'ru');
+            if (cmp !== 0) return cmp;
             return (a.first_name || '').localeCompare(b.first_name || '', 'ru');
         });
         return list;
