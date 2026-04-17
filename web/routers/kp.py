@@ -40,6 +40,96 @@ async def get_app_kp_items(app_id: int, current_user=Depends(get_current_user)):
     return items
 
 
+# ==========================================
+# SMR WIZARD STEP 1 — HOURS
+# ==========================================
+
+@router.get("/api/kp/apps/{app_id}/hours")
+async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
+    """Hours for an application grouped by team.
+    Pre-fills with any previously saved hours. Brigadier sees all teams on
+    the application; restriction on WRITE is enforced on POST."""
+    if db.conn is None:
+        await db.init_db()
+    async with db.conn.execute(
+        "SELECT id FROM applications WHERE id = ?", (app_id,)
+    ) as cur:
+        if not await cur.fetchone():
+            raise HTTPException(404, "Заявка не найдена")
+
+    saved = await db.get_app_hours(app_id)
+    teams = await db.get_teams_for_app(app_id)
+
+    by_key = {(int(r['team_id']), int(r['member_id'])): r for r in saved}
+
+    result = []
+    for team in teams:
+        members_out = []
+        for m in team['members']:
+            key = (int(team['id']), int(m['id']))
+            saved_row = by_key.get(key, {})
+            members_out.append({
+                'user_id': m['id'],          # team_members.id — used as "user_id" on write
+                'member_id': m['id'],         # explicit alias for clarity on the frontend
+                'fio': m.get('fio', ''),
+                'specialty': m.get('position', ''),
+                'is_foreman': bool(m.get('is_foreman', 0)),
+                'status': m.get('status') or 'available',
+                'status_from': m.get('status_from') or '',
+                'status_until': m.get('status_until') or '',
+                'tg_user_id': m.get('tg_user_id'),
+                'hours': float(saved_row.get('hours') or 0),
+                'filled_by_fio': saved_row.get('filled_by_fio') or '',
+                'filled_by_role': saved_row.get('filled_by_role') or '',
+                'filled_at': saved_row.get('filled_at') or '',
+            })
+        result.append({
+            'team_id': team['id'],
+            'team_name': team['name'],
+            'team_icon': team.get('icon') or '',
+            'members': members_out,
+        })
+    return result
+
+
+@router.post("/api/kp/apps/{app_id}/hours")
+async def save_app_hours_endpoint(app_id: int, request: Request, current_user=Depends(get_current_user)):
+    """Upsert hours for an application.
+    Body: {"items": [{"team_id": int, "user_id": int (team_members.id), "hours": number}, ...]}
+    Brigadier scope: may only save hours for teams where they are a member.
+    """
+    data = await request.json()
+    items = data.get('items') or []
+
+    if db.conn is None:
+        await db.init_db()
+    async with db.conn.execute(
+        "SELECT id FROM applications WHERE id = ?", (app_id,)
+    ) as cur:
+        if not await cur.fetchone():
+            raise HTTPException(404, "Заявка не найдена")
+
+    role = current_user.get('role', 'worker')
+    tg_id = current_user['tg_id']
+
+    if role in ('worker', 'driver', 'brigadier'):
+        user_team_ids = set(await db.get_user_team_ids(tg_id))
+        if not user_team_ids:
+            raise HTTPException(403, "Вы не состоите ни в одной бригаде")
+        filtered = []
+        for it in items:
+            try:
+                tid = int(it.get('team_id'))
+            except (TypeError, ValueError):
+                continue
+            if tid in user_team_ids:
+                filtered.append(it)
+        items = filtered
+
+    await db.save_app_hours(app_id, items, tg_id)
+    return {"status": "ok", "saved": len(items)}
+
+
 @router.post("/api/kp/apps/{app_id}/submit")
 async def submit_app_kp(app_id: int, request: Request, current_user=Depends(get_current_user)):
     data = await request.json()
