@@ -11,6 +11,7 @@ import ExchangeDialog from './ExchangeDialog';
 import ObjectSelector from './ObjectSelector';
 import EquipmentSelector from './EquipmentSelector';
 import TeamSelector from './TeamSelector';
+import useEquipDefaultTime from '../../../hooks/useEquipDefaultTime';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -45,6 +46,7 @@ export default function EditAppModal({
     const [equipLoading, setEquipLoading] = useState(false);
     const [timeAutoSet, setTimeAutoSet] = useState(false);
     const [actionChoiceEquip, setActionChoiceEquip] = useState(null);
+    const defaultTime = useEquipDefaultTime();
 
     // Fetch equipment availability when date changes
     const fetchAvailability = useCallback(async (date) => {
@@ -182,7 +184,7 @@ export default function EditAppModal({
             const exists = prev.equipment.find(e => e.id === equip.id);
             if (exists) return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id) };
             const displayName = equip.driver ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})` : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
-            return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: '08', time_end: '17' }] };
+            return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: defaultTime.start, time_end: defaultTime.end }] };
         });
     };
 
@@ -238,7 +240,7 @@ export default function EditAppModal({
                 if (type === 'equip') {
                     const ids = targetEquips.split(',').map(Number);
                     const newEq = data.equipment.filter(e => ids.includes(e.id)).map(e => ({
-                        id: e.id, name: e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`, time_start: '08', time_end: '17'
+                        id: e.id, name: e.driver ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})` : `${e.name} [${e.license_plate || 'нет г.н.'}]`, time_start: defaultTime.start, time_end: defaultTime.end
                     }));
                     setForm(prev => ({ ...prev, equipment: newEq }));
                 }

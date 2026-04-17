@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import useConfirm from '../../../hooks/useConfirm';
+import useEquipDefaultTime from '../../../hooks/useEquipDefaultTime';
 
 /**
  * Custom hook encapsulating all form state and handlers for the application
@@ -27,6 +28,7 @@ export default function useAppForm({
     isGlobalCreateAppOpen,
 }) {
     const { confirm, ConfirmUI } = useConfirm();
+    const defaultTime = useEquipDefaultTime();
 
     const emptyForm = () => ({
         id: null,
@@ -148,7 +150,7 @@ export default function useAppForm({
             const displayName = equip.driver
                 ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})`
                 : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
-            return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: '08', time_end: '17' }] };
+            return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: defaultTime.start, time_end: defaultTime.end }] };
         });
     };
 
@@ -243,8 +245,8 @@ export default function useAppForm({
                             name: e.driver
                                 ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})`
                                 : `${e.name} [${e.license_plate || 'нет г.н.'}]`,
-                            time_start: '08',
-                            time_end: '17',
+                            time_start: defaultTime.start,
+                            time_end: defaultTime.end,
                         }));
                     setAppForm(prev => ({ ...prev, equipment: newEq }));
                 }
