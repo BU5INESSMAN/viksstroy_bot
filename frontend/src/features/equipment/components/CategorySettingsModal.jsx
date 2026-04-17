@@ -87,7 +87,7 @@ export default function CategorySettingsModal({ onClose, onSaved }) {
                                     >
                                         <span className={`inline-flex items-center justify-center w-9 h-9 rounded-lg
                                             ${iconKey ? 'bg-blue-500/15 text-blue-600 dark:text-blue-400' : 'bg-gray-100 text-gray-400 dark:bg-gray-700 dark:text-gray-500'}`}>
-                                            <CurrentIcon className="w-5 h-5" />
+                                            <CurrentIcon className="w-5 h-5" stroke={2} />
                                         </span>
                                         <span className="flex-1 min-w-0">
                                             <div className="font-semibold text-sm text-gray-900 dark:text-gray-100 truncate">

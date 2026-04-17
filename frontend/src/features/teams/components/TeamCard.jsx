@@ -16,7 +16,7 @@ export default function TeamCard({ t, canDeleteTeam, openManageModal, handleDele
         <div className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-600 transition-all group">
             <div className="mb-5">
                 <h3 className="font-bold text-xl text-gray-800 dark:text-white flex items-center gap-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                    <TeamIcon className="w-5 h-5 text-indigo-400 flex-shrink-0" /> {t.name}
+                    <TeamIcon className="w-5 h-5 text-indigo-400 flex-shrink-0" stroke={2} /> {t.name}
                 </h3>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1.5 ml-7 flex items-center gap-1.5">
                     {t.brigadier_name ? (

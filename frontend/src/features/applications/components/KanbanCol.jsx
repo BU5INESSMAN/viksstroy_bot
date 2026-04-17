@@ -1,8 +1,9 @@
 import { useState, useMemo } from 'react';
 import {
     Calendar, MapPin, Users, Truck,
-    ChevronDown, ChevronUp, HardHat, CheckCircle, Search, Archive, Cog
+    ChevronDown, ChevronUp, HardHat, CheckCircle, Search, Archive
 } from 'lucide-react';
+import { IconUsersGroup, IconTruck } from '@tabler/icons-react';
 import { motion } from 'framer-motion';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 import {
@@ -82,11 +83,11 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                                         const tMembers = a.members_data?.filter(m => m.team_id === tId) || [];
                                         const tName = tMembers.length > 0 ? tMembers[0].team_name : `Бригада #${tId}`;
                                         const isFreed = freedTeamIds.includes(tId) || a.is_team_freed === 1;
-                                        const TeamIcon = getIconComponent(teamIconMap[tId] || DEFAULT_TEAM_ICON, TEAM_ICONS) || Users;
+                                        const TeamIcon = getIconComponent(teamIconMap[tId] || DEFAULT_TEAM_ICON, TEAM_ICONS) || IconUsersGroup;
 
                                         return (
                                             <p key={tId} className={`text-xs flex items-center gap-1.5 ${isFreed ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300 font-medium'}`}>
-                                                <TeamIcon className={`w-3.5 h-3.5 flex-shrink-0 ${isFreed ? 'text-gray-400' : 'text-indigo-400'}`} />
+                                                <TeamIcon className={`w-3.5 h-3.5 flex-shrink-0 ${isFreed ? 'text-gray-400' : 'text-indigo-400'}`} stroke={2} />
                                                 <span className="truncate">{tName}</span>
                                                 {isFreed && <span className="ml-auto flex-shrink-0 text-[9px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded flex items-center gap-1"><CheckCircle className="w-2.5 h-2.5" /> Свободна</span>}
                                             </p>
@@ -111,11 +112,11 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                                         const bracketMatch = nameWithoutDriver.match(/\[([^\]]+)\]/);
                                         const plate = bracketMatch ? bracketMatch[1] : (eq.license_plate || '');
                                         const label = plate ? `${firstWord} ${plate.replace(/\s+/g, '')}` : firstWord;
-                                        const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || Truck;
+                                        const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || IconTruck;
                                         return (
                                             <div key={idx}>
                                                 <p className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
-                                                    <EqIcon className="w-3 h-3 flex-shrink-0" />
+                                                    <EqIcon className="w-3 h-3 flex-shrink-0" stroke={2} />
                                                     <span>{label}</span>
                                                     {eq.time_start != null && <span className="text-gray-400 dark:text-gray-500 ml-auto flex-shrink-0">{eq.time_start}–{eq.time_end}</span>}
                                                     {eq.is_freed && <CheckCircle className="w-3 h-3 text-emerald-500 flex-shrink-0" />}

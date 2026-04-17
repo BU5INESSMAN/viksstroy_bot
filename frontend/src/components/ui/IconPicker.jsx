@@ -42,7 +42,7 @@ export default function IconPicker({ value, onChange, icons, columns = 5, classN
                     >
                         <Icon
                             className={`w-5 h-5 ${selected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-300'}`}
-                            strokeWidth={selected ? 2.4 : 2}
+                            stroke={selected ? 2.4 : 2}
                         />
                         <span className={`mt-0.5 text-[10px] font-medium truncate max-w-full text-center
                             ${selected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-400 dark:text-gray-500'}`}>

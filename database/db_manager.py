@@ -117,6 +117,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.migrate_estimate_pdfs_to_files()
         await self.upgrade_db_for_user_fio_split()
         await self.upgrade_db_for_icon_settings()
+        await self.migrate_icon_keys_to_tabler()
         await self.upgrade_db_for_smr_units()
         await self.upgrade_application_extra_works_unit()
         await self.repair_catalog_units_if_numeric()
@@ -590,6 +591,50 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         except Exception:
             pass
         await self.conn.commit()
+
+    async def migrate_icon_keys_to_tabler(self):
+        """v2.4.5: icon picker switched from lucide-react to @tabler/icons-react.
+        Remap any lucide keys stored in teams.icon / equipment_category_settings.icon
+        to their Tabler equivalents. Idempotent — UPDATE WHERE won't match already-
+        migrated rows."""
+        key_map = {
+            'wrench':       'tool',
+            'hardhat':      'helmet',
+            'users':        'usersGroup',
+            'usercheck':    'user',
+            'usercog':      'user',
+            'construction': 'building',
+            'warehouse':    'building',
+            'paintbucket':  'bucket',
+            'pipette':      'droplet',
+            'cog':          'settings',
+            'zap':          'bolt',
+            'fuel':         'gasStation',
+            'weight':       'truck',
+            'container':    'bucket',
+            'pickaxe':      'shovel',
+            'scissors':     'tool',
+            'axe':          'hammer',
+            'compass':      'ruler',
+            'gauge':        'settings',
+        }
+        remapped = 0
+        try:
+            for old_key, new_key in key_map.items():
+                for table in ('teams', 'equipment_category_settings'):
+                    try:
+                        cur = await self.conn.execute(
+                            f"UPDATE {table} SET icon = ? WHERE icon = ?",
+                            (new_key, old_key),
+                        )
+                        remapped += cur.rowcount or 0
+                    except Exception:
+                        pass
+            await self.conn.commit()
+            if remapped:
+                logging.info(f"Icon keys migrated lucide → tabler: {remapped} rows updated")
+        except Exception as e:
+            logging.error(f"Icon key migration failed: {e}")
 
     async def upgrade_db_for_user_fio_split(self):
         """Stage 2: add last_name/first_name/middle_name/specialty/settings

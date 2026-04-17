@@ -1,4 +1,5 @@
 import { createPortal } from 'react-dom';
+import { IconTruck } from '@tabler/icons-react';
 import { getIconComponent, EQUIPMENT_ICONS, DEFAULT_EQUIPMENT_ICON } from '../../../utils/iconConfig';
 import {
     Truck, Clock, CheckCircle, ClipboardList,
@@ -109,11 +110,11 @@ export default function EquipmentSelector({
                                                 <div className="flex items-center gap-2 min-w-0 flex-1">
                                                     {(() => {
                                                         // v2.4 FIX 10: prefer the category's configured icon
-                                                        const IconComp = getIconComponent(eqA.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || Truck;
+                                                        const IconComp = getIconComponent(eqA.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || IconTruck;
                                                         if (isSelected) {
                                                             return <CheckCircle className={`w-4 h-4 flex-shrink-0 mt-0.5 ${selectedEquipment.find(eq => eq.id === eqA.id)?.isPartialTime ? 'text-amber-500' : 'text-blue-500'}`} />;
                                                         }
-                                                        return <IconComp className={`w-4 h-4 flex-shrink-0 mt-0.5 ${state === 'repair' || state === 'unavailable' ? 'text-gray-300' : (state === 'exchange' || state === 'both') ? 'text-amber-500' : 'text-gray-500'}`} />;
+                                                        return <IconComp className={`w-4 h-4 flex-shrink-0 mt-0.5 ${state === 'repair' || state === 'unavailable' ? 'text-gray-300' : (state === 'exchange' || state === 'both') ? 'text-amber-500' : 'text-gray-500'}`} stroke={2} />;
                                                     })()}
                                                     <div className="min-w-0 flex-1">
                                                         <span className={`text-sm font-bold truncate block ${state === 'unavailable' || state === 'in_exchange' ? 'text-gray-400' : 'dark:text-gray-200'}`}>

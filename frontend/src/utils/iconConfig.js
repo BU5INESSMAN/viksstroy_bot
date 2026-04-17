@@ -1,68 +1,100 @@
+// Equipment & Team icon registries — using @tabler/icons-react.
+// Lucide-react continues to be used for all UI icons (buttons, nav, status);
+// these registries are ONLY for the icon picker in category/team settings.
+
 import {
-    Truck, Shovel, HardHat, Wrench, Hammer, Drill,
-    Forklift, Tractor, Construction, Building2,
-    Warehouse, PaintBucket, Pipette, Ruler, Cog,
-    Zap, Fuel, Weight, Container,
-    Users, UserCheck, UserCog, Shield, Star,
-    Pickaxe, Scissors, Axe, Compass, Gauge,
-} from 'lucide-react';
+    IconBackhoe,
+    IconBulldozer,
+    IconCrane,
+    IconCarCrane,
+    IconForklift,
+    IconTractor,
+    IconTruck,
+    IconTruckDelivery,
+    IconTruckLoading,
+    IconTool,
+    IconTools,
+    IconHammer,
+    IconShovel,
+    IconBolt,
+    IconGasStation,
+    IconSettings2,
+    IconBuilding,
+    IconRoad,
+    IconRuler,
+    IconBucket,
+    IconDroplet,
+    IconPipeline,
+    IconHelmet,
+    IconUsersGroup,
+    IconUser,
+    IconShield,
+    IconStar,
+    IconHome,
+    IconTarget,
+    IconNut,
+} from '@tabler/icons-react';
 
-// Equipment category icons — construction & transport themed.
-// Note: `Crane` was requested but does not ship in the installed
-// lucide-react version, so it is omitted. All other icons verified
-// against node_modules/lucide-react/dist/esm/icons/.
+// ============================================================
+// EQUIPMENT CATEGORY ICONS — construction machinery & transport
+// ============================================================
 export const EQUIPMENT_ICONS = {
-    truck:        { component: Truck,        label: 'Грузовик' },
-    shovel:       { component: Shovel,       label: 'Лопата' },
-    hardhat:      { component: HardHat,      label: 'Каска' },
-    wrench:       { component: Wrench,       label: 'Гаечный ключ' },
-    hammer:       { component: Hammer,       label: 'Молоток' },
-    drill:        { component: Drill,        label: 'Дрель' },
-    forklift:     { component: Forklift,     label: 'Погрузчик' },
-    tractor:      { component: Tractor,      label: 'Трактор' },
-    construction: { component: Construction, label: 'Стройка' },
-    building:     { component: Building2,    label: 'Здание' },
-    warehouse:    { component: Warehouse,    label: 'Склад' },
-    paintbucket:  { component: PaintBucket,  label: 'Краска' },
-    pipette:      { component: Pipette,      label: 'Пипетка' },
-    ruler:        { component: Ruler,        label: 'Линейка' },
-    cog:          { component: Cog,          label: 'Механизм' },
-    zap:          { component: Zap,          label: 'Энергия' },
-    fuel:         { component: Fuel,         label: 'Топливо' },
-    weight:       { component: Weight,       label: 'Груз' },
-    container:    { component: Container,    label: 'Контейнер' },
-    pickaxe:      { component: Pickaxe,      label: 'Кирка' },
-    scissors:     { component: Scissors,     label: 'Ножницы' },
-    axe:          { component: Axe,          label: 'Топор' },
-    compass:      { component: Compass,      label: 'Компас' },
-    gauge:        { component: Gauge,        label: 'Датчик' },
+    backhoe:        { component: IconBackhoe,       label: 'Экскаватор-погрузчик' },
+    bulldozer:      { component: IconBulldozer,     label: 'Бульдозер' },
+    crane:          { component: IconCrane,         label: 'Башенный кран' },
+    carCrane:       { component: IconCarCrane,      label: 'Автокран' },
+    forklift:       { component: IconForklift,      label: 'Погрузчик' },
+    tractor:        { component: IconTractor,       label: 'Трактор' },
+    truck:          { component: IconTruck,         label: 'Грузовик' },
+    truckDelivery:  { component: IconTruckDelivery, label: 'Доставка' },
+    truckLoading:   { component: IconTruckLoading,  label: 'Самосвал' },
+    tool:           { component: IconTool,          label: 'Инструмент' },
+    tools:          { component: IconTools,         label: 'Инструменты' },
+    hammer:         { component: IconHammer,        label: 'Молоток' },
+    shovel:         { component: IconShovel,        label: 'Лопата' },
+    bolt:           { component: IconBolt,          label: 'Энергия' },
+    gasStation:     { component: IconGasStation,    label: 'Топливо' },
+    settings:       { component: IconSettings2,     label: 'Механизм' },
+    building:       { component: IconBuilding,      label: 'Здание' },
+    road:           { component: IconRoad,          label: 'Дорога' },
+    ruler:          { component: IconRuler,         label: 'Геодезия' },
+    bucket:         { component: IconBucket,        label: 'Ёмкость' },
+    droplet:        { component: IconDroplet,       label: 'Водоснабжение' },
+    pipeline:       { component: IconPipeline,      label: 'Трубопровод' },
+    nut:            { component: IconNut,           label: 'Крепёж' },
 };
 
-// Team icons — people & organization themed.
+// ============================================================
+// TEAM / BRIGADE ICONS — people & organization
+// ============================================================
 export const TEAM_ICONS = {
-    users:        { component: Users,        label: 'Бригада' },
-    usercheck:    { component: UserCheck,    label: 'Проверенный' },
-    usercog:      { component: UserCog,      label: 'Специалист' },
-    shield:       { component: Shield,       label: 'Охрана' },
-    star:         { component: Star,         label: 'Звезда' },
-    hardhat:      { component: HardHat,      label: 'Каска' },
-    hammer:       { component: Hammer,       label: 'Молоток' },
-    wrench:       { component: Wrench,       label: 'Гаечный ключ' },
-    construction: { component: Construction, label: 'Стройка' },
-    truck:        { component: Truck,        label: 'Транспорт' },
-    building:     { component: Building2,    label: 'Здание' },
-    zap:          { component: Zap,          label: 'Энергия' },
-    cog:          { component: Cog,          label: 'Механизм' },
-    pickaxe:      { component: Pickaxe,      label: 'Кирка' },
-    gauge:        { component: Gauge,        label: 'Датчик' },
+    usersGroup: { component: IconUsersGroup, label: 'Бригада' },
+    user:       { component: IconUser,       label: 'Работник' },
+    helmet:     { component: IconHelmet,     label: 'Каска' },
+    shield:     { component: IconShield,     label: 'Охрана' },
+    star:       { component: IconStar,       label: 'Лучшие' },
+    tool:       { component: IconTool,       label: 'Инструмент' },
+    tools:      { component: IconTools,      label: 'Инструменты' },
+    hammer:     { component: IconHammer,     label: 'Молоток' },
+    crane:      { component: IconCrane,      label: 'Кран' },
+    truck:      { component: IconTruck,      label: 'Транспорт' },
+    home:       { component: IconHome,       label: 'Дом' },
+    building:   { component: IconBuilding,   label: 'Здание' },
+    bolt:       { component: IconBolt,       label: 'Энергетики' },
+    droplet:    { component: IconDroplet,    label: 'Водоснабжение' },
+    nut:        { component: IconNut,        label: 'Крепёж' },
+    target:     { component: IconTarget,     label: 'Цель' },
 };
 
-// Resolve icon component by key, with graceful fallback.
+// ============================================================
+// Helpers (unchanged API — used by all consumers)
+// ============================================================
+
 export function getIconComponent(iconKey, registry = EQUIPMENT_ICONS) {
+    if (!iconKey) return null;
     const entry = registry[iconKey];
     return entry ? entry.component : null;
 }
 
-// Default icons used when none is configured.
-export const DEFAULT_EQUIPMENT_ICON = 'cog';
-export const DEFAULT_TEAM_ICON = 'users';
+export const DEFAULT_EQUIPMENT_ICON = 'settings';
+export const DEFAULT_TEAM_ICON = 'usersGroup';

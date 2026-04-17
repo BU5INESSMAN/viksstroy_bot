@@ -51,7 +51,7 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
                 <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden border border-gray-100 dark:border-gray-700">
                     <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
                         <h3 className="text-xl font-bold dark:text-white flex items-center gap-2 min-w-0">
-                            <CurrentTeamIcon className="w-6 h-6 text-indigo-500 flex-shrink-0" />
+                            <CurrentTeamIcon className="w-6 h-6 text-indigo-500 flex-shrink-0" stroke={2} />
                             <span className="truncate">Бригада: {manageTeamData.name}</span>
                         </h3>
                         <button onClick={() => setManageModalOpen(false)} className="text-gray-400 hover:text-red-500 transition-colors bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-sm border border-gray-100 dark:border-gray-700 flex-shrink-0">

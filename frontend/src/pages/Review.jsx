@@ -13,6 +13,7 @@ import useConfirm from '../hooks/useConfirm';
 import ScheduleModal from '../features/applications/components/ScheduleModal';
 import { ReviewSkeleton } from '../components/ui/PageSkeletons';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
+import { IconUsersGroup, IconTruck } from '@tabler/icons-react';
 import {
     getIconComponent,
     TEAM_ICONS, DEFAULT_TEAM_ICON,
@@ -163,11 +164,11 @@ export default function Review() {
                                     const tMembers = app.members_data?.filter(m => m.team_id === tId) || [];
                                     const tName = tMembers.length > 0 ? tMembers[0].team_name : `Бригада #${tId}`;
                                     const isFreed = freedTeamIds.includes(tId) || app.is_team_freed === 1;
-                                    const TeamIcon = getIconComponent(app.team_icon || DEFAULT_TEAM_ICON, TEAM_ICONS) || Users;
+                                    const TeamIcon = getIconComponent(app.team_icon || DEFAULT_TEAM_ICON, TEAM_ICONS) || IconUsersGroup;
 
                                     return (
                                         <p key={tId} className={`text-xs flex items-center gap-1.5 ${isFreed ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-200'}`}>
-                                            <TeamIcon className={`w-3.5 h-3.5 ${isFreed ? 'text-gray-400' : 'text-indigo-400'}`} />
+                                            <TeamIcon className={`w-3.5 h-3.5 ${isFreed ? 'text-gray-400' : 'text-indigo-400'}`} stroke={2} />
                                             <span className="font-medium">{tName}</span>
                                             {isFreed && <span className="ml-1 text-[9px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded flex items-center gap-1"><CheckCircle className="w-2.5 h-2.5" /> Свободна</span>}
                                         </p>
@@ -184,11 +185,11 @@ export default function Review() {
                                     const driverMatch = (eq.name || '').match(/\(([^)]+)\)\s*$/);
                                     const driverFio = driverMatch && driverMatch[1] !== 'Не указан' ? driverMatch[1] : null;
                                     const displayName = driverFio ? eq.name.replace(/\s*\([^)]+\)\s*$/, '') : eq.name;
-                                    const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || Truck;
+                                    const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || IconTruck;
                                     return (
                                         <div key={idx}>
                                             <p className={`text-xs truncate flex items-center gap-1.5 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400 font-medium'}`}>
-                                                <EqIcon className={`w-3.5 h-3.5 ${eq.is_freed ? 'text-gray-400' : 'text-blue-400'}`} />
+                                                <EqIcon className={`w-3.5 h-3.5 ${eq.is_freed ? 'text-gray-400' : 'text-blue-400'}`} stroke={2} />
                                                 <span>{displayName}</span>
                                                 {eq.is_freed && <CheckCircle className="w-3.5 h-3.5 text-emerald-500" />}
                                             </p>

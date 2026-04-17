@@ -17,7 +17,7 @@ export default function EquipmentCard({ eq, canManageEquipment, canDeleteEquipme
             <div>
                 <div className="flex justify-between items-start mb-3">
                     <span className="bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-400 text-[10px] font-extrabold px-2.5 py-1 rounded-md uppercase tracking-wider border border-indigo-100 dark:border-indigo-800/50 inline-flex items-center gap-1.5">
-                        <CategoryIcon className="w-3 h-3" />
+                        <CategoryIcon className="w-3 h-3" stroke={2} />
                         {eq.category}
                     </span>
                     <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-md uppercase tracking-wider flex items-center gap-1 ${eq.status === 'free' ? 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50' : eq.status === 'work' ? 'bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/50' : 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-400 border border-red-200 dark:border-red-800/50'}`}>
