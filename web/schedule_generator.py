@@ -183,9 +183,21 @@ async def _fetch_schedule_sections(target_date: str) -> list:
     async with db.conn.execute("SELECT id, name FROM teams ORDER BY name") as cur:
         teams = await cur.fetchall()
 
+    def _status_active(status: str, status_from: str, status_until: str) -> bool:
+        """v2.4 FIX 12: honour both status_from and status_until boundaries
+        so Отп/Бол are shown for ALL team members on the right days — not
+        only those assigned to an application."""
+        if not status or status == "available":
+            return False
+        if status_from and status_from > target_date:
+            return False  # starts later
+        if status_until and status_until < target_date:
+            return False  # already ended
+        return True
+
     for tid, tname in teams:
         async with db.conn.execute(
-            "SELECT id, fio, position, status, status_until FROM team_members "
+            "SELECT id, fio, position, status, status_from, status_until FROM team_members "
             "WHERE team_id = ? ORDER BY is_leader DESC, is_foreman DESC, fio",
             (tid,),
         ) as cur:
@@ -193,13 +205,14 @@ async def _fetch_schedule_sections(target_date: str) -> list:
         if not members:
             continue
         rows = []
-        for mid, fio, pos, m_status, m_status_until in members:
+        for mid, fio, pos, m_status, m_status_from, m_status_until in members:
             objs = member_objs.get(mid, [])
             m_status = m_status or "available"
+            active = _status_active(m_status, m_status_from, m_status_until)
             # Determine display status: vacation/sick override attendance
-            if m_status == "vacation" and (not m_status_until or m_status_until >= target_date):
+            if m_status == "vacation" and active:
                 display_status = "Отп"
-            elif m_status == "sick" and (not m_status_until or m_status_until >= target_date):
+            elif m_status == "sick" and active:
                 display_status = "Бол"
             elif objs:
                 display_status = "Акт"
