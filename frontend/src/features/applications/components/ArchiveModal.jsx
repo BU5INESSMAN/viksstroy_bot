@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import useConfirm from '../../../hooks/useConfirm';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
+import ModalPortal from '../../../components/ui/ModalPortal';
 
 export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
     const tgId = localStorage.getItem('tg_id') || '0';
@@ -72,7 +73,8 @@ export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
     const sortedDates = Object.keys(grouped).sort((a, b) => b.localeCompare(a));
 
     return (
-        <div className="fixed inset-0 w-full h-[100dvh] z-[99990] bg-black/60 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
+        <ModalPortal>
+        <div className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 backdrop-blur-sm overflow-y-auto" style={{ top: 0, left: 0, right: 0, bottom: 0 }} onClick={onClose}>
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                 <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
 
@@ -191,5 +193,6 @@ export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
             </div>
             {ConfirmUI}
         </div>
+        </ModalPortal>
     );
 }

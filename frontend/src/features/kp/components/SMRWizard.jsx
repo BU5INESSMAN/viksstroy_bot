@@ -6,6 +6,7 @@ import { X } from 'lucide-react';
 import StepHours from './StepHours';
 import StepWorks from './StepWorks';
 import StepReview from './StepReview';
+import ModalPortal from '../../../components/ui/ModalPortal';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -71,7 +72,8 @@ export default function SMRWizard({
     };
 
     return (
-        <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto">
+        <ModalPortal>
+        <div className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 backdrop-blur-sm overflow-y-auto" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
             <div className="flex min-h-full items-start justify-center p-4 pt-6 pb-24">
                 <motion.div
                     initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
@@ -155,6 +157,7 @@ export default function SMRWizard({
                 </motion.div>
             </div>
         </div>
+        </ModalPortal>
     );
 }
 

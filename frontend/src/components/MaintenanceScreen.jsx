@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
+import ModalPortal from './ui/ModalPortal';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -13,7 +14,8 @@ const EASE_OUT = [0.23, 1, 0.32, 1];
  */
 export default function MaintenanceScreen() {
     return (
-        <div className="fixed inset-0 z-[9999] bg-gray-950 flex flex-col items-center justify-center gap-7 p-8">
+        <ModalPortal>
+        <div className="fixed inset-0 w-screen h-[100dvh] z-[9999] bg-gray-950 flex flex-col items-center justify-center gap-7 p-8" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
             {/* Logo */}
             <motion.img
                 src="/logo-white.png"
@@ -67,5 +69,6 @@ export default function MaintenanceScreen() {
                 Автоматическое переподключение…
             </motion.p>
         </div>
+        </ModalPortal>
     );
 }

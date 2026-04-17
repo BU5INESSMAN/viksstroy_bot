@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Users } from 'lucide-react';
 import axios from 'axios';
+import ModalPortal from '../../../components/ui/ModalPortal';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -38,12 +39,14 @@ export default function OnlineUsersModal({ isOpen, onClose }) {
     const anim = prefersReducedMotion ? {} : { initial: { opacity: 0, y: -20, scale: 0.95 }, animate: { opacity: 1, y: 0, scale: 1 }, exit: { opacity: 0, y: -20, scale: 0.95 }, transition: { duration: 0.2 } };
 
     return (
+        <ModalPortal>
         <AnimatePresence>
             <motion.div
                 initial={prefersReducedMotion ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 z-[200] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-16 sm:pt-24 px-4"
+                className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-16 sm:pt-24 px-4"
+                style={{ top: 0, left: 0, right: 0, bottom: 0 }}
                 onClick={onClose}
             >
                 <motion.div
@@ -85,5 +88,6 @@ export default function OnlineUsersModal({ isOpen, onClose }) {
                 </motion.div>
             </motion.div>
         </AnimatePresence>
+        </ModalPortal>
     );
 }

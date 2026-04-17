@@ -13,6 +13,7 @@ import { unsubscribeFromPush } from '../../../utils/pushSubscription';
 import { displayFio } from '../../../utils/fioFormat';
 import { ROLE_NAMES as roleNames } from '../../../utils/roleConfig';
 import { motion } from 'framer-motion';
+import ModalPortal from '../../../components/ui/ModalPortal';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -217,9 +218,11 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
     };
 
     return (
+        <ModalPortal>
         <>
             <motion.div
-                className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm"
+                className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 overflow-y-auto backdrop-blur-sm"
+                style={{ top: 0, left: 0, right: 0, bottom: 0 }}
                 initial={prefersReducedMotion ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
                 transition={{ duration: 0.2 }}
@@ -526,6 +529,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
             </motion.div>
             {ConfirmUI}
         </>
+        </ModalPortal>
     );
 }
 

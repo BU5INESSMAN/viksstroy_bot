@@ -7,6 +7,7 @@ import {
     Upload, Trash2, FileText, Image, File, FolderOpen,
 } from 'lucide-react';
 import FileViewerModal from '../../../components/FileViewerModal';
+import ModalPortal from '../../../components/ui/ModalPortal';
 
 const FILE_TABS = [
     { key: 'all', label: 'Все' },
@@ -188,7 +189,8 @@ export default function ObjectEditModal({
     const handleDrop = (e) => { e.preventDefault(); setIsDragging(false); uploadFiles(Array.from(e.dataTransfer.files)); };
 
     return (
-        <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
+        <ModalPortal>
+        <div className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
             <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden">
                 {/* Header */}
                 <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
@@ -450,5 +452,6 @@ export default function ObjectEditModal({
                 fileName={viewingFile?.name || ''}
             />
         </div>
+        </ModalPortal>
     );
 }

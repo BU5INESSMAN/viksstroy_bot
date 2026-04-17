@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { X, BarChart3, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
+import ModalPortal from '../../../components/ui/ModalPortal';
 
 /** Render a catalog unit string safely. Hides empties, pandas NaN
  *  leftovers, and purely numeric values (catalog sometimes has stray
@@ -17,7 +18,8 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
     const [expandedDates, setExpandedDates] = useState({});
 
     return (
-        <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
+        <ModalPortal>
+        <div className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
             <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden">
                 <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
                     <h3 className="text-xl font-bold dark:text-white flex items-center gap-2">
@@ -231,5 +233,6 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                 </div>
             </div>
         </div>
+        </ModalPortal>
     );
 }

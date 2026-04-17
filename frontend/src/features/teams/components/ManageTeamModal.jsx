@@ -7,6 +7,7 @@ import {
 import MemberStatusModal from './MemberStatusModal';
 import IconPicker from '../../../components/ui/IconPicker';
 import { TEAM_ICONS, getIconComponent, DEFAULT_TEAM_ICON } from '../../../utils/iconConfig';
+import ModalPortal from '../../../components/ui/ModalPortal';
 
 const STATUS_BADGES = {
     vacation: { label: 'Отпуск', className: 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-600 dark:text-yellow-400 border-yellow-200 dark:border-yellow-700' },
@@ -46,7 +47,8 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
     };
 
     return (
-        <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity">
+        <ModalPortal>
+        <div className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 overflow-y-auto backdrop-blur-sm transition-opacity" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
             <div className="flex min-h-screen items-start justify-center p-4 pt-10 pb-24">
                 <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden border border-gray-100 dark:border-gray-700">
                     <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
@@ -187,5 +189,6 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
                 />
             )}
         </div>
+        </ModalPortal>
     );
 }

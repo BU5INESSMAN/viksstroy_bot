@@ -6,6 +6,7 @@ import {
     Search, Check, ClipboardList,
 } from 'lucide-react';
 import useEnterToSubmit from '../../../hooks/useEnterToSubmit';
+import ModalPortal from '../../../components/ui/ModalPortal';
 
 /**
  * ObjectCreateModal
@@ -231,7 +232,8 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
     );
 
     return (
-        <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
+        <ModalPortal>
+        <div className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
             <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-lg shadow-2xl relative">
                 <button
                     onClick={handleClose}
@@ -423,5 +425,6 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
                 )}
             </div>
         </div>
+        </ModalPortal>
     );
 }

@@ -1,9 +1,11 @@
 import { AlertCircle, LogIn } from 'lucide-react';
 import { logoutAndRedirect } from '../../../utils/tokenStorage';
+import ModalPortal from '../../../components/ui/ModalPortal';
 
 export default function SessionModal() {
     return (
-        <div className="fixed inset-0 w-full h-[100dvh] z-[99990] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300">
+        <ModalPortal>
+        <div className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/80 backdrop-blur-md flex items-center justify-center p-6 animate-in fade-in duration-300" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
             <div className="bg-white dark:bg-gray-800 rounded-[2.5rem] w-full max-w-sm overflow-hidden shadow-2xl border border-gray-100 dark:border-gray-700">
                 <div className="p-8 text-center">
                     <div className="w-20 h-20 bg-orange-100 dark:bg-orange-900/30 rounded-full flex items-center justify-center mx-auto mb-6 text-orange-600 dark:text-orange-400">
@@ -22,5 +24,6 @@ export default function SessionModal() {
                 </div>
             </div>
         </div>
+        </ModalPortal>
     );
 }
