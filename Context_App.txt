@@ -132,11 +132,35 @@ Deps: 16 packages pinned (requirements.txt)
     - L-02: All 16 dependencies pinned in requirements.txt
     - N-01/N-02/L-03/L-05: Final low-risk items closed
 
+  v2.4 Features (2026-04-17 → 2026-04-18)                                 [OK]
+    - PWA install banner + update modal with service-worker integration
+    - Settings page (notifications TG/MAX/Push + interface) for all users
+    - Admin page (boss+) renamed from System; user mgmt + role changes
+    - Users: split FIO into last_name/first_name/middle_name + specialty
+    - Per-user notification settings + persistent JSON blob in users.settings
+    - Configurable icons for equipment categories and teams (Tabler Icons)
+    - Bot: 11 slash commands implemented across TG + MAX
+    - ObjectDisplay: name + address rendered on two lines across the app
+    - Foreman is read-only on Objects page (no edit/upload/import)
+    - Equipment time defaults read from admin settings on create/edit
+    - Team icon persists across reloads (icon column returned in responses)
+    - SMR: units of measurement from KP catalog (col G fix in parser)
+    - SMR 3-step wizard: Часы → Работы → Просмотр
+    - SMR hours tracked per team member per application (application_hours)
+    - SMR role flow: brigadier fills → foreman reviews & approves
+    - SMR authorship: filled_by_user_id on kp / extra_works / hours
+    - SMR Excel report (Часы / Работы / Доп. работы, no ЗП/цен)
+    - KP page: grouping by object → date; per-app Скачать button
+    - Extra works: collapsible category picker, draws from kp_catalog
+    - Kanban: object name + address restored (enrich in /api/dashboard)
+    - MaintenanceScreen when the API is unreachable; auto-reload on recovery
+    - Session expiry: fullAuthCleanup + logoutAndRedirect (no infinite 401)
+    - Push: VAPID `aud` claim derived per-subscription endpoint origin
+
 --- CURRENT STATUS ---
 
-  ALL STAGES COMPLETE. v2.3 security sprint delivered.
-  Production ready: all critical and high findings resolved.
-  412 commits across v1.0-v2.3.
+  v2.4 shipped. Production ready.
+  468 commits across v1.0-v2.4.
 
 --- TOOLING ---
 
@@ -145,14 +169,18 @@ Deps: 16 packages pinned (requirements.txt)
     .claude/skills/ui-ux-pro-max/      -- UI/UX design intelligence (67 styles)
     .claude/skills/graphify/           -- Knowledge graph generation
 
+  Icon libraries:
+    lucide-react          -- UI icons (buttons, nav, status indicators)
+    @tabler/icons-react   -- Construction-themed equipment/team pickers
+
   Graph outputs:
     graphify-out/graph.html            -- Interactive graph (browser)
     graphify-out/GRAPH_REPORT.md       -- Audit report
     graphify-out/graph.json            -- Queryable graph data
     graphify-out/obsidian/             -- Obsidian vault (notes + canvas)
-    graphify-out/wiki/                 -- Agent-crawlable wiki (155 articles)
+    graphify-out/wiki/                 -- Agent-crawlable wiki
 
-  Token reduction: 185.1x avg (graphify 1080 nodes / 1236 edges / 155 communities)
+  Token reduction: graphify 1197 nodes / 1676 edges / 44 communities (v2.4)
 
 --- SECURITY POSTURE (v2.3, 2026-04-16) ---
 

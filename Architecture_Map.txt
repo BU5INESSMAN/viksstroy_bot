@@ -55,6 +55,8 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   |                          | badges, stagger animation, GlassCard              |
   | JoinTeam.jsx             | Team invite acceptance page                       |
   | JoinEquipment.jsx        | Equipment invite acceptance page                  |
+  | Settings.jsx             | User settings (notifications TG/MAX/Push + UI)    |
+  | Admin.jsx                | Admin panel (renamed from System): users, roles   |
   +--------------------------+--------------------------------------------------+
 
   FRONTEND COMPONENTS (frontend/src/)
@@ -85,7 +87,17 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   |                          | EditEquipmentModal, EquipmentInviteModal            |
   | features/layout/         | Header, BottomNav (animated FAB + bottom sheet),   |
   |                          | ProfileModal (animated), SessionModal               |
+  | features/kp/components/  | v2.4 SMR wizard: SMRWizard (container),           |
+  |                          | StepHours, StepWorks, StepReview, ExtraWorksPicker |
+  | components/MaintenanceScr| Full-screen overlay when API is unreachable        |
+  | components/ui/IconPicker | Grid picker for Tabler equipment/team icons        |
+  | components/ui/ObjectDispl| Object name + address on two lines (block/inline)  |
+  | components/ui/TabBadge   | Floating counter badge for tabs                   |
+  | components/PWAInstallBan | PWA install prompt above BottomNav                 |
+  | components/PWAUpdateModa | App update notification with countdown              |
   | hooks/useConfirm.jsx     | Confirmation dialog hook                           |
+  | hooks/useApiHealth.js    | API reachability poller → MaintenanceScreen toggle |
+  | hooks/useEquipDefaultTime| Fetch equip_base_time_{start,end} from settings    |
   | utils/dateUtils.js       | Smart date calculations (today, tomorrow, week)    |
   | utils/clipboard.js       | Copy-to-clipboard helper                           |
   | utils/equipFormat.js     | Equipment name formatting                          |
@@ -93,8 +105,11 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   | utils/statusConfig.js    | STATUS_CONFIG + getStatusBadge() helper             |
   | utils/animations.js      | Shared framer-motion variants: fadeIn, slideUp,    |
   |                          | scaleIn, stagger, getMotionProps                   |
-  | utils/tokenStorage.js    | saveAuthData(tgId, role) -- UI metadata only,      |
-  |                          | no session_token in JS-accessible storage           |
+  | utils/iconConfig.js      | Tabler equipment/team icon registries + helpers     |
+  | utils/pwaInstall.js      | PWA install detection + browser support             |
+  | utils/pwaUpdate.js       | Service-worker update detection                     |
+  | utils/tokenStorage.js    | Triple-layer auth storage + fullAuthCleanup +       |
+  |                          | logoutAndRedirect on session expiry                  |
   +--------------------------+--------------------------------------------------+
 
   BACKEND ROUTERS (web/routers/)
@@ -171,13 +186,17 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   | user_service.py (59)     | User ops: delete cascade, unlink platform          |
   | account_merge.py         | Account merge logic: combine TG+MAX into one user |
   | pdf_parser.py            | SMR PDF parsing: extract works tables/text         |
+  | smr_report.py            | SMR Excel generator (Часы/Работы/Доп.работы) —     |
+  |                          | authorship column, no ЗП/цены                       |
+  | push_templates.py        | Push notification payload builder (10 types)        |
+  | bot_commands.py          | Shared TG + MAX bot command registry                |
   | __init__.py              | Re-exports for backward compatibility              |
   +--------------------------+--------------------------------------------------+
 
   DATABASE (database/)
   +--------------------------+--------------------------------------------------+
   | db_manager.py            | Mixin-based async SQLite manager (WAL mode)       |
-  |                          | Composes 7 domain repo mixins into DatabaseManager|
+  |                          | Composes 8 domain repo mixins into DatabaseManager|
   | users_repo.py            | UsersRepoMixin: user CRUD, profile, avatar,       |
   |                          | linked accounts, admin/moderator queries          |
   | teams_repo.py            | TeamsRepoMixin: team CRUD, invite codes, member   |
@@ -186,11 +205,32 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   | apps_repo.py             | AppsRepoMixin: application CRUD, resource check,  |
   |                          | publish queries, daily reports, object history     |
   | objects_repo.py          | ObjectsRepoMixin: object CRUD, KP plan, archive   |
-  | kp_repo.py               | KpRepoMixin: KP catalog, application KP items     |
+  | kp_repo.py               | KpRepoMixin: KP catalog, application KP items,     |
+  |                          | submit report with authorship (filled_by_user_id)  |
   | exchange_repo.py         | ExchangeRepoMixin: exchange requests, timeouts    |
   | logs_repo.py             | LogsRepoMixin: audit log insert/query             |
-  | schema.sql               | Full DDL: 19+ tables (includes sessions,          |
-  |                          | web_codes, account_links, push_subscriptions)     |
+  | hours_repo.py            | HoursRepoMixin: application_hours CRUD, per-team   |
+  |                          | member hours, brigadier scope helper                |
+  | schema.sql               | Full DDL: 20+ tables (sessions, web_codes,         |
+  |                          | account_links, push_subscriptions,                  |
+  |                          | equipment_category_settings, application_hours,     |
+  |                          | application_extra_works, object_kp_plan)            |
+  +--------------------------+--------------------------------------------------+
+
+  KEY DATABASE CHANGES (v2.4)
+  +--------------------------+--------------------------------------------------+
+  | application_hours        | app_id, team_id, user_id (team_members.id),       |
+  |                          | hours, filled_by_user_id, filled_at (UNIQUE on    |
+  |                          | app_id+team_id+user_id)                             |
+  | equipment_category_sett  | category TEXT PK, icon TEXT (Tabler icon key)      |
+  | users.last_name/         | FIO split columns + specialty + settings JSON       |
+  |   first_name/middle_name |                                                    |
+  | applications.smr_group_id| UUID linking brigadier submissions for one app     |
+  | applications.smr_status  | '' | draft | pending_review | approved             |
+  | applications.smr_filled_ | 'foreman' | 'brigadier' — authorship at app level  |
+  |   by_role                |                                                    |
+  | application_kp.filled_by_| Per-row authorship for the "Заполнил" column       |
+  |   user_id / filled_at    |                                                    |
   +--------------------------+--------------------------------------------------+
 
   BOT ENTRY POINTS
