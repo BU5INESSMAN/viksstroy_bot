@@ -801,9 +801,11 @@ async def api_submit_app_extra_works(app_id: int, request: Request, current_user
 
         await db.conn.execute(
             """INSERT INTO application_extra_works
-               (application_id, extra_work_id, custom_name, unit, volume, salary, price)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (app_id, extra_work_id, custom_name, unit, volume, salary, price),
+               (application_id, extra_work_id, custom_name, unit, volume, salary, price,
+                filled_by_user_id, filled_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (app_id, extra_work_id, custom_name, unit, volume, salary, price,
+             current_user['tg_id'], __import__('datetime').datetime.now().isoformat(timespec='seconds')),
         )
     await db.conn.commit()
     return {"status": "ok"}

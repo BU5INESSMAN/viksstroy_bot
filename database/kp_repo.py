@@ -69,10 +69,14 @@ class KpRepoMixin:
         async with self.conn.execute(query, (app_id, obj_id)) as cur:
             return [dict(row) for row in await cur.fetchall()]
 
-    async def submit_kp_report(self, app_id: int, items: list, role: str):
+    async def submit_kp_report(self, app_id: int, items: list, role: str, filled_by_user_id: int | None = None):
         # v2.4.3: foreman sends only {kp_id, volume}. Unit, salary, and
         # price are looked up from kp_catalog server-side so the frontend
         # never needs pricing data and cannot spoof it.
+        # v2.4.5 (wizard): `filled_by_user_id` is stored per row for the
+        # "Заполнил" column in the Excel report.
+        from datetime import datetime as _dt
+        _now = _dt.now().isoformat(timespec='seconds')
         kp_ids = [int(i['kp_id']) for i in items if int(i.get('kp_id') or 0) > 0]
         lookup: dict[int, dict] = {}
         if kp_ids:
@@ -115,9 +119,11 @@ class KpRepoMixin:
                 salary = meta['salary']
                 price = meta['price']
             await self.conn.execute(
-                """INSERT INTO application_kp (application_id, kp_id, volume, unit, current_salary, current_price)
-                   VALUES (?, ?, ?, ?, ?, ?)""",
-                (app_id, kp_id, volume, meta['unit'], salary, price),
+                """INSERT INTO application_kp
+                   (application_id, kp_id, volume, unit, current_salary, current_price,
+                    filled_by_user_id, filled_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (app_id, kp_id, volume, meta['unit'], salary, price, filled_by_user_id, _now),
             )
 
         new_status = 'approved' if role in ['foreman', 'moderator', 'boss', 'superadmin'] else 'submitted'
