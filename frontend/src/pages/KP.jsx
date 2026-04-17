@@ -9,6 +9,8 @@ import {
 import { KPSkeleton } from '../components/ui/PageSkeletons';
 import TabBadge from '../components/ui/TabBadge';
 import ExtraWorksPicker from '../features/kp/components/ExtraWorksPicker';
+import SMRWizard from '../features/kp/components/SMRWizard';
+import ObjectDisplay from '../components/ui/ObjectDisplay';
 
 export default function KP() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -45,18 +47,29 @@ export default function KP() {
     const [extraWorks, setExtraWorks] = useState([]);
     const [showArchive, setShowArchive] = useState(false);
     const [archivedApps, setArchivedApps] = useState([]);
+    // v2.4.5 SMR wizard integration
+    const [wizardApp, setWizardApp] = useState(null);
+    const [wizardApproveMode, setWizardApproveMode] = useState(false);
 
     const fileInputRef = useRef(null);
 
     const fetchApps = async () => {
         setLoading(true);
         try {
-            const res = await axios.get('/api/kp/dashboard');
-            setData(res.data);
-            if (res.data[activeTab]?.length === 0) {
-                if (res.data.to_fill.length > 0) setActiveTab('to_fill');
-                else if (res.data.pending_review.length > 0) setActiveTab('pending_review');
-                else if (res.data.approved.length > 0) setActiveTab('approved');
+            // v2.4.5: /api/kp/smr/list returns {to_fill, pending, completed}
+            // — same shape as before with `pending_review` → `pending` and
+            // `approved` → `completed` renamed, so remap for the existing UI.
+            const res = await axios.get('/api/kp/smr/list');
+            const mapped = {
+                to_fill: res.data.to_fill || [],
+                pending_review: res.data.pending || [],
+                approved: res.data.completed || [],
+            };
+            setData(mapped);
+            if (mapped[activeTab]?.length === 0) {
+                if (mapped.to_fill.length > 0) setActiveTab('to_fill');
+                else if (mapped.pending_review.length > 0) setActiveTab('pending_review');
+                else if (mapped.approved.length > 0) setActiveTab('approved');
             }
         } catch (e) { console.error(e); }
         setLoading(false);
@@ -292,9 +305,18 @@ export default function KP() {
                                 {activeTab === 'approved' && isOffice && <input type="checkbox" checked={selectedForExport.includes(app.id)} onChange={() => setSelectedForExport(prev => prev.includes(app.id) ? prev.filter(x => x !== app.id) : [...prev, app.id])} className="w-5 h-5 text-emerald-600 rounded" />}
                             </div>
                         </div>
-                        <h4 className="font-bold text-gray-800 dark:text-gray-100 flex items-start gap-1.5 mb-2 leading-tight"><MapPin className="w-4 h-4 text-red-500 mt-0.5" />{app.obj_name || 'Объект'}</h4>
+                        <h4 className="font-bold text-gray-800 dark:text-gray-100 flex items-start gap-1.5 mb-1 leading-tight">
+                            <MapPin className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
+                            <ObjectDisplay
+                                name={app.object_name || app.obj_name}
+                                address={app.object_clean_address || app.object_address}
+                                showIcon={false}
+                                nameClassName="font-bold text-gray-800 dark:text-gray-100 leading-tight"
+                                addressClassName="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5"
+                            />
+                        </h4>
                         <p className="text-xs text-gray-500 mb-4 flex items-center gap-1"><HardHat className="w-3.5 h-3.5 text-gray-400" /> {app.foreman_name}</p>
-                        {activeTab === 'to_fill' && isOffice ? (
+                        {activeTab === 'to_fill' && isOffice && app.foreman_id !== Number(tgId) ? (
                             <button onClick={async () => {
                                 try {
                                     const fd = new FormData();
@@ -309,8 +331,38 @@ export default function KP() {
                             <div className="w-full bg-gray-100 dark:bg-gray-700/50 text-gray-400 dark:text-gray-500 py-3 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 flex justify-center items-center gap-2 cursor-not-allowed">
                                 <Clock className="w-4 h-4" /> Откроется в {smrUnlockTime}
                             </div>
+                        ) : activeTab === 'to_fill' ? (
+                            <button onClick={() => { setWizardApproveMode(false); setWizardApp(app); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-sm font-bold transition-colors active:scale-[0.98]">
+                                Заполнить
+                            </button>
+                        ) : activeTab === 'pending_review' ? (
+                            <div className="flex gap-2">
+                                <button onClick={() => { setWizardApproveMode(true); setWizardApp(app); }} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl text-sm font-bold transition-colors active:scale-[0.98]">
+                                    Проверить
+                                </button>
+                            </div>
                         ) : (
-                            <button onClick={() => openModal(app)} className="w-full bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 flex justify-center items-center gap-2">{activeTab === 'to_fill' ? 'Заполнить' : 'Посмотреть'}</button>
+                            <div className="flex gap-2">
+                                <button onClick={() => openModal(app)} className="flex-1 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 flex justify-center items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
+                                    Посмотреть
+                                </button>
+                                <button
+                                    onClick={async () => {
+                                        try {
+                                            const res = await axios.get(`/api/kp/apps/${app.id}/smr/download`, { responseType: 'blob' });
+                                            const url = window.URL.createObjectURL(new Blob([res.data]));
+                                            const link = document.createElement('a');
+                                            link.href = url;
+                                            link.setAttribute('download', `smr_${app.id}.xlsx`);
+                                            document.body.appendChild(link); link.click(); link.remove();
+                                        } catch { toast.error('Не удалось скачать отчёт'); }
+                                    }}
+                                    title="Скачать отчёт"
+                                    className="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 py-3 px-3 rounded-xl border border-blue-200 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
+                                >
+                                    <Download className="w-4 h-4" />
+                                </button>
+                            </div>
                         )}
                     </div>
                 ))}
@@ -464,6 +516,18 @@ export default function KP() {
                         </div>
                     </div>
                 </div>
+            )}
+
+            {wizardApp && (
+                <SMRWizard
+                    appId={wizardApp.id}
+                    app={wizardApp}
+                    userRole={role}
+                    tgId={tgId}
+                    approveMode={wizardApproveMode}
+                    onClose={() => { setWizardApp(null); setWizardApproveMode(false); }}
+                    onSubmitted={() => { fetchApps(); }}
+                />
             )}
         </main>
     );
