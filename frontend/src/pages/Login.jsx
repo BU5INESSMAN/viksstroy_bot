@@ -19,6 +19,9 @@ export default function Login() {
 
   // Redirect already-authenticated users to dashboard
   useEffect(() => {
+    // Clear the 401-redirect guard so a future expiry can redirect again.
+    try { sessionStorage.removeItem('auth_redirecting'); } catch { /* silent */ }
+
     loadAuthData().then(stored => {
       if (stored?.tg_id && stored?.user_role) {
         navigate('/dashboard', { replace: true });

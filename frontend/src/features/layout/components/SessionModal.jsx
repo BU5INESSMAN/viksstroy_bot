@@ -1,4 +1,5 @@
-import { AlertCircle, RefreshCw } from 'lucide-react';
+import { AlertCircle, LogIn } from 'lucide-react';
+import { logoutAndRedirect } from '../../../utils/tokenStorage';
 
 export default function SessionModal() {
     return (
@@ -10,13 +11,13 @@ export default function SessionModal() {
                     </div>
                     <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-3 tracking-tight">Сессия истекла</h2>
                     <p className="text-gray-500 dark:text-gray-400 text-sm leading-relaxed mb-8">
-                        Данные авторизации были удалены браузером для экономии памяти. Пожалуйста, войдите снова через мессенджер.
+                        Сессия истекла. Пожалуйста, войдите заново.
                     </p>
                     <button
-                        onClick={() => window.location.href = '/'}
+                        onClick={logoutAndRedirect}
                         className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-2xl shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
                     >
-                        <RefreshCw className="w-5 h-5" /> Авторизоваться
+                        <LogIn className="w-5 h-5" /> Войти заново
                     </button>
                 </div>
             </div>

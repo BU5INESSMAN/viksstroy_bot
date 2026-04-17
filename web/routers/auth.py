@@ -420,7 +420,12 @@ async def validate_session(
 
 @router.post("/api/auth/logout")
 async def api_logout(request: Request):
-    """Logout: invalidate session server-side and clear cookie."""
+    """Logout: invalidate session server-side and clear cookie.
+
+    Clears the cookie both as a host-only cookie (default) and bound to
+    the explicit request host so a reverse-proxy setup that originally
+    issued the cookie with a domain attribute still sees it expired.
+    """
     token = request.cookies.get("session_token")
     if token:
         try:
@@ -431,4 +436,10 @@ async def api_logout(request: Request):
 
     resp = JSONResponse(content={"status": "ok"})
     resp.delete_cookie("session_token", path="/")
+    host = (request.headers.get("host") or "").split(":")[0]
+    if host:
+        try:
+            resp.delete_cookie("session_token", path="/", domain=host)
+        except Exception:
+            pass
     return resp

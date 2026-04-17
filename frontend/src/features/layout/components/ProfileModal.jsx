@@ -8,7 +8,7 @@ import {
 } from 'lucide-react';
 import useConfirm from '../../../hooks/useConfirm';
 import useEnterToSubmit from '../../../hooks/useEnterToSubmit';
-import { clearAuthData } from '../../../utils/tokenStorage';
+import { logoutAndRedirect } from '../../../utils/tokenStorage';
 import { unsubscribeFromPush } from '../../../utils/pushSubscription';
 import { displayFio } from '../../../utils/fioFormat';
 import { ROLE_NAMES as roleNames } from '../../../utils/roleConfig';
@@ -511,10 +511,8 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                 {isMyProfile && (
                                     <button
                                         onClick={async () => {
-                                            await unsubscribeFromPush();
-                                            await clearAuthData();
-                                            document.cookie = 'session_token=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/;';
-                                            window.location.href = '/';
+                                            try { await unsubscribeFromPush(); } catch { /* silent */ }
+                                            logoutAndRedirect();
                                         }}
                                         className="w-full mt-2 py-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400 text-sm font-medium hover:bg-red-500/20 transition-colors flex items-center justify-center gap-2 active:scale-[0.98]"
                                     >

@@ -165,3 +165,93 @@ export async function clearAuthData() {
   } catch { /* silent */ }
   await Promise.all([idbClear(), cacheClear()]);
 }
+
+/**
+ * Full auth cleanup: wipes localStorage, sessionStorage, cookies,
+ * push subscription, IndexedDB databases, and Cache API entries.
+ * Preserves non-auth UI preferences ('theme').
+ *
+ * Synchronous best-effort — async side effects fire-and-forget so the
+ * caller can redirect immediately without waiting.
+ */
+export function fullAuthCleanup() {
+  // 1. localStorage — preserve theme only
+  try {
+    const preserved = {};
+    const keep = ['theme'];
+    keep.forEach(k => {
+      const v = localStorage.getItem(k);
+      if (v !== null) preserved[k] = v;
+    });
+    localStorage.clear();
+    Object.entries(preserved).forEach(([k, v]) => {
+      try { localStorage.setItem(k, v); } catch { /* silent */ }
+    });
+  } catch { /* silent */ }
+
+  // 2. sessionStorage — full wipe
+  try { sessionStorage.clear(); } catch { /* silent */ }
+
+  // 3. Cookies — expire every cookie for this host + root host
+  try {
+    const host = window.location.hostname;
+    document.cookie.split(';').forEach(raw => {
+      const name = raw.split('=')[0].trim();
+      if (!name) return;
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/`;
+      document.cookie = `${name}=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=${host}`;
+    });
+  } catch { /* silent */ }
+
+  // 4. Push subscription — unsubscribe best-effort
+  if ('serviceWorker' in navigator) {
+    try {
+      navigator.serviceWorker.ready.then(reg => {
+        reg.pushManager.getSubscription().then(sub => {
+          if (sub) sub.unsubscribe().catch(() => {});
+        }).catch(() => {});
+      }).catch(() => {});
+    } catch { /* silent */ }
+  }
+
+  // 5. IndexedDB — drop every database
+  try {
+    if (window.indexedDB && typeof indexedDB.databases === 'function') {
+      indexedDB.databases().then(dbs => {
+        (dbs || []).forEach(d => {
+          if (d?.name) {
+            try { indexedDB.deleteDatabase(d.name); } catch { /* silent */ }
+          }
+        });
+      }).catch(() => {});
+    } else if (window.indexedDB) {
+      // Safari fallback: at least drop the known auth DB
+      try { indexedDB.deleteDatabase(DB_NAME); } catch { /* silent */ }
+    }
+  } catch { /* silent */ }
+
+  // 6. Cache API — drop every cache bucket
+  try {
+    if ('caches' in window) {
+      caches.keys().then(names => {
+        names.forEach(n => caches.delete(n).catch(() => {}));
+      }).catch(() => {});
+    }
+  } catch { /* silent */ }
+}
+
+/**
+ * One-shot logout: best-effort server logout call, full local cleanup,
+ * hard redirect to login. Uses window.location.href (full page reload)
+ * so all React state is destroyed.
+ */
+export function logoutAndRedirect() {
+  // Fire-and-forget server logout; cookie may already be invalid.
+  try {
+    fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+  } catch { /* silent */ }
+
+  fullAuthCleanup();
+
+  window.location.href = '/';
+}
