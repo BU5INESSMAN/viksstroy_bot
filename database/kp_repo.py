@@ -70,26 +70,55 @@ class KpRepoMixin:
             return [dict(row) for row in await cur.fetchall()]
 
     async def submit_kp_report(self, app_id: int, items: list, role: str):
-        # Batch-lookup units from kp_catalog by kp_id so the denormalized
-        # unit column stays in sync with the catalog at insertion time.
+        # v2.4.3: foreman sends only {kp_id, volume}. Unit, salary, and
+        # price are looked up from kp_catalog server-side so the frontend
+        # never needs pricing data and cannot spoof it.
         kp_ids = [int(i['kp_id']) for i in items if int(i.get('kp_id') or 0) > 0]
-        units: dict[int, str] = {}
+        lookup: dict[int, dict] = {}
         if kp_ids:
             pl = ",".join("?" * len(kp_ids))
             async with self.conn.execute(
-                f"SELECT id, unit FROM kp_catalog WHERE id IN ({pl})", kp_ids
+                f"SELECT id, unit, salary, price FROM kp_catalog WHERE id IN ({pl})", kp_ids
             ) as cur:
                 for r in await cur.fetchall():
-                    units[int(r[0])] = (r[1] or '').strip()
+                    lookup[int(r[0])] = {
+                        'unit': (r[1] or '').strip(),
+                        'salary': float(r[2]) if r[2] is not None else 0.0,
+                        'price': float(r[3]) if r[3] is not None else 0.0,
+                    }
 
         await self.conn.execute("DELETE FROM application_kp WHERE application_id = ?", (app_id,))
         for item in items:
-            if float(item['volume']) > 0:
-                unit = units.get(int(item['kp_id']), '')
-                await self.conn.execute("""
-                                        INSERT INTO application_kp (application_id, kp_id, volume, unit, current_salary, current_price)
-                                        VALUES (?, ?, ?, ?, ?, ?)
-                                        """, (app_id, item['kp_id'], item['volume'], unit, item['salary'], item['price']))
+            try:
+                volume = float(item.get('volume') or 0)
+            except (TypeError, ValueError):
+                volume = 0.0
+            if volume <= 0:
+                continue
+            kp_id = int(item.get('kp_id') or 0)
+            if not kp_id:
+                continue
+            meta = lookup.get(kp_id, {'unit': '', 'salary': 0.0, 'price': 0.0})
+            # Office roles may override salary/price when editing a submitted
+            # report — accept them only if explicitly provided, otherwise use
+            # the catalog values.
+            salary = item.get('salary')
+            price = item.get('price')
+            if role in ('moderator', 'boss', 'superadmin') and salary is not None and price is not None:
+                try:
+                    salary = float(salary)
+                    price = float(price)
+                except (TypeError, ValueError):
+                    salary = meta['salary']
+                    price = meta['price']
+            else:
+                salary = meta['salary']
+                price = meta['price']
+            await self.conn.execute(
+                """INSERT INTO application_kp (application_id, kp_id, volume, unit, current_salary, current_price)
+                   VALUES (?, ?, ?, ?, ?, ?)""",
+                (app_id, kp_id, volume, meta['unit'], salary, price),
+            )
 
         new_status = 'approved' if role in ['foreman', 'moderator', 'boss', 'superadmin'] else 'submitted'
         await self.conn.execute("UPDATE applications SET kp_status = ? WHERE id = ?", (new_status, app_id))
