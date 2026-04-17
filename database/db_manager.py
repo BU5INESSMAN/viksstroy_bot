@@ -118,6 +118,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_user_fio_split()
         await self.upgrade_db_for_icon_settings()
         await self.upgrade_db_for_smr_units()
+        await self.sync_worker_specialties()
 
         # Employee status columns on team_members
         for col_stmt in [
@@ -365,6 +366,34 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             ON user_notifications(user_id, is_read, created_at DESC)
         """)
         await self.conn.commit()
+
+    async def sync_worker_specialties(self):
+        """v2.4 FIX 7: one-time backfill — for every worker/driver/brigadier
+        whose users.specialty is empty, copy the position from their
+        team_members row (joined via tg_user_id → users.user_id).
+        Idempotent — only touches rows with empty specialty."""
+        try:
+            cur = await self.conn.execute("""
+                UPDATE users SET specialty = (
+                    SELECT tm.position FROM team_members tm
+                    WHERE tm.tg_user_id = users.user_id
+                      AND tm.position IS NOT NULL AND TRIM(tm.position) != ''
+                    LIMIT 1
+                )
+                WHERE role IN ('worker','driver','brigadier')
+                  AND (specialty IS NULL OR specialty = '')
+                  AND EXISTS (
+                    SELECT 1 FROM team_members tm
+                    WHERE tm.tg_user_id = users.user_id
+                      AND tm.position IS NOT NULL AND TRIM(tm.position) != ''
+                  )
+            """)
+            n = cur.rowcount if cur.rowcount is not None else 0
+            await self.conn.commit()
+            if n:
+                logging.info(f"Worker specialty sync: backfilled {n} users from team position")
+        except Exception as e:
+            logging.error(f"Worker specialty sync failed: {e}")
 
     async def upgrade_db_for_smr_units(self):
         """Stage 10: denormalize `unit` onto object_kp_plan + application_kp

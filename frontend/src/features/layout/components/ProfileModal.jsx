@@ -324,7 +324,21 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                             <Field label="Отчество" placeholder="необязательно" value={middleName} onChange={setMiddleName} disabled={!canEditUsers && !isMyProfile} />
                                         </div>
 
-                                        <Field label="Специальность" value={specialty} onChange={setSpecialty} disabled={!canEditUsers && !isMyProfile} />
+                                        {(() => {
+                                            // Stage v2.4 FIX 7: specialty auto-syncs from team position
+                                            // for worker/driver/brigadier — read-only hint instead of edit.
+                                            const autoSynced = ['worker', 'driver', 'brigadier']
+                                                .includes(profileData.role);
+                                            return (
+                                                <Field
+                                                    label="Специальность"
+                                                    value={specialty}
+                                                    onChange={setSpecialty}
+                                                    placeholder={autoSynced ? 'Определяется должностью в бригаде' : ''}
+                                                    disabled={autoSynced || (!canEditUsers && !isMyProfile)}
+                                                />
+                                            );
+                                        })()}
 
                                         <div>
                                             <Field

@@ -106,7 +106,19 @@ class TeamsRepoMixin:
 
     async def update_member(self, member_id: int, fio: str = None, position: str = None):
         if fio: await self.conn.execute("UPDATE team_members SET fio = ? WHERE id = ?", (fio, member_id))
-        if position: await self.conn.execute("UPDATE team_members SET position = ? WHERE id = ?", (position, member_id))
+        if position:
+            await self.conn.execute("UPDATE team_members SET position = ? WHERE id = ?", (position, member_id))
+            # Stage v2.4 FIX 7: sync to users.specialty for workers/drivers/brigadiers
+            async with self.conn.execute(
+                "SELECT tg_user_id FROM team_members WHERE id = ?", (member_id,)
+            ) as _c:
+                _row = await _c.fetchone()
+            if _row and _row[0]:
+                await self.conn.execute(
+                    "UPDATE users SET specialty = ? "
+                    "WHERE user_id = ? AND role IN ('worker','driver','brigadier')",
+                    (position, _row[0]),
+                )
         await self.conn.commit()
 
     async def get_or_create_invite_code(self, member_id: int):
