@@ -114,28 +114,29 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                                         const label = plate ? `${firstWord} ${plate.replace(/\s+/g, '')}` : firstWord;
                                         const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || IconTruck;
                                         return (
-                                            <div key={idx} className="py-1">
-                                                {/* Top row: name left, time right */}
-                                                <div className={`flex items-center justify-between text-xs ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
-                                                    <span className="font-medium truncate">{label}</span>
-                                                    <div className="flex items-center gap-1 shrink-0 ml-2">
-                                                        {eq.time_start != null && (
-                                                            <span className="text-gray-400 dark:text-gray-500">{eq.time_start}–{eq.time_end}</span>
-                                                        )}
-                                                        {eq.is_freed && <CheckCircle className="w-3 h-3 text-emerald-500" />}
-                                                    </div>
-                                                </div>
-                                                {/* Big centered category icon — subtle, not dominant */}
-                                                <div className="flex justify-center my-1">
+                                            <div key={idx} className="flex items-center gap-3 py-1">
+                                                {/* Big icon — left, vertically centered */}
+                                                <div className="shrink-0">
                                                     <EqIcon
-                                                        className={`w-8 h-8 ${eq.is_freed ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400/60 dark:text-gray-500/60'}`}
+                                                        className={`w-8 h-8 ${eq.is_freed ? 'text-gray-300 dark:text-gray-600' : 'text-gray-400/70 dark:text-gray-500/70'}`}
                                                         stroke={1.5}
                                                     />
                                                 </div>
-                                                {/* Driver — centered under the icon */}
-                                                {driverFio && !eq.is_freed && (
-                                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate text-center">{driverFio}</p>
-                                                )}
+                                                {/* Name + driver block */}
+                                                <div className="flex-1 min-w-0">
+                                                    <div className={`flex items-center justify-between gap-2 text-xs ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                        <span className="font-medium truncate">{label}</span>
+                                                        <div className="flex items-center gap-1 shrink-0">
+                                                            {eq.time_start != null && (
+                                                                <span className="text-gray-400 dark:text-gray-500">{eq.time_start}–{eq.time_end}</span>
+                                                            )}
+                                                            {eq.is_freed && <CheckCircle className="w-3 h-3 text-emerald-500" />}
+                                                        </div>
+                                                    </div>
+                                                    {driverFio && !eq.is_freed && (
+                                                        <p className="text-[10px] text-gray-400 dark:text-gray-500 truncate mt-0.5">{driverFio}</p>
+                                                    )}
+                                                </div>
                                             </div>
                                         );
                                     })}
