@@ -237,8 +237,40 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
 
                     <div className="flex-1" />
 
+                    {/* v2.4.1 FIX 8: Install-app card lives above the secondary
+                        nav (Guide / Updates / Support / Theme) so it's immediately
+                        discoverable. Divider separates it from primary nav above
+                        and from the Гайд group below. */}
+                    {installCan && !collapsed && (
+                        <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-800">
+                            <button
+                                onClick={handleInstallClick}
+                                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-blue-50 dark:bg-blue-500/10 hover:bg-blue-100 dark:hover:bg-blue-500/15 border border-blue-100 dark:border-blue-500/20 transition-colors duration-150 active:scale-[0.98]"
+                            >
+                                <Download className="w-5 h-5 text-blue-600 dark:text-blue-400 shrink-0" />
+                                <div className="text-left min-w-0">
+                                    <div className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">Установить приложение</div>
+                                    <div className="text-[11px] text-gray-500 dark:text-gray-400 truncate">Быстрый доступ и уведомления</div>
+                                </div>
+                            </button>
+                        </div>
+                    )}
+                    {installCan && collapsed && (
+                        <div className="pt-2 mt-2 border-t border-gray-100 dark:border-gray-800">
+                            <NavItem
+                                icon={Download}
+                                label="Установить приложение"
+                                collapsed={collapsed}
+                                isActive={false}
+                                onClick={handleInstallClick}
+                                secondary
+                                installAccent
+                            />
+                        </div>
+                    )}
+
                     {/* Secondary nav */}
-                    <div className="space-y-0.5 pt-2 border-t border-gray-100 dark:border-gray-800 mt-2">
+                    <div className={`space-y-0.5 ${installCan ? 'pt-2 mt-2 border-t border-gray-100 dark:border-gray-800' : 'pt-2 border-t border-gray-100 dark:border-gray-800 mt-2'}`}>
                         {secondaryNav.map(item => (
                             <NavItem
                                 key={item.label}
@@ -253,18 +285,6 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                         ))}
                         <NavItem icon={ThemeIcon} label="Тема" collapsed={collapsed}
                             isActive={false} onClick={toggleTheme} secondary />
-
-                        {installCan && (
-                            <NavItem
-                                icon={Download}
-                                label="Установить приложение"
-                                collapsed={collapsed}
-                                isActive={false}
-                                onClick={handleInstallClick}
-                                secondary
-                                installAccent
-                            />
-                        )}
 
                         {/* Settings (all roles) + Admin (boss+) — just above profile */}
                         <NavItem
