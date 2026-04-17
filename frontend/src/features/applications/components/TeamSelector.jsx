@@ -28,15 +28,17 @@ export default function TeamSelector({
                 {teamIds && teamIds.length > 0 ? (
                     teamIds.map(teamId => {
                         const tMembers = appForm.members_data?.filter(m => m.team_id === teamId) || [];
-                        const tName = tMembers.length > 0 ? tMembers[0].team_name : (data?.teams?.find(t => t.id === teamId)?.name || 'Бригада');
+                        const teamObj = data?.teams?.find(t => t.id === teamId);
+                        const tName = tMembers.length > 0 ? tMembers[0].team_name : (teamObj?.name || 'Бригада');
                         const isThisFreed = appForm.freed_team_ids?.includes(teamId) || appForm.is_team_freed === 1;
+                        const TeamIcon = getIconComponent(teamObj?.icon || DEFAULT_TEAM_ICON, TEAM_ICONS) || Users;
 
                         return (
                             <div key={teamId} className="p-4 bg-gray-50/80 dark:bg-gray-700/30 border border-gray-200 dark:border-gray-600/50 rounded-2xl shadow-sm">
                                 <div className="flex justify-between items-center mb-4">
                                     <h4 className={`font-bold flex items-center gap-2 ${isThisFreed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-100'}`}>
                                         <div className={`p-1.5 rounded-lg ${isThisFreed ? 'bg-gray-200 dark:bg-gray-700 text-gray-400' : 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-500'}`}>
-                                            <Users className="w-4 h-4" />
+                                            <TeamIcon className="w-4 h-4" />
                                         </div>
                                         {tName}
                                     </h4>

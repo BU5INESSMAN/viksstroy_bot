@@ -5,6 +5,11 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
+import {
+    getIconComponent,
+    TEAM_ICONS, DEFAULT_TEAM_ICON,
+    EQUIPMENT_ICONS, DEFAULT_EQUIPMENT_ICON,
+} from '../../../utils/iconConfig';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -48,9 +53,10 @@ function AppCard({ a, role, tgId, openProfile, openFreeModal }) {
                     const eqName = e.name || `Техника #${e.id}`;
                     const s = String(e.time_start ?? '08').padStart(2, '0');
                     const end = String(e.time_end ?? '17').padStart(2, '0');
+                    const EqIcon = getIconComponent(e.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || Truck;
                     return (
                         <div key={idx} className={`flex items-center justify-between text-xs ${e.is_freed ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300 font-medium'}`}>
-                            <span className="truncate mr-2">{eqName}</span>
+                            <span className="truncate mr-2 flex items-center gap-1.5 min-w-0"><EqIcon className="w-3 h-3 flex-shrink-0 text-gray-400" /><span className="truncate">{eqName}</span></span>
                             <span className="text-gray-400 text-[11px] flex-shrink-0">{s}:00 – {end}:00</span>
                         </div>
                     );

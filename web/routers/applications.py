@@ -9,7 +9,11 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import APIRouter, Form, HTTPException, Depends
 from datetime import datetime, timedelta
 from database_deps import db, TZ_BARNAUL
-from utils import resolve_id, fetch_teams_dict, enrich_app_with_team_name
+from utils import (
+    resolve_id, fetch_teams_dict, enrich_app_with_team_name,
+    fetch_teams_icon_map, fetch_category_icon_map, fetch_equipment_category_map,
+    enrich_app_with_icons,
+)
 from auth_deps import get_current_user, require_role
 from services.notifications import notify_users
 from services.app_service import (
@@ -98,6 +102,9 @@ async def delete_app(app_id: int, current_user=Depends(get_current_user)):
 async def get_review_apps(current_user=Depends(get_current_user)):
     await ensure_app_columns()
     teams_dict = await fetch_teams_dict()
+    teams_icon_map = await fetch_teams_icon_map()
+    category_icon_map = await fetch_category_icon_map()
+    equip_category_map = await fetch_equipment_category_map()
 
     real_tg_id = current_user["tg_id"]
     user_role = current_user.get("role")
@@ -109,6 +116,7 @@ async def get_review_apps(current_user=Depends(get_current_user)):
     for row in rows:
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
+        enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
         await enrich_app_with_object_fields(app_dict)
 
@@ -168,6 +176,9 @@ async def get_active_app(current_user=Depends(get_current_user)):
     role = current_user.get("role")
 
     teams_dict = await fetch_teams_dict()
+    teams_icon_map = await fetch_teams_icon_map()
+    category_icon_map = await fetch_category_icon_map()
+    equip_category_map = await fetch_equipment_category_map()
     async with db.conn.execute(
             "SELECT * FROM applications WHERE status IN ('approved', 'published', 'in_progress') ORDER BY date_target ASC") as cursor:
         rows = await cursor.fetchall()
@@ -176,6 +187,7 @@ async def get_active_app(current_user=Depends(get_current_user)):
     for row in rows:
         app_dict = dict(zip([col[0] for col in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
+        enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
         await enrich_app_with_object_fields(app_dict)
 
@@ -216,6 +228,9 @@ async def get_my_apps(current_user=Depends(get_current_user)):
     real_tg_id = current_user["tg_id"]
     role = current_user.get("role")
     teams_dict = await fetch_teams_dict()
+    teams_icon_map = await fetch_teams_icon_map()
+    category_icon_map = await fetch_category_icon_map()
+    equip_category_map = await fetch_equipment_category_map()
     async with db.conn.execute(
             "SELECT * FROM applications WHERE status = 'completed' ORDER BY date_target DESC") as cursor:
         rows = await cursor.fetchall()
@@ -224,6 +239,7 @@ async def get_my_apps(current_user=Depends(get_current_user)):
     for row in rows:
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
+        enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
         await enrich_app_with_object_fields(app_dict)
 
@@ -311,6 +327,9 @@ async def remind_foreman(app_id: int, current_user=Depends(_require_office)):
 @router.get("/api/applications/archive")
 async def get_archived_apps(date_from: str = "", date_to: str = "", current_user=Depends(get_current_user)):
     teams_dict = await fetch_teams_dict()
+    teams_icon_map = await fetch_teams_icon_map()
+    category_icon_map = await fetch_category_icon_map()
+    equip_category_map = await fetch_equipment_category_map()
     query = "SELECT * FROM applications WHERE is_archived = 1"
     params = []
     if date_from:
@@ -328,6 +347,7 @@ async def get_archived_apps(date_from: str = "", date_to: str = "", current_user
     for row in rows:
         app_dict = dict(zip([c[0] for c in cursor.description], row))
         enrich_app_with_team_name(app_dict, teams_dict)
+        enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
         await enrich_app_with_object_fields(app_dict)
         result.append(app_dict)

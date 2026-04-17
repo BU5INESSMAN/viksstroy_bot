@@ -63,6 +63,74 @@ async def fetch_teams_dict():
         return {r[0]: r[1] for r in await cur.fetchall()}
 
 
+async def fetch_teams_icon_map():
+    """v2.4.2 FIX 2: {team_id: icon_key} for enriching apps with team_icon."""
+    if db.conn is None: await db.init_db()
+    try:
+        async with db.conn.execute("SELECT id, icon FROM teams") as cur:
+            return {r[0]: (r[1] or '') for r in await cur.fetchall()}
+    except Exception:
+        return {}
+
+
+async def fetch_category_icon_map():
+    """v2.4.2 FIX 2: {category_name: icon_key} for enriching equipment lists."""
+    if db.conn is None: await db.init_db()
+    try:
+        async with db.conn.execute("SELECT category, icon FROM equipment_category_settings") as cur:
+            return {r[0]: (r[1] or '') for r in await cur.fetchall()}
+    except Exception:
+        return {}
+
+
+def enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map):
+    """Adds team_icon + category_icon on each equipment entry. Idempotent."""
+    import json as _json
+
+    # team_icon: first team id in possibly-comma list
+    t_val = str(app_dict.get('team_id') or '').strip()
+    team_icon = ''
+    if t_val and t_val != '0':
+        for part in t_val.split(','):
+            part = part.strip()
+            if part.isdigit():
+                team_icon = teams_icon_map.get(int(part), '') or ''
+                if team_icon:
+                    break
+    app_dict['team_icon'] = team_icon
+
+    # category_icon on each equipment item
+    raw = app_dict.get('equipment_data')
+    if raw:
+        try:
+            eq_list = _json.loads(raw) if isinstance(raw, str) else raw
+        except Exception:
+            eq_list = []
+        if isinstance(eq_list, list):
+            changed = False
+            for eq in eq_list:
+                if not isinstance(eq, dict):
+                    continue
+                cat = eq.get('category') or equip_category_map.get(eq.get('id')) or ''
+                if cat and not eq.get('category'):
+                    eq['category'] = cat
+                eq['category_icon'] = category_icon_map.get(cat, '') or ''
+                changed = True
+            if changed:
+                app_dict['equipment_data'] = _json.dumps(eq_list, ensure_ascii=False)
+    return app_dict
+
+
+async def fetch_equipment_category_map():
+    """{equipment_id: category} — for apps whose equipment_data lacks category."""
+    if db.conn is None: await db.init_db()
+    try:
+        async with db.conn.execute("SELECT id, category FROM equipment") as cur:
+            return {r[0]: (r[1] or '') for r in await cur.fetchall()}
+    except Exception:
+        return {}
+
+
 async def verify_moderator_plus(tg_id: int):
     """Verify user is moderator, boss, or superadmin. Returns (real_id, user_dict)."""
     from fastapi import HTTPException

@@ -108,7 +108,7 @@ async def create_team(name: str = Form(...), current_user=Depends(_require_offic
 
 @router.get("/api/teams/{team_id}/details")
 async def get_team_details(team_id: int, current_user=Depends(get_current_user)):
-    async with db.conn.execute("SELECT name FROM teams WHERE id = ?",
+    async with db.conn.execute("SELECT name, icon FROM teams WHERE id = ?",
                                (team_id,)) as cur: team_row = await cur.fetchone()
     if not team_row:
         raise HTTPException(404, "Бригада не найдена")
@@ -119,7 +119,7 @@ async def get_team_details(team_id: int, current_user=Depends(get_current_user))
             "id": r[0], "fio": r[1], "position": r[2], "is_linked": bool(r[3]), "is_foreman": bool(r[4]),
             "status": r[5] or "available", "status_from": r[6] or "", "status_until": r[7] or "", "status_reason": r[8] or "",
         } for r in await cur.fetchall()]
-    return {"id": team_id, "name": team_row[0], "members": members}
+    return {"id": team_id, "name": team_row[0], "icon": team_row[1] or '', "members": members}
 
 
 @router.post("/api/teams/{team_id}/members/add")

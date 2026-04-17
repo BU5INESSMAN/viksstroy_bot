@@ -9,7 +9,11 @@ import asyncio
 import logging
 from database_deps import db, TZ_BARNAUL
 from datetime import datetime, timedelta
-from utils import resolve_id, fetch_teams_dict, enrich_app_with_team_name
+from utils import (
+    resolve_id, fetch_teams_dict, enrich_app_with_team_name,
+    fetch_teams_icon_map, fetch_category_icon_map, fetch_equipment_category_map,
+    enrich_app_with_icons,
+)
 from services.notifications import notify_users
 from services.publish_service import execute_app_publish
 from auth_deps import get_current_user, require_role
@@ -75,8 +79,14 @@ async def get_dashboard_data(current_user=Depends(get_current_user)):
             "SELECT * FROM applications WHERE date_target >= date('now', '-14 days') AND (is_archived = 0 OR is_archived IS NULL) ORDER BY id DESC") as cur:
         all_apps = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
 
+    # v2.4.2 FIX 2: icon maps for kanban card rendering (team + equipment category)
+    teams_icon_map = await fetch_teams_icon_map()
+    category_icon_map = await fetch_category_icon_map()
+    equip_category_map = await fetch_equipment_category_map()
+
     for a in all_apps:
         enrich_app_with_team_name(a, teams_dict)
+        enrich_app_with_icons(a, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(a)
 
     recent_addresses = []
@@ -91,11 +101,16 @@ async def get_dashboard_data(current_user=Depends(get_current_user)):
     if user_role in ('foreman', 'brigadier') and real_tg_id:
         all_apps = [a for a in all_apps if a.get('foreman_id') == real_tg_id]
 
-    # Enrich teams with member_count + brigadier_name
+    # Enrich teams with member_count + brigadier_name + icon
     enriched_teams = []
     for t in teams:
         tid = t['id']
-        team_info = {"id": tid, "name": t['name'], "member_count": 0, "brigadier_name": None}
+        # v2.4.2 FIX 2: include icon so kanban/cards/selectors can render it
+        try:
+            icon_val = t['icon']
+        except (IndexError, KeyError):
+            icon_val = None
+        team_info = {"id": tid, "name": t['name'], "icon": icon_val or '', "member_count": 0, "brigadier_name": None}
         try:
             async with db.conn.execute("SELECT COUNT(*) FROM team_members WHERE team_id = ?", (tid,)) as c:
                 row = await c.fetchone()

@@ -9,6 +9,10 @@ import {
 import { getStatusBadge } from '../../../utils/statusConfig';
 import { motion } from 'framer-motion';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
+import {
+    getIconComponent,
+    EQUIPMENT_ICONS, DEFAULT_EQUIPMENT_ICON,
+} from '../../../utils/iconConfig';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -341,12 +345,13 @@ export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
                                         const driverMatch = rawName.match(/\(([^)]+)\)\s*$/);
                                         const driver = driverMatch && driverMatch[1] !== 'Не указан' ? driverMatch[1] : null;
                                         const eqName = driver ? rawName.replace(/\s*\([^)]+\)\s*$/, '') : rawName;
+                                        const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || Truck;
                                         return (
                                             <div key={eq.id ?? i} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-100 dark:border-gray-700 gap-3">
                                                 <div className="flex items-center gap-3 min-w-0">
                                                     {eq.is_freed
                                                         ? <CheckCircle className="w-5 h-5 text-emerald-500 flex-shrink-0" />
-                                                        : <div className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0"><Truck className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /></div>
+                                                        : <div className="w-5 h-5 rounded-full bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0"><EqIcon className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /></div>
                                                     }
                                                     <div className="min-w-0">
                                                         <p className={`text-sm font-bold truncate ${eq.is_freed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}>
