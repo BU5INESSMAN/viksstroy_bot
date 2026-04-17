@@ -55,7 +55,21 @@ USER_STATES = {}
 # audit (see web/services/bot_commands.py). MAX currently mirrors the TG
 # set; this may legitimately diverge if a handler is added to only one
 # bot. Commands absent here are silently omitted from the output.
-MAX_AVAILABLE_COMMANDS = {"/start", "/order", "/schedule"}
+MAX_AVAILABLE_COMMANDS = {
+    "/start", "/help", "/profile",
+    "/order", "/myorders", "/schedule",
+    "/review", "/broadcast", "/debtors",
+    "/backup", "/logs",
+}
+
+_MAX_ROLE_RANK = {
+    "driver": 1, "worker": 2, "brigadier": 3,
+    "foreman": 4, "moderator": 5, "boss": 6, "superadmin": 7,
+}
+
+
+def _max_min_rank(role: str, floor_role: str) -> bool:
+    return _MAX_ROLE_RANK.get(role, 0) >= _MAX_ROLE_RANK.get(floor_role, 99)
 
 
 async def _resolve_user_role_max(pseudo_tg_id: int) -> str:
@@ -285,6 +299,69 @@ async def message_handler(event: MessageCreated):
         state_data["state"] = "order_confirm"
         USER_STATES[max_id_str] = state_data
         await _ord_show_confirm(event, state_data)
+        return
+
+    # v2.4 FIX 13: missing commands with shared text builders
+    if text.startswith("/help"):
+        role = await _resolve_user_role_max(pseudo_tg_id)
+        await send_max_msg(event, format_commands_message(role, MAX_AVAILABLE_COMMANDS))
+        return
+
+    if text.startswith("/profile"):
+        from services.bot_commands import get_user_profile_text
+        out = await get_user_profile_text(db, real_tg_id)
+        await send_max_msg(event, out)
+        return
+
+    if text.startswith("/myorders"):
+        role = await _resolve_user_role_max(pseudo_tg_id)
+        if not _max_min_rank(role, "foreman"):
+            await send_max_msg(event, "Команда доступна только для прорабов и выше.")
+            return
+        from services.bot_commands import get_my_orders_text
+        await send_max_msg(event, await get_my_orders_text(db, real_tg_id))
+        return
+
+    if text.startswith("/review"):
+        role = await _resolve_user_role_max(pseudo_tg_id)
+        if not _max_min_rank(role, "moderator"):
+            await send_max_msg(event, "Команда доступна только для модераторов и выше.")
+            return
+        from services.bot_commands import get_review_text
+        await send_max_msg(event, await get_review_text(db))
+        return
+
+    if text.startswith("/debtors"):
+        role = await _resolve_user_role_max(pseudo_tg_id)
+        if not _max_min_rank(role, "moderator"):
+            await send_max_msg(event, "Команда доступна только для модераторов и выше.")
+            return
+        from services.bot_commands import get_debtors_text
+        await send_max_msg(event, await get_debtors_text(db))
+        return
+
+    if text.startswith("/broadcast"):
+        role = await _resolve_user_role_max(pseudo_tg_id)
+        if not _max_min_rank(role, "moderator"):
+            await send_max_msg(event, "Команда доступна только для модераторов и выше.")
+            return
+        await send_max_msg(event, "Для рассылки используйте веб-интерфейс: Админка → Рассылка.")
+        return
+
+    if text.startswith("/backup"):
+        role = await _resolve_user_role_max(pseudo_tg_id)
+        if role != "superadmin":
+            await send_max_msg(event, "Команда доступна только для суперадмина.")
+            return
+        await send_max_msg(event, "Для создания резервной копии используйте веб-интерфейс или SSH.")
+        return
+
+    if text.startswith("/logs"):
+        role = await _resolve_user_role_max(pseudo_tg_id)
+        if role != "superadmin":
+            await send_max_msg(event, "Команда доступна только для суперадмина.")
+            return
+        await send_max_msg(event, "Журнал действий доступен в веб-интерфейсе: Админка → Журнал.")
         return
 
     if text.startswith("/schedule"):

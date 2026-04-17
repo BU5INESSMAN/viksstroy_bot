@@ -49,7 +49,18 @@ WEB_APP_URL = "https://miniapp.viks22.ru"
 # (see web/services/bot_commands.py for the intended map). Commands in the
 # intended map but absent here are silently omitted from the /start and
 # fallback-handler output; a warning is logged at startup.
-TG_AVAILABLE_COMMANDS = {"/start", "/order", "/schedule"}
+TG_AVAILABLE_COMMANDS = {
+    "/start", "/help", "/profile",
+    "/order", "/myorders", "/schedule",
+    "/review", "/broadcast", "/debtors",
+    "/backup", "/logs",
+}
+
+# Role rank mirrors ROLE_RANK in services/bot_commands.py — kept local for cheap gating
+_TG_ROLE_RANK = {
+    "driver": 1, "worker": 2, "brigadier": 3,
+    "foreman": 4, "moderator": 5, "boss": 6, "superadmin": 7,
+}
 
 
 async def _resolve_user_role_tg(tg_id: int) -> str:
@@ -1230,6 +1241,89 @@ async def backup_database():
         logger.info("Бэкап БД создан.")
     except Exception as e:
         logger.error(f"Ошибка бэкапа: {e}")
+
+
+# ─────────────────────────────────────────────────────────────
+# v2.4 FIX 13: implement the commands listed in bot_commands.py
+# that previously had no handler. Each does a role check and
+# delegates to the shared text builders so MAX and TG show the
+# same output. Registered BEFORE the catch-all fallback below.
+# ─────────────────────────────────────────────────────────────
+
+def _tg_min_rank(role: str, floor_role: str) -> bool:
+    return _TG_ROLE_RANK.get(role, 0) >= _TG_ROLE_RANK.get(floor_role, 99)
+
+
+@dp.message(Command("help"))
+async def cmd_help(message: types.Message):
+    role = await _resolve_user_role_tg(message.from_user.id)
+    await message.answer(format_commands_message(role, TG_AVAILABLE_COMMANDS))
+
+
+@dp.message(Command("profile"))
+async def cmd_profile(message: types.Message):
+    from services.bot_commands import get_user_profile_text
+    real_id = await resolve_id(message.from_user.id)
+    text = await get_user_profile_text(db, real_id)
+    await message.answer(text)
+
+
+@dp.message(Command("myorders"))
+async def cmd_myorders(message: types.Message):
+    role = await _resolve_user_role_tg(message.from_user.id)
+    if not _tg_min_rank(role, "foreman"):
+        await message.answer("Команда доступна только для прорабов и выше.")
+        return
+    from services.bot_commands import get_my_orders_text
+    real_id = await resolve_id(message.from_user.id)
+    await message.answer(await get_my_orders_text(db, real_id))
+
+
+@dp.message(Command("review"))
+async def cmd_review(message: types.Message):
+    role = await _resolve_user_role_tg(message.from_user.id)
+    if not _tg_min_rank(role, "moderator"):
+        await message.answer("Команда доступна только для модераторов и выше.")
+        return
+    from services.bot_commands import get_review_text
+    await message.answer(await get_review_text(db))
+
+
+@dp.message(Command("debtors"))
+async def cmd_debtors(message: types.Message):
+    role = await _resolve_user_role_tg(message.from_user.id)
+    if not _tg_min_rank(role, "moderator"):
+        await message.answer("Команда доступна только для модераторов и выше.")
+        return
+    from services.bot_commands import get_debtors_text
+    await message.answer(await get_debtors_text(db))
+
+
+@dp.message(Command("broadcast"))
+async def cmd_broadcast(message: types.Message):
+    role = await _resolve_user_role_tg(message.from_user.id)
+    if not _tg_min_rank(role, "moderator"):
+        await message.answer("Команда доступна только для модераторов и выше.")
+        return
+    await message.answer("Для рассылки используйте веб-интерфейс: Админка → Рассылка.")
+
+
+@dp.message(Command("backup"))
+async def cmd_backup(message: types.Message):
+    role = await _resolve_user_role_tg(message.from_user.id)
+    if role != "superadmin":
+        await message.answer("Команда доступна только для суперадмина.")
+        return
+    await message.answer("Для создания резервной копии используйте веб-интерфейс или SSH.")
+
+
+@dp.message(Command("logs"))
+async def cmd_logs(message: types.Message):
+    role = await _resolve_user_role_tg(message.from_user.id)
+    if role != "superadmin":
+        await message.answer("Команда доступна только для суперадмина.")
+        return
+    await message.answer("Журнал действий доступен в веб-интерфейсе: Админка → Журнал.")
 
 
 # ─────────────────────────────────────────────────────────────
