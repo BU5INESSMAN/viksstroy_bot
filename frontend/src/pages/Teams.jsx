@@ -141,7 +141,11 @@ export default function Teams() {
             {/* МОДАЛКИ ОСТАЮТСЯ БЕЗ ИЗМЕНЕНИЙ */}
             <CreateTeamModal isTeamModalOpen={isTeamModalOpen} setTeamModalOpen={setTeamModalOpen} newTeamName={newTeamName} setNewTeamName={setNewTeamName} handleCreateTeam={handleCreateTeam} />
 
-            <ManageTeamModal isManageModalOpen={isManageModalOpen} setManageModalOpen={setManageModalOpen} manageTeamData={manageTeamData} canManage={canManage} generateInvite={generateInvite} newMember={newMember} setNewMember={setNewMember} handleAddMember={handleAddMember} toggleForeman={toggleForeman} handleUnlinkMember={handleUnlinkMember} deleteMember={deleteMember} openProfile={openProfile} tgId={tgId} onRefresh={() => manageTeamData && openManageModal(manageTeamData.id)} />
+            {/* v2.4.1 FIX 6: onRefresh refetches the team list (so the card
+                shows the new icon) AND re-opens the manage modal with fresh
+                data. Previously only the modal was refreshed — the list
+                behind it kept the stale icon. */}
+            <ManageTeamModal isManageModalOpen={isManageModalOpen} setManageModalOpen={setManageModalOpen} manageTeamData={manageTeamData} canManage={canManage} generateInvite={generateInvite} newMember={newMember} setNewMember={setNewMember} handleAddMember={handleAddMember} toggleForeman={toggleForeman} handleUnlinkMember={handleUnlinkMember} deleteMember={deleteMember} openProfile={openProfile} tgId={tgId} onRefresh={() => { fetchData(); if (manageTeamData) openManageModal(manageTeamData.id); }} />
 
             <TeamInviteModal inviteInfo={inviteInfo} setInviteInfo={setInviteInfo} copiedLink={copiedLink} setCopiedLink={setCopiedLink} />
             <TeamStatsModal isOpen={!!statsTeam} onClose={() => setStatsTeam(null)} team={statsTeam} tgId={tgId} />
