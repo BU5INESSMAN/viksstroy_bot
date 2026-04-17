@@ -27,22 +27,38 @@ logger = logging.getLogger("SCHEDULE_GEN")
 # ─────────────────────────────────────────────
 def _object_cell(pairs: list[tuple[str, str]]):
     """Collapse a list of (name, address) pairs into the cell value used by
-    the renderer. Single pair → dict with two lines; multiple → merged
-    names on one line (no room for N addresses)."""
+    the renderer. Address is intentionally ignored — schedule shows only
+    object names."""
     if not pairs:
         return ""
-    uniq: list[tuple[str, str]] = []
-    seen: set[tuple[str, str]] = set()
-    for p in pairs:
-        if p not in seen:
-            seen.add(p)
-            uniq.append(p)
-    if len(uniq) == 1:
-        name, addr = uniq[0]
-        if addr:
-            return {"name": name, "address": addr}
-        return name
-    return ", ".join(p[0] for p in uniq)
+    uniq_names: list[str] = []
+    seen: set[str] = set()
+    for name, _addr in pairs:
+        if name and name not in seen:
+            seen.add(name)
+            uniq_names.append(name)
+    return ", ".join(uniq_names)
+
+
+def _get_status_label(member: dict, target_date: str) -> str:
+    """Return display label for employee status. Always returns a label, never empty or dash."""
+    status = (member.get('status') or '').strip()
+
+    # Check date range — if status has expired or not yet active, treat as available
+    if status and status != 'available':
+        status_until = member.get('status_until', '') or ''
+        status_from = member.get('status_from', '') or ''
+        if status_until and status_until < target_date:
+            status = 'available'  # expired
+        if status_from and status_from > target_date:
+            status = 'available'  # not yet active
+
+    STATUS_LABELS = {
+        'vacation': 'Отп',
+        'sick': 'Бол',
+        'repair': 'Рем',
+    }
+    return STATUS_LABELS.get(status, 'Акт')  # default is always 'Акт'
 
 
 def _load_font(size: int, bold: bool = False):
@@ -174,7 +190,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
             rows.append({
                 "name": fio or "—",
                 "role": label,
-                "status": "Акт" if objs else "—",
+                "status": _get_status_label({}, target_date),
                 "object": _object_cell(objs),
             })
         sections.append({"title": "ПРОРАБЫ", "rows": rows})
@@ -182,18 +198,6 @@ async def _fetch_schedule_sections(target_date: str) -> list:
     # ── Бригады (машины) ─────────────────────
     async with db.conn.execute("SELECT id, name FROM teams ORDER BY name") as cur:
         teams = await cur.fetchall()
-
-    def _status_active(status: str, status_from: str, status_until: str) -> bool:
-        """v2.4 FIX 12: honour both status_from and status_until boundaries
-        so Отп/Бол are shown for ALL team members on the right days — not
-        only those assigned to an application."""
-        if not status or status == "available":
-            return False
-        if status_from and status_from > target_date:
-            return False  # starts later
-        if status_until and status_until < target_date:
-            return False  # already ended
-        return True
 
     for tid, tname in teams:
         async with db.conn.execute(
@@ -207,21 +211,15 @@ async def _fetch_schedule_sections(target_date: str) -> list:
         rows = []
         for mid, fio, pos, m_status, m_status_from, m_status_until in members:
             objs = member_objs.get(mid, [])
-            m_status = m_status or "available"
-            active = _status_active(m_status, m_status_from, m_status_until)
-            # Determine display status: vacation/sick override attendance
-            if m_status == "vacation" and active:
-                display_status = "Отп"
-            elif m_status == "sick" and active:
-                display_status = "Бол"
-            elif objs:
-                display_status = "Акт"
-            else:
-                display_status = "—"
+            member = {
+                'status': m_status,
+                'status_from': m_status_from,
+                'status_until': m_status_until,
+            }
             rows.append({
                 "name": fio or "—",
                 "role": pos or "—",
-                "status": display_status,
+                "status": _get_status_label(member, target_date),
                 "object": _object_cell(objs),
             })
         sections.append({"title": tname, "rows": rows})
@@ -237,16 +235,10 @@ async def _fetch_schedule_sections(target_date: str) -> list:
     for eid, ename, cat, driver, eq_status in equip_rows:
         cat = cat or "Прочая техника"
         objs = equip_objs.get(eid, [])
-        if eq_status == "repair":
-            display_status = "Рем"
-        elif objs:
-            display_status = "Акт"
-        else:
-            display_status = "—"
         eq_cats.setdefault(cat, []).append({
             "name": driver or "—",
             "role": ename or "—",
-            "status": display_status,
+            "status": _get_status_label({'status': eq_status}, target_date),
             "object": _object_cell(objs),
         })
 
@@ -279,17 +271,13 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
     """Рисует таблицу-расстановку в стиле Excel и возвращает PNG-буфер."""
     font = _load_font(14, bold=False)
     font_bold = _load_font(14, bold=True)
-    # Меньший шрифт для адреса под названием объекта
-    font_small = _load_font(11, bold=False)
 
     # Ширины колонок: ФИО | Должность | Статус | Объект
     COL_W = [200, 270, 50, 240]
     TABLE_W = sum(COL_W)
     ROW_H = 20
-    ROW_H_TALL = 34  # higher row when the object column shows name+address
     PX = 4   # padding-x
     PY = 2   # padding-y
-    GRAY = (120, 120, 120)
 
     YELLOW = (255, 242, 204)   # #FFF2CC
     BLACK = (0, 0, 0)
@@ -301,7 +289,6 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
         "Отп": (183, 149, 11),     # Dark yellow
         "Бол": (198, 40, 40),      # Dark red
         "Рем": (198, 40, 40),      # Dark red
-        "—":   (149, 165, 166),    # Gray
     }
 
     # Дата для отображения
@@ -312,15 +299,10 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
         display_date = date_str
 
     # Считаем высоту: 1 строка (дата) + для каждой секции (заголовок + строки).
-    # Высота строки зависит от того, нужна ли вторая линия (адрес).
-    def _row_h(val) -> int:
-        return ROW_H_TALL if isinstance(val, dict) and val.get("address") else ROW_H
-
     img_h = ROW_H  # date row
     for s in sections:
         img_h += ROW_H  # section header
-        for r in s["rows"]:
-            img_h += _row_h(r.get("object"))
+        img_h += ROW_H * len(s["rows"])
     img_h += 1
 
     img = Image.new("RGB", (TABLE_W + 1, img_h), WHITE)
@@ -346,34 +328,23 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
 
         # ── Строки данных ──
         for row in section["rows"]:
-            obj_val = row.get("object", "")
-            this_row_h = ROW_H_TALL if isinstance(obj_val, dict) and obj_val.get("address") else ROW_H
-
             x = 0
-            vals = [row["name"], row["role"], str(row["status"]), obj_val]
+            vals = [row["name"], row["role"], str(row["status"]), row.get("object", "")]
             for ci, val in enumerate(vals):
-                draw.rectangle([x, y, x + COL_W[ci], y + this_row_h], fill=WHITE, outline=BLACK)
+                draw.rectangle([x, y, x + COL_W[ci], y + ROW_H], fill=WHITE, outline=BLACK)
                 if ci == 2:  # Status column — centered, color-coded
                     clipped = _clip_text(draw, str(val), font, COL_W[ci] - PX * 2)
                     text_color = STATUS_COLORS.get(clipped, BLACK)
                     status_font = font_bold if clipped in ("Акт", "Отп", "Бол", "Рем") else font
                     bb = draw.textbbox((0, 0), clipped, font=status_font)
                     cx = x + (COL_W[ci] - (bb[2] - bb[0])) // 2
-                    cy = y + (this_row_h - (bb[3] - bb[1])) // 2 - 2
+                    cy = y + (ROW_H - (bb[3] - bb[1])) // 2 - 2
                     draw.text((cx, cy), clipped, fill=text_color, font=status_font)
-                elif ci == 3 and isinstance(val, dict):
-                    # Object column: two lines — name (normal) + address (small gray)
-                    name_clipped = _clip_text(draw, val.get("name", ""), font, COL_W[ci] - PX * 2)
-                    addr_clipped = _clip_text(draw, val.get("address", ""), font_small, COL_W[ci] - PX * 2)
-                    draw.text((x + PX, y + PY), name_clipped, fill=BLACK, font=font)
-                    draw.text((x + PX, y + PY + 16), addr_clipped, fill=GRAY, font=font_small)
                 else:
                     clipped = _clip_text(draw, str(val), font, COL_W[ci] - PX * 2)
-                    # Vertically center single-line text when the row is tall
-                    y_text = y + PY if this_row_h == ROW_H else y + (this_row_h - 14) // 2
-                    draw.text((x + PX, y_text), clipped, fill=BLACK, font=font)
+                    draw.text((x + PX, y + PY), clipped, fill=BLACK, font=font)
                 x += COL_W[ci]
-            y += this_row_h
+            y += ROW_H
 
     img = img.crop((0, 0, TABLE_W + 1, y + 1))
 

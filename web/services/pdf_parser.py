@@ -46,6 +46,31 @@ def parse_smr_pdf(file_path: str) -> dict:
     }
 
 
+# v2.4.1 FIX 5: table-header tokens — if the regex-captured name/address
+# contains any of these, we cut the string at the first occurrence so
+# metadata text doesn't leak in.
+_TABLE_HEADER_TOKENS = [
+    '№пп', '№ пп', 'п/п', 'N п/п',
+    'Наименование',
+    'Ед.изм', 'Ед. изм', 'Ед.изм.', 'Ед изм',
+    'Кол-во', 'Кол - во', 'Кол.во', 'Количество',
+    'Цена', 'Стоимость', 'Сумма',
+    'Всего', 'Итого',
+]
+
+
+def _strip_table_tail(s: str) -> str:
+    """Cut everything starting at the first table-header token we find."""
+    if not s:
+        return s
+    cut_at = len(s)
+    for tok in _TABLE_HEADER_TOKENS:
+        idx = s.find(tok)
+        if idx != -1 and idx < cut_at:
+            cut_at = idx
+    return s[:cut_at].strip().strip('"\u201C\u201D').strip().rstrip('.,;')
+
+
 def _extract_object_info(full_text: str):
     """Extract object name and address from various PDF header formats."""
     # Normalize whitespace for reliable matching
@@ -59,7 +84,7 @@ def _extract_object_info(full_text: str):
     if m:
         name = m.group(1).strip().rstrip('.,;')
         addr = m.group(2).strip().split('\n')[0].rstrip('.,;')
-        return name, addr
+        return _strip_table_tail(name), _strip_table_tail(addr)
 
     # Pattern 2: "по адресу:" standalone (earlier broad pattern)
     m = re.search(r'(.{5,300}?)\s*по адресу\s*[:\-–]\s*(.+?)(?:\n|$)', text, re.IGNORECASE)
@@ -67,7 +92,7 @@ def _extract_object_info(full_text: str):
         raw_name = m.group(1).strip()
         raw_addr = m.group(2).strip().split('\n')[0].rstrip('.,;')
         name = re.sub(r'^.*?(?:объект[аеу]?\s*[:\-–]?\s*|на\s+)', '', raw_name, flags=re.IGNORECASE).strip() or raw_name
-        return name.rstrip('.,;'), raw_addr
+        return _strip_table_tail(name.rstrip('.,;')), _strip_table_tail(raw_addr)
 
     # Pattern 3: "на объекте: NAME" without "по адресу"
     m = re.search(
@@ -86,12 +111,12 @@ def _extract_object_info(full_text: str):
             addr = raw[len(addr_m.group(0)):].strip().lstrip('.,;').strip()
             if not addr:
                 addr = raw[len(name):].strip().lstrip('.,;').strip()
-            return name, addr
+            return _strip_table_tail(name), _strip_table_tail(addr)
         # Try parenthesized address: "NAME (ADDRESS)"
         paren_m = re.match(r'^(.+?)\s*\((.+?)\)\s*$', raw)
         if paren_m:
-            return paren_m.group(1).strip(), paren_m.group(2).strip()
-        return raw[:150], ""
+            return _strip_table_tail(paren_m.group(1).strip()), _strip_table_tail(paren_m.group(2).strip())
+        return _strip_table_tail(raw[:150]), ""
 
     # Pattern 4: "Капитальный ремонт / Строительство / Реконструкция ..."
     m = re.search(
@@ -103,7 +128,7 @@ def _extract_object_info(full_text: str):
         parts = re.split(r'\s+по\s+(?=ул|пр|пер)', full, maxsplit=1)
         name = parts[0].strip()[:150]
         addr = ("по " + parts[1].strip()[:200]) if len(parts) > 1 else ""
-        return name, addr
+        return _strip_table_tail(name), _strip_table_tail(addr)
 
     return "", ""
 
