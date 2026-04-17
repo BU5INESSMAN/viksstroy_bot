@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Save, Trash2 } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import useEnterToSubmit from '../../../hooks/useEnterToSubmit';
 
 export default function EditEquipmentModal({ equipment, categories, onClose, onUpdate }) {
     const [form, setForm] = useState({
@@ -12,6 +13,8 @@ export default function EditEquipmentModal({ equipment, categories, onClose, onU
     });
     const [saving, setSaving] = useState(false);
     const [confirmDelete, setConfirmDelete] = useState(false);
+
+    useEnterToSubmit(!confirmDelete, () => handleSave());
 
     const handleSave = async () => {
         if (!form.name.trim() || !form.category.trim()) {

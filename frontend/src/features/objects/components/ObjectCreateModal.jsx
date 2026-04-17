@@ -5,6 +5,7 @@ import {
     X, MapPin, FileUp, AlertCircle, CheckCheck, Trash2,
     Search, Check, ClipboardList,
 } from 'lucide-react';
+import useEnterToSubmit from '../../../hooks/useEnterToSubmit';
 
 /**
  * ObjectCreateModal
@@ -66,6 +67,8 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
     };
 
     const handleClose = () => { reset(); onClose(); };
+
+    useEnterToSubmit(true, () => handleCreate());
 
     const handleCreate = async (e) => {
         if (e) e.preventDefault();

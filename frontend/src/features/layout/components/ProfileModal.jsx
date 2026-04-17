@@ -7,6 +7,7 @@ import {
     Send, Smartphone, MessageCircle, Bell, UserPlus, LogOut, ChevronRight
 } from 'lucide-react';
 import useConfirm from '../../../hooks/useConfirm';
+import useEnterToSubmit from '../../../hooks/useEnterToSubmit';
 import { clearAuthData } from '../../../utils/tokenStorage';
 import { unsubscribeFromPush } from '../../../utils/pushSubscription';
 import { displayFio } from '../../../utils/fioFormat';
@@ -33,6 +34,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
     const [linkingInProgress, setLinkingInProgress] = useState(false);
     const [saving, setSaving] = useState(false);
     const { confirm, ConfirmUI } = useConfirm();
+    useEnterToSubmit(!profileData.unregistered && (canEditUsers || isMyProfile), () => handleSave());
 
     // Baseline for dirty-diff on save — captured once per opened profile
     const [initial, setInitial] = useState(() => ({
