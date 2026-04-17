@@ -109,8 +109,8 @@ export default function MyApps() {
                                         <CalendarIcon className="w-3.5 h-3.5" /> {app.date_target}
                                     </div>
                                     <ObjectDisplay
-                                        name={app.object_name || app.object_address}
-                                        address={app.object_name ? app.object_address : ''}
+                                        name={app.object_name}
+                                        address={app.object_address}
                                         nameClassName="font-bold dark:text-white text-base leading-tight group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate"
                                     />
 

@@ -138,8 +138,8 @@ export default function Review() {
 
                     <div className="mb-3">
                         <ObjectDisplay
-                            name={app.object_name || app.object_address}
-                            address={app.object_name ? app.object_address : ''}
+                            name={app.object_name}
+                            address={app.object_address}
                             nameClassName="font-bold dark:text-white text-base group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate leading-tight"
                         />
                     </div>
@@ -279,8 +279,8 @@ export default function Review() {
                                         </label>
                                         <div className="bg-gray-50 dark:bg-gray-700/50 p-4 rounded-xl border border-gray-100 dark:border-gray-600/50">
                                             <ObjectDisplay
-                                                name={selectedApp.object_name || selectedApp.object_address}
-                                                address={selectedApp.object_name ? selectedApp.object_address : ''}
+                                                name={selectedApp.object_name}
+                                                address={selectedApp.object_address}
                                                 showIcon={false}
                                                 nameClassName="font-bold text-gray-800 dark:text-gray-100 leading-snug"
                                                 addressClassName="text-sm text-gray-500 dark:text-gray-400 leading-snug mt-1"

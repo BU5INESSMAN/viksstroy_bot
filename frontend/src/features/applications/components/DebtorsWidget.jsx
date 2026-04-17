@@ -97,8 +97,8 @@ export default function DebtorsWidget({ debtors, tgId, onHide }) {
                                             <ObjectDisplay
                                                 variant="inline"
                                                 showIcon={false}
-                                                name={s.object_name || s.object_address}
-                                                address={s.object_name ? s.object_address : ''}
+                                                name={s.object_name}
+                                                address={s.object_address}
                                                 nameClassName="text-red-600/80 dark:text-red-400/80 truncate"
                                                 addressClassName="text-red-400 dark:text-red-500/70 truncate"
                                             />

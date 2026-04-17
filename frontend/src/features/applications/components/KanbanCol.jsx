@@ -57,8 +57,8 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                         <motion.div key={a.id} variants={prefersReducedMotion ? {} : staggerItem} transition={{ duration: 0.2 }} onClick={() => onAppClick(a)} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500 text-sm cursor-pointer transition-all duration-200 group active:scale-[0.98]">
                             <div className="mb-1.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                                 <ObjectDisplay
-                                    name={a.object_name || a.object_address}
-                                    address={a.object_name ? a.object_address : ''}
+                                    name={a.object_name}
+                                    address={a.object_address}
                                     nameClassName="font-bold text-gray-800 dark:text-gray-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 truncate leading-tight"
                                 />
                             </div>

@@ -19,14 +19,34 @@ async def ensure_app_columns():
     await db.conn.commit()
 
 
+def _split_legacy_object_address(merged: str):
+    """v2.4.2 FIX 4: legacy `applications.object_address` was stored as
+    'Name (Address)'. Split into (name, address) so the frontend can
+    render two lines even for old rows whose object was deleted or was
+    never linked via object_id. Returns (name, address) tuple.
+    """
+    if not merged:
+        return '', ''
+    s = merged.strip()
+    # Prefer the last '(...)' suffix — object names can contain commas
+    # or other punctuation but should not themselves end in a parenthetical.
+    if s.endswith(')') and ' (' in s:
+        lparen = s.rfind(' (')
+        name = s[:lparen].strip()
+        address = s[lparen + 2:-1].strip()
+        if name and address:
+            return name, address
+    return s, ''
+
+
 async def enrich_app_with_object_fields(app_dict):
     """Populate `object_name` and `object_address` on an application dict
     from the linked `objects` row (via `a.object_id`).
 
-    Keeps the legacy merged `object_address` column intact for bot
-    notifications if `object_id` is NULL; otherwise overrides it with the
-    clean split (`objects.name`, `objects.address`). The frontend
-    `ObjectDisplay` uses the two fields separately.
+    Overrides the legacy merged `object_address` column with the clean
+    split (`objects.name`, `objects.address`). For rows without a linked
+    object, falls back to parsing the legacy 'Name (Address)' string.
+    The frontend `ObjectDisplay` uses the two fields separately.
     """
     obj_id = app_dict.get('object_id')
     legacy = app_dict.get('object_address', '') or ''
@@ -38,15 +58,17 @@ async def enrich_app_with_object_fields(app_dict):
                 row = await cur.fetchone()
             if row:
                 name, address = row[0] or '', row[1] or ''
-                app_dict['object_name'] = name or legacy
-                app_dict['object_address'] = address
-                return
+                if name:
+                    app_dict['object_name'] = name
+                    app_dict['object_address'] = address
+                    return
         except Exception:
             pass
-    # Fallback: no object_id or missing row — show whatever we have as
-    # the name and leave the address empty.
-    app_dict['object_name'] = legacy
-    app_dict['object_address'] = ''
+    # Fallback: no object_id or missing row — split the legacy merged
+    # string so the frontend can still render name/address on two lines.
+    name, address = _split_legacy_object_address(legacy)
+    app_dict['object_name'] = name
+    app_dict['object_address'] = address
 
 
 async def enrich_app_with_members_data(app_dict):

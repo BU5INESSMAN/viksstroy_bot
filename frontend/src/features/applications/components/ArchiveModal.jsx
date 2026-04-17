@@ -143,8 +143,8 @@ export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
                                                     <div key={a.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm">
                                                         <div className="mb-1">
                                                             <ObjectDisplay
-                                                                name={a.object_name || a.object_address}
-                                                                address={a.object_name ? a.object_address : ''}
+                                                                name={a.object_name}
+                                                                address={a.object_address}
                                                                 nameClassName="font-bold text-gray-800 dark:text-gray-100 truncate"
                                                             />
                                                         </div>

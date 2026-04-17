@@ -127,9 +127,11 @@ export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
     const st = getStatusBadge(app.status);
     const StIcon = statusIcons[app.status] || Clock;
 
-    // ── Object display fields (new: name + address separately) ──
-    const objName = app.object_name || app.obj_name || app.object_address;
-    const objAddress = (app.object_name || app.obj_name) ? app.object_address : '';
+    // ── Object display fields (name + address separately) ──
+    // v2.4.2 FIX 4: backend always enriches, so use clean fields directly.
+    // obj_name is the legacy alias from KP dashboard rows.
+    const objName = app.object_name || app.obj_name || '';
+    const objAddress = app.object_address || '';
 
     // ── Equipment ──
     let eqList = [];

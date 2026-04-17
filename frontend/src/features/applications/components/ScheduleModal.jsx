@@ -150,8 +150,8 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
                                                     <ObjectDisplay
                                                         variant="inline"
                                                         showIcon={false}
-                                                        name={app.object_name || app.object_address}
-                                                        address={app.object_name ? app.object_address : ''}
+                                                        name={app.object_name}
+                                                        address={app.object_address}
                                                         className="truncate"
                                                         nameClassName="text-gray-700 dark:text-gray-300 truncate"
                                                         addressClassName="text-gray-500 dark:text-gray-400 truncate"
@@ -166,8 +166,8 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
                                                     <ObjectDisplay
                                                         variant="inline"
                                                         showIcon={false}
-                                                        name={app.object_name || app.object_address}
-                                                        address={app.object_name ? app.object_address : ''}
+                                                        name={app.object_name}
+                                                        address={app.object_address}
                                                         className="truncate"
                                                         nameClassName="text-amber-800 dark:text-amber-300 truncate"
                                                         addressClassName="text-amber-600/80 dark:text-amber-400/80 truncate"

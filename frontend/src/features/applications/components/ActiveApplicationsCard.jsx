@@ -29,8 +29,8 @@ function AppCard({ a, role, tgId, openProfile, openFreeModal }) {
                     {a.date_target}
                 </div>
                 <ObjectDisplay
-                    name={a.object_name || a.object_address}
-                    address={a.object_name ? a.object_address : ''}
+                    name={a.object_name}
+                    address={a.object_address}
                     nameClassName="font-bold text-gray-800 dark:text-gray-100 leading-snug truncate"
                 />
 
