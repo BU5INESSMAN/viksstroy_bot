@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
 import TabBadge from '../components/ui/TabBadge';
+import ExtraWorksPicker from '../features/kp/components/ExtraWorksPicker';
 
 export default function KP() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -91,7 +92,7 @@ export default function KP() {
             const [res, ewRes, catRes] = await Promise.all([
                 axios.get(`/api/kp/apps/${app.id}/items`),
                 axios.get(`/api/kp/apps/${app.id}/extra_works`),
-                axios.get('/api/extra_works/catalog'),
+                axios.get('/api/kp/catalog'),
             ]);
             setKpItems(res.data.map(i => ({
                 ...i,
@@ -99,14 +100,17 @@ export default function KP() {
                 current_salary: i.saved_salary !== null ? i.saved_salary : i.salary,
                 current_price: i.saved_price !== null ? i.saved_price : i.price,
             })));
-            setExtraWorksCatalog(catRes.data);
-            setExtraWorks(ewRes.data.map(ew => ({
-                extra_work_id: ew.extra_work_id,
-                custom_name: ew.custom_name || ew.catalog_name || '',
-                volume: ew.volume || '',
+            // v2.4.3: catalog for extra works is the global KP catalog.
+            setExtraWorksCatalog(catRes.data || []);
+            // Restore existing extra works. Legacy rows may lack kp_id —
+            // in that case we keep them in view-only form via custom_name.
+            setExtraWorks((ewRes.data || []).map(ew => ({
+                kp_id: ew.extra_work_id || null,
+                name: ew.custom_name || ew.catalog_name || '',
+                unit: ew.display_unit || ew.catalog_unit || 'шт',
+                volume: ew.volume ?? '',
                 salary: ew.salary || 0,
                 price: ew.price || 0,
-                unit: ew.catalog_unit || 'шт',
             })));
         } catch (e) { toast.error("Ошибка загрузки"); setModalApp(null); }
     };
@@ -120,15 +124,25 @@ export default function KP() {
         try {
             await Promise.all([
                 axios.post(`/api/kp/apps/${modalApp.id}/submit`, {
-                    items: kpItems.map(i => ({ kp_id: i.kp_id, volume: i.volume || 0, ...(isOffice ? { salary: i.current_salary, price: i.current_price } : {}) }))
+                    items: kpItems.map(i => ({
+                        kp_id: i.kp_id,
+                        volume: i.volume || 0,
+                        ...(isOffice ? { salary: i.current_salary, price: i.current_price } : {}),
+                    })),
                 }),
                 axios.post(`/api/kp/apps/${modalApp.id}/extra_works/submit`, {
-                    items: extraWorks.filter(ew => parseFloat(ew.volume || 0) > 0).map(ew => ({
-                        extra_work_id: ew.extra_work_id,
-                        custom_name: ew.custom_name,
-                        volume: ew.volume || 0,
-                        ...(isOffice ? { salary: ew.salary, price: ew.price } : { salary: 0, price: 0 })
-                    }))
+                    items: extraWorks
+                        .filter(ew => parseFloat(ew.volume || 0) > 0)
+                        .map(ew => ({
+                            kp_id: ew.kp_id || 0,
+                            // Backend looks up name/unit/price from kp_catalog
+                            // when kp_id is set. Keep name + unit in the
+                            // payload as a fallback for legacy rows.
+                            custom_name: ew.name || '',
+                            unit: ew.unit || '',
+                            volume: ew.volume || 0,
+                            ...(isOffice ? { salary: ew.salary, price: ew.price } : {}),
+                        })),
                 }),
             ]);
             toast.success("Отчет отправлен!");
@@ -339,58 +353,16 @@ export default function KP() {
                                 </div>
                             ) : <p className="text-center text-gray-400 py-8">Работы не назначены.</p>}
 
-                            {/* Доп. работы */}
+                            {/* Доп. работы — v2.4.3 collapsible category picker */}
                             {(extraWorks.length > 0 || activeTab === 'to_fill') && (
-                                <div className="mt-6 border border-amber-200 dark:border-amber-700/50 rounded-2xl overflow-hidden">
-                                    <div className="bg-yellow-50 dark:bg-yellow-900/30 px-4 py-2 text-xs font-bold text-amber-700 dark:text-amber-400 uppercase flex items-center justify-between">
-                                        <span>Доп. работы</span>
-                                        {activeTab === 'to_fill' && (
-                                            <button onClick={() => setExtraWorks(prev => [...prev, { extra_work_id: 0, custom_name: '', volume: '', salary: 0, price: 0, unit: 'шт' }])} className="text-amber-600 dark:text-amber-400 hover:text-amber-800 transition-colors">
-                                                <Plus className="w-4 h-4" />
-                                            </button>
-                                        )}
-                                    </div>
-                                    <div className="divide-y divide-yellow-100 dark:divide-yellow-900/20">
-                                        {extraWorks.map((ew, idx) => (
-                                            <div key={idx} className="p-4 bg-yellow-50/50 dark:bg-yellow-900/10 flex flex-col sm:flex-row items-start sm:items-center gap-3">
-                                                <div className="flex-1 w-full">
-                                                    {activeTab === 'to_fill' ? (
-                                                        <select value={ew.extra_work_id || ''} onChange={(e) => {
-                                                            const catItem = extraWorksCatalog.find(c => c.id === parseInt(e.target.value));
-                                                            setExtraWorks(prev => prev.map((item, i) => i === idx ? {
-                                                                ...item,
-                                                                extra_work_id: catItem ? catItem.id : 0,
-                                                                custom_name: catItem ? catItem.name : '',
-                                                                unit: catItem ? catItem.unit : 'шт',
-                                                                salary: catItem ? catItem.salary : 0,
-                                                                price: catItem ? catItem.price : 0,
-                                                            } : item));
-                                                        }} className="w-full p-2 text-sm font-medium border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-white">
-                                                            <option value="">Выберите работу...</option>
-                                                            {extraWorksCatalog.map(c => <option key={c.id} value={c.id}>{c.name} ({c.unit})</option>)}
-                                                        </select>
-                                                    ) : (
-                                                        <div>
-                                                            <p className="font-bold text-sm text-gray-800 dark:text-gray-100">{ew.custom_name}</p>
-                                                            {isOffice && <p className="text-[10px] text-gray-400 mt-1">ЗП: {ew.salary}₽ · Цена: {ew.price}₽ / {ew.unit}</p>}
-                                                        </div>
-                                                    )}
-                                                </div>
-                                                <div className="flex items-center gap-2">
-                                                    <input type="number" min="0" step="0.1" disabled={activeTab !== 'to_fill' && !(activeTab === 'approved' && isOffice) && !(activeTab === 'pending_review' && isEditing)} value={ew.volume} onChange={(e) => setExtraWorks(prev => prev.map((item, i) => i === idx ? { ...item, volume: e.target.value } : item))} className="w-20 p-2 text-center font-bold border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-white" />
-                                                    <span className="text-[10px] font-bold text-gray-400">{ew.unit}</span>
-                                                    {activeTab === 'to_fill' && (
-                                                        <button onClick={() => setExtraWorks(prev => prev.filter((_, i) => i !== idx))} className="text-red-400 hover:text-red-600 transition-colors p-1">
-                                                            <Trash2 className="w-4 h-4" />
-                                                        </button>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        ))}
-                                        {extraWorks.length === 0 && activeTab !== 'to_fill' && (
-                                            <p className="text-center text-gray-400 text-xs py-3">Нет доп. работ</p>
-                                        )}
-                                    </div>
+                                <div className="mt-6">
+                                    <ExtraWorksPicker
+                                        catalog={extraWorksCatalog}
+                                        selected={extraWorks}
+                                        onChange={setExtraWorks}
+                                        disabled={activeTab !== 'to_fill' && !(activeTab === 'approved' && isOffice) && !(activeTab === 'pending_review' && isEditing)}
+                                        defaultOpen={extraWorks.length > 0}
+                                    />
                                 </div>
                             )}
                         </div>

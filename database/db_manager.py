@@ -118,6 +118,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_user_fio_split()
         await self.upgrade_db_for_icon_settings()
         await self.upgrade_db_for_smr_units()
+        await self.upgrade_application_extra_works_unit()
         await self.repair_catalog_units_if_numeric()
         await self.sync_worker_specialties()
 
@@ -485,6 +486,18 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
                 logging.info(f"SMR units migration: backfilled {app_n} rows in application_kp")
         except Exception as e:
             logging.error(f"SMR units migration (application_kp) failed: {e}")
+
+    async def upgrade_application_extra_works_unit(self):
+        """v2.4.3: extra works now pick from kp_catalog so each row needs a
+        denormalized unit. Also switches the picker source, but existing
+        rows carry their custom_name + unit forward unchanged."""
+        try:
+            await self.conn.execute(
+                "ALTER TABLE application_extra_works ADD COLUMN unit TEXT DEFAULT ''"
+            )
+            await self.conn.commit()
+        except Exception:
+            pass
 
     async def repair_catalog_units_if_numeric(self):
         """v2.4.3: older parser read unit from col F (old_salary) instead of
