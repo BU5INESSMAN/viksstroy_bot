@@ -118,6 +118,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.upgrade_db_for_user_fio_split()
         await self.upgrade_db_for_icon_settings()
         await self.upgrade_db_for_smr_units()
+        await self.repair_catalog_units_if_numeric()
         await self.sync_worker_specialties()
 
         # Employee status columns on team_members
@@ -484,6 +485,81 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
                 logging.info(f"SMR units migration: backfilled {app_n} rows in application_kp")
         except Exception as e:
             logging.error(f"SMR units migration (application_kp) failed: {e}")
+
+    async def repair_catalog_units_if_numeric(self):
+        """v2.4.3: older parser read unit from col F (old_salary) instead of
+        col G, so kp_catalog.unit is full of numeric values for affected
+        installs. If ANY row has a numeric-looking unit, re-parse the last
+        uploaded catalog file with the fixed parser. If no file is on
+        disk, scrub the junk so the UI stops rendering numbers-as-units.
+        """
+        try:
+            async with self.conn.execute(
+                "SELECT COUNT(*) FROM kp_catalog WHERE unit GLOB '[0-9]*'"
+            ) as cur:
+                row = await cur.fetchone()
+                bad_count = row[0] if row else 0
+        except Exception:
+            return
+
+        if not bad_count:
+            return
+
+        logging.warning(
+            f"kp_catalog: found {bad_count} rows with numeric unit values — "
+            "attempting auto-repair from last uploaded catalog file"
+        )
+
+        # Try to re-import from the last uploaded Excel on disk.
+        try:
+            path = self.get_latest_catalog_path()
+            if path and os.path.exists(path):
+                # Clear bad units first so the UPSERT can overwrite them cleanly.
+                await self.conn.execute(
+                    "UPDATE kp_catalog SET unit = '' WHERE unit GLOB '[0-9]*'"
+                )
+                await self.conn.commit()
+                ok = await self.import_kp_from_excel(path)
+                if ok:
+                    logging.info(
+                        f"kp_catalog: auto-repaired from {os.path.basename(path)}"
+                    )
+                else:
+                    logging.error(
+                        "kp_catalog: re-import failed — units cleared but NOT re-populated"
+                    )
+            else:
+                # No file on disk — at least scrub the junk.
+                await self.conn.execute(
+                    "UPDATE kp_catalog SET unit = '' WHERE unit GLOB '[0-9]*'"
+                )
+                await self.conn.commit()
+                logging.warning(
+                    "kp_catalog: no catalog file on disk — junk unit values cleared. "
+                    "Admin must re-upload the catalog to restore unit strings."
+                )
+        except Exception as e:
+            logging.error(f"kp_catalog auto-repair failed: {e}")
+            return
+
+        # Re-run unit backfill on object_kp_plan + application_kp so the
+        # newly fixed catalog values propagate to plan and history rows.
+        for tbl, id_col in (("object_kp_plan", "kp_id"), ("application_kp", "kp_id")):
+            try:
+                await self.conn.execute(
+                    f"""UPDATE {tbl}
+                        SET unit = (
+                            SELECT kc.unit FROM kp_catalog kc
+                            WHERE kc.id = {tbl}.{id_col}
+                              AND kc.unit IS NOT NULL AND kc.unit != ''
+                              AND kc.unit NOT GLOB '[0-9]*'
+                        )
+                        WHERE (unit IS NULL OR unit = '' OR unit GLOB '[0-9]*')
+                          AND {id_col} IS NOT NULL"""
+                )
+                await self.conn.commit()
+            except Exception as e:
+                logging.error(f"{tbl} unit re-backfill failed: {e}")
 
     async def upgrade_db_for_icon_settings(self):
         """Stage 6: icon column on teams + equipment_category_settings table."""

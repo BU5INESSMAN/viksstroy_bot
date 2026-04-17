@@ -168,37 +168,66 @@ class KpRepoMixin:
                     return ''
                 return s
 
+            # v2.4.3 Column mapping for sheet "СМР":
+            #   A (0) = coefficient, B (1) = multiplier (unused),
+            #   C (2) = base price,  D (3) = work name,
+            #   E (4) = price w/VAT, F (5) = old salary,
+            #   G (6) = unit (шт/м/м2/…), H (7) = new salary.
+            # Category rows: value in D, no value in G. Work rows: both.
+            def _num(s):
+                if not s:
+                    return None
+                try:
+                    return float(s.replace(',', '.'))
+                except ValueError:
+                    return None
+
             current_category = "Без категории"
             for index, row in df.iterrows():
                 if index < 2: continue
 
                 col_name = _clean(row[3])
-                col_unit = _clean(row[5])
-                col_zp = _clean(row[7])
-                col_coef = _clean(row[2])
-                col_old = _clean(row[4])
+                col_unit = _clean(row[6]) if len(row) > 6 else ''
+                col_price = _clean(row[2])
+                col_old_salary = _clean(row[5]) if len(row) > 5 else ''
+                col_salary = _clean(row[7]) if len(row) > 7 else ''
+                col_coef = _clean(row[0])
 
-                if col_name and not col_zp and not col_unit:
+                # If the stray "nan"/"None" leaked in, _clean already
+                # normalized to ''. Guard against numeric-looking unit
+                # strings (defensive — the correct column should be text).
+                if col_unit and col_unit.replace('.', '', 1).replace(',', '', 1).isdigit():
+                    col_unit = ''
+
+                # Category row: has a name but no unit.
+                if col_name and not col_unit:
                     current_category = col_name
                     continue
 
-                if col_name and col_zp and col_zp.replace('.', '', 1).isdigit():
-                    salary = float(col_zp)
-                    price = salary * 4
-                    coef = float(col_coef) if col_coef.replace('.', '', 1).isdigit() else 0.0
-                    old_salary = float(col_old) if col_old.replace('.', '', 1).isdigit() else salary
+                # Work row: must have name, unit, and a numeric salary.
+                salary = _num(col_salary)
+                if not col_name or not col_unit or salary is None:
+                    continue
 
-                    key = (current_category, col_name)
-                    if key in existing:
-                        await self.conn.execute("""
-                            UPDATE kp_catalog SET unit=?, coefficient=?, salary=?, price=?, old_salary=?
-                            WHERE id=?
-                            """, (col_unit, coef, salary, price, old_salary, existing[key]))
-                    else:
-                        await self.conn.execute("""
-                            INSERT INTO kp_catalog (category, name, unit, coefficient, salary, price, old_salary)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                            """, (current_category, col_name, col_unit, coef, salary, price, old_salary))
+                price = _num(col_price)
+                if price is None:
+                    price = salary * 4  # fallback for rows missing base price
+                coef = _num(col_coef) or 0.0
+                old_salary = _num(col_old_salary)
+                if old_salary is None:
+                    old_salary = salary
+
+                key = (current_category, col_name)
+                if key in existing:
+                    await self.conn.execute("""
+                        UPDATE kp_catalog SET unit=?, coefficient=?, salary=?, price=?, old_salary=?
+                        WHERE id=?
+                        """, (col_unit, coef, salary, price, old_salary, existing[key]))
+                else:
+                    await self.conn.execute("""
+                        INSERT INTO kp_catalog (category, name, unit, coefficient, salary, price, old_salary)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """, (current_category, col_name, col_unit, coef, salary, price, old_salary))
 
             await self.conn.commit()
             logging.info(f"Справочник КП обновлен из файла: {file_path}")
