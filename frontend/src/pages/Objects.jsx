@@ -250,17 +250,19 @@ export default function Objects() {
                 {objects.map(obj => (
                     <div
                         key={obj.id}
-                        className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between hover:shadow-md transition-all"
+                        className="bg-white dark:bg-gray-800 p-6 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 flex flex-col justify-between hover:shadow-md transition-all overflow-hidden min-w-0"
                     >
-                        <div className="mb-6">
-                            <div className="flex justify-between items-start mb-2 gap-2">
-                                <ObjectDisplay
-                                    name={obj.name}
-                                    address={obj.address}
-                                    showIcon={false}
-                                    nameClassName="font-bold text-xl text-gray-800 dark:text-white leading-tight truncate"
-                                    addressClassName="text-sm text-gray-500 dark:text-gray-400 truncate mt-1"
-                                />
+                        <div className="mb-6 min-w-0">
+                            <div className="flex justify-between items-start mb-2 gap-2 min-w-0">
+                                <div className="min-w-0 flex-1 overflow-hidden">
+                                    <ObjectDisplay
+                                        name={(obj.name || '').trim() || '—'}
+                                        address={(obj.address || '').trim()}
+                                        showIcon={false}
+                                        nameClassName="font-bold text-xl text-gray-800 dark:text-white leading-tight truncate"
+                                        addressClassName="text-sm text-gray-500 dark:text-gray-400 truncate mt-1"
+                                    />
+                                </div>
                                 {obj.is_archived === 1 && (
                                     <span className="flex-shrink-0 bg-gray-100 text-gray-500 dark:bg-gray-700 px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider">
                                         Архив
@@ -316,7 +318,14 @@ export default function Objects() {
             {isCreateModalOpen && (
                 <ObjectCreateModal
                     onClose={() => setCreateModalOpen(false)}
-                    onCreated={fetchObjects}
+                    onCreated={() => {
+                        // v2.4.1 FIX 4: force a clean refetch + scroll to top so
+                        // the new card appears without layout flicker on mobile.
+                        fetchObjects();
+                        if (typeof window !== 'undefined') {
+                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                        }
+                    }}
                 />
             )}
 
