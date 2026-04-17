@@ -238,7 +238,10 @@ async def api_import_smr_from_pdf(obj_id: int, file: UploadFile = File(...),
     with open(perm_path, "wb") as out:
         out.write(content)
 
-    rel_path = str(perm_path.relative_to(Path("data/uploads")))
+    # v2.4.1 FIX 1: both sides must be absolute/resolved (not a mix of
+    # absolute perm_path and relative "data/uploads"). UPLOADS_ROOT is
+    # the canonical absolute base.
+    rel_path = str(perm_path.resolve().relative_to(UPLOADS_ROOT))
     db_path = f"/uploads/{rel_path.replace(os.sep, '/')}"
     try:
         await db.add_object_file(obj_id, db_path, original_name=f"СМР — {orig_name}", file_size=len(content))
@@ -385,13 +388,14 @@ async def api_download_file(file_id: int, download: int = Query(0),
     file_path_str = row[1] or ""
     original_name = row[2] or ""
 
-    # Path traversal safety — resolve inside data/ and verify
+    # Path traversal safety — both sides absolute. The stored DB path is
+    # of the form "/uploads/objects/{id}/…" so strip the leading "/" and
+    # the "uploads/" prefix then anchor at UPLOADS_ROOT.
     try:
         clean_rel = file_path_str.lstrip("/")
         if clean_rel.startswith("uploads/"):
-            resolved = (Path("data") / clean_rel).resolve()
-        else:
-            resolved = (Path("data/uploads") / clean_rel).resolve()
+            clean_rel = clean_rel[len("uploads/"):]
+        resolved = (UPLOADS_ROOT / clean_rel).resolve()
         resolved.relative_to(UPLOADS_ROOT)  # ValueError if outside
     except (ValueError, OSError):
         raise HTTPException(403, "Недопустимый путь файла")
