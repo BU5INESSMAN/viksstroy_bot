@@ -113,9 +113,21 @@ class ObjectsRepoMixin:
         """Возвращает сводную статистику: план vs факт по каждому виду работ"""
         # Stage 10: unit prefers the denormalized plan.unit, falls back to
         # catalog when the plan row's unit is still empty.
+        # v2.4.2 FIX 3: explicitly filter out 'nan'/'none'/'null' junk that
+        # legacy Excel imports left in the column, so the UI never sees them.
         query = """
             SELECT k.id as kp_id, k.category, k.name,
-                   COALESCE(NULLIF(TRIM(okp.unit), ''), k.unit, '') as unit,
+                   COALESCE(
+                       NULLIF(
+                           CASE WHEN LOWER(TRIM(okp.unit)) IN ('nan','none','null') THEN ''
+                                ELSE TRIM(okp.unit) END,
+                           ''),
+                       NULLIF(
+                           CASE WHEN LOWER(TRIM(k.unit)) IN ('nan','none','null') THEN ''
+                                ELSE TRIM(k.unit) END,
+                           ''),
+                       ''
+                   ) as unit,
                    okp.target_volume,
                    COALESCE(SUM(akp.volume), 0) as completed_volume
             FROM object_kp_plan okp
@@ -139,7 +151,17 @@ class ObjectsRepoMixin:
         # the work was reported — fall back to catalog otherwise.
         query = """
             SELECT a.id as app_id, a.date_target, k.category, k.name,
-                   COALESCE(NULLIF(TRIM(akp.unit), ''), k.unit, '') as unit,
+                   COALESCE(
+                       NULLIF(
+                           CASE WHEN LOWER(TRIM(akp.unit)) IN ('nan','none','null') THEN ''
+                                ELSE TRIM(akp.unit) END,
+                           ''),
+                       NULLIF(
+                           CASE WHEN LOWER(TRIM(k.unit)) IN ('nan','none','null') THEN ''
+                                ELSE TRIM(k.unit) END,
+                           ''),
+                       ''
+                   ) as unit,
                    akp.volume
             FROM application_kp akp
             JOIN applications a ON akp.application_id = a.id

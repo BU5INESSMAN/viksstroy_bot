@@ -1,12 +1,14 @@
 import { useState } from 'react';
 import { X, BarChart3, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 
-/** Render a catalog unit string safely. Hides empties and purely
- *  numeric values (catalog sometimes has stray numbers in the unit
- *  column — we defend against that). */
+/** Render a catalog unit string safely. Hides empties, pandas NaN
+ *  leftovers, and purely numeric values (catalog sometimes has stray
+ *  numbers in the unit column — we defend against that). */
 function formatUnit(raw) {
     const s = (raw || '').toString().trim();
     if (!s) return '—';
+    const lc = s.toLowerCase();
+    if (lc === 'nan' || lc === 'none' || lc === 'null') return '—';
     if (!Number.isNaN(Number(s.replace(',', '.')))) return '—';
     return s;
 }

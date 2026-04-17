@@ -399,10 +399,11 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             logging.error(f"Worker specialty sync failed: {e}")
 
     async def upgrade_db_for_smr_units(self):
-        """Stage 10: denormalize `unit` onto object_kp_plan + application_kp
-        so that UI reads don't require a JOIN and legacy rows keep their
-        unit even if the catalog entry is later edited. Idempotent — the
-        backfill only touches rows whose unit is empty/NULL."""
+        """Stage 10 + v2.4.2 FIX 3: denormalize `unit` onto object_kp_plan +
+        application_kp so that UI reads don't require a JOIN. Legacy rows
+        keep their unit even if the catalog entry is later edited.
+        Idempotent — backfill re-runs every startup so late fixes to the
+        catalog propagate to plan rows that still have empty/junk values."""
         for col_stmt in [
             "ALTER TABLE object_kp_plan ADD COLUMN unit TEXT DEFAULT ''",
             "ALTER TABLE application_kp ADD COLUMN unit TEXT DEFAULT ''",
@@ -413,15 +414,49 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
                 pass
         await self.conn.commit()
 
-        # Backfill object_kp_plan from kp_catalog via the kp_id FK
+        # v2.4.2 FIX 3: Excel parser used to stringify NaN → 'nan' which
+        # leaked into kp_catalog.unit. Scrub those to '' so COALESCE in
+        # subsequent queries behaves correctly, and so the backfill below
+        # reads clean source values.
+        try:
+            cur = await self.conn.execute(
+                "UPDATE kp_catalog SET unit = '' "
+                "WHERE unit IS NOT NULL AND LOWER(TRIM(unit)) IN ('nan','none','null')"
+            )
+            n = cur.rowcount if cur.rowcount is not None else 0
+            await self.conn.commit()
+            if n:
+                logging.info(f"SMR units migration: cleaned {n} junk unit values in kp_catalog")
+        except Exception as e:
+            logging.error(f"SMR units migration (kp_catalog cleanup) failed: {e}")
+
+        # v2.4.2 FIX 3: same scrub on already-denormalized rows.
+        for tbl in ('object_kp_plan', 'application_kp'):
+            try:
+                cur = await self.conn.execute(
+                    f"UPDATE {tbl} SET unit = '' "
+                    f"WHERE unit IS NOT NULL AND LOWER(TRIM(unit)) IN ('nan','none','null')"
+                )
+                n = cur.rowcount if cur.rowcount is not None else 0
+                await self.conn.commit()
+                if n:
+                    logging.info(f"SMR units migration: cleaned {n} junk unit values in {tbl}")
+            except Exception as e:
+                logging.error(f"SMR units migration ({tbl} cleanup) failed: {e}")
+
+        # Backfill object_kp_plan from kp_catalog via the kp_id FK.
+        # v2.4.2 FIX 3: also re-backfill rows whose catalog entry was
+        # previously empty but is now populated — the WHERE clause catches
+        # any plan row that still has an empty unit.
         try:
             cur = await self.conn.execute(
                 """UPDATE object_kp_plan
                    SET unit = COALESCE(
-                       (SELECT kc.unit FROM kp_catalog kc WHERE kc.id = object_kp_plan.kp_id),
+                       NULLIF(TRIM((SELECT kc.unit FROM kp_catalog kc WHERE kc.id = object_kp_plan.kp_id)), ''),
+                       unit,
                        ''
                    )
-                   WHERE (unit IS NULL OR unit = '')
+                   WHERE (unit IS NULL OR TRIM(unit) = '')
                      AND kp_id IS NOT NULL"""
             )
             plan_n = cur.rowcount if cur.rowcount is not None else 0
@@ -436,10 +471,11 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             cur = await self.conn.execute(
                 """UPDATE application_kp
                    SET unit = COALESCE(
-                       (SELECT kc.unit FROM kp_catalog kc WHERE kc.id = application_kp.kp_id),
+                       NULLIF(TRIM((SELECT kc.unit FROM kp_catalog kc WHERE kc.id = application_kp.kp_id)), ''),
+                       unit,
                        ''
                    )
-                   WHERE (unit IS NULL OR unit = '')
+                   WHERE (unit IS NULL OR TRIM(unit) = '')
                      AND kp_id IS NOT NULL"""
             )
             app_n = cur.rowcount if cur.rowcount is not None else 0

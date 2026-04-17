@@ -154,15 +154,29 @@ class KpRepoMixin:
                 for row in await cur.fetchall():
                     existing[(row[1], row[2])] = row[0]
 
+            def _clean(v):
+                """Return trimmed string for a pandas cell, with NaN/None → ''."""
+                if v is None:
+                    return ''
+                try:
+                    if pd.isna(v):
+                        return ''
+                except Exception:
+                    pass
+                s = str(v).strip()
+                if s.lower() in ('nan', 'none', 'null'):
+                    return ''
+                return s
+
             current_category = "Без категории"
             for index, row in df.iterrows():
                 if index < 2: continue
 
-                col_name = str(row[3]).strip()
-                col_unit = str(row[5]).strip()
-                col_zp = str(row[7]).strip()
-                col_coef = str(row[2]).strip()
-                col_old = str(row[4]).strip()
+                col_name = _clean(row[3])
+                col_unit = _clean(row[5])
+                col_zp = _clean(row[7])
+                col_coef = _clean(row[2])
+                col_old = _clean(row[4])
 
                 if col_name and not col_zp and not col_unit:
                     current_category = col_name
