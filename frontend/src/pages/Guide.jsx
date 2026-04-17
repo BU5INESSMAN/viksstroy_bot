@@ -424,7 +424,7 @@ export default function Guide() {
         },
         {
             id: 'pwa', icon: Smartphone, iconColor: 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
-            title: '21. Установка на телефон (PWA)', roleHint: 'Все роли',
+            title: '21. Установка приложения', roleHint: 'Все роли',
             keywords: 'установка телефон приложение pwa ios android iphone скачать домой экран',
             content: (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

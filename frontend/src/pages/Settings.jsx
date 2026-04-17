@@ -120,8 +120,8 @@ export default function Settings() {
                     {pwaAvailable && (
                         <ToggleRow
                             icon={Bell}
-                            label="Push-уведомления (PWA)"
-                            description="Получать push-уведомления на этом устройстве"
+                            label="Push-уведомления (приложение)"
+                            description="Работает только если приложение установлено"
                             value={settings.notify_pwa}
                             onChange={(v) => setKey('notify_pwa', v)}
                         />
