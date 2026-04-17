@@ -2,6 +2,7 @@ import {
     Users, Clock, CheckCircle, XCircle, User, Check, Truck
 } from 'lucide-react';
 import toast from 'react-hot-toast';
+import { getIconComponent, TEAM_ICONS, DEFAULT_TEAM_ICON } from '../../../utils/iconConfig';
 
 export default function TeamSelector({
     teams,
@@ -86,7 +87,10 @@ export default function TeamSelector({
                     const st = checkTeamStatus(t.id);
                     const isSelected = teamIds.includes(t.id);
                     let btnStyles = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700';
-                    let icon = <Users className="w-4 h-4 text-gray-400" />;
+                    // v2.4 FIX 10: render team's configured icon; keep status
+                    // icons (Clock/CheckCircle) when busy/selected.
+                    const TeamIcon = getIconComponent(t.icon || DEFAULT_TEAM_ICON, TEAM_ICONS) || Users;
+                    let icon = <TeamIcon className="w-4 h-4 text-gray-400" />;
 
                     if (st.state === 'busy') {
                         btnStyles = 'bg-gray-50 border-gray-200 text-gray-400 dark:bg-gray-800/50 dark:border-gray-700 dark:text-gray-500 cursor-not-allowed opacity-75';

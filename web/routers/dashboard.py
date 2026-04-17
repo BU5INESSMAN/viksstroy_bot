@@ -57,6 +57,15 @@ async def get_dashboard_data(current_user=Depends(get_current_user)):
 
     async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur:
         equip = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
+    # v2.4 FIX 10: enrich equipment with category icon from equipment_category_settings
+    try:
+        async with db.conn.execute("SELECT category, icon FROM equipment_category_settings") as cur:
+            cat_icon_map = {r[0]: (r[1] or '') for r in await cur.fetchall()}
+        for e in equip:
+            e['category_icon'] = cat_icon_map.get(e.get('category'), '')
+    except Exception:
+        for e in equip:
+            e.setdefault('category_icon', '')
     async with db.conn.execute(
             "SELECT DISTINCT category FROM equipment WHERE category IS NOT NULL AND category != ''") as cur:
         cat_rows = await cur.fetchall()
