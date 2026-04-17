@@ -134,8 +134,12 @@ class ObjectsRepoMixin:
 
     async def get_object_history(self, object_id: int):
         """Хронологическая история выполненных объемов по датам/заявкам"""
+        # v2.4.1 FIX 3: prefer the denormalized akp.unit (populated at
+        # submit time) so the history view shows the exact unit as when
+        # the work was reported — fall back to catalog otherwise.
         query = """
-            SELECT a.id as app_id, a.date_target, k.category, k.name, k.unit,
+            SELECT a.id as app_id, a.date_target, k.category, k.name,
+                   COALESCE(NULLIF(TRIM(akp.unit), ''), k.unit, '') as unit,
                    akp.volume
             FROM application_kp akp
             JOIN applications a ON akp.application_id = a.id
