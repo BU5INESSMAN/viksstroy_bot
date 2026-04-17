@@ -423,9 +423,69 @@ export default function Guide() {
             ),
         },
         {
+            id: 'settings', icon: Settings, iconColor: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
+            title: '22. Настройки', roleHint: 'Все роли',
+            keywords: 'настройки уведомления телеграм макс push-уведомления приложение виджет должники интерфейс модератор',
+            content: (
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                    <p>Страница <b>«Настройки»</b> доступна из бокового меню (или бургер-меню на мобильном).</p>
+                    <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
+                        <h4 className="font-bold text-gray-900 dark:text-white mb-2">Уведомления</h4>
+                        <ul className="list-disc pl-4 space-y-1 text-xs">
+                            <li>Каналы: Telegram, MAX, Push-уведомления (приложение)</li>
+                            <li>Push работает, только если приложение установлено на устройство</li>
+                        </ul>
+                    </div>
+                    <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
+                        <h4 className="font-bold text-gray-900 dark:text-white mb-2">Уведомления модератора</h4>
+                        <ul className="list-disc pl-4 space-y-1 text-xs">
+                            <li>Новые заявки на проверку</li>
+                            <li>Должники СМР</li>
+                            <li>Запросы на новые объекты</li>
+                            <li>Обмены техникой</li>
+                        </ul>
+                    </div>
+                    <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
+                        <h4 className="font-bold text-gray-900 dark:text-white mb-2">Интерфейс</h4>
+                        <p className="text-xs">Скрыть виджет должников СМР на главной странице.</p>
+                    </div>
+                </div>
+            ),
+        },
+        {
+            id: 'admin', icon: Shield, iconColor: 'bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400',
+            title: '23. Админка', roleHint: 'Boss и выше',
+            keywords: 'админка управление пользователи роли журнал рассылки суперадмин руководитель',
+            content: (
+                <div className="space-y-3 text-sm text-gray-700 dark:text-gray-300">
+                    <p>Страница <b>«Админка»</b> доступна только для ролей <b>Руководитель</b> и <b>Супер-Админ</b>.</p>
+                    <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
+                        <h4 className="font-bold text-gray-900 dark:text-white mb-2">Управление пользователями</h4>
+                        <ul className="list-disc pl-4 space-y-1 text-xs">
+                            <li>Таблица с поиском по ФИО и специальности</li>
+                            <li>Сортировка по рангу роли, затем по алфавиту</li>
+                            <li>Смена роли в один клик, с подтверждением</li>
+                            <li>Нельзя сменить свою роль</li>
+                            <li>Нельзя понизить последнего супер-админа</li>
+                            <li>Все изменения записываются в журнал действий</li>
+                        </ul>
+                    </div>
+                    <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
+                        <h4 className="font-bold text-gray-900 dark:text-white mb-2">Дополнительно</h4>
+                        <ul className="list-disc pl-4 space-y-1 text-xs">
+                            <li>Журнал действий с раскрываемым списком получателей уведомлений</li>
+                            <li>Массовая рассылка сообщений по ролям или конкретным пользователям</li>
+                            <li>Настройки автоматизации: публикация расстановки, напоминания</li>
+                            <li>Иконки категорий техники</li>
+                        </ul>
+                    </div>
+                </div>
+            ),
+        },
+        {
             id: 'pwa', icon: Smartphone, iconColor: 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-400',
-            title: '21. Установка приложения', roleHint: 'Все роли',
-            keywords: 'установка телефон приложение pwa ios android iphone скачать домой экран',
+            title: '24. Установка приложения', roleHint: 'Все роли',
+            keywords: 'установка телефон приложение pwa ios android iphone скачать домой экран safari chrome яндекс edge',
             content: (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700">
