@@ -222,6 +222,22 @@ CREATE TABLE IF NOT EXISTS application_kp (
     FOREIGN KEY (kp_id) REFERENCES kp_catalog(id)
 );
 
+-- Часы по участникам бригад внутри заявки (СМР wizard: step 1)
+CREATE TABLE IF NOT EXISTS application_hours (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    hours REAL DEFAULT 0,
+    filled_by_user_id INTEGER,
+    filled_at TEXT,
+    FOREIGN KEY (app_id) REFERENCES applications(id),
+    FOREIGN KEY (team_id) REFERENCES teams(id),
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_app_hours_app ON application_hours(app_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_hours_unique ON application_hours(app_id, team_id, user_id);
+
 -- Биржа ресурсов (Stage 5A): обмен техникой между прорабами
 CREATE TABLE IF NOT EXISTS equipment_exchanges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

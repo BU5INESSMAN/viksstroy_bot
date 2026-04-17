@@ -120,6 +120,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.migrate_icon_keys_to_tabler()
         await self.upgrade_db_for_smr_units()
         await self.upgrade_application_extra_works_unit()
+        await self.upgrade_db_for_smr_wizard()
         await self.repair_catalog_units_if_numeric()
         await self.sync_worker_specialties()
 
@@ -487,6 +488,53 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
                 logging.info(f"SMR units migration: backfilled {app_n} rows in application_kp")
         except Exception as e:
             logging.error(f"SMR units migration (application_kp) failed: {e}")
+
+    async def upgrade_db_for_smr_wizard(self):
+        """v2.4.5 SMR wizard: hours tracking + authorship + group linking.
+
+        - application_hours: per-user hours inside an application.
+        - application_kp: who filled which row, when.
+        - application_extra_works: same authorship columns.
+        - applications: smr_group_id + smr_status + smr_filled_by_role.
+        All ALTER statements are idempotent via try/except on "duplicate
+        column" errors.
+        """
+        try:
+            await self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS application_hours (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    app_id INTEGER NOT NULL,
+                    team_id INTEGER NOT NULL,
+                    user_id INTEGER NOT NULL,
+                    hours REAL DEFAULT 0,
+                    filled_by_user_id INTEGER,
+                    filled_at TEXT
+                )
+            """)
+            await self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_app_hours_app ON application_hours(app_id)"
+            )
+            await self.conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_app_hours_unique "
+                "ON application_hours(app_id, team_id, user_id)"
+            )
+        except Exception as e:
+            logging.error(f"application_hours table creation failed: {e}")
+
+        for stmt in (
+            "ALTER TABLE application_kp ADD COLUMN filled_by_user_id INTEGER",
+            "ALTER TABLE application_kp ADD COLUMN filled_at TEXT",
+            "ALTER TABLE application_extra_works ADD COLUMN filled_by_user_id INTEGER",
+            "ALTER TABLE application_extra_works ADD COLUMN filled_at TEXT",
+            "ALTER TABLE applications ADD COLUMN smr_group_id TEXT",
+            "ALTER TABLE applications ADD COLUMN smr_status TEXT DEFAULT ''",
+            "ALTER TABLE applications ADD COLUMN smr_filled_by_role TEXT DEFAULT ''",
+        ):
+            try:
+                await self.conn.execute(stmt)
+            except Exception:
+                pass
+        await self.conn.commit()
 
     async def upgrade_application_extra_works_unit(self):
         """v2.4.3: extra works now pick from kp_catalog so each row needs a
