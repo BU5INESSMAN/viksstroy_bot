@@ -148,12 +148,22 @@ class ObjectsRepoMixin:
             return [dict(row) for row in await cur.fetchall()]
 
     async def get_object_history(self, object_id: int):
-        """Хронологическая история выполненных объемов по датам/заявкам"""
-        # v2.4.1 FIX 3: prefer the denormalized akp.unit (populated at
-        # submit time) so the history view shows the exact unit as when
-        # the work was reported — fall back to catalog otherwise.
+        """Хронологическая история выполненных объемов по датам/заявкам.
+
+        v2.4.8: drop the `kp_status = 'approved'` filter — the SMR wizard
+        flow leaves brigadier submissions in `kp_status = 'submitted' /
+        smr_status = 'pending_review'` until a foreman reviews them. The
+        work itself has been reported, so it should appear in history.
+        We still require akp.volume > 0 to hide empty rows, and surface
+        `smr_status` + authorship so the UI can flag pending entries.
+        """
         query = """
-            SELECT a.id as app_id, a.date_target, k.category, k.name,
+            SELECT a.id as app_id,
+                   a.date_target,
+                   a.smr_status,
+                   a.smr_filled_by_role,
+                   k.category,
+                   k.name,
                    COALESCE(
                        NULLIF(
                            CASE WHEN LOWER(TRIM(akp.unit)) IN ('nan','none','null')
@@ -167,12 +177,16 @@ class ObjectsRepoMixin:
                            ''),
                        ''
                    ) as unit,
-                   akp.volume
+                   akp.volume,
+                   akp.filled_at,
+                   u_filled.fio as filled_by_fio,
+                   u_filled.role as filled_by_role
             FROM application_kp akp
             JOIN applications a ON akp.application_id = a.id
             JOIN kp_catalog k ON akp.kp_id = k.id
-            WHERE a.object_id = ? AND a.kp_status = 'approved' AND akp.volume > 0
-            ORDER BY a.date_target DESC, k.category, k.id
+            LEFT JOIN users u_filled ON u_filled.user_id = akp.filled_by_user_id
+            WHERE a.object_id = ? AND akp.volume > 0
+            ORDER BY a.date_target DESC, akp.filled_at DESC, k.category, k.id
         """
         async with self.conn.execute(query, (object_id,)) as cur:
             return [dict(row) for row in await cur.fetchall()]

@@ -126,62 +126,97 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                 </h4>
                                 {statsData.history?.length > 0 ? (
                                     (() => {
-                                        const byDate = {};
+                                        // v2.4.8: group by (date + app) so every SMR submission is
+                                        // one collapsible block. Show authorship + smr_status badge.
+                                        const byKey = {};
                                         statsData.history.forEach(h => {
-                                            const key = `${h.date_target} — Заявка #${h.app_id}`;
-                                            if (!byDate[key]) byDate[key] = [];
-                                            byDate[key].push(h);
+                                            const key = `${h.date_target}__${h.app_id}`;
+                                            if (!byKey[key]) {
+                                                byKey[key] = {
+                                                    app_id: h.app_id,
+                                                    date: h.date_target || '—',
+                                                    smr_status: h.smr_status || '',
+                                                    filled_by_fio: h.filled_by_fio || '',
+                                                    filled_by_role: h.filled_by_role || h.smr_filled_by_role || '',
+                                                    filled_at: (h.filled_at || '').split('T')[0] || '',
+                                                    items: [],
+                                                };
+                                            }
+                                            byKey[key].items.push(h);
                                         });
+                                        const groups = Object.values(byKey)
+                                            .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
                                         return (
                                             <div className="space-y-2 max-h-[40vh] overflow-y-auto pr-2">
-                                                {Object.entries(byDate).map(([dateKey, items]) => (
-                                                    <div
-                                                        key={dateKey}
-                                                        className="border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden"
-                                                    >
-                                                        <button
-                                                            onClick={() =>
-                                                                setExpandedDates(prev => ({
-                                                                    ...prev,
-                                                                    [dateKey]: !prev[dateKey],
-                                                                }))
-                                                            }
-                                                            className="w-full flex items-center justify-between px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900/70 transition-colors"
+                                                {groups.map((group) => {
+                                                    const dateKey = `${group.date}__${group.app_id}`;
+                                                    const open = !!expandedDates[dateKey];
+                                                    const pending = group.smr_status === 'pending_review';
+                                                    return (
+                                                        <div
+                                                            key={dateKey}
+                                                            className="border border-gray-100 dark:border-gray-700 rounded-xl overflow-hidden"
                                                         >
-                                                            <span className="text-sm font-bold text-gray-700 dark:text-gray-300">
-                                                                {dateKey}
-                                                            </span>
-                                                            {expandedDates[dateKey] ? (
-                                                                <ChevronUp className="w-4 h-4 text-gray-400" />
-                                                            ) : (
-                                                                <ChevronDown className="w-4 h-4 text-gray-400" />
-                                                            )}
-                                                        </button>
-                                                        {expandedDates[dateKey] && (
-                                                            <div className="divide-y divide-gray-50 dark:divide-gray-700">
-                                                                {items.map((h, i) => (
-                                                                    <div
-                                                                        key={i}
-                                                                        className="flex justify-between px-4 py-2 text-sm"
-                                                                    >
-                                                                        <span className="text-gray-700 dark:text-gray-300">
-                                                                            {h.name}
-                                                                            {(() => {
-                                                                                const u = formatUnit(h.unit);
-                                                                                return u && u !== '—' ? (
-                                                                                    <span className="text-gray-400 text-xs ml-1">({u})</span>
-                                                                                ) : null;
-                                                                            })()}
+                                                            <button
+                                                                onClick={() =>
+                                                                    setExpandedDates(prev => ({
+                                                                        ...prev,
+                                                                        [dateKey]: !prev[dateKey],
+                                                                    }))
+                                                                }
+                                                                className="w-full flex items-center justify-between gap-3 px-4 py-2.5 bg-gray-50 dark:bg-gray-900/50 hover:bg-gray-100 dark:hover:bg-gray-900/70 transition-colors text-left"
+                                                            >
+                                                                <div className="min-w-0 flex-1">
+                                                                    <div className="flex items-center gap-2">
+                                                                        <span className="text-sm font-bold text-gray-700 dark:text-gray-300 truncate">
+                                                                            {group.date} — Заявка №{group.app_id}
                                                                         </span>
-                                                                        <span className="font-bold text-gray-800 dark:text-gray-200">
-                                                                            {h.volume}
-                                                                        </span>
+                                                                        {pending && (
+                                                                            <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded whitespace-nowrap">
+                                                                                на проверке
+                                                                            </span>
+                                                                        )}
                                                                     </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ))}
+                                                                    {(group.filled_by_fio || group.filled_at) && (
+                                                                        <div className="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5 truncate">
+                                                                            {group.filled_by_fio && `Заполнил: ${group.filled_by_fio}`}
+                                                                            {group.filled_by_fio && group.filled_at && ' · '}
+                                                                            {group.filled_at}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                {open ? (
+                                                                    <ChevronUp className="w-4 h-4 text-gray-400 shrink-0" />
+                                                                ) : (
+                                                                    <ChevronDown className="w-4 h-4 text-gray-400 shrink-0" />
+                                                                )}
+                                                            </button>
+                                                            {open && (
+                                                                <div className="divide-y divide-gray-50 dark:divide-gray-700">
+                                                                    {group.items.map((h, i) => (
+                                                                        <div
+                                                                            key={i}
+                                                                            className="flex justify-between items-center gap-3 px-4 py-2 text-sm"
+                                                                        >
+                                                                            <span className="text-gray-700 dark:text-gray-300 truncate">
+                                                                                {h.name}
+                                                                            </span>
+                                                                            <span className="font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap shrink-0">
+                                                                                {h.volume}
+                                                                                {(() => {
+                                                                                    const u = formatUnit(h.unit);
+                                                                                    return u && u !== '—' ? (
+                                                                                        <span className="text-gray-400 font-normal text-xs ml-1">{u}</span>
+                                                                                    ) : null;
+                                                                                })()}
+                                                                            </span>
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    );
+                                                })}
                                             </div>
                                         );
                                     })()
