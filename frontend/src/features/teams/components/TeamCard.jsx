@@ -31,12 +31,14 @@ export default function TeamCard({ t, canDeleteTeam, openManageModal, handleDele
             </div>
             <div className="flex gap-2">
                 {onStats && (
-                    <button onClick={() => onStats(t)} className="flex-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 dark:border-blue-800/50 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-1.5 active:scale-95">
-                        <BarChart3 className="w-3.5 h-3.5" /> Статистика
+                    <button onClick={() => onStats(t)} title="Статистика" className="flex-1 bg-blue-50 hover:bg-blue-100 border border-blue-200 dark:border-blue-800/50 dark:bg-blue-900/20 dark:hover:bg-blue-900/40 text-blue-700 dark:text-blue-400 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-1.5 active:scale-95">
+                        <BarChart3 className="w-3.5 h-3.5 shrink-0" />
+                        <span className="hidden lg:inline truncate">Статистика</span>
                     </button>
                 )}
-                <button onClick={() => openManageModal(t.id)} className="flex-1 bg-gray-50 hover:bg-indigo-50 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-indigo-900/30 text-gray-700 dark:text-gray-300 hover:text-indigo-700 dark:hover:text-indigo-400 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-1.5 active:scale-95">
-                    <Settings className="w-3.5 h-3.5" /> Управление
+                <button onClick={() => openManageModal(t.id)} title="Управление" className="flex-1 bg-gray-50 hover:bg-indigo-50 border border-gray-200 dark:border-gray-700 dark:bg-gray-800 dark:hover:bg-indigo-900/30 text-gray-700 dark:text-gray-300 hover:text-indigo-700 dark:hover:text-indigo-400 py-2.5 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center justify-center gap-1.5 active:scale-95">
+                    <Settings className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden lg:inline truncate">Управление</span>
                 </button>
                 {canDeleteTeam && (
                     <button onClick={() => handleDeleteTeam(t.id)} className="bg-red-50 hover:bg-red-100 text-red-600 dark:bg-red-900/20 dark:hover:bg-red-900/40 dark:text-red-400 py-2.5 px-3.5 rounded-xl text-xs font-bold transition-colors shadow-sm flex items-center justify-center active:scale-95">
