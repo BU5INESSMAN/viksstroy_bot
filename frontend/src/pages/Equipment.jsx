@@ -139,10 +139,17 @@ export default function Equipment() {
     return (
         <div className="px-4 sm:px-6 lg:px-8 space-y-6">
 
-            {/* Кнопки управления теперь выровнены по правому краю */}
+            {/* Кнопки управления — flex-wrap gap-2.5, чтобы ничего не обрезалось на узких экранах */}
             {canManageEquipment && (
-                <div className="flex justify-end gap-2.5 mb-2">
-                    {isOffice && (
+                <div className="flex flex-wrap justify-end gap-2.5 mb-2">
+                    <button data-tour="equip-add-btn" onClick={() => setActiveTab('new')} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
+                        <Plus className="w-4 h-4" /> Добавить
+                    </button>
+                    <button onClick={() => setActiveTab('bulk')} className="bg-gray-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-gray-900 transition-all active:scale-95 flex items-center gap-2 dark:bg-gray-700 dark:hover:bg-gray-600">
+                        <Upload className="w-4 h-4" /> Загрузка
+                    </button>
+                    {/* v2.4 FIX 11: Иконки only for boss+, last in the row, no clipping */}
+                    {['boss', 'superadmin'].includes(role) && (
                         <button
                             onClick={() => setCategorySettingsOpen(true)}
                             className="bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 px-4 py-2.5 rounded-xl text-sm font-bold transition-all active:scale-95 flex items-center gap-2 hover:bg-gray-50 dark:hover:bg-gray-700"
@@ -151,12 +158,6 @@ export default function Equipment() {
                             <Cog className="w-4 h-4" /> Иконки
                         </button>
                     )}
-                    <button data-tour="equip-add-btn" onClick={() => setActiveTab('new')} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
-                        <Plus className="w-4 h-4" /> Добавить
-                    </button>
-                    <button onClick={() => setActiveTab('bulk')} className="bg-gray-800 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-gray-900 transition-all active:scale-95 flex items-center gap-2 dark:bg-gray-700 dark:hover:bg-gray-600">
-                        <Upload className="w-4 h-4" /> Загрузка
-                    </button>
                 </div>
             )}
 
