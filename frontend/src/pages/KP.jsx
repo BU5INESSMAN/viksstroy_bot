@@ -321,10 +321,15 @@ export default function KP() {
                                             <div className="divide-y divide-gray-50 dark:divide-gray-700">
                                                 {items.map(item => (
                                                     <div key={item.kp_id} className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-                                                        <div className="flex-1"><p className="font-bold text-sm text-gray-800 dark:text-gray-100">{item.name}</p>{isOffice ? <p className="text-[10px] text-gray-400 mt-1">ЗП: {item.current_salary}₽ · Цена: {item.current_price}₽ / {item.unit}</p> : <p className="text-[10px] text-gray-400 mt-1">{item.unit}</p>}</div>
+                                                        <div className="flex-1">
+                                                            <p className="font-bold text-sm text-gray-800 dark:text-gray-100">{item.name}</p>
+                                                            {isOffice && (
+                                                                <p className="text-[10px] text-gray-400 mt-1">ЗП: {item.current_salary}₽ · Цена: {item.current_price}₽</p>
+                                                            )}
+                                                        </div>
                                                         <div className="flex items-center gap-2">
                                                             <input type="number" min="0" step="0.1" disabled={activeTab !== 'to_fill' && !(activeTab === 'approved' && isOffice) && !(activeTab === 'pending_review' && isEditing)} value={item.volume} onChange={(e) => handleVolumeChange(item.kp_id, e.target.value)} className="w-20 p-2 text-center font-bold border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-white" />
-                                                            <span className="text-[10px] font-bold text-gray-400">{item.unit}</span>
+                                                            <span className="min-w-[2.5rem] text-xs font-semibold text-gray-500 dark:text-gray-400">{item.unit || ''}</span>
                                                         </div>
                                                     </div>
                                                 ))}
