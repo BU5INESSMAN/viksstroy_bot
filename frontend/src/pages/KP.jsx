@@ -1,16 +1,47 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     FileText, CheckCircle, Clock, Search, X, MapPin,
-    Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive
+    Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive,
+    Calendar as CalendarIcon
 } from 'lucide-react';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
 import TabBadge from '../components/ui/TabBadge';
 import ExtraWorksPicker from '../features/kp/components/ExtraWorksPicker';
 import SMRWizard from '../features/kp/components/SMRWizard';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
+
+// v2.4.6 — group flat list of SMR apps by object → date for cleaner scanning.
+function groupByObjectAndDate(items) {
+    const objMap = new Map();
+    for (const app of items || []) {
+        const name = app.object_name || app.obj_name || app.object_address || 'Без объекта';
+        const addr = app.object_clean_address || (app.object_name ? app.object_address : '') || '';
+        const key = `${app.object_id || 0}|${name}`;
+        if (!objMap.has(key)) {
+            objMap.set(key, {
+                object_name: name,
+                object_address: addr,
+                dates: new Map(),
+            });
+        }
+        const group = objMap.get(key);
+        const date = app.date_target || '—';
+        if (!group.dates.has(date)) group.dates.set(date, []);
+        group.dates.get(date).push(app);
+    }
+    // Sort objects alphabetically (ru-aware), dates chronologically descending
+    const groups = [...objMap.values()]
+        .sort((a, b) => (a.object_name || '').localeCompare(b.object_name || '', 'ru'));
+    for (const g of groups) {
+        g.dates = [...g.dates.entries()]
+            .sort(([a], [b]) => b.localeCompare(a))
+            .map(([date, apps]) => ({ date, apps }));
+    }
+    return groups;
+}
 
 export default function KP() {
     const [searchParams, setSearchParams] = useSearchParams();
@@ -279,94 +310,46 @@ export default function KP() {
                 </div>
             )}
 
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3" data-tour="kp-grid">
-                {(data[activeTab] || []).map(app => (
-                    <div key={app.id} className="bg-white dark:bg-gray-800 p-5 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 hover:shadow-md transition-all">
-                        <div className="flex justify-between items-start mb-3">
-                            <span className="text-[10px] font-extrabold text-blue-600 bg-blue-50 dark:bg-blue-900/30 px-2 py-1 rounded-md">{app.date_target}</span>
-                            <div className="flex items-center gap-2">
-                                {isOffice && (
-                                    <button
-                                        onClick={async (e) => {
-                                            e.stopPropagation();
-                                            if (!window.confirm(`Архивировать СМР: ${app.obj_name || 'Объект'} (${app.date_target})?`)) return;
-                                            try {
-                                                await axios.post(`/api/kp/apps/${app.id}/archive`);
-                                                toast.success('СМР перемещена в архив');
-                                                fetchApps();
-                                            } catch { toast.error('Ошибка архивации'); }
-                                        }}
-                                        className="text-gray-400 hover:text-red-500 transition-colors p-1 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
-                                        title="В архив"
-                                    >
-                                        <Archive className="w-4 h-4" />
-                                    </button>
-                                )}
-                                {activeTab === 'approved' && isOffice && <input type="checkbox" checked={selectedForExport.includes(app.id)} onChange={() => setSelectedForExport(prev => prev.includes(app.id) ? prev.filter(x => x !== app.id) : [...prev, app.id])} className="w-5 h-5 text-emerald-600 rounded" />}
-                            </div>
-                        </div>
-                        <h4 className="font-bold text-gray-800 dark:text-gray-100 flex items-start gap-1.5 mb-1 leading-tight">
-                            <MapPin className="w-4 h-4 text-red-500 mt-0.5 flex-shrink-0" />
-                            <ObjectDisplay
-                                name={app.object_name || app.obj_name}
-                                address={app.object_clean_address || app.object_address}
-                                showIcon={false}
-                                nameClassName="font-bold text-gray-800 dark:text-gray-100 leading-tight"
-                                addressClassName="text-[11px] text-gray-500 dark:text-gray-400 mt-0.5"
-                            />
-                        </h4>
-                        <p className="text-xs text-gray-500 mb-4 flex items-center gap-1"><HardHat className="w-3.5 h-3.5 text-gray-400" /> {app.foreman_name}</p>
-                        {activeTab === 'to_fill' && isOffice && app.foreman_id !== Number(tgId) ? (
-                            <button onClick={async () => {
-                                try {
-                                    const fd = new FormData();
-                                    fd.append('tg_id', tgId);
-                                    await axios.post(`/api/applications/${app.id}/remind`, fd);
-                                    toast.success('Напоминание отправлено прорабу!');
-                                } catch (e) { toast.error(e.response?.data?.detail || 'Ошибка отправки'); }
-                            }} className="w-full bg-orange-50 dark:bg-orange-900/20 text-orange-700 dark:text-orange-400 py-3 rounded-xl text-sm font-bold border border-orange-200 dark:border-orange-800/50 flex justify-center items-center gap-2 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors active:scale-[0.98]">
-                                <Bell className="w-4 h-4" /> Напомнить
-                            </button>
-                        ) : activeTab === 'to_fill' && isSmrLocked ? (
-                            <div className="w-full bg-gray-100 dark:bg-gray-700/50 text-gray-400 dark:text-gray-500 py-3 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 flex justify-center items-center gap-2 cursor-not-allowed">
-                                <Clock className="w-4 h-4" /> Откроется в {smrUnlockTime}
-                            </div>
-                        ) : activeTab === 'to_fill' ? (
-                            <button onClick={() => { setWizardApproveMode(false); setWizardApp(app); }} className="w-full bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl text-sm font-bold transition-colors active:scale-[0.98]">
-                                Заполнить
-                            </button>
-                        ) : activeTab === 'pending_review' ? (
-                            <div className="flex gap-2">
-                                <button onClick={() => { setWizardApproveMode(true); setWizardApp(app); }} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-3 rounded-xl text-sm font-bold transition-colors active:scale-[0.98]">
-                                    Проверить
-                                </button>
-                            </div>
-                        ) : (
-                            <div className="flex gap-2">
-                                <button onClick={() => openModal(app)} className="flex-1 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 flex justify-center items-center gap-2 hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors">
-                                    Посмотреть
-                                </button>
-                                <button
-                                    onClick={async () => {
-                                        try {
-                                            const res = await axios.get(`/api/kp/apps/${app.id}/smr/download`, { responseType: 'blob' });
-                                            const url = window.URL.createObjectURL(new Blob([res.data]));
-                                            const link = document.createElement('a');
-                                            link.href = url;
-                                            link.setAttribute('download', `smr_${app.id}.xlsx`);
-                                            document.body.appendChild(link); link.click(); link.remove();
-                                        } catch { toast.error('Не удалось скачать отчёт'); }
-                                    }}
-                                    title="Скачать отчёт"
-                                    className="bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 py-3 px-3 rounded-xl border border-blue-200 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors"
-                                >
-                                    <Download className="w-4 h-4" />
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                ))}
-            </div>
+            <GroupedSMRList
+                items={data[activeTab] || []}
+                tab={activeTab}
+                isOffice={isOffice}
+                tgId={tgId}
+                isSmrLocked={isSmrLocked}
+                smrUnlockTime={smrUnlockTime}
+                selectedForExport={selectedForExport}
+                setSelectedForExport={setSelectedForExport}
+                onFill={(app) => { setWizardApproveMode(false); setWizardApp(app); }}
+                onReview={(app) => { setWizardApproveMode(true); setWizardApp(app); }}
+                onView={(app) => openModal(app)}
+                onArchive={async (app) => {
+                    if (!window.confirm(`Архивировать СМР: ${app.object_name || app.obj_name || 'Объект'} (${app.date_target})?`)) return;
+                    try {
+                        await axios.post(`/api/kp/apps/${app.id}/archive`);
+                        toast.success('СМР перемещена в архив');
+                        fetchApps();
+                    } catch { toast.error('Ошибка архивации'); }
+                }}
+                onRemind={async (app) => {
+                    try {
+                        const fd = new FormData();
+                        fd.append('tg_id', tgId);
+                        await axios.post(`/api/applications/${app.id}/remind`, fd);
+                        toast.success('Напоминание отправлено прорабу!');
+                    } catch (e) { toast.error(e.response?.data?.detail || 'Ошибка отправки'); }
+                }}
+                onDownload={async (app) => {
+                    try {
+                        const res = await axios.get(`/api/kp/apps/${app.id}/smr/download`, { responseType: 'blob' });
+                        const url = window.URL.createObjectURL(new Blob([res.data]));
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.setAttribute('download', `smr_${app.id}.xlsx`);
+                        document.body.appendChild(link); link.click(); link.remove();
+                        window.URL.revokeObjectURL(url);
+                    } catch { toast.error('Не удалось скачать отчёт'); }
+                }}
+            />
 
             {modalApp && (
                 <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
@@ -530,5 +513,183 @@ export default function KP() {
                 />
             )}
         </main>
+    );
+}
+
+// ============================================================
+// v2.4.6 — Grouped SMR list (object → date → applications)
+// ============================================================
+function GroupedSMRList({
+    items,
+    tab,
+    isOffice,
+    tgId,
+    isSmrLocked,
+    smrUnlockTime,
+    selectedForExport,
+    setSelectedForExport,
+    onFill,
+    onReview,
+    onView,
+    onArchive,
+    onRemind,
+    onDownload,
+}) {
+    const groups = useMemo(() => groupByObjectAndDate(items), [items]);
+
+    if (groups.length === 0) {
+        return (
+            <div className="text-center py-12 text-gray-400 dark:text-gray-500 italic">
+                Нет заявок
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-4" data-tour="kp-grid">
+            {groups.map((group, gi) => (
+                <div key={gi} className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
+                    {/* Object header */}
+                    <div className="px-5 py-4 bg-gray-50/70 dark:bg-gray-900/30 border-b border-gray-100 dark:border-gray-700">
+                        <ObjectDisplay
+                            name={group.object_name}
+                            address={group.object_address}
+                            showIcon
+                            nameClassName="font-bold text-base text-gray-900 dark:text-white leading-tight"
+                            addressClassName="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
+                        />
+                    </div>
+
+                    {/* Date sections */}
+                    <div className="divide-y divide-gray-100 dark:divide-gray-700/60">
+                        {group.dates.map(({ date, apps }) => (
+                            <div key={date} className="px-5 py-3">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <CalendarIcon className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
+                                    <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                                        {date}
+                                    </span>
+                                    <span className="text-[10px] text-gray-400">{apps.length} заявка{apps.length === 1 ? '' : apps.length < 5 ? 'и' : ''}</span>
+                                </div>
+                                <ul className="space-y-1.5">
+                                    {apps.map(app => (
+                                        <SMRGroupRow
+                                            key={app.id}
+                                            app={app}
+                                            tab={tab}
+                                            isOffice={isOffice}
+                                            tgId={tgId}
+                                            isSmrLocked={isSmrLocked}
+                                            smrUnlockTime={smrUnlockTime}
+                                            selectedForExport={selectedForExport}
+                                            setSelectedForExport={setSelectedForExport}
+                                            onFill={onFill}
+                                            onReview={onReview}
+                                            onView={onView}
+                                            onArchive={onArchive}
+                                            onRemind={onRemind}
+                                            onDownload={onDownload}
+                                        />
+                                    ))}
+                                </ul>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            ))}
+        </div>
+    );
+}
+
+function SMRGroupRow({
+    app, tab, isOffice, tgId, isSmrLocked, smrUnlockTime,
+    selectedForExport, setSelectedForExport,
+    onFill, onReview, onView, onArchive, onRemind, onDownload,
+}) {
+    const isBrigadierSubmission = app.smr_filled_by_role === 'brigadier';
+
+    return (
+        <li className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50/60 dark:bg-gray-900/20 hover:bg-gray-100 dark:hover:bg-gray-700/40 transition-colors">
+            <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
+                    Заявка №{app.id}
+                </p>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate flex items-center gap-1.5">
+                    <HardHat className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                    {app.foreman_name || '—'}
+                    {isBrigadierSubmission && tab === 'pending_review' && (
+                        <span className="text-[10px] font-bold text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-0.5 rounded">
+                            бригадир
+                        </span>
+                    )}
+                </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+                {isOffice && (
+                    <button
+                        onClick={(e) => { e.stopPropagation(); onArchive(app); }}
+                        className="text-gray-400 hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                        title="В архив"
+                    >
+                        <Archive className="w-3.5 h-3.5" />
+                    </button>
+                )}
+
+                {tab === 'to_fill' && isOffice && app.foreman_id !== Number(tgId) ? (
+                    <button
+                        onClick={() => onRemind(app)}
+                        className="text-xs font-bold text-orange-600 dark:text-orange-400 bg-orange-50 dark:bg-orange-900/20 px-3 py-1.5 rounded-lg border border-orange-200 dark:border-orange-800/50 hover:bg-orange-100 dark:hover:bg-orange-900/30 transition-colors active:scale-95 flex items-center gap-1.5"
+                    >
+                        <Bell className="w-3.5 h-3.5" /> Напомнить
+                    </button>
+                ) : tab === 'to_fill' && isSmrLocked ? (
+                    <span className="text-xs font-medium text-gray-400 italic flex items-center gap-1">
+                        <Clock className="w-3 h-3" /> до {smrUnlockTime}
+                    </span>
+                ) : tab === 'to_fill' ? (
+                    <button
+                        onClick={() => onFill(app)}
+                        className="text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg transition-colors active:scale-95"
+                    >
+                        Заполнить
+                    </button>
+                ) : tab === 'pending_review' ? (
+                    <button
+                        onClick={() => onReview(app)}
+                        className="text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-3 py-1.5 rounded-lg transition-colors active:scale-95"
+                    >
+                        Проверить
+                    </button>
+                ) : (
+                    <>
+                        {isOffice && (
+                            <input
+                                type="checkbox"
+                                checked={selectedForExport.includes(app.id)}
+                                onChange={() => setSelectedForExport(prev =>
+                                    prev.includes(app.id) ? prev.filter(x => x !== app.id) : [...prev, app.id]
+                                )}
+                                className="w-4 h-4 text-emerald-600 rounded"
+                                title="Выбрать для пакетной выгрузки"
+                            />
+                        )}
+                        <button
+                            onClick={() => onView(app)}
+                            className="text-xs font-bold text-gray-700 dark:text-gray-200 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-gray-600 transition-colors active:scale-95"
+                        >
+                            Открыть
+                        </button>
+                        <button
+                            onClick={() => onDownload(app)}
+                            title="Скачать отчёт"
+                            className="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-1.5 rounded-lg border border-blue-200 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors active:scale-95"
+                        >
+                            <Download className="w-3.5 h-3.5" />
+                        </button>
+                    </>
+                )}
+            </div>
+        </li>
     );
 }
