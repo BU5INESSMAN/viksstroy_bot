@@ -20,6 +20,7 @@ from auth_deps import get_current_user, require_role
 
 logger = logging.getLogger(__name__)
 from routers.applications import enrich_app_with_members_data
+from services.app_service import enrich_app_with_object_fields
 
 router = APIRouter(tags=["Dashboard"])
 
@@ -88,6 +89,9 @@ async def get_dashboard_data(current_user=Depends(get_current_user)):
         enrich_app_with_team_name(a, teams_dict)
         enrich_app_with_icons(a, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(a)
+        # v2.4.6: split merged `object_address` into clean name + address
+        # so KanbanCol <ObjectDisplay> can render them as two lines.
+        await enrich_app_with_object_fields(a)
 
     recent_addresses = []
     real_tg_id = tg_id
