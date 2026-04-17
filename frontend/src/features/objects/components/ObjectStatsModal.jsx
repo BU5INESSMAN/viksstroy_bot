@@ -55,55 +55,62 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                     Общий прогресс
                                 </h4>
                                 {statsData.progress?.length > 0 ? (
-                                    <div className="border border-gray-100 dark:border-gray-700 rounded-2xl overflow-hidden">
-                                        <div className="grid grid-cols-[1fr_50px_70px_70px_50px] gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-900/50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
-                                            <span>Работа</span>
-                                            <span className="text-center">Ед.</span>
-                                            <span className="text-right">Факт</span>
-                                            <span className="text-right">План</span>
-                                            <span className="text-right">%</span>
+                                    <div className="relative">
+                                        <div className="-mx-6 px-6 sm:mx-0 sm:px-0 overflow-x-auto">
+                                            <div className="min-w-[480px] border border-gray-100 dark:border-gray-700 rounded-2xl overflow-hidden">
+                                                <div className="grid grid-cols-[minmax(0,1fr)_60px_70px_70px_60px] gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-900/50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                                                    <span>Работа</span>
+                                                    <span className="text-center">Ед.</span>
+                                                    <span className="text-right">Факт</span>
+                                                    <span className="text-right">План</span>
+                                                    <span className="text-right">%</span>
+                                                </div>
+                                                <div className="divide-y divide-gray-50 dark:divide-gray-700">
+                                                    {statsData.progress.map((p, i) => {
+                                                        const pct =
+                                                            p.target_volume > 0
+                                                                ? Math.round(
+                                                                      (p.completed_volume / p.target_volume) * 100
+                                                                  )
+                                                                : p.completed_volume > 0
+                                                                ? 100
+                                                                : 0;
+                                                        return (
+                                                            <div
+                                                                key={i}
+                                                                className="grid grid-cols-[minmax(0,1fr)_60px_70px_70px_60px] gap-2 px-4 py-3 items-center"
+                                                            >
+                                                                <div className="min-w-0">
+                                                                    <p className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-tight truncate">
+                                                                        {p.name}
+                                                                    </p>
+                                                                    <p className="text-[10px] text-gray-400 mt-0.5 truncate">
+                                                                        {p.category}
+                                                                    </p>
+                                                                </div>
+                                                                <span className="text-xs text-gray-400 text-center whitespace-nowrap">
+                                                                    {formatUnit(p.unit)}
+                                                                </span>
+                                                                <span className="text-sm font-bold text-right text-gray-800 dark:text-gray-200 whitespace-nowrap">
+                                                                    {p.completed_volume}
+                                                                </span>
+                                                                <span className="text-sm text-right text-gray-500 whitespace-nowrap">
+                                                                    {p.target_volume || '—'}
+                                                                </span>
+                                                                <span
+                                                                    className={`text-sm font-bold text-right whitespace-nowrap ${pct >= 100 ? 'text-emerald-600' : pct > 50 ? 'text-amber-600' : 'text-gray-400'}`}
+                                                                >
+                                                                    {p.target_volume > 0 ? `${pct}%` : '—'}
+                                                                </span>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
                                         </div>
-                                        <div className="divide-y divide-gray-50 dark:divide-gray-700">
-                                            {statsData.progress.map((p, i) => {
-                                                const pct =
-                                                    p.target_volume > 0
-                                                        ? Math.round(
-                                                              (p.completed_volume / p.target_volume) * 100
-                                                          )
-                                                        : p.completed_volume > 0
-                                                        ? 100
-                                                        : 0;
-                                                return (
-                                                    <div
-                                                        key={i}
-                                                        className="grid grid-cols-[1fr_50px_70px_70px_50px] gap-2 px-4 py-3 items-center"
-                                                    >
-                                                        <div>
-                                                            <p className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-tight">
-                                                                {p.name}
-                                                            </p>
-                                                            <p className="text-[10px] text-gray-400 mt-0.5">
-                                                                {p.category}
-                                                            </p>
-                                                        </div>
-                                                        <span className="text-xs text-gray-400 text-center whitespace-nowrap">
-                                                            {formatUnit(p.unit)}
-                                                        </span>
-                                                        <span className="text-sm font-bold text-right text-gray-800 dark:text-gray-200">
-                                                            {p.completed_volume}
-                                                        </span>
-                                                        <span className="text-sm text-right text-gray-500">
-                                                            {p.target_volume || '—'}
-                                                        </span>
-                                                        <span
-                                                            className={`text-sm font-bold text-right ${pct >= 100 ? 'text-emerald-600' : pct > 50 ? 'text-amber-600' : 'text-gray-400'}`}
-                                                        >
-                                                            {p.target_volume > 0 ? `${pct}%` : '—'}
-                                                        </span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
+                                        {/* Mobile scroll hint — fades the right edge so the cut-off
+                                            columns feel intentional. Hidden on ≥sm where the table fits. */}
+                                        <div className="pointer-events-none absolute right-0 top-0 bottom-0 w-6 bg-gradient-to-l from-white dark:from-gray-800 to-transparent sm:hidden" />
                                     </div>
                                 ) : (
                                     <p className="text-center text-gray-400 italic py-4">
