@@ -29,6 +29,18 @@ axios.interceptors.response.use(
         logoutAndRedirect();
       }
     }
+
+    // v2.4.4: server-down scenarios are handled by the maintenance
+    // screen (useApiHealth hook). Suppress the noisy "Network Error"
+    // console trace for them — the rejection is still propagated so
+    // component-level callers can react, but we keep the console clean.
+    const status = error?.response?.status;
+    const isServerDown = !error.response || status === 502 || status === 503 || status === 504;
+    if (isServerDown) {
+      // eslint-disable-next-line no-console
+      console.warn('[api] unreachable — maintenance screen will handle it:', error.message || status);
+    }
+
     return Promise.reject(error);
   }
 );
