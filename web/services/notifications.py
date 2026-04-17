@@ -371,7 +371,10 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
     raw_sub = os.getenv("VAPID_CLAIM_EMAIL", "admin@viks22.ru").strip()
     if not raw_sub.startswith("mailto:") and not raw_sub.startswith("https:"):
         raw_sub = "mailto:" + raw_sub
-    vapid_claims = {"sub": raw_sub}
+    # v2.4.7: `aud` must be the origin of the push-resource endpoint
+    # (e.g. https://fcm.googleapis.com for Chrome, https://updates.push.services.mozilla.com
+    # for Firefox). It is computed per-subscription in the loop below.
+    base_claims = {"sub": raw_sub}
 
     if not user_ids:
         return
@@ -415,6 +418,8 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
         url,
     ))
 
+    from urllib.parse import urlparse
+
     expired_ids = []
     for sub in subscriptions:
         sub_id, sub_uid, endpoint, p256dh, auth_key = sub[0], sub[1], sub[2], sub[3], sub[4]
@@ -422,6 +427,20 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
             logger.debug(f"PUSH — user {sub_uid} opted out of PWA/{push_type}")
             continue
         sub_info = {"endpoint": endpoint, "keys": {"p256dh": p256dh, "auth": auth_key}}
+
+        # v2.4.7: set `aud` to the push-service origin for this specific
+        # subscription. Chrome → https://fcm.googleapis.com,
+        # Firefox → https://updates.push.services.mozilla.com,
+        # Apple   → https://web.push.apple.com, etc.
+        try:
+            parsed = urlparse(endpoint or "")
+            aud = f"{parsed.scheme}://{parsed.netloc}" if parsed.scheme and parsed.netloc else ""
+        except Exception:
+            aud = ""
+        vapid_claims = dict(base_claims)
+        if aud:
+            vapid_claims["aud"] = aud
+
         try:
             webpush(
                 subscription_info=sub_info,
@@ -434,8 +453,9 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
                 expired_ids.append(sub_id)
                 logger.info(f"PUSH — Subscription expired for user {sub_uid}, removing")
             elif e.response and e.response.status_code == 403:
-                # iOS APNs returns 403 BadJwtToken when the VAPID JWT is
-                # malformed (wrong key format, missing mailto: sub, etc.).
+                # 403 from a push service: either the `aud` claim doesn't
+                # match the endpoint origin, the `sub` is malformed, or
+                # the VAPID key is wrong.
                 body_text = ""
                 try:
                     body_text = e.response.text
@@ -444,6 +464,7 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
                 logger.error(
                     f"PUSH VAPID 403 for user {sub_uid}: "
                     f"sub={vapid_claims.get('sub')!r}, "
+                    f"aud={vapid_claims.get('aud')!r}, "
                     f"key_len={len(vapid_private)}, "
                     f"key_prefix={vapid_private[:10]!r}, "
                     f"endpoint_host={endpoint.split('/')[2] if '/' in endpoint else '?'}, "
