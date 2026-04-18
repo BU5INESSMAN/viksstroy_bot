@@ -345,17 +345,76 @@ async def api_send_schedule_self(date: str = Form(""), current_user=Depends(_req
 
 @router.post("/api/system/delay_publish")
 async def api_delay_publish(current_user=Depends(_require_office)):
-    """Delay auto-publish by 10 minutes."""
-    real_id = current_user["tg_id"]
+    """Defer the daily-prep prompt by 10 minutes.
 
+    v2.4.9: the prompt itself is re-sent after 10 minutes (clears
+    `smart_prompt_sent_<date>` + sets `smart_prompt_at`). The old
+    behaviour silently auto-published — now the moderator gets a fresh
+    decision point, matching the task requirement for the defer button.
+    """
+    real_id = current_user["tg_id"]
     new_time = datetime.now(TZ_BARNAUL) + timedelta(minutes=10)
     new_time_str = new_time.strftime("%Y-%m-%d %H:%M:%S")
 
+    # Keep the auto-publish fallback but push it further out to avoid
+    # racing the re-prompt (20 min after defer).
+    fallback = datetime.now(TZ_BARNAUL) + timedelta(minutes=20)
     await db.conn.execute(
         "INSERT OR REPLACE INTO settings (key, value) VALUES ('smart_publish_at', ?)",
+        (fallback.strftime("%Y-%m-%d %H:%M:%S"),))
+    await db.conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('smart_prompt_at', ?)",
         (new_time_str,))
+    # Clear today's "prompt sent" flag so the scheduler re-sends it.
+    today_key = f"smart_prompt_sent_{datetime.now(TZ_BARNAUL).strftime('%Y-%m-%d')}"
+    await db.conn.execute("DELETE FROM settings WHERE key = ?", (today_key,))
     await db.conn.commit()
 
-    await db.add_log(real_id, current_user.get('fio', 'Модератор'), "Отложил авто-публикацию на 10 минут", target_type='system')
+    await db.add_log(real_id, current_user.get('fio', 'Модератор'),
+                     "Отложил запрос на публикацию на 10 минут", target_type='system')
+    return {"status": "ok", "prompt_at": new_time_str}
 
-    return {"status": "ok", "publish_at": new_time_str}
+
+@router.post("/api/system/notify_debtors_and_defer")
+async def api_notify_debtors_and_defer(current_user=Depends(_require_office)):
+    """v2.4.9: send reminders to foremen who have no approved applications
+    for tomorrow, then schedule a re-prompt in 10 minutes (same as defer)."""
+    import asyncio as _asyncio
+    from services.schedule_helpers import get_application_debtors_for_date
+    from services.notifications import notify_users
+
+    real_id = current_user["tg_id"]
+    tomorrow = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
+    debtors = await get_application_debtors_for_date(tomorrow)
+
+    # Defer the prompt + push auto-publish out.
+    new_time = datetime.now(TZ_BARNAUL) + timedelta(minutes=10)
+    fallback = datetime.now(TZ_BARNAUL) + timedelta(minutes=20)
+    await db.conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('smart_publish_at', ?)",
+        (fallback.strftime("%Y-%m-%d %H:%M:%S"),))
+    await db.conn.execute(
+        "INSERT OR REPLACE INTO settings (key, value) VALUES ('smart_prompt_at', ?)",
+        (new_time.strftime("%Y-%m-%d %H:%M:%S"),))
+    today_key = f"smart_prompt_sent_{datetime.now(TZ_BARNAUL).strftime('%Y-%m-%d')}"
+    await db.conn.execute("DELETE FROM settings WHERE key = ?", (today_key,))
+    await db.conn.commit()
+
+    # Notify debtors (fire-and-forget per recipient).
+    notified = 0
+    if debtors:
+        recipient_ids = [d['user_id'] for d in debtors]
+        _asyncio.create_task(notify_users(
+            recipient_ids,
+            f"📝 Напоминание: подайте заявку на {tomorrow}",
+            "dashboard", category="orders",
+            push_type="smr_debt",
+        ))
+        notified = len(recipient_ids)
+
+    await db.add_log(
+        real_id, current_user.get('fio', 'Модератор'),
+        f"Уведомил должников ({notified}) и отложил публикацию на 10 минут",
+        target_type='system',
+    )
+    return {"status": "ok", "notified": notified, "prompt_at": new_time.strftime("%Y-%m-%d %H:%M:%S")}

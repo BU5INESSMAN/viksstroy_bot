@@ -42,6 +42,29 @@ async def get_smr_debtors():
     return out
 
 
+async def get_application_debtors_for_date(target_date: str):
+    """v2.4.9: «Должники по заявкам» — все активные прорабы, которые НЕ
+    подали ни одной approved/published/in_progress заявки на указанную
+    дату. Возвращает [{user_id, fio}]."""
+    if db.conn is None: await db.init_db()
+
+    async with db.conn.execute(
+        "SELECT user_id, fio FROM users "
+        "WHERE role = 'foreman' AND is_active = 1 AND is_blacklisted = 0"
+    ) as cur:
+        all_foremen = [dict(r) for r in await cur.fetchall()]
+
+    async with db.conn.execute(
+        "SELECT DISTINCT foreman_id FROM applications "
+        "WHERE date_target = ? "
+        "AND status IN ('approved', 'published', 'in_progress')",
+        (target_date,),
+    ) as cur:
+        active_ids = {int(r[0]) for r in await cur.fetchall() if r[0] is not None}
+
+    return [f for f in all_foremen if int(f['user_id']) not in active_ids]
+
+
 async def get_waiting_apps_for_date(target_date: str):
     """Получить непроверенные (waiting) заявки на дату для предупреждения."""
     if db.conn is None: await db.init_db()
@@ -78,8 +101,11 @@ async def send_smart_schedule_prompt():
     """Отправить модераторам запрос на публикацию расстановки с inline-кнопками (TG + MAX)."""
     if db.conn is None: await db.init_db()
 
-    debtors = await get_smr_debtors()
     tomorrow_str = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    # v2.4.9: «Должники по заявкам» — прорабы без approved/published/in_progress
+    # заявок на завтра (а не должники по СМР, как раньше).
+    app_debtors = await get_application_debtors_for_date(tomorrow_str)
 
     async with db.conn.execute(
         "SELECT COUNT(*) FROM applications WHERE status = 'approved' AND date_target = ?",
@@ -93,13 +119,13 @@ async def send_smart_schedule_prompt():
     ) as cur:
         waiting_count = (await cur.fetchone())[0]
 
-    debtors_text = ", ".join(list({d['foreman_name'] for d in debtors})) if debtors else "Нет"
+    debtors_text = ", ".join([d['fio'] for d in app_debtors]) if app_debtors else "Нет"
 
     warning = f"\n⚠️ Непроверенных заявок: {waiting_count}" if waiting_count > 0 else ""
 
     text = (
         f"📅 <b>Подготовка нарядов на завтра</b>\n"
-        f"⚠️ <b>Должники по СМР:</b> {debtors_text}\n"
+        f"⚠️ <b>Должники по заявкам:</b> {debtors_text}\n"
         f"📋 Одобренных заявок на завтра: {approved_count}"
         f"{warning}\n"
         f"❓ Отправить расстановку по одобренным?"
@@ -124,7 +150,8 @@ async def send_smart_schedule_prompt():
 
     tg_markup = {"inline_keyboard": [
         [{"text": "✅ Опубликовать", "callback_data": "smart_publish_now"}],
-        [{"text": "⏳ Отложить на 10 мин", "callback_data": "smart_publish_delay"}]
+        [{"text": "⏳ Отложить на 10 мин", "callback_data": "smart_publish_delay"}],
+        [{"text": "📢 Уведомить должников и перенести", "callback_data": "smart_publish_notify_defer"}],
     ]}
 
     max_plain_text = strip_html(text)
@@ -147,7 +174,8 @@ async def send_smart_schedule_prompt():
             elif lid < 0 and notify_max and max_bot_token:
                 max_buttons = [
                     [CallbackButton(text="✅ Опубликовать", payload="smart_publish_now")],
-                    [CallbackButton(text="⏳ Отложить на 10 мин", payload="smart_publish_delay")]
+                    [CallbackButton(text="⏳ Отложить на 10 мин", payload="smart_publish_delay")],
+                    [CallbackButton(text="📢 Уведомить должников и перенести", payload="smart_publish_notify_defer")],
                 ]
                 max_payload = ButtonsPayload(buttons=max_buttons).pack()
                 dm_chat_id = await get_max_dm_chat_id(str(abs(lid)))

@@ -560,14 +560,29 @@ async def message_callback(event: MessageCallback):
                     f"{API_URL}/api/system/delay_publish", data=fd
                 ) as resp:
                     pass
-            buttons = [
-                [CallbackButton(text="✅ Опубликовать сейчас", payload="smart_publish_now")],
-                [CallbackButton(text="⏳ Отложить ещё на 10 мин", payload="smart_publish_delay")]
-            ]
-            btn_payload = ButtonsPayload(buttons=buttons).pack()
+            # v2.4.9: prompt is auto-re-sent in 10 min by the scheduler.
             await send_max_msg(event,
-                               "⏳ Отложено на 10 минут. Авто-публикация через 10 мин.",
-                               attachments=[btn_payload])
+                               "⏳ Отложено на 10 минут — запрос придёт снова.")
+        except Exception as e:
+            await send_max_msg(event, f"❌ Ошибка: {e}")
+        return
+
+    # ---------------- SMART SCHEDULING: УВЕДОМИТЬ ДОЛЖНИКОВ + ОТЛОЖИТЬ ----------------
+    if payload == "smart_publish_notify_defer":
+        user = await db.get_user(real_tg_id)
+        if not user or dict(user).get('role') not in ['moderator', 'boss', 'superadmin']:
+            return await send_max_msg(event, "❌ Нет прав для выполнения этого действия.")
+        try:
+            async with aiohttp.ClientSession() as session:
+                fd = aiohttp.FormData()
+                fd.add_field('tg_id', str(real_tg_id))
+                async with session.post(
+                    f"{API_URL}/api/system/notify_debtors_and_defer", data=fd
+                ) as resp:
+                    result = await resp.json()
+                    notified = result.get('notified', 0)
+            await send_max_msg(event,
+                               f"📢 Уведомлено должников: {notified}. Запрос придёт снова через 10 мин.")
         except Exception as e:
             await send_max_msg(event, f"❌ Ошибка: {e}")
         return

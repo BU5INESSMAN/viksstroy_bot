@@ -495,6 +495,7 @@ async def handle_smart_publish_callback(callback: types.CallbackQuery):
             await callback.answer(f"❌ Ошибка публикации", show_alert=True)
 
     elif callback.data == "smart_publish_delay":
+        # v2.4.9: defer now re-sends the prompt in 10 min (scheduler task).
         try:
             async with aiohttp.ClientSession() as session:
                 fd = aiohttp.FormData()
@@ -503,22 +504,39 @@ async def handle_smart_publish_callback(callback: types.CallbackQuery):
                     f"{API_URL}/api/system/delay_publish", data=fd
                 ) as resp:
                     pass
-            original_text = callback.message.text or ""
-            await callback.message.edit_text(
-                f"📅 <b>Подготовка нарядов на завтра</b>\n"
-                f"{original_text.split(chr(10), 1)[-1] if chr(10) in original_text else ''}\n\n"
-                f"⏳ <i>Отложено на 10 минут. Авто-публикация через 10 мин.</i>",
-                parse_mode="HTML",
-                reply_markup=InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="✅ Опубликовать сейчас",
-                                          callback_data="smart_publish_now")],
-                    [InlineKeyboardButton(text="⏳ Отложить ещё на 10 мин",
-                                          callback_data="smart_publish_delay")]
-                ])
-            )
-            await callback.answer("⏳ Отложено на 10 минут")
+            try:
+                await callback.message.delete()
+            except Exception:
+                await callback.message.edit_text(
+                    "⏳ <i>Отложено на 10 минут. Запрос придёт снова.</i>",
+                    parse_mode="HTML",
+                )
+            await callback.answer("⏳ Отложено на 10 минут — придёт снова")
         except Exception as e:
             logger.error(f"Ошибка отложения публикации: {e}")
+            await callback.answer("❌ Ошибка", show_alert=True)
+
+    elif callback.data == "smart_publish_notify_defer":
+        # v2.4.9: notify application debtors and reschedule the prompt.
+        try:
+            async with aiohttp.ClientSession() as session:
+                fd = aiohttp.FormData()
+                fd.add_field('tg_id', str(tg_id))
+                async with session.post(
+                    f"{API_URL}/api/system/notify_debtors_and_defer", data=fd
+                ) as resp:
+                    result = await resp.json()
+                    notified = result.get('notified', 0)
+            try:
+                await callback.message.delete()
+            except Exception:
+                await callback.message.edit_text(
+                    f"📢 <i>Уведомлено должников: {notified}. Запрос придёт снова через 10 мин.</i>",
+                    parse_mode="HTML",
+                )
+            await callback.answer(f"📢 Уведомлено: {notified}. Через 10 мин придёт снова.")
+        except Exception as e:
+            logger.error(f"Ошибка notify_debtors_and_defer: {e}")
             await callback.answer("❌ Ошибка", show_alert=True)
 
 

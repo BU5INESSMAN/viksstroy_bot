@@ -240,6 +240,31 @@ async def check_and_run_tasks():
                 await db.conn.commit()
 
         # =========================================================================
+        # v2.4.9: ТРИГГЕР 9b — RE-PROMPT по таймеру (defer / notify+defer)
+        # =========================================================================
+        try:
+            async with db.conn.execute(
+                "SELECT value FROM settings WHERE key = 'smart_prompt_at'"
+            ) as cur:
+                re_prompt_row = await cur.fetchone()
+            if re_prompt_row and re_prompt_row[0]:
+                re_prompt_at = datetime.strptime(re_prompt_row[0], "%Y-%m-%d %H:%M:%S")
+                if now.replace(tzinfo=None) >= re_prompt_at:
+                    from services.schedule_helpers import send_smart_schedule_prompt
+                    logger.info("⏳ Re-sending smart-schedule prompt after defer")
+                    await send_smart_schedule_prompt()
+                    await db.conn.execute("DELETE FROM settings WHERE key = 'smart_prompt_at'")
+                    # Mark today's prompt as sent again so the regular scheduler
+                    # doesn't double-send at auto_publish_time.
+                    prompt_flag_key = f"smart_prompt_sent_{today_date_str}"
+                    await db.conn.execute(
+                        "INSERT OR REPLACE INTO settings (key, value) VALUES (?, '1')",
+                        (prompt_flag_key,))
+                    await db.conn.commit()
+        except Exception as e:
+            logger.error(f"Ошибка re-prompt таймера: {e}")
+
+        # =========================================================================
         # ТРИГГЕР 10: АВТО-ПУБЛИКАЦИЯ ПО ТАЙМЕРУ (10-мин таймаут)
         # =========================================================================
         try:
