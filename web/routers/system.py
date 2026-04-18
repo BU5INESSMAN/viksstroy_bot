@@ -122,6 +122,162 @@ async def test_notification_extended(test_type: str = Form(...), platform: str =
     return {"status": "ok", "test_type": test_type}
 
 
+# --- v2.4.10: precise test-notification panel (user × channels × type) ---
+
+_require_boss_plus = require_role("superadmin", "boss")
+
+
+@router.post("/api/system/test_notification")
+async def api_test_notification(request: Request, current_user=Depends(_require_boss_plus)):
+    """Send a test notification to a specific user via selected channels.
+
+    Body: {
+      target_user_id: int | null,      # null = self
+      channels: ["telegram", "max", "pwa"],
+      notification_type: str,          # e.g. "app_approved"
+      custom_message: str,
+    }
+    Returns {results: ["TG → …: OK", …]}.
+    """
+    data = await request.json()
+    try:
+        target_id = int(data.get('target_user_id') or current_user['tg_id'])
+    except (TypeError, ValueError):
+        target_id = current_user['tg_id']
+    channels = data.get('channels') or []
+    notif_type = (data.get('notification_type') or '').strip() or 'app_approved'
+    custom_msg = (data.get('custom_message') or '').strip() or 'Тестовое уведомление'
+
+    async with db.conn.execute("SELECT * FROM users WHERE user_id = ?", (target_id,)) as cur:
+        target_row = await cur.fetchone()
+    if not target_row:
+        raise HTTPException(404, "Пользователь не найден")
+    target_user = dict(target_row)
+    target_name = target_user.get('fio') or str(target_id)
+
+    results: list[str] = []
+
+    # Gather linked TG / MAX ids for this user (positive = TG, negative = MAX).
+    try:
+        from utils import get_all_linked_ids
+        linked_ids = await get_all_linked_ids(target_id)
+    except Exception:
+        linked_ids = [target_id]
+
+    if 'telegram' in channels:
+        tg_ids = [i for i in linked_ids if i > 0]
+        if not tg_ids:
+            results.append(f"TG → {target_name}: не привязан")
+        else:
+            import os as _os
+            token = _os.getenv("BOT_TOKEN")
+            if not token:
+                results.append("TG → BOT_TOKEN не задан")
+            else:
+                from services.tg_session import get_tg_session
+                for tid in tg_ids:
+                    try:
+                        async with await get_tg_session() as session:
+                            async with session.post(
+                                f"https://api.telegram.org/bot{token}/sendMessage",
+                                json={"chat_id": tid, "text": custom_msg},
+                            ) as resp:
+                                ok = resp.status == 200
+                        results.append(f"TG → {target_name}: {'OK' if ok else 'HTTP ' + str(resp.status)}")
+                    except Exception as e:
+                        results.append(f"TG → {target_name}: {str(e)[:80]}")
+
+    if 'max' in channels:
+        max_ids = [abs(i) for i in linked_ids if i < 0]
+        if not max_ids:
+            results.append(f"MAX → {target_name}: не привязан")
+        else:
+            import os as _os
+            mtoken = _os.getenv("MAX_BOT_TOKEN")
+            if not mtoken:
+                results.append("MAX → MAX_BOT_TOKEN не задан")
+            else:
+                from services.max_api import get_max_dm_chat_id, send_max_text
+                for mid in max_ids:
+                    try:
+                        chat_id = await get_max_dm_chat_id(str(mid))
+                        if chat_id:
+                            await send_max_text(mtoken, chat_id, custom_msg)
+                            results.append(f"MAX → {target_name}: OK")
+                        else:
+                            results.append(f"MAX → {target_name}: нет DM-чата")
+                    except Exception as e:
+                        results.append(f"MAX → {target_name}: {str(e)[:80]}")
+
+    if 'pwa' in channels:
+        try:
+            async with db.conn.execute(
+                "SELECT COUNT(*) FROM push_subscriptions WHERE user_id = ?", (target_id,)
+            ) as cur:
+                sub_count = (await cur.fetchone())[0]
+        except Exception:
+            sub_count = 0
+        if sub_count == 0:
+            results.append(f"Push → {target_name}: нет подписок")
+        else:
+            try:
+                from services.notifications import _send_web_push_safe
+                await _send_web_push_safe([target_id], 'Тест', custom_msg, url='/dashboard', push_type=notif_type)
+                results.append(f"Push → {target_name}: отправлено в {sub_count} подписок")
+            except Exception as e:
+                results.append(f"Push → {target_name}: {str(e)[:80]}")
+
+    await db.add_log(
+        current_user["tg_id"], current_user.get('fio', ''),
+        f"Тестовое уведомление для {target_name} ({', '.join(channels) or '—'})",
+        target_type='system',
+    )
+    return {"results": results}
+
+
+@router.post("/api/system/test_schedule")
+async def api_test_schedule(current_user=Depends(_require_boss_plus)):
+    """Generate a fresh tomorrow-schedule PNG and send it to the caller in TG."""
+    import os as _os
+
+    tomorrow = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
+    try:
+        from schedule_generator import generate_schedule_image
+        buf = await generate_schedule_image(tomorrow)
+    except Exception as e:
+        raise HTTPException(500, f"Не удалось сгенерировать PNG: {e}")
+
+    token = _os.getenv("BOT_TOKEN")
+    if not token:
+        raise HTTPException(500, "BOT_TOKEN не задан")
+
+    tg_id = current_user["tg_id"]
+    if tg_id <= 0:
+        raise HTTPException(400, "TG не привязан — откройте через Telegram")
+
+    try:
+        import aiohttp as _aiohttp
+        form = _aiohttp.FormData()
+        form.add_field('chat_id', str(tg_id))
+        form.add_field('caption', f'Тестовая расстановка на {tomorrow}')
+        form.add_field('photo', buf.getvalue(), filename='schedule.png',
+                       content_type='image/png')
+        async with _aiohttp.ClientSession() as session:
+            async with session.post(
+                f"https://api.telegram.org/bot{token}/sendPhoto", data=form
+            ) as resp:
+                ok = resp.status == 200
+                resp_text = await resp.text()
+    except Exception as e:
+        raise HTTPException(500, f"Ошибка отправки: {e}")
+
+    await db.add_log(tg_id, current_user.get('fio', ''),
+                     f"Отправил тестовую расстановку на {tomorrow}", target_type='system')
+    if not ok:
+        return {"status": "error", "message": resp_text[:200]}
+    return {"status": "ok", "date": tomorrow}
+
+
 # --- Debtors Endpoint ---
 
 @router.get("/api/system/debtors")
