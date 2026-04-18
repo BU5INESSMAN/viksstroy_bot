@@ -361,7 +361,7 @@ export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
                                                             {eqName}
                                                         </p>
                                                         {driver && (
-                                                            <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">Водитель: {driver}</p>
+                                                            <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">{driver}</p>
                                                         )}
                                                     </div>
                                                 </div>
