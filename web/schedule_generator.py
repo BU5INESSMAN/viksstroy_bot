@@ -146,6 +146,42 @@ async def _fetch_schedule_sections(target_date: str) -> list:
             except Exception:
                 pass
 
+    # v2.4.9: also credit a foreman with an object when their team is
+    # assigned to the application, even if someone else created the app.
+    # Without this the ПРОРАБЫ section shows an empty "Объект" cell for
+    # foremen who didn't personally submit the request.
+    try:
+        async with db.conn.execute(
+            "SELECT team_id, tg_user_id FROM team_members "
+            "WHERE is_foreman = 1 AND tg_user_id IS NOT NULL AND tg_user_id != 0"
+        ) as _tmc:
+            team_foremen: dict[int, list[int]] = {}
+            for tm_tid, tm_uid in await _tmc.fetchall():
+                if tm_tid is None:
+                    continue
+                team_foremen.setdefault(int(tm_tid), []).append(int(tm_uid))
+    except Exception:
+        team_foremen = {}
+
+    for app in apps:
+        team_field = app.get("team_id")
+        if not team_field:
+            continue
+        app_teams: list[int] = []
+        for part in str(team_field).split(","):
+            part = part.strip()
+            if part.isdigit():
+                app_teams.append(int(part))
+        if not app_teams:
+            continue
+        if app.get("object_id") and int(app["object_id"]) in obj_id_to_pair:
+            pair = obj_id_to_pair[int(app["object_id"])]
+        else:
+            pair = ((app.get("object_address", "") or "").strip(), "")
+        for tid in app_teams:
+            for uid in team_foremen.get(tid, []):
+                foreman_objs.setdefault(uid, []).append(pair)
+
     logger.info(f"  foreman_objs keys: {list(foreman_objs.keys())}")
     logger.info(f"  member_objs keys: {list(member_objs.keys())}")
     logger.info(f"  equip_objs keys: {list(equip_objs.keys())}")
