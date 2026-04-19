@@ -1,16 +1,17 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useMemo, useRef } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
-    ClipboardList, Clock, CheckCircle, HardHat, Flag,
+    ClipboardList, Clock, CheckCircle, HardHat, Flag, Edit3,
     XCircle, Search, Undo, ChevronDown, ChevronUp, User, X
 } from 'lucide-react';
 
-import { getTodayStr } from '../utils/dateUtils';
+import { getTodayStr, getSmartDates } from '../utils/dateUtils';
 import useConfirm from '../hooks/useConfirm';
 import ScheduleModal from '../features/applications/components/ScheduleModal';
+import EditAppModal from '../features/applications/components/EditAppModal';
 import { ReviewSkeleton } from '../components/ui/PageSkeletons';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
 import { IconUsersGroup, IconTruck } from '@tabler/icons-react';
@@ -55,8 +56,70 @@ export default function Review() {
     const [selectedApp, setSelectedApp] = useState(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [isScheduleOpen, setScheduleOpen] = useState(false);
+    // v2.4.11: edit modal + explicit status transitions (moved from ViewAppModal).
+    // EditAppModal depends on the dashboard bundle (teams + equipment + kanban_apps)
+    // and the active-objects list — we fetch them lazily, only when opening edit.
+    const [editApp, setEditApp] = useState(null);
+    const [editData, setEditData] = useState(null);
+    const [editObjects, setEditObjects] = useState(null);
+    const [selectedStatus, setSelectedStatus] = useState('');
+    const [changingStatus, setChangingStatus] = useState(false);
     const { confirm, prompt, ConfirmUI } = useConfirm();
     const approvedRef = useRef(null);
+    const smartDates = useMemo(() => getSmartDates(), []);
+
+    const openEditModal = async (app) => {
+        try {
+            const [dashRes, objRes] = await Promise.all([
+                axios.get('/api/dashboard'),
+                axios.get(`/api/objects/active?tg_id=${tgId}`),
+            ]);
+            setEditData(dashRes.data || {});
+            setEditObjects(objRes.data || []);
+            setEditApp(app);
+        } catch (e) {
+            toast.error('Не удалось открыть редактирование');
+        }
+    };
+
+    // Who may press «Редактировать» on a given app:
+    // moderator+ always, foreman if they own the request, and only while
+    // the application is still editable (waiting / approved / published).
+    const canEditApp = useMemo(() => {
+        return (app) => {
+            if (!app) return false;
+            const isOffice = ['moderator', 'boss', 'superadmin'].includes(role);
+            const isCreator = String(app.foreman_id) === String(tgId);
+            const editable = ['waiting', 'approved', 'published'].includes(app.status);
+            return editable && (isOffice || (role === 'foreman' && isCreator));
+        };
+    }, [role, tgId]);
+
+    const handleStatusTransition = async (app) => {
+        if (!selectedStatus) return toast.error('Выберите действие');
+        const isRollback = selectedStatus === 'approved';
+        if (isRollback) {
+            const ok = await confirm(
+                'При возврате в «Одобренные» данные СМР будут удалены. Продолжить?',
+                { title: 'Подтверждение', variant: 'warning', confirmText: 'Вернуть' },
+            );
+            if (!ok) return;
+        }
+        setChangingStatus(true);
+        try {
+            const fd = new FormData();
+            fd.append('new_status', selectedStatus);
+            await axios.post(`/api/applications/${app.id}/change_status`, fd);
+            toast.success('Статус изменён');
+            setSelectedStatus('');
+            setSelectedApp(null);
+            fetchData();
+        } catch (err) {
+            toast.error(err.response?.data?.detail || 'Ошибка смены статуса');
+        } finally {
+            setChangingStatus(false);
+        }
+    };
 
     const fetchData = () => {
         axios.get('/api/applications/review')
@@ -405,32 +468,111 @@ export default function Review() {
                                     </div>
                                 </div>
 
+                                {/* v2.4.11: single-row actions — Одобрить | Редактировать | Отклонить.
+                                    Edit button visible to moderator+ and to the app creator;
+                                    approve/reject limited to moderator+. */}
                                 <div className="flex flex-col sm:flex-row gap-3 pt-6 border-t border-gray-100 dark:border-gray-700">
-                                    {selectedApp.status === 'waiting' && canModerate && (
+                                    {selectedApp.status === 'waiting' && (
                                         <>
-                                            <button disabled={isProcessing} onClick={() => handleReviewAction('rejected')} className="w-full sm:w-1/2 bg-red-50 text-red-600 disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 py-3.5 rounded-xl font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition-all active:scale-[0.98] border border-red-200 dark:border-red-800 flex items-center justify-center gap-2 shadow-sm">
-                                                <XCircle className="w-4 h-4" /> Отклонить
-                                            </button>
-                                            <button disabled={isProcessing} onClick={() => handleReviewAction('approved')} className="w-full sm:w-1/2 bg-emerald-500 text-white disabled:opacity-50 py-3.5 rounded-xl font-bold shadow-md hover:shadow-lg hover:bg-emerald-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                                                <CheckCircle className="w-4 h-4" /> Одобрить
-                                            </button>
+                                            {canModerate && (
+                                                <button disabled={isProcessing} onClick={() => handleReviewAction('approved')} className="flex-1 bg-emerald-500 text-white disabled:opacity-50 py-3.5 rounded-xl font-bold shadow-md hover:shadow-lg hover:bg-emerald-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                                                    <CheckCircle className="w-4 h-4" /> Одобрить
+                                                </button>
+                                            )}
+                                            {canEditApp(selectedApp) && (
+                                                <button disabled={isProcessing} onClick={() => openEditModal(selectedApp)} className="flex-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 disabled:opacity-50 py-3.5 rounded-xl font-bold border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                                                    <Edit3 className="w-4 h-4" /> Редактировать
+                                                </button>
+                                            )}
+                                            {canModerate && (
+                                                <button disabled={isProcessing} onClick={() => handleReviewAction('rejected')} className="flex-1 bg-red-50 text-red-600 disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 py-3.5 rounded-xl font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition-all active:scale-[0.98] border border-red-200 dark:border-red-800 flex items-center justify-center gap-2 shadow-sm">
+                                                    <XCircle className="w-4 h-4" /> Отклонить
+                                                </button>
+                                            )}
                                         </>
                                     )}
-                                    {selectedApp.status === 'approved' && canModerate && (
-                                        <button disabled={isProcessing} onClick={() => handleReviewAction('rejected')} className="w-full bg-red-50 text-red-600 disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 py-3.5 rounded-xl font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition-all active:scale-[0.98] border border-red-200 dark:border-red-800 flex items-center justify-center gap-2 shadow-sm">
-                                            <Undo className="w-4 h-4" /> Отозвать заявку
-                                        </button>
+                                    {selectedApp.status === 'approved' && (
+                                        <>
+                                            {canEditApp(selectedApp) && (
+                                                <button disabled={isProcessing} onClick={() => openEditModal(selectedApp)} className="flex-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 disabled:opacity-50 py-3.5 rounded-xl font-bold border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 transition-all active:scale-[0.98] flex items-center justify-center gap-2">
+                                                    <Edit3 className="w-4 h-4" /> Редактировать
+                                                </button>
+                                            )}
+                                            {canModerate && (
+                                                <button disabled={isProcessing} onClick={() => handleReviewAction('rejected')} className="flex-1 bg-red-50 text-red-600 disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 py-3.5 rounded-xl font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition-all active:scale-[0.98] border border-red-200 dark:border-red-800 flex items-center justify-center gap-2 shadow-sm">
+                                                    <Undo className="w-4 h-4" /> Отозвать заявку
+                                                </button>
+                                            )}
+                                        </>
                                     )}
-                                                    {(selectedApp.status === 'published' || selectedApp.status === 'in_progress') && canModerate && (
+                                    {(selectedApp.status === 'published' || selectedApp.status === 'in_progress') && canModerate && (
                                         <button disabled={isProcessing} onClick={() => handleReviewAction('completed')} className="w-full bg-gray-800 text-white disabled:opacity-50 dark:bg-gray-700 py-3.5 rounded-xl font-bold hover:bg-gray-900 dark:hover:bg-gray-600 transition-all active:scale-[0.98] shadow-md hover:shadow-lg flex items-center justify-center gap-2">
                                             <Flag className="w-4 h-4" /> Отменить / Завершить наряд
                                         </button>
                                     )}
                                 </div>
+
+                                {/* v2.4.11: status-transition dropdown (moved from ViewAppModal).
+                                    Available to moderator+ for approved / in_progress apps. */}
+                                {canModerate && (selectedApp.status === 'approved' || selectedApp.status === 'in_progress') && (() => {
+                                    const opts = selectedApp.status === 'approved'
+                                        ? [{ value: 'in_progress', label: 'В работу' }]
+                                        : [
+                                            { value: 'approved', label: 'Вернуть в Одобренные' },
+                                            { value: 'completed', label: 'Завершить' },
+                                        ];
+                                    return (
+                                        <div className="mt-4 bg-gray-50 dark:bg-gray-700/30 rounded-xl p-4 border border-gray-100 dark:border-gray-700">
+                                            <p className="text-[11px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Управление статусом</p>
+                                            <div className="flex gap-2 items-center">
+                                                <select
+                                                    value={selectedStatus}
+                                                    onChange={e => setSelectedStatus(e.target.value)}
+                                                    className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2.5 text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 outline-none focus:ring-2 focus:ring-blue-500"
+                                                >
+                                                    <option value="">Выберите действие</option>
+                                                    {opts.map(o => (
+                                                        <option key={o.value} value={o.value}>{o.label}</option>
+                                                    ))}
+                                                </select>
+                                                <button
+                                                    onClick={() => handleStatusTransition(selectedApp)}
+                                                    disabled={changingStatus || !selectedStatus}
+                                                    className={`px-5 py-2.5 rounded-lg text-sm font-bold text-white transition-colors disabled:opacity-50 active:scale-[0.97] ${selectedStatus === 'approved' ? 'bg-amber-500 hover:bg-amber-600' : 'bg-indigo-600 hover:bg-indigo-700'}`}
+                                                >
+                                                    {changingStatus ? '...' : 'Применить'}
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         </div>
                     </div>
                 </div>
+            )}
+
+            {/* v2.4.11: edit modal — opens over the Review detail drawer.
+                On close/save we refresh the list and drop the selected app
+                so the updated data shows up on the next open. */}
+            {editApp && editData && editObjects && (
+                <EditAppModal
+                    app={editApp}
+                    onClose={() => { setEditApp(null); setEditData(null); setEditObjects(null); }}
+                    onSaved={() => {
+                        setEditApp(null);
+                        setEditData(null);
+                        setEditObjects(null);
+                        setSelectedApp(null);
+                        fetchData();
+                    }}
+                    data={editData}
+                    objectsList={editObjects}
+                    smartDates={smartDates}
+                    role={role}
+                    tgId={tgId}
+                    openProfile={openProfile}
+                />
             )}
             <ScheduleModal isOpen={isScheduleOpen} onClose={() => setScheduleOpen(false)} tgId={tgId} />
             {ConfirmUI}
