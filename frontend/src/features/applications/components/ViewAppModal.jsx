@@ -1,6 +1,4 @@
 import { useState } from 'react';
-import axios from 'axios';
-import toast from 'react-hot-toast';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, Clock, CheckCircle, HardHat, Flag,
@@ -115,13 +113,9 @@ function InfoCell({ label, icon: Icon, iconColor, children }) {
 }
 
 /* ─── Main Modal ─── */
-export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
-    const [selectedStatus, setSelectedStatus] = useState('');
-    const [changingStatus, setChangingStatus] = useState(false);
-    const role = localStorage.getItem('user_role') || '';
-    const tgId = localStorage.getItem('tg_id') || '0';
-    const canManageStatus = role === 'superadmin' || role === 'admin';
-
+export default function ViewAppModal({ app, onClose, data }) {
+    // v2.4.11: ViewAppModal is a pure read-only viewer. All actions
+    // (edit, approve/reject, status transitions) live on the Review page.
     if (!app) return null;
 
     const statusIcons = { waiting: Clock, approved: CheckCircle, published: HardHat, in_progress: HardHat, completed: Flag };
@@ -394,95 +388,17 @@ export default function ViewAppModal({ app, onClose, onEdit, data, onUpdate }) {
                             </p>
                         </div>
                     )}
-                    {/* ── Status Management (admin/superadmin only) ── */}
-                    {canManageStatus && (() => {
-                        const opts = [];
-                        if (app.status === 'approved') {
-                            opts.push({ value: 'in_progress', label: 'В работу' });
-                        } else if (app.status === 'in_progress') {
-                            opts.push({ value: 'approved', label: 'Вернуть в Одобренные' });
-                            opts.push({ value: 'completed', label: 'Завершить' });
-                        }
-
-                        if (opts.length === 0) {
-                            return (
-                                <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
-                                    <p className="text-xs text-gray-400 font-medium">Изменение статуса недоступно</p>
-                                </div>
-                            );
-                        }
-
-                        const isRollback = selectedStatus === 'approved';
-
-                        const handleChangeStatus = async () => {
-                            if (!selectedStatus) return toast.error('Выберите действие');
-                            if (isRollback) {
-                                const ok = window.confirm('При возврате в «Одобренные» данные СМР будут удалены. Продолжить?');
-                                if (!ok) return;
-                            }
-                            setChangingStatus(true);
-                            try {
-                                const fd = new FormData();
-                                fd.append('new_status', selectedStatus);
-                                await axios.post(`/api/applications/${app.id}/change_status`, fd);
-                                toast.success('Статус изменён');
-                                onUpdate ? onUpdate() : onClose();
-                            } catch (err) {
-                                toast.error(err.response?.data?.detail || 'Ошибка смены статуса');
-                            } finally {
-                                setChangingStatus(false);
-                            }
-                        };
-
-                        return (
-                            <div className="bg-gray-50 dark:bg-gray-700/30 rounded-lg p-3">
-                                <p className="text-xs font-bold text-gray-600 dark:text-gray-300 mb-2">Управление статусом</p>
-                                <div className="flex gap-2 items-center">
-                                    <select
-                                        value={selectedStatus}
-                                        onChange={e => setSelectedStatus(e.target.value)}
-                                        className="flex-1 border border-gray-300 dark:border-gray-600 rounded-lg px-3 py-2 text-sm bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
-                                    >
-                                        <option value="">Выберите действие</option>
-                                        {opts.map(o => (
-                                            <option key={o.value} value={o.value}>{o.label}</option>
-                                        ))}
-                                    </select>
-                                    <button
-                                        onClick={handleChangeStatus}
-                                        disabled={changingStatus || !selectedStatus}
-                                        className={`px-4 py-2 rounded-lg text-sm font-bold text-white transition-colors disabled:opacity-50 ${
-                                            isRollback
-                                                ? 'bg-amber-500 hover:bg-amber-600'
-                                                : 'bg-indigo-600 hover:bg-indigo-700'
-                                        }`}
-                                    >
-                                        {changingStatus ? '...' : 'Применить'}
-                                    </button>
-                                </div>
-                            </div>
-                        );
-                    })()}
                 </div>
 
-                {/* ── Footer ── */}
-                <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/30 flex gap-3">
+                {/* ── Footer — read-only: close only ── */}
+                <div className="px-6 py-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/30">
                     <button
                         type="button"
                         onClick={onClose}
-                        className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 px-6 rounded-xl font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition-all active:scale-[0.98]"
+                        className="w-full bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 py-3 px-6 rounded-xl font-bold hover:bg-gray-300 dark:hover:bg-gray-600 transition-all active:scale-[0.98]"
                     >
                         Закрыть
                     </button>
-                    {onEdit && app.status === 'waiting' && (
-                        <button
-                            type="button"
-                            onClick={() => onEdit(app)}
-                            className="flex-1 bg-yellow-500 text-white py-3 px-6 rounded-xl font-bold shadow-md hover:shadow-lg hover:bg-yellow-600 transition-all active:scale-[0.98]"
-                        >
-                            Редактировать
-                        </button>
-                    )}
                 </div>
             </motion.div>
         </motion.div>

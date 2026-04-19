@@ -330,15 +330,6 @@ export default function Home() {
                     app={viewApp}
                     onClose={() => setViewApp(null)}
                     data={data}
-                    onEdit={
-                        (viewApp.status === 'waiting' && (
-                            ['moderator', 'boss', 'superadmin'].includes(role) ||
-                            (role === 'foreman' && String(viewApp.foreman_id) === String(tgId))
-                        ))
-                            ? handleEditFromView
-                            : undefined
-                    }
-                    onUpdate={() => { setViewApp(null); fetchData(); }}
                 />
             )}
 
