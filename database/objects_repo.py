@@ -138,7 +138,12 @@ class ObjectsRepoMixin:
             LEFT JOIN application_kp akp ON akp.kp_id = k.id
                 AND akp.application_id IN (
                     SELECT a.id FROM applications a
-                    WHERE a.object_id = ? AND a.kp_status = 'approved'
+                    WHERE a.object_id = ?
+                      AND (
+                        a.kp_status IN ('approved', 'submitted')
+                        OR a.smr_status IN ('approved', 'pending_review')
+                        OR a.status = 'completed'
+                      )
                 )
             WHERE okp.object_id = ?
             GROUP BY k.id
@@ -146,6 +151,51 @@ class ObjectsRepoMixin:
         """
         async with self.conn.execute(query, (object_id, object_id)) as cur:
             return [dict(row) for row in await cur.fetchall()]
+
+    async def get_object_extra_works_stats(self, object_id: int):
+        """Сводные «дополнительные работы» по объекту.
+
+        application_extra_works → extra_works_catalog через extra_work_id
+        (НЕ kp_catalog). Название берём сначала из custom_name (если пустое
+        — из справочника). Единицу — из aew.unit (денормализована с v2.4.3),
+        иначе из справочника. Работы без названия и нулевые объёмы
+        пропускаем.
+        """
+        query = """
+            SELECT
+                COALESCE(NULLIF(TRIM(aew.custom_name), ''), ewc.name, 'Без названия') AS name,
+                COALESCE(
+                    NULLIF(
+                        CASE WHEN LOWER(TRIM(aew.unit)) IN ('nan','none','null')
+                               OR TRIM(aew.unit) GLOB '[0-9]*' THEN ''
+                             ELSE TRIM(aew.unit) END,
+                        ''),
+                    NULLIF(
+                        CASE WHEN LOWER(TRIM(ewc.unit)) IN ('nan','none','null')
+                               OR TRIM(ewc.unit) GLOB '[0-9]*' THEN ''
+                             ELSE TRIM(ewc.unit) END,
+                        ''),
+                    'шт'
+                ) AS unit,
+                SUM(aew.volume) AS completed_volume
+            FROM application_extra_works aew
+            LEFT JOIN extra_works_catalog ewc ON ewc.id = aew.extra_work_id
+            JOIN applications a ON a.id = aew.application_id
+            WHERE a.object_id = ?
+              AND (
+                a.kp_status IN ('approved', 'submitted')
+                OR a.smr_status IN ('approved', 'pending_review')
+                OR a.status = 'completed'
+              )
+              AND aew.volume > 0
+            GROUP BY COALESCE(NULLIF(TRIM(aew.custom_name), ''), ewc.name)
+            ORDER BY name
+        """
+        try:
+            async with self.conn.execute(query, (object_id,)) as cur:
+                return [dict(row) for row in await cur.fetchall()]
+        except Exception:
+            return []
 
     async def get_object_history(self, object_id: int):
         """Хронологическая история выполненных объемов по датам/заявкам.

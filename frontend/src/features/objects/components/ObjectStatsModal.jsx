@@ -121,6 +121,41 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                 )}
                             </div>
 
+                            {/* Extra works section — rendered only when reported */}
+                            {statsData.extra_works && statsData.extra_works.length > 0 && (
+                                <div>
+                                    <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">
+                                        Выполненные доп. работы
+                                    </h4>
+                                    <div className="relative">
+                                        <div className="-mx-6 px-6 sm:mx-0 sm:px-0 overflow-x-auto">
+                                            <div className="min-w-[380px] border border-gray-100 dark:border-gray-700 rounded-2xl overflow-hidden">
+                                                <div className="grid grid-cols-[minmax(0,1fr)_60px_80px] gap-2 px-4 py-2 bg-gray-50 dark:bg-gray-900/50 text-[10px] font-bold uppercase tracking-wider text-gray-500">
+                                                    <span>Работа</span>
+                                                    <span className="text-center">Ед.</span>
+                                                    <span className="text-right">Факт</span>
+                                                </div>
+                                                <div className="divide-y divide-gray-50 dark:divide-gray-700">
+                                                    {statsData.extra_works.map((e, i) => (
+                                                        <div key={i} className="grid grid-cols-[minmax(0,1fr)_60px_80px] gap-2 px-4 py-3 items-center">
+                                                            <p className="text-sm font-medium text-gray-800 dark:text-gray-200 leading-tight truncate">
+                                                                {e.name}
+                                                            </p>
+                                                            <span className="text-xs text-gray-400 text-center whitespace-nowrap">
+                                                                {formatUnit(e.unit)}
+                                                            </span>
+                                                            <span className="text-sm font-bold text-right text-gray-800 dark:text-gray-200 whitespace-nowrap">
+                                                                {e.completed_volume}
+                                                            </span>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* History timeline */}
                             <div>
                                 <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">
