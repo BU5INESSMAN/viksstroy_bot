@@ -83,12 +83,18 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                                         const tMembers = a.members_data?.filter(m => m.team_id === tId) || [];
                                         const tName = tMembers.length > 0 ? tMembers[0].team_name : `Бригада #${tId}`;
                                         const isFreed = freedTeamIds.includes(tId) || a.is_team_freed === 1;
+                                        const isPartial = !!(a.teams_partial && a.teams_partial[tId]);
                                         const TeamIcon = getIconComponent(teamIconMap[tId] || DEFAULT_TEAM_ICON, TEAM_ICONS) || IconUsersGroup;
 
                                         return (
                                             <p key={tId} className={`text-xs flex items-center gap-1.5 ${isFreed ? 'text-gray-400 line-through' : 'text-gray-700 dark:text-gray-300 font-medium'}`}>
                                                 <TeamIcon className={`w-3.5 h-3.5 flex-shrink-0 ${isFreed ? 'text-gray-400' : 'text-indigo-400'}`} stroke={2} />
                                                 <span className="truncate">{tName}</span>
+                                                {isPartial && !isFreed && (
+                                                    <span className="flex-shrink-0 text-[10px] text-yellow-600 dark:text-yellow-400 font-semibold bg-yellow-500/10 border border-yellow-500/30 px-1.5 py-0.5 rounded">
+                                                        (част.)
+                                                    </span>
+                                                )}
                                                 {isFreed && <span className="ml-auto flex-shrink-0 text-[9px] uppercase tracking-wider text-emerald-600 dark:text-emerald-400 font-bold bg-emerald-100 dark:bg-emerald-900/30 px-1.5 py-0.5 rounded flex items-center gap-1"><CheckCircle className="w-2.5 h-2.5" /> Свободна</span>}
                                             </p>
                                         );

@@ -48,10 +48,17 @@ async def check_availability(
         team_ids: str = Form(""),
         equip_data: str = Form(""),
         exclude_app_id: int = Form(0),
+        selected_members: str = Form(""),
         current_user=Depends(get_current_user),
 ):
     if db.conn is None: await db.init_db()
-    occupied = await db.check_resource_availability(date_target, object_id, team_ids, equip_data, exclude_app_id=exclude_app_id or None)
+    # v2.4.3: pass selected_members so the repo can detect partial-brigade
+    # situations (same team, different workers — allowed).
+    occupied = await db.check_resource_availability(
+        date_target, object_id, team_ids, equip_data,
+        exclude_app_id=exclude_app_id or None,
+        selected_members=selected_members,
+    )
     if occupied:
         return {"status": "occupied", "message": "Выбранные ресурсы недоступны:\n\n" + "\n".join(occupied)}
     return {"status": "free"}

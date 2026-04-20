@@ -96,6 +96,38 @@ async def enrich_app_with_members_data(app_dict):
                     })
     app_dict['members_data'] = members_list
 
+    # v2.4.3: flag teams as partial when fewer than all-their-members are
+    # selected in THIS application. Kanban / ViewApp render "(част.)".
+    teams_partial: dict[int, bool] = {}
+    team_field = app_dict.get('team_id')
+    team_ids = []
+    if team_field and str(team_field) != '0':
+        for part in str(team_field).split(','):
+            part = part.strip()
+            if part.isdigit():
+                team_ids.append(int(part))
+    if team_ids:
+        try:
+            pl = ','.join(['?'] * len(team_ids))
+            async with db.conn.execute(
+                f"SELECT team_id, COUNT(*) FROM team_members WHERE team_id IN ({pl}) GROUP BY team_id",
+                team_ids,
+            ) as _tc:
+                totals = {int(r[0]): int(r[1]) for r in await _tc.fetchall()}
+        except Exception:
+            totals = {}
+        selected_by_team: dict[int, int] = {}
+        for m in members_list:
+            tid = m.get('team_id')
+            if tid is not None:
+                selected_by_team[int(tid)] = selected_by_team.get(int(tid), 0) + 1
+        for tid in team_ids:
+            total = totals.get(tid, 0)
+            used = selected_by_team.get(tid, 0)
+            # Partial = team is referenced but some members are not used here
+            teams_partial[tid] = total > 0 and 0 < used < total
+    app_dict['teams_partial'] = teams_partial
+
 
 async def get_active_objects_list(tg_id: int = 0):
     """Get active objects sorted by user's last used."""
@@ -133,7 +165,10 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
     user = await db.get_user(real_tg_id)
     fio = dict(user).get('fio', 'Web-Пользователь') if user else "Web-Пользователь"
 
-    occupied = await db.check_resource_availability(date_target, object_id, team_id, equipment_data)
+    occupied = await db.check_resource_availability(
+        date_target, object_id, team_id, equipment_data,
+        selected_members=selected_members,
+    )
     if occupied:
         raise HTTPException(409, "Ошибка создания наряда:\n" + "\n".join(occupied))
 
@@ -157,7 +192,11 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
         row = await cur.fetchone()
         if not row or row[0] != 'waiting': raise HTTPException(400, "Заявка уже в работе или проверена")
 
-    occupied = await db.check_resource_availability(date_target, object_id, team_id, equipment_data, exclude_app_id=app_id)
+    occupied = await db.check_resource_availability(
+        date_target, object_id, team_id, equipment_data,
+        exclude_app_id=app_id,
+        selected_members=selected_members,
+    )
     if occupied:
         raise HTTPException(409, "Ошибка обновления наряда:\n" + "\n".join(occupied))
 

@@ -128,8 +128,15 @@ class AppsRepoMixin:
         await self.conn.execute("UPDATE applications SET is_published = 1 WHERE id = ?", (app_id,))
         await self.conn.commit()
 
-    async def check_resource_availability(self, date_target: str, object_id: int, team_ids: str, equip_data: str, exclude_app_id: int = None):
-        """Строгая проверка занятости бригад и техники с учётом временных слотов"""
+    async def check_resource_availability(self, date_target: str, object_id: int, team_ids: str, equip_data: str, exclude_app_id: int = None, selected_members: str = ""):
+        """Строгая проверка занятости бригад и техники с учётом временных слотов.
+
+        v2.4.3 partial-brigade fix: если новая заявка и существующая заявка
+        выбирают РАЗНЫЕ работников одной и той же бригады, конфликта нет —
+        бригада частично занята, но оставшихся людей можно использовать в
+        другом наряде. Столкновение регистрируется только при пересечении
+        конкретных member_id.
+        """
         import json
         import logging
         logger = logging.getLogger(__name__)
@@ -142,9 +149,23 @@ class AppsRepoMixin:
                 return int(parts[0]) * 60 + int(parts[1])
             return int(s) * 60
 
+        # Parse requested member IDs (new app's selected_members) for partial check
+        def _members_set(raw):
+            if not raw:
+                return set()
+            out = set()
+            for part in str(raw).split(','):
+                part = part.strip()
+                if part.isdigit():
+                    out.add(int(part))
+            return out
+
+        new_members: set[int] = _members_set(selected_members)
+
         # Fetch ALL applications for the target date where status != 'rejected'
         query = """
-                SELECT a.id, a.team_id, a.equipment_data, o.name as obj_name, a.object_address, a.foreman_name
+                SELECT a.id, a.team_id, a.equipment_data, o.name as obj_name, a.object_address, a.foreman_name,
+                       a.selected_members
                 FROM applications a
                          LEFT JOIN objects o ON a.object_id = o.id
                 WHERE a.date_target = ?
@@ -197,14 +218,29 @@ class AppsRepoMixin:
             app_equip_raw = str(app[2]) if app[2] is not None else ""
             obj_name = app[3] or app[4] or "Неизвестный объект"
             foreman_name = app[5] or ""
+            existing_members = _members_set(app[6] if len(app) > 6 else "")
 
-            # Team conflict check
+            # Team conflict check — v2.4.3: partial-brigade aware.
+            # If both apps list specific members, only block on actual
+            # member overlap. If either side didn't pick specific members
+            # (full-team semantics), fall back to the legacy hard block.
             if target_teams and app_team and app_team != '0':
                 app_team_list = [t.strip() for t in app_team.split(',') if t.strip() and t.strip() != '0']
                 for t in target_teams:
-                    if t in app_team_list:
-                        t_name = team_names_map.get(t, f"#{t}")
-                        occupied_resources.append(f"❌ Бригада «{t_name}» уже занята на объекте «{obj_name}»")
+                    if t not in app_team_list:
+                        continue
+                    both_selected = bool(new_members) and bool(existing_members)
+                    if both_selected:
+                        overlap = new_members & existing_members
+                        if not overlap:
+                            # Different members of the same brigade — allowed
+                            logger.info(
+                                f"Partial brigade: team={t} shared with app #{app[0]} "
+                                f"but members do not overlap — skipping block"
+                            )
+                            continue
+                    t_name = team_names_map.get(t, f"#{t}")
+                    occupied_resources.append(f"❌ Бригада «{t_name}» уже занята на объекте «{obj_name}»")
 
             # Equipment conflict check with time-overlap
             if target_equip_map and app_equip_raw:
