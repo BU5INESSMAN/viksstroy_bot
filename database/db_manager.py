@@ -530,6 +530,11 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             "ALTER TABLE applications ADD COLUMN smr_group_id TEXT",
             "ALTER TABLE applications ADD COLUMN smr_status TEXT DEFAULT ''",
             "ALTER TABLE applications ADD COLUMN smr_filled_by_role TEXT DEFAULT ''",
+            # v2.4.3 per-brigade works: optional team_id per work row so the
+            # Excel report can render a «Бригада» column when per-brigade
+            # mode was used. NULL = common mode (all teams together).
+            "ALTER TABLE application_kp ADD COLUMN team_id INTEGER",
+            "ALTER TABLE application_extra_works ADD COLUMN team_id INTEGER",
         ):
             try:
                 await self.conn.execute(stmt)

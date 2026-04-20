@@ -118,12 +118,22 @@ class KpRepoMixin:
             else:
                 salary = meta['salary']
                 price = meta['price']
+            # v2.4.3 per-brigade: optional team_id tag so the Excel report
+            # can show a «Бригада» column and analytics can aggregate
+            # by team. NULL / 0 → common mode (shared across all teams).
+            try:
+                team_id_raw = item.get('team_id')
+                team_id = int(team_id_raw) if team_id_raw else None
+                if team_id == 0:
+                    team_id = None
+            except (TypeError, ValueError):
+                team_id = None
             await self.conn.execute(
                 """INSERT INTO application_kp
                    (application_id, kp_id, volume, unit, current_salary, current_price,
-                    filled_by_user_id, filled_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (app_id, kp_id, volume, meta['unit'], salary, price, filled_by_user_id, _now),
+                    filled_by_user_id, filled_at, team_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (app_id, kp_id, volume, meta['unit'], salary, price, filled_by_user_id, _now, team_id),
             )
 
         new_status = 'approved' if role in ['foreman', 'moderator', 'boss', 'superadmin'] else 'submitted'

@@ -130,6 +130,7 @@ export default function SMRWizard({
                                     <StepWorks
                                         appId={appId}
                                         tgId={tgId}
+                                        userRole={userRole}
                                         worksData={worksData}
                                         setWorksData={setWorksData}
                                         extraWorksData={extraWorksData}

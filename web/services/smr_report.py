@@ -118,33 +118,49 @@ async def generate_smr_excel_bytes(db, app_id: int) -> tuple[bytes, str]:
     _autosize(ws_hours)
 
     # ─────────────────────── Sheet 2: Работы ───────────────────────
-    ws_works = wb.create_sheet("Работы")
-    _write_header(ws_works, ["Наименование", "Ед.изм", "Объём", "Заполнил"])
-
+    # v2.4.3 per-brigade: when any row carries team_id, prepend a "Бригада"
+    # column so the distribution across teams is visible in the report.
     async with db.conn.execute(
         """
         SELECT akp.volume,
                COALESCE(NULLIF(akp.unit, ''), kc.unit, '') AS unit,
                kc.name AS work_name,
+               akp.team_id AS team_id,
+               t.name AS team_name,
                u.fio AS filled_by_fio,
                u.role AS filled_by_role
         FROM application_kp akp
         LEFT JOIN kp_catalog kc ON kc.id = akp.kp_id
+        LEFT JOIN teams t ON t.id = akp.team_id
         LEFT JOIN users u ON u.user_id = akp.filled_by_user_id
         WHERE akp.application_id = ? AND akp.volume > 0
-        ORDER BY kc.category, kc.name
+        ORDER BY COALESCE(t.name, ''), kc.category, kc.name
         """,
         (app_id,),
     ) as cur:
         works = [dict(x) for x in await cur.fetchall()]
 
+    has_teams = any(w.get('team_id') for w in works)
+    ws_works = wb.create_sheet("Работы")
+    if has_teams:
+        _write_header(ws_works, ["Бригада", "Наименование", "Ед.изм", "Объём", "Заполнил"])
+    else:
+        _write_header(ws_works, ["Наименование", "Ед.изм", "Объём", "Заполнил"])
+
     r = 2
     for w in works:
-        ws_works.cell(row=r, column=1, value=w.get('work_name') or '').alignment = _LEFT
-        ws_works.cell(row=r, column=2, value=w.get('unit') or '').alignment = _CENTER
-        ws_works.cell(row=r, column=3, value=float(w.get('volume') or 0)).alignment = _CENTER
+        col = 1
+        if has_teams:
+            ws_works.cell(row=r, column=col, value=w.get('team_name') or '—').alignment = _LEFT
+            col += 1
+        ws_works.cell(row=r, column=col, value=w.get('work_name') or '').alignment = _LEFT
+        col += 1
+        ws_works.cell(row=r, column=col, value=w.get('unit') or '').alignment = _CENTER
+        col += 1
+        ws_works.cell(row=r, column=col, value=float(w.get('volume') or 0)).alignment = _CENTER
+        col += 1
         ws_works.cell(
-            row=r, column=4,
+            row=r, column=col,
             value=_author_label(w.get('filled_by_fio'), w.get('filled_by_role')),
         ).alignment = _LEFT
         r += 1
@@ -158,29 +174,43 @@ async def generate_smr_excel_bytes(db, app_id: int) -> tuple[bytes, str]:
         SELECT aew.volume,
                COALESCE(NULLIF(aew.unit, ''), kc.unit, ewc.unit, '') AS unit,
                COALESCE(NULLIF(aew.custom_name, ''), kc.name, ewc.name, '') AS work_name,
+               aew.team_id AS team_id,
+               t.name AS team_name,
                u.fio AS filled_by_fio,
                u.role AS filled_by_role
         FROM application_extra_works aew
         LEFT JOIN kp_catalog kc ON kc.id = aew.extra_work_id
         LEFT JOIN extra_works_catalog ewc ON ewc.id = aew.extra_work_id
+        LEFT JOIN teams t ON t.id = aew.team_id
         LEFT JOIN users u ON u.user_id = aew.filled_by_user_id
         WHERE aew.application_id = ? AND aew.volume > 0
-        ORDER BY work_name
+        ORDER BY COALESCE(t.name, ''), work_name
         """,
         (app_id,),
     ) as cur:
         extras = [dict(x) for x in await cur.fetchall()]
 
     if extras:
+        extras_has_teams = any(e.get('team_id') for e in extras)
         ws_extra = wb.create_sheet("Доп. работы")
-        _write_header(ws_extra, ["Наименование", "Ед.изм", "Объём", "Заполнил"])
+        if extras_has_teams:
+            _write_header(ws_extra, ["Бригада", "Наименование", "Ед.изм", "Объём", "Заполнил"])
+        else:
+            _write_header(ws_extra, ["Наименование", "Ед.изм", "Объём", "Заполнил"])
         r = 2
         for e in extras:
-            ws_extra.cell(row=r, column=1, value=e.get('work_name') or '').alignment = _LEFT
-            ws_extra.cell(row=r, column=2, value=e.get('unit') or '').alignment = _CENTER
-            ws_extra.cell(row=r, column=3, value=float(e.get('volume') or 0)).alignment = _CENTER
+            col = 1
+            if extras_has_teams:
+                ws_extra.cell(row=r, column=col, value=e.get('team_name') or '—').alignment = _LEFT
+                col += 1
+            ws_extra.cell(row=r, column=col, value=e.get('work_name') or '').alignment = _LEFT
+            col += 1
+            ws_extra.cell(row=r, column=col, value=e.get('unit') or '').alignment = _CENTER
+            col += 1
+            ws_extra.cell(row=r, column=col, value=float(e.get('volume') or 0)).alignment = _CENTER
+            col += 1
             ws_extra.cell(
-                row=r, column=4,
+                row=r, column=col,
                 value=_author_label(e.get('filled_by_fio'), e.get('filled_by_role')),
             ).alignment = _LEFT
             r += 1

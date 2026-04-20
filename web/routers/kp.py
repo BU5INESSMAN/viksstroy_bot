@@ -294,12 +294,20 @@ async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: s
                 salary = 0.0
                 price = 0.0
 
+        # v2.4.3: optional per-team tag for per-brigade mode
+        try:
+            team_id_raw = it.get('team_id')
+            team_id = int(team_id_raw) if team_id_raw else None
+            if team_id == 0:
+                team_id = None
+        except (TypeError, ValueError):
+            team_id = None
         await db.conn.execute(
             """INSERT INTO application_extra_works
                (application_id, extra_work_id, custom_name, unit, volume,
-                salary, price, filled_by_user_id, filled_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (app_id, extra_work_id, custom_name, unit, volume, salary, price, tg_id, now),
+                salary, price, filled_by_user_id, filled_at, team_id)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (app_id, extra_work_id, custom_name, unit, volume, salary, price, tg_id, now, team_id),
         )
     await db.conn.commit()
 
