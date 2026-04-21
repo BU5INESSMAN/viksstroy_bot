@@ -107,7 +107,7 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                             </div>
 
                             {equipList.length > 0 && (
-                                <div className="mt-2.5 pt-2.5 border-t border-gray-100 dark:border-gray-700 space-y-2">
+                                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/60 divide-y divide-gray-100 dark:divide-gray-700/40">
                                     {equipList.map((eq, idx) => {
                                         // Compact: first word of name + license plate in brackets
                                         const fullName = eq.name || '';
@@ -120,8 +120,8 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                                         const label = plate ? `${firstWord} ${plate.replace(/\s+/g, '')}` : firstWord;
                                         const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || IconTruck;
                                         return (
-                                            <div key={idx} className={`flex items-center justify-between gap-2 py-1.5 text-xs ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
-                                                <div className="flex items-center gap-2 min-w-0">
+                                            <div key={idx} className={`flex items-center justify-between gap-2 py-1 text-xs ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                                <div className="flex items-center gap-1.5 min-w-0">
                                                     <EqIcon className="w-4 h-4 shrink-0" stroke={2} />
                                                     <span className="font-medium truncate">{label}</span>
                                                 </div>

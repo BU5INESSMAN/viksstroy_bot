@@ -243,24 +243,24 @@ export default function Review() {
                         </div>
 
                         {equipList.length > 0 && (
-                            <div className="pt-2 space-y-2 border-t border-gray-200 dark:border-gray-600/50">
+                            <div className="pt-2 mt-1 border-t border-gray-200 dark:border-gray-600/50 divide-y divide-gray-100 dark:divide-gray-700/40">
                                 {equipList.map((eq, idx) => {
                                     const driverMatch = (eq.name || '').match(/\(([^)]+)\)\s*$/);
                                     const driverFio = driverMatch && driverMatch[1] !== 'Не указан' ? driverMatch[1] : null;
                                     const displayName = driverFio ? eq.name.replace(/\s*\([^)]+\)\s*$/, '') : eq.name;
                                     const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || IconTruck;
                                     return (
-                                        <div key={idx} className="py-1.5">
+                                        <div key={idx} className="py-1">
                                             <div className={`flex items-center justify-between gap-2 text-xs font-medium ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
-                                                <div className="flex items-center gap-2 min-w-0">
+                                                <div className="flex items-center gap-1.5 min-w-0">
                                                     <EqIcon className="w-4 h-4 shrink-0" stroke={2} />
                                                     <span className="truncate">{displayName}</span>
+                                                    {driverFio && !eq.is_freed && (
+                                                        <span className="text-[11px] text-gray-400 dark:text-gray-500 truncate">· {driverFio}</span>
+                                                    )}
                                                 </div>
                                                 {eq.is_freed && <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
                                             </div>
-                                            {driverFio && !eq.is_freed && (
-                                                <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate pl-6 mt-0.5">{driverFio}</p>
-                                            )}
                                         </div>
                                     );
                                 })}
