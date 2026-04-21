@@ -243,7 +243,7 @@ export default function Review() {
                         </div>
 
                         {equipList.length > 0 && (
-                            <div className="pt-2 mt-1 border-t border-gray-200 dark:border-gray-600/50 divide-y divide-gray-100 dark:divide-gray-700/40">
+                            <div className="pt-2 mt-1 border-t border-gray-200 dark:border-gray-600/50 space-y-0">
                                 {equipList.map((eq, idx) => {
                                     const driverMatch = (eq.name || '').match(/\(([^)]+)\)\s*$/);
                                     const driverFio = driverMatch && driverMatch[1] !== 'Не указан' ? driverMatch[1] : null;

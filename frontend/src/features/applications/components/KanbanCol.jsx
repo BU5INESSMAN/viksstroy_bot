@@ -107,7 +107,7 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
                             </div>
 
                             {equipList.length > 0 && (
-                                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/60 divide-y divide-gray-100 dark:divide-gray-700/40">
+                                <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700/60 space-y-0">
                                     {equipList.map((eq, idx) => {
                                         // Compact: first word of name + license plate in brackets
                                         const fullName = eq.name || '';

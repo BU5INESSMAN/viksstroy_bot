@@ -91,24 +91,41 @@ export default function EditAppModal({
 
     const checkTeamStatus = (team_id) => {
         // Mirrors useAppForm.checkTeamStatus (partial-brigade aware).
+        // Only flags 'partial' when at least one member is still free —
+        // if the union of members picked across all other apps covers
+        // the whole roster, the team is 'busy'.
         if (!data.kanban_apps) return { state: 'free' };
+        const team = (data.teams || []).find(t => Number(t.id) === Number(team_id));
+        const totalMembers = Number(team?.member_count || 0);
         const appsOnDate = data.kanban_apps.filter(a =>
             a.date_target === form.date_target && !['rejected', 'cancelled', 'completed'].includes(a.status)
         );
-        let partialHit = null;
+
+        const pickedAcrossApps = new Set();
+        let lastHitMessage = '';
+        let wholeTeamHit = null;
+
         for (const a of appsOnDate) {
             if (form.id === a.id) continue;
             const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
-            if (!tIds.includes(team_id)) continue;
+            if (!tIds.includes(Number(team_id))) continue;
             const otherSelected = a.selected_members
                 ? String(a.selected_members).split(',').map(s => Number(s.trim())).filter(Boolean)
                 : [];
             if (otherSelected.length === 0) {
-                return { state: 'busy', message: `Бригада полностью занята в этот день на объекте:\n📍 ${a.object_address}` };
+                wholeTeamHit = { state: 'busy', message: `Бригада полностью занята в этот день на объекте:\n📍 ${a.object_address}` };
+                break;
             }
-            partialHit = partialHit || { state: 'partial', message: `Бригада частично занята (заявка №${a.id} · ${a.object_address}).` };
+            otherSelected.forEach(id => pickedAcrossApps.add(id));
+            lastHitMessage = `Бригада частично занята (заявка №${a.id} · ${a.object_address}).`;
         }
-        return partialHit || { state: 'free' };
+
+        if (wholeTeamHit) return wholeTeamHit;
+        if (pickedAcrossApps.size === 0) return { state: 'free' };
+        if (totalMembers > 0 && pickedAcrossApps.size >= totalMembers) {
+            return { state: 'busy', message: 'Все рабочие этой бригады уже заняты в других заявках.' };
+        }
+        return { state: 'partial', message: lastHitMessage };
     };
 
     const getEquipState = (eqAvail) => {
