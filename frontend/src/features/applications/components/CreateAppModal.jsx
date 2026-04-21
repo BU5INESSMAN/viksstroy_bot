@@ -19,7 +19,8 @@ export default function CreateAppModal({
     handleCreateApp, handleDeleteApp, handleFormChange, handleApplyDefaults,
     handleObjectSelect,
     smartDates, objectsList, data, role,
-    toggleTeamSelection, toggleAppMember, checkTeamStatus, checkEquipStatus,
+    toggleTeamSelection, toggleAppMember, selectAllFreeInTeam,
+    checkTeamStatus, checkEquipStatus,
     toggleEquipmentSelection, updateEquipmentTime,
     activeEqCategory, setActiveEqCategory, teamMembers, openProfile, openFreeModal,
     tgId
@@ -273,6 +274,7 @@ export default function CreateAppModal({
                                 teamMembers={teamMembers}
                                 selectedMembers={appForm.members}
                                 onToggleMember={toggleAppMember}
+                                onSelectAllFreeInTeam={selectAllFreeInTeam}
                                 checkTeamStatus={checkTeamStatus}
                                 isSubmitting={isSubmitting}
                                 isViewOnly={appForm.isViewOnly}

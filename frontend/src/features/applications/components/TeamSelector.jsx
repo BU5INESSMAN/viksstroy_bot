@@ -1,5 +1,5 @@
 import {
-    Users, Clock, CheckCircle, XCircle, User, Check, Truck
+    Users, Clock, CheckCircle, XCircle, User, Check, Truck, Ban
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { IconUsersGroup } from '@tabler/icons-react';
@@ -12,6 +12,7 @@ export default function TeamSelector({
     teamMembers,
     selectedMembers,
     onToggleMember,
+    onSelectAllFreeInTeam,
     checkTeamStatus,
     isSubmitting,
     // view-only props (CreateAppModal only)
@@ -94,6 +95,7 @@ export default function TeamSelector({
                     // icons (Clock/CheckCircle) when busy/selected.
                     const TeamIcon = getIconComponent(t.icon || DEFAULT_TEAM_ICON, TEAM_ICONS) || IconUsersGroup;
                     let icon = <TeamIcon className="w-4 h-4 text-gray-400" stroke={2} />;
+                    let badge = null;
 
                     if (st.state === 'busy') {
                         btnStyles = 'bg-gray-50 border-gray-200 text-gray-400 dark:bg-gray-800/50 dark:border-gray-700 dark:text-gray-500 cursor-not-allowed opacity-75';
@@ -101,11 +103,30 @@ export default function TeamSelector({
                     } else if (isSelected) {
                         btnStyles = 'bg-indigo-50 border-indigo-500 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300 shadow-sm ring-1 ring-indigo-500';
                         icon = <CheckCircle className="w-4 h-4" />;
+                    } else if (st.state === 'partial') {
+                        btnStyles = 'bg-amber-50 border-amber-300 text-amber-700 dark:bg-amber-900/20 dark:border-amber-700/50 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/30';
+                        badge = (
+                            <span className="text-[10px] font-bold bg-amber-200/70 dark:bg-amber-500/30 text-amber-800 dark:text-amber-200 px-1.5 py-0.5 rounded-md">
+                                част.
+                            </span>
+                        );
                     }
 
                     return (
-                        <button key={t.id} type="button" disabled={isSubmitting} onClick={() => { if (st.state !== 'free') return toast.error(st.message); onToggleTeam(t.id); }} className={`px-4 py-2.5 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${btnStyles}`}>
-                            {icon} {t.name}
+                        <button
+                            key={t.id}
+                            type="button"
+                            disabled={isSubmitting || st.state === 'busy'}
+                            onClick={() => {
+                                if (st.state === 'busy') return toast.error(st.message);
+                                if (st.state === 'partial' && !isSelected) {
+                                    toast(st.message, { icon: '⚠️' });
+                                }
+                                onToggleTeam(t.id);
+                            }}
+                            className={`px-4 py-2.5 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${btnStyles}`}
+                        >
+                            {icon} {t.name} {badge}
                         </button>
                     );
                 })}
@@ -121,34 +142,119 @@ export default function TeamSelector({
                         const membersOfTeam = teamMembers.filter(m => m.team_id === tid);
                         if (membersOfTeam.length === 0) return null;
                         const teamName = membersOfTeam[0]?.team_name || teams?.find(t => t.id === tid)?.name || 'Бригада';
+                        const usedCount = membersOfTeam.filter(m => m.is_used).length;
+                        const totalCount = membersOfTeam.length;
+                        const freeCount = totalCount - usedCount;
+                        const isPartial = usedCount > 0 && freeCount > 0;
                         return (
-                            <div key={tid} className="mb-4 last:mb-0">
-                                <h4 className="text-[10px] font-extrabold text-indigo-500/70 dark:text-indigo-400/60 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                                    <Users className="w-3 h-3" /> {teamName}
-                                </h4>
+                            <div key={tid} className="mb-5 last:mb-0">
+                                <div className="flex items-center justify-between gap-2 mb-2">
+                                    <h4 className="text-[10px] font-extrabold text-indigo-500/70 dark:text-indigo-400/60 uppercase tracking-widest flex items-center gap-1.5 min-w-0">
+                                        <Users className="w-3 h-3 flex-shrink-0" />
+                                        <span className="truncate">{teamName}</span>
+                                    </h4>
+                                    {isPartial && (
+                                        <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                            частично занята
+                                        </span>
+                                    )}
+                                </div>
                                 <div className="flex flex-wrap gap-2.5">
                                     {membersOfTeam.map(m => {
                                         const isSelected = selectedMembers?.includes(m.id);
+                                        const isUsed = m.is_used === true;
                                         const isUnavailable = m.status === 'vacation' || m.status === 'sick';
                                         const statusLabel = m.status === 'vacation' ? 'Отп' : m.status === 'sick' ? 'Бол' : '';
+                                        const disabled = isSubmitting || isUnavailable || isUsed;
+
+                                        let btnCls;
+                                        if (isUsed) {
+                                            btnCls = 'opacity-60 cursor-not-allowed bg-red-50/60 dark:bg-red-900/10 text-gray-500 dark:text-gray-400 border-red-200/70 dark:border-red-800/40';
+                                        } else if (isUnavailable) {
+                                            btnCls = 'opacity-40 cursor-not-allowed bg-gray-50 dark:bg-gray-800/50 text-gray-400 border-gray-200 dark:border-gray-700';
+                                        } else if (isSelected) {
+                                            btnCls = 'bg-indigo-600 text-white border-indigo-700 shadow-md';
+                                        } else {
+                                            btnCls = 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700';
+                                        }
+
+                                        let marker;
+                                        if (isUsed) {
+                                            marker = <Ban className="w-4 h-4 text-red-400" />;
+                                        } else if (isUnavailable) {
+                                            marker = <div className="w-4 h-4 border-2 border-current rounded-full opacity-30" />;
+                                        } else if (isSelected) {
+                                            marker = <Check className="w-4 h-4" />;
+                                        } else {
+                                            marker = <div className="w-4 h-4 border-2 border-current rounded-full opacity-30" />;
+                                        }
+
                                         return (
-                                            <button key={m.id} type="button" disabled={isSubmitting || isUnavailable} onClick={() => onToggleMember(m.id)}
-                                                title={isUnavailable ? `${m.status === 'vacation' ? 'Отпуск' : 'Больничный'}${m.status_until ? ' до ' + m.status_until : ''}` : ''}
-                                                className={`px-3.5 py-2 disabled:opacity-50 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 hover:shadow-md ${isUnavailable ? 'opacity-40 cursor-not-allowed bg-gray-50 dark:bg-gray-800/50 text-gray-400 border-gray-200 dark:border-gray-700' : isSelected ? 'bg-indigo-600 text-white border-indigo-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
-                                                {isUnavailable
-                                                    ? <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>
-                                                    : isSelected ? <Check className="w-4 h-4" /> : <div className="w-4 h-4 border-2 border-current rounded-full opacity-30"></div>}
-                                                {m.fio}
-                                                {m.is_foreman && <span className="text-[10px] px-1 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 font-bold">Бр</span>}
-                                                {isUnavailable && (
+                                            <button
+                                                key={m.id}
+                                                type="button"
+                                                disabled={disabled}
+                                                onClick={() => onToggleMember(m.id)}
+                                                title={
+                                                    isUsed
+                                                        ? (m.used_in_object
+                                                            ? `Занят: заявка №${m.used_in_app_id} · ${m.used_in_object}`
+                                                            : `Занят в заявке №${m.used_in_app_id}`)
+                                                        : isUnavailable
+                                                            ? `${m.status === 'vacation' ? 'Отпуск' : 'Больничный'}${m.status_until ? ' до ' + m.status_until : ''}`
+                                                            : ''
+                                                }
+                                                className={`px-3.5 py-2 disabled:opacity-60 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${isUsed ? '' : 'hover:shadow-md'} ${btnCls}`}
+                                            >
+                                                {marker}
+                                                <span className={isUsed ? 'line-through decoration-red-400/70' : ''}>
+                                                    {m.fio}
+                                                </span>
+                                                {m.is_foreman && (
+                                                    <span className="text-[10px] px-1 py-0.5 rounded bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400 font-bold">
+                                                        Бр
+                                                    </span>
+                                                )}
+                                                {isUsed && (
+                                                    <span
+                                                        className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-300 whitespace-nowrap"
+                                                        title={m.used_in_object ? `Заявка №${m.used_in_app_id} · ${m.used_in_object}` : ''}
+                                                    >
+                                                        Занят · №{m.used_in_app_id}
+                                                    </span>
+                                                )}
+                                                {!isUsed && isUnavailable && (
                                                     <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${m.status === 'vacation' ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-600 dark:text-yellow-400' : 'bg-red-100 dark:bg-red-900/30 text-red-500'}`}>
                                                         {statusLabel}
+                                                    </span>
+                                                )}
+                                                {!isUsed && !isUnavailable && isPartial && !isSelected && (
+                                                    <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold whitespace-nowrap">
+                                                        Свободен
                                                     </span>
                                                 )}
                                             </button>
                                         );
                                     })}
                                 </div>
+                                {isPartial && (
+                                    <div className="mt-2 flex items-center justify-between text-[11px] px-0.5">
+                                        <span className="text-gray-500 dark:text-gray-400">
+                                            Свободно: <span className="font-bold text-emerald-600 dark:text-emerald-400">{freeCount}</span>
+                                            <span className="text-gray-400 dark:text-gray-500"> из {totalCount}</span>
+                                        </span>
+                                        {onSelectAllFreeInTeam && (
+                                            <button
+                                                type="button"
+                                                disabled={isSubmitting || freeCount === 0}
+                                                onClick={() => onSelectAllFreeInTeam(tid)}
+                                                className="font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-700 dark:hover:text-indigo-300 disabled:opacity-40"
+                                            >
+                                                Выбрать всех свободных
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         );
                     })}

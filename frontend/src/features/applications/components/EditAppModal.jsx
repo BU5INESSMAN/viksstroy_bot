@@ -65,31 +65,50 @@ export default function EditAppModal({
 
     useEffect(() => {
         if (form.team_ids.length > 0) {
-            Promise.all(form.team_ids.map(id => axios.get(`/api/teams/${id}/details`)))
+            // Partial-brigade picker: pass the edit app's own id as
+            // exclude_app_id so its own selected members aren't marked
+            // as "used" against themselves.
+            const params = new URLSearchParams();
+            if (form.date_target) params.set('date', form.date_target);
+            if (form.id) params.set('exclude_app_id', String(form.id));
+            const qs = params.toString() ? `?${params.toString()}` : '';
+            Promise.all(form.team_ids.map(id => axios.get(`/api/teams/${id}/details${qs}`)))
                 .then(responses => {
-                    const allMembers = responses.flatMap(res => res.data?.members || []);
+                    const allMembers = responses.flatMap(res => {
+                        const tid = res.data?.id;
+                        const tname = res.data?.name || '';
+                        return (res.data?.members || []).map(m => ({ ...m, team_id: tid, team_name: tname }));
+                    });
                     const uniqueMembers = Array.from(new Map(allMembers.map(m => [m.id, m])).values());
                     setTeamMembers(uniqueMembers);
                 }).catch(() => setTeamMembers([]));
         } else {
             setTeamMembers([]);
         }
-    }, [form.team_ids.join(',')]);
+    }, [form.team_ids.join(','), form.date_target, form.id]);
 
     const handleFormChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
     const checkTeamStatus = (team_id) => {
-        if (data.kanban_apps) {
-            const appsOnDate = data.kanban_apps.filter(a =>
-                a.date_target === form.date_target && !['rejected', 'cancelled', 'completed'].includes(a.status)
-            );
-            for (const a of appsOnDate) {
-                const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
-                if (tIds.includes(team_id) && form.id !== a.id)
-                    return { state: 'busy', message: `Эта бригада уже занята в этот день на объекте:\n📍 ${a.object_address}` };
+        // Mirrors useAppForm.checkTeamStatus (partial-brigade aware).
+        if (!data.kanban_apps) return { state: 'free' };
+        const appsOnDate = data.kanban_apps.filter(a =>
+            a.date_target === form.date_target && !['rejected', 'cancelled', 'completed'].includes(a.status)
+        );
+        let partialHit = null;
+        for (const a of appsOnDate) {
+            if (form.id === a.id) continue;
+            const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
+            if (!tIds.includes(team_id)) continue;
+            const otherSelected = a.selected_members
+                ? String(a.selected_members).split(',').map(s => Number(s.trim())).filter(Boolean)
+                : [];
+            if (otherSelected.length === 0) {
+                return { state: 'busy', message: `Бригада полностью занята в этот день на объекте:\n📍 ${a.object_address}` };
             }
+            partialHit = partialHit || { state: 'partial', message: `Бригада частично занята (заявка №${a.id} · ${a.object_address}).` };
         }
-        return { state: 'free' };
+        return partialHit || { state: 'free' };
     };
 
     const getEquipState = (eqAvail) => {
@@ -173,10 +192,32 @@ export default function EditAppModal({
     };
 
     const toggleAppMember = (id) => {
+        const target = teamMembers.find(m => m.id === id);
+        if (target?.is_used) {
+            toast.error(
+                target.used_in_object
+                    ? `Уже занят: заявка №${target.used_in_app_id} · ${target.used_in_object}`
+                    : `Уже занят в заявке №${target.used_in_app_id}`
+            );
+            return;
+        }
         setForm(prev => ({
             ...prev,
             members: prev.members.includes(id) ? prev.members.filter(m => m !== id) : [...prev.members, id]
         }));
+    };
+
+    const selectAllFreeInTeam = (teamId) => {
+        const freeIds = teamMembers
+            .filter(m => m.team_id === teamId && !m.is_used)
+            .map(m => m.id);
+        setForm(prev => {
+            const keep = (prev.members || []).filter(mid => {
+                const mm = teamMembers.find(x => x.id === mid);
+                return !mm || mm.team_id !== teamId;
+            });
+            return { ...prev, members: [...keep, ...freeIds] };
+        });
     };
 
     const toggleEquipmentSelection = (equip) => {
@@ -398,6 +439,7 @@ export default function EditAppModal({
                                 teamMembers={teamMembers}
                                 selectedMembers={form.members}
                                 onToggleMember={toggleAppMember}
+                                onSelectAllFreeInTeam={selectAllFreeInTeam}
                                 checkTeamStatus={checkTeamStatus}
                                 isSubmitting={isSubmitting}
                                 isViewOnly={false}

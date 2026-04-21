@@ -107,7 +107,24 @@ async def create_team(name: str = Form(...), current_user=Depends(_require_offic
 
 
 @router.get("/api/teams/{team_id}/details")
-async def get_team_details(team_id: int, current_user=Depends(get_current_user)):
+async def get_team_details(
+    team_id: int,
+    date: str | None = None,
+    exclude_app_id: int | None = None,
+    current_user=Depends(get_current_user),
+):
+    """Team + members. When ``date`` is provided, each member carries
+    availability flags derived from OTHER applications on that date:
+
+      - ``is_used``          — member is booked in another app that date.
+      - ``used_in_app_id``   — the app id that booked them.
+      - ``used_in_object``   — object name / address from that app.
+
+    ``exclude_app_id`` lets the edit flow ignore the current application
+    (otherwise an edit would always see its own members as "used").
+    Apps that pick the whole team (no ``selected_members``) mark every
+    member of the team as used for that date.
+    """
     async with db.conn.execute("SELECT name, icon FROM teams WHERE id = ?",
                                (team_id,)) as cur: team_row = await cur.fetchone()
     if not team_row:
@@ -118,7 +135,68 @@ async def get_team_details(team_id: int, current_user=Depends(get_current_user))
         members = [{
             "id": r[0], "fio": r[1], "position": r[2], "is_linked": bool(r[3]), "is_foreman": bool(r[4]),
             "status": r[5] or "available", "status_from": r[6] or "", "status_until": r[7] or "", "status_reason": r[8] or "",
+            "is_used": False, "used_in_app_id": None, "used_in_object": "",
         } for r in await cur.fetchall()]
+
+    if date:
+        # Pull every active app on that date that references this team.
+        params: list = [date]
+        q = (
+            "SELECT a.id, a.team_id, a.selected_members, "
+            "       COALESCE(o.name, a.object_address, '') AS obj_name "
+            "FROM applications a "
+            "LEFT JOIN objects o ON o.id = a.object_id "
+            "WHERE a.date_target = ? "
+            "  AND a.status NOT IN ('rejected', 'cancelled', 'archived') "
+            "  AND (a.is_team_freed = 0 OR a.is_team_freed IS NULL)"
+        )
+        if exclude_app_id:
+            q += " AND a.id != ?"
+            params.append(exclude_app_id)
+        async with db.conn.execute(q, params) as cur:
+            rows = await cur.fetchall()
+
+        usage: dict[int, dict] = {}  # member_id → {app_id, object_name}
+        all_team_member_ids = [m["id"] for m in members]
+
+        for r in rows:
+            other_app_id = r[0]
+            other_team_raw = str(r[1] or "")
+            other_selected_raw = str(r[2] or "")
+            other_obj = r[3] or ""
+
+            team_ids_on_other = {
+                int(p) for p in other_team_raw.split(",")
+                if p.strip().isdigit()
+            }
+            if team_id not in team_ids_on_other:
+                continue
+
+            # Parse selected_members — empty = whole-team semantics.
+            picked: set[int] = set()
+            for p in other_selected_raw.split(","):
+                p = p.strip()
+                if p.isdigit():
+                    picked.add(int(p))
+
+            if picked:
+                touched = picked
+            else:
+                # Whole team — everyone on this team is considered used.
+                touched = set(all_team_member_ids)
+
+            for mid in touched:
+                if mid in usage:
+                    continue  # first hit wins (stable ordering)
+                usage[mid] = {"app_id": other_app_id, "object_name": other_obj}
+
+        for m in members:
+            info = usage.get(m["id"])
+            if info:
+                m["is_used"] = True
+                m["used_in_app_id"] = info["app_id"]
+                m["used_in_object"] = info["object_name"] or ""
+
     return {"id": team_id, "name": team_row[0], "icon": team_row[1] or '', "members": members}
 
 

@@ -63,7 +63,7 @@ export default function Home() {
         isSubmitting, setIsSubmitting,
         teamMembers, activeEqCategory, setActiveEqCategory,
         handleFormChange, handleObjectSelect, handleApplyDefaults,
-        toggleTeamSelection, toggleAppMember,
+        toggleTeamSelection, toggleAppMember, selectAllFreeInTeam,
         toggleEquipmentSelection, updateEquipmentTime,
         checkTeamStatus, checkEquipStatus,
         handleCreateApp, handleDeleteApp,
@@ -350,6 +350,7 @@ export default function Home() {
                     role={role}
                     toggleTeamSelection={toggleTeamSelection}
                     toggleAppMember={toggleAppMember}
+                    selectAllFreeInTeam={selectAllFreeInTeam}
                     checkTeamStatus={checkTeamStatus}
                     checkEquipStatus={checkEquipStatus}
                     toggleEquipmentSelection={toggleEquipmentSelection}

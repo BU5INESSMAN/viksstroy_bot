@@ -65,10 +65,17 @@ export default function useAppForm({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isGlobalCreateAppOpen]);
 
-    // Fetch team members whenever the selected team list changes
+    // Fetch team members whenever the selected team list OR the target
+    // date changes. Passing date + exclude_app_id lets the backend mark
+    // members already booked in another app that date — the picker then
+    // shows them disabled with a "Занят" label instead of hiding them.
     useEffect(() => {
         if (appForm.team_ids && appForm.team_ids.length > 0) {
-            Promise.all(appForm.team_ids.map(id => axios.get(`/api/teams/${id}/details`)))
+            const params = new URLSearchParams();
+            if (appForm.date_target) params.set('date', appForm.date_target);
+            if (appForm.id) params.set('exclude_app_id', String(appForm.id));
+            const qs = params.toString() ? `?${params.toString()}` : '';
+            Promise.all(appForm.team_ids.map(id => axios.get(`/api/teams/${id}/details${qs}`)))
                 .then(responses => {
                     const allMembers = responses.flatMap(res => {
                         const tid = res.data?.id;
@@ -80,7 +87,12 @@ export default function useAppForm({
                     );
                     setTeamMembers(uniqueMembers);
                     if (!appForm.isViewOnly && !appForm.id) {
-                        setAppForm(prev => ({ ...prev, members: uniqueMembers.map(m => m.id) }));
+                        // Pre-select only members that aren't already booked
+                        // elsewhere on this date. Users can still untick them.
+                        const freeIds = uniqueMembers
+                            .filter(m => !m.is_used)
+                            .map(m => m.id);
+                        setAppForm(prev => ({ ...prev, members: freeIds }));
                     }
                 })
                 .catch(() => setTeamMembers([]));
@@ -88,7 +100,7 @@ export default function useAppForm({
             setTeamMembers([]);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [appForm.team_ids.join(',')]);
+    }, [appForm.team_ids.join(','), appForm.date_target, appForm.id]);
 
     // -------------------------------------------------------------------------
     // Basic field helpers
@@ -129,13 +141,42 @@ export default function useAppForm({
     };
 
     const toggleAppMember = (id) => {
-        if (!appForm.isViewOnly)
-            setAppForm(prev => ({
-                ...prev,
-                members: prev.members?.includes(id)
-                    ? prev.members.filter(m => m !== id)
-                    : [...(prev.members || []), id],
-            }));
+        if (appForm.isViewOnly) return;
+        // Block toggling members that are already booked in another
+        // application on the same date — the picker shows them disabled
+        // but a stray click shouldn't bypass that.
+        const target = teamMembers.find(m => m.id === id);
+        if (target?.is_used) {
+            toast.error(
+                target.used_in_object
+                    ? `Уже занят: заявка №${target.used_in_app_id} · ${target.used_in_object}`
+                    : `Уже занят в заявке №${target.used_in_app_id}`
+            );
+            return;
+        }
+        setAppForm(prev => ({
+            ...prev,
+            members: prev.members?.includes(id)
+                ? prev.members.filter(m => m !== id)
+                : [...(prev.members || []), id],
+        }));
+    };
+
+    /** Select every non-used member of a given team, preserving other
+     *  team picks. Exposed for the "Выбрать всех свободных" shortcut in
+     *  the partial-brigade picker. */
+    const selectAllFreeInTeam = (teamId) => {
+        if (appForm.isViewOnly) return;
+        const freeIds = teamMembers
+            .filter(m => m.team_id === teamId && !m.is_used)
+            .map(m => m.id);
+        setAppForm(prev => {
+            const keep = (prev.members || []).filter(mid => {
+                const mm = teamMembers.find(x => x.id === mid);
+                return !mm || mm.team_id !== teamId;
+            });
+            return { ...prev, members: [...keep, ...freeIds] };
+        });
     };
 
     // -------------------------------------------------------------------------
@@ -167,18 +208,37 @@ export default function useAppForm({
     // -------------------------------------------------------------------------
 
     const checkTeamStatus = (team_id) => {
-        if (data.kanban_apps) {
-            const appsOnDate = data.kanban_apps.filter(
-                a => a.date_target === appForm.date_target &&
-                    !['rejected', 'cancelled', 'completed'].includes(a.status)
-            );
-            for (const a of appsOnDate) {
-                const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
-                if (tIds.includes(team_id) && appForm.id !== a.id)
-                    return { state: 'busy', message: `Эта бригада уже занята в этот день на объекте:\n📍 ${a.object_address}` };
+        // v2.4.4: partial-brigade aware.
+        //   free    — no other app on this date references the team.
+        //   partial — another app picks SPECIFIC members of this team;
+        //             the remaining members are free to use here.
+        //   busy    — another app uses the whole team (empty
+        //             selected_members), so nothing is left.
+        if (!data.kanban_apps) return { state: 'free' };
+        const appsOnDate = data.kanban_apps.filter(
+            a => a.date_target === appForm.date_target &&
+                !['rejected', 'cancelled', 'completed'].includes(a.status)
+        );
+        let partialHit = null;
+        for (const a of appsOnDate) {
+            if (appForm.id === a.id) continue;
+            const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
+            if (!tIds.includes(team_id)) continue;
+            const otherSelected = a.selected_members
+                ? String(a.selected_members).split(',').map(s => Number(s.trim())).filter(Boolean)
+                : [];
+            if (otherSelected.length === 0) {
+                return {
+                    state: 'busy',
+                    message: `Бригада полностью занята в этот день на объекте:\n📍 ${a.object_address}`,
+                };
             }
+            partialHit = partialHit || {
+                state: 'partial',
+                message: `Бригада частично занята (заявка №${a.id} · ${a.object_address}). Свободных рабочих можно выбрать.`,
+            };
         }
-        return { state: 'free' };
+        return partialHit || { state: 'free' };
     };
 
     const checkEquipStatus = (equip) => {
@@ -415,6 +475,7 @@ export default function useAppForm({
         handleApplyDefaults,
         toggleTeamSelection,
         toggleAppMember,
+        selectAllFreeInTeam,
         toggleEquipmentSelection,
         updateEquipmentTime,
         checkTeamStatus,
