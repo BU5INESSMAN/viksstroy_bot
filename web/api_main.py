@@ -35,37 +35,76 @@ os.makedirs("data/uploads", exist_ok=True)
 os.makedirs("data/uploads/objects", exist_ok=True)
 # N-01: Static mount removed — files served via authenticated /api/files/{id}/download only
 
-_last_active_cache = {}  # tg_id → last_update_time (throttle to 1 update per 60s)
+_last_active_cache = {}  # user_id → last_update_time (throttle to 1 update per 60s)
+_session_user_cache = {}  # session_token → (user_id, cached_at) — avoid per-request SELECT on sessions
+
+
+async def _resolve_user_from_session(token: str) -> int | None:
+    """Resolve user_id from session cookie token with a short in-process cache.
+
+    Returns the canonical (resolved) user_id or ``None`` if the session is
+    invalid. Cached for 5 minutes; expired sessions are evicted lazily.
+    """
+    import time
+    now = time.time()
+    cached = _session_user_cache.get(token)
+    if cached and now - cached[1] < 300:
+        return cached[0]
+    try:
+        async with db.conn.execute(
+            "SELECT user_id FROM sessions WHERE token = ? AND expires_at > datetime('now')",
+            (token,),
+        ) as cur:
+            row = await cur.fetchone()
+        if not row:
+            _session_user_cache.pop(token, None)
+            return None
+        from utils import resolve_id
+        real_id = await resolve_id(row[0])
+        _session_user_cache[token] = (real_id, now)
+        return real_id
+    except Exception:
+        return None
 
 
 @app.middleware("http")
 async def track_activity(request: Request, call_next):
     response = await call_next(request)
     try:
-        tg_id = request.query_params.get("tg_id")
-        if not tg_id:
-            # Also check form body for POST — but only from query params to keep it cheap
-            pass
-        if tg_id and tg_id not in ("0", "undefined", "null", ""):
-            import time
-            tg_id_int = int(tg_id)
+        import time
+        user_id: int | None = None
+
+        # Primary signal: session cookie (covers every cookie-auth request).
+        token = request.cookies.get("session_token")
+        if token:
+            user_id = await _resolve_user_from_session(token)
+
+        # Fallback: legacy tg_id query param (bot flows, pre-session callers).
+        if user_id is None:
+            tg_id = request.query_params.get("tg_id")
+            if tg_id and tg_id not in ("0", "undefined", "null", ""):
+                try:
+                    from utils import resolve_id
+                    user_id = await resolve_id(int(tg_id))
+                except Exception:
+                    user_id = None
+
+        if user_id:
             now = time.time()
-            last = _last_active_cache.get(tg_id_int, 0)
+            last = _last_active_cache.get(user_id, 0)
             if now - last > 60:  # Throttle: max once per 60 seconds per user
-                _last_active_cache[tg_id_int] = now
-                asyncio.create_task(_update_last_active(tg_id_int))
+                _last_active_cache[user_id] = now
+                asyncio.create_task(_update_last_active(user_id))
     except Exception:
         pass
     return response
 
 
-async def _update_last_active(tg_id: int):
+async def _update_last_active(user_id: int):
     try:
-        from utils import resolve_id
-        real_id = await resolve_id(tg_id)
         await db.conn.execute(
             "UPDATE users SET last_active = datetime('now', 'localtime') WHERE user_id = ?",
-            (real_id,)
+            (user_id,)
         )
         await db.conn.commit()
     except Exception:
