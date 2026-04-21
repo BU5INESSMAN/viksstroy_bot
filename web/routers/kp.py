@@ -26,9 +26,60 @@ async def get_kp_dashboard(current_user=Depends(get_current_user)):
     return await db.get_kp_dashboard_apps(real_tg_id, role, teams)
 
 
+async def _expand_merge_group(app_id: int) -> list[int]:
+    """Return the list of application ids that share an SMR merge group
+    with ``app_id`` (inclusive). When the app is not merged this is just
+    ``[app_id]``. Order: primary (lowest id) first, then ascending.
+
+    A merge group is identified by a shared non-null ``smr_group_id``
+    on applications still in the "to_fill" stage (smr_status empty /
+    kp_status in none/rejected). Apps that have already advanced are
+    never pulled back into the group — we match only on the group id,
+    not on status, so the wizard can keep a consistent picture even if
+    one app in the group was approved separately.
+    """
+    if db.conn is None:
+        await db.init_db()
+    async with db.conn.execute(
+        "SELECT smr_group_id FROM applications WHERE id = ?", (app_id,)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        return [app_id]
+    gid = row[0]
+    if not gid:
+        return [app_id]
+    async with db.conn.execute(
+        "SELECT id FROM applications WHERE smr_group_id = ? ORDER BY id ASC",
+        (gid,),
+    ) as cur:
+        ids = [r[0] for r in await cur.fetchall()]
+    return ids or [app_id]
+
+
 @router.get("/api/kp/apps/{app_id}/items")
 async def get_app_kp_items(app_id: int, current_user=Depends(get_current_user)):
-    items = await db.get_app_kp_items(app_id)
+    # Merge-aware: aggregate plan items across every app in the same
+    # SMR merge group so the wizard sees the unified picture.
+    group_ids = await _expand_merge_group(app_id)
+    items: list[dict] = []
+    seen_keys: set = set()
+    for aid in group_ids:
+        batch = await db.get_app_kp_items(aid)
+        for it in batch:
+            # Sum volumes per kp_id across the group so the wizard shows
+            # one row per catalog item with the combined plan volume.
+            key = int(it.get('kp_id') or it.get('id') or 0)
+            if key in seen_keys:
+                existing = next((x for x in items if int(x.get('kp_id') or x.get('id') or 0) == key), None)
+                if existing is not None:
+                    try:
+                        existing['volume'] = float(existing.get('volume') or 0) + float(it.get('volume') or 0)
+                    except (TypeError, ValueError):
+                        pass
+                    continue
+            seen_keys.add(key)
+            items.append(it)
     role = current_user.get('role', 'worker')
     # Strip financial data for non-office roles (privacy)
     if role not in ('moderator', 'boss', 'superadmin'):
@@ -48,7 +99,12 @@ async def get_app_kp_items(app_id: int, current_user=Depends(get_current_user)):
 async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
     """Hours for an application grouped by team.
     Pre-fills with any previously saved hours. Brigadier sees all teams on
-    the application; restriction on WRITE is enforced on POST."""
+    the application; restriction on WRITE is enforced on POST.
+
+    Merge-aware: when the app is part of an SMR merge group the response
+    is the union of teams from every app in the group (deduped by
+    team_id). Previously-saved hours are aggregated per (team, member).
+    """
     if db.conn is None:
         await db.init_db()
     async with db.conn.execute(
@@ -57,10 +113,38 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
         if not await cur.fetchone():
             raise HTTPException(404, "Заявка не найдена")
 
-    saved = await db.get_app_hours(app_id)
-    teams = await db.get_teams_for_app(app_id)
+    group_ids = await _expand_merge_group(app_id)
 
-    by_key = {(int(r['team_id']), int(r['member_id'])): r for r in saved}
+    # Aggregate saved hours across all apps in the group. Later values
+    # win the metadata race (filled_by_fio etc.) — sum the hours.
+    by_key: dict[tuple, dict] = {}
+    for aid in group_ids:
+        for r in await db.get_app_hours(aid):
+            key = (int(r['team_id']), int(r['member_id']))
+            existing = by_key.get(key)
+            if existing is None:
+                by_key[key] = dict(r)
+            else:
+                try:
+                    existing['hours'] = float(existing.get('hours') or 0) + float(r.get('hours') or 0)
+                except (TypeError, ValueError):
+                    pass
+                # Prefer latest filled_at metadata
+                if (r.get('filled_at') or '') > (existing.get('filled_at') or ''):
+                    existing['filled_by_fio'] = r.get('filled_by_fio') or existing.get('filled_by_fio') or ''
+                    existing['filled_by_role'] = r.get('filled_by_role') or existing.get('filled_by_role') or ''
+                    existing['filled_at'] = r.get('filled_at') or existing.get('filled_at') or ''
+
+    # Union of teams across the group — dedupe by team_id.
+    seen_teams: set[int] = set()
+    teams: list[dict] = []
+    for aid in group_ids:
+        for t in await db.get_teams_for_app(aid):
+            tid = int(t.get('id') or 0)
+            if tid in seen_teams:
+                continue
+            seen_teams.add(tid)
+            teams.append(t)
 
     result = []
     for team in teams:
@@ -186,25 +270,27 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     if extras:
         await _save_extra_works_inline(app_id, extras, tg_id, role)
 
-    # 4. Group + status
+    # 4. Group + status — cascade to every app in the merge group so a
+    # single wizard pass marks them all pending/approved together.
     group_id = dict(app_row).get('smr_group_id') or _uuid.uuid4().hex[:12]
+    group_ids = await _expand_merge_group(app_id)
+    if app_id not in group_ids:
+        group_ids.append(app_id)
+
     if role in ('foreman', 'moderator', 'boss', 'superadmin'):
         smr_status = 'approved'
         smr_role = 'foreman'
-        # Office roles also finalise application status → 'completed'
-        await db.conn.execute(
-            "UPDATE applications SET kp_status = 'approved' WHERE id = ?", (app_id,)
-        )
+        new_kp_status = 'approved'
     else:
         smr_status = 'pending_review'
         smr_role = 'brigadier'
-        await db.conn.execute(
-            "UPDATE applications SET kp_status = 'submitted' WHERE id = ?", (app_id,)
-        )
+        new_kp_status = 'submitted'
 
+    placeholders = ",".join("?" * len(group_ids))
     await db.conn.execute(
-        "UPDATE applications SET smr_group_id = ?, smr_status = ?, smr_filled_by_role = ? WHERE id = ?",
-        (group_id, smr_status, smr_role, app_id),
+        f"UPDATE applications SET smr_group_id = ?, smr_status = ?, "
+        f"smr_filled_by_role = ?, kp_status = ? WHERE id IN ({placeholders})",
+        (group_id, smr_status, smr_role, new_kp_status, *group_ids),
     )
     await db.conn.commit()
 
@@ -347,6 +433,168 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
     return {"status": "ok"}
 
 
+@router.post("/api/kp/smr/merge")
+async def merge_smr_apps(request: Request, current_user=Depends(get_current_user)):
+    """Combine multiple applications into a single SMR merge group.
+
+    Body: ``{"app_ids": [1, 2, 3]}`` — 2+ app ids, all accessible to the
+    caller, all currently in the "to_fill" stage (no smr_status, no
+    approved kp_status). Apps already belonging to a group are merged
+    into the new group (their old group id is overwritten). Returns
+    the assigned ``smr_group_id``.
+    """
+    import uuid as _uuid
+
+    data = await request.json()
+    raw_ids = data.get('app_ids') or []
+    try:
+        app_ids = sorted({int(x) for x in raw_ids if int(x) > 0})
+    except (TypeError, ValueError):
+        raise HTTPException(400, "app_ids должен быть списком чисел")
+    if len(app_ids) < 2:
+        raise HTTPException(400, "Для объединения выберите минимум 2 заявки")
+
+    tg_id = current_user['tg_id']
+    role = current_user.get('role', 'worker')
+
+    if db.conn is None:
+        await db.init_db()
+
+    placeholders = ",".join("?" * len(app_ids))
+    async with db.conn.execute(
+        f"SELECT id, foreman_id, team_id, kp_status, smr_status, smr_group_id "
+        f"FROM applications WHERE id IN ({placeholders})",
+        app_ids,
+    ) as cur:
+        rows = [dict(r) for r in await cur.fetchall()]
+
+    if len(rows) != len(app_ids):
+        raise HTTPException(404, "Одна или несколько заявок не найдены")
+
+    # Access + state checks: every app must be writable by the caller
+    # and still in the to_fill stage.
+    user_team_ids = set(await db.get_user_team_ids(tg_id))
+    for r in rows:
+        smr = (r.get('smr_status') or '').strip()
+        kp = (r.get('kp_status') or '').strip()
+        if smr in ('pending_review', 'approved') or kp == 'approved':
+            raise HTTPException(400, f"Заявка №{r['id']} уже заполнена и не может быть объединена")
+        if role in ('moderator', 'boss', 'superadmin'):
+            continue
+        if role == 'foreman':
+            if int(r.get('foreman_id') or 0) != int(tg_id):
+                raise HTTPException(403, f"Нет доступа к заявке №{r['id']}")
+            continue
+        # brigadier / worker — must be a team member of at least one
+        # brigade on the app.
+        app_teams = set()
+        for part in str(r.get('team_id') or '').split(','):
+            part = part.strip()
+            if part.isdigit():
+                app_teams.add(int(part))
+        if not (app_teams & user_team_ids):
+            raise HTTPException(403, f"Нет доступа к заявке №{r['id']}")
+
+    group_id = _uuid.uuid4().hex[:12]
+    await db.conn.execute(
+        f"UPDATE applications SET smr_group_id = ? WHERE id IN ({placeholders})",
+        (group_id, *app_ids),
+    )
+    await db.conn.commit()
+
+    try:
+        await db.add_log(
+            tg_id, current_user.get('fio', ''),
+            f"Объединил СМР заявки: {', '.join(f'№{a}' for a in app_ids)}",
+            target_type='smr', target_id=app_ids[0],
+        )
+    except Exception:
+        pass
+
+    return {"status": "ok", "smr_group_id": group_id, "app_ids": app_ids}
+
+
+@router.post("/api/kp/smr/unmerge")
+async def unmerge_smr_app(request: Request, current_user=Depends(get_current_user)):
+    """Remove a single application from its SMR merge group.
+
+    Body: ``{"app_id": N}``. If the remaining group has ≤ 1 app its
+    ``smr_group_id`` is also cleared, since a one-app group is the same
+    as no group.
+    """
+    data = await request.json()
+    try:
+        app_id = int(data.get('app_id') or 0)
+    except (TypeError, ValueError):
+        app_id = 0
+    if app_id <= 0:
+        raise HTTPException(400, "app_id обязателен")
+
+    if db.conn is None:
+        await db.init_db()
+
+    async with db.conn.execute(
+        "SELECT id, foreman_id, team_id, smr_status, kp_status, smr_group_id "
+        "FROM applications WHERE id = ?",
+        (app_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Заявка не найдена")
+    r = dict(row)
+
+    gid = r.get('smr_group_id')
+    if not gid:
+        return {"status": "ok", "noop": True}
+
+    # Access + state check (same as merge).
+    tg_id = current_user['tg_id']
+    role = current_user.get('role', 'worker')
+    smr = (r.get('smr_status') or '').strip()
+    kp = (r.get('kp_status') or '').strip()
+    if smr in ('pending_review', 'approved') or kp == 'approved':
+        raise HTTPException(400, "Заявка уже заполнена — нельзя отменить объединение")
+    if role not in ('moderator', 'boss', 'superadmin'):
+        if role == 'foreman':
+            if int(r.get('foreman_id') or 0) != int(tg_id):
+                raise HTTPException(403, "Нет доступа к этой заявке")
+        else:
+            user_team_ids = set(await db.get_user_team_ids(tg_id))
+            app_teams = set()
+            for part in str(r.get('team_id') or '').split(','):
+                part = part.strip()
+                if part.isdigit():
+                    app_teams.add(int(part))
+            if not (app_teams & user_team_ids):
+                raise HTTPException(403, "Нет доступа к этой заявке")
+
+    # Detach this app from the group.
+    await db.conn.execute(
+        "UPDATE applications SET smr_group_id = NULL WHERE id = ?", (app_id,)
+    )
+    # If only one app is left in the group, drop the group id from it too.
+    async with db.conn.execute(
+        "SELECT id FROM applications WHERE smr_group_id = ?", (gid,)
+    ) as cur:
+        remaining = [rr[0] for rr in await cur.fetchall()]
+    if len(remaining) == 1:
+        await db.conn.execute(
+            "UPDATE applications SET smr_group_id = NULL WHERE id = ?", (remaining[0],)
+        )
+    await db.conn.commit()
+
+    try:
+        await db.add_log(
+            tg_id, current_user.get('fio', ''),
+            f"Отменил объединение СМР заявки №{app_id}",
+            target_type='smr', target_id=app_id,
+        )
+    except Exception:
+        pass
+
+    return {"status": "ok"}
+
+
 @router.get("/api/kp/smr/list")
 async def get_smr_list(current_user=Depends(get_current_user)):
     """Applications grouped into SMR-wizard tabs: к заполнению / на проверку / готовые."""
@@ -412,8 +660,48 @@ async def get_smr_list(current_user=Depends(get_current_user)):
     if role in ('worker', 'driver', 'brigadier'):
         pending = []
 
+    # ── Collapse merged groups in the "to_fill" tab ──
+    # Apps sharing a non-null smr_group_id are shown as a single primary
+    # card (lowest id) with `merged_with` pointing at the other group
+    # members. The secondary apps are hidden from the tab so the list is
+    # not duplicated. Apps with no group id are unaffected.
+    groups: dict[str, list[dict]] = {}
+    ungrouped: list[dict] = []
+    for app in to_fill:
+        gid = (app.get('smr_group_id') or '').strip()
+        if gid:
+            groups.setdefault(gid, []).append(app)
+        else:
+            ungrouped.append(app)
+
+    collapsed: list[dict] = []
+    for gid, members in groups.items():
+        if len(members) == 1:
+            # A one-member group is effectively not merged — show it plainly.
+            collapsed.append(members[0])
+            continue
+        members.sort(key=lambda x: int(x.get('id') or 0))
+        primary = dict(members[0])
+        primary['merged_with'] = [
+            {
+                'id': m['id'],
+                'date_target': m.get('date_target'),
+                'object_id': m.get('object_id'),
+                'object_name': m.get('object_name'),
+                'object_address': m.get('object_address') or m.get('object_clean_address'),
+            }
+            for m in members[1:]
+        ]
+        collapsed.append(primary)
+
+    collapsed.extend(ungrouped)
+    collapsed.sort(
+        key=lambda x: (x.get('date_target') or '', int(x.get('id') or 0)),
+        reverse=True,
+    )
+
     return {
-        'to_fill': to_fill,
+        'to_fill': collapsed,
         'pending': pending,
         'completed': completed,
     }
@@ -423,7 +711,12 @@ async def get_smr_list(current_user=Depends(get_current_user)):
 async def download_smr_report(app_id: int, current_user=Depends(get_current_user)):
     """Download the SMR report as an .xlsx — hours + works + extras, no pricing.
     Access: any authenticated user who can see the application on the
-    KP page (same scope as /api/kp/smr/list)."""
+    KP page (same scope as /api/kp/smr/list).
+
+    Merge-aware: the wizard saves all data onto the merge-group's primary
+    app. When someone downloads the report for a secondary app we
+    transparently redirect to the primary so the file isn't empty.
+    """
     from services.smr_report import generate_smr_excel_bytes
 
     if db.conn is None:
@@ -434,7 +727,11 @@ async def download_smr_report(app_id: int, current_user=Depends(get_current_user
         if not await cur.fetchone():
             raise HTTPException(404, "Заявка не найдена")
 
-    blob, filename = await generate_smr_excel_bytes(db, app_id)
+    # Resolve to primary app if this app is part of a merge group.
+    group_ids = await _expand_merge_group(app_id)
+    report_app_id = group_ids[0] if group_ids else app_id
+
+    blob, filename = await generate_smr_excel_bytes(db, report_app_id)
     headers = {
         "Content-Disposition": (
             f"attachment; filename*=UTF-8''{quote(filename)}"

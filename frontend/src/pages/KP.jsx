@@ -5,8 +5,9 @@ import toast from 'react-hot-toast';
 import {
     FileText, CheckCircle, Clock, Search, X, MapPin,
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive,
-    Calendar as CalendarIcon
+    Calendar as CalendarIcon, Link2, Link2Off
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
 import TabBadge from '../components/ui/TabBadge';
 import ExtraWorksPicker from '../features/kp/components/ExtraWorksPicker';
@@ -98,6 +99,9 @@ export default function KP() {
     // v2.4.5 SMR wizard integration
     const [wizardApp, setWizardApp] = useState(null);
     const [wizardApproveMode, setWizardApproveMode] = useState(false);
+    // v2.4.4 SMR merge — only applies to the "to_fill" tab.
+    const [mergeSelected, setMergeSelected] = useState([]);
+    const [mergeBusy, setMergeBusy] = useState(false);
 
     const fileInputRef = useRef(null);
 
@@ -131,6 +135,43 @@ export default function KP() {
     };
 
     useEffect(() => { fetchApps(); }, [tgId]);
+
+    // Clear merge selection whenever the tab changes away from to_fill
+    // or the underlying list refreshes — stale selections are confusing.
+    useEffect(() => {
+        if (activeTab !== 'to_fill') setMergeSelected([]);
+    }, [activeTab]);
+
+    const toggleMergeSelect = (appId) => {
+        setMergeSelected(prev => (
+            prev.includes(appId) ? prev.filter(x => x !== appId) : [...prev, appId]
+        ));
+    };
+
+    const handleMerge = async () => {
+        if (mergeSelected.length < 2) return;
+        setMergeBusy(true);
+        try {
+            await axios.post('/api/kp/smr/merge', { app_ids: mergeSelected });
+            toast.success(`Объединено заявок: ${mergeSelected.length}`);
+            setMergeSelected([]);
+            await fetchApps();
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Не удалось объединить');
+        } finally {
+            setMergeBusy(false);
+        }
+    };
+
+    const handleUnmerge = async (appId) => {
+        try {
+            await axios.post('/api/kp/smr/unmerge', { app_id: appId });
+            toast.success('Объединение отменено');
+            await fetchApps();
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Не удалось отменить');
+        }
+    };
 
     useEffect(() => {
         axios.get('/api/settings').then(res => {
@@ -350,6 +391,9 @@ export default function KP() {
                 smrUnlockTime={smrUnlockTime}
                 selectedForExport={selectedForExport}
                 setSelectedForExport={setSelectedForExport}
+                mergeSelected={mergeSelected}
+                toggleMergeSelect={toggleMergeSelect}
+                onUnmerge={handleUnmerge}
                 onFill={(app) => { setWizardApproveMode(false); setWizardApp(app); }}
                 onReview={(app) => { setWizardApproveMode(true); setWizardApp(app); }}
                 onView={(app) => openModal(app)}
@@ -544,6 +588,42 @@ export default function KP() {
                     onSubmitted={() => { fetchApps(); }}
                 />
             )}
+
+            {/* Floating "Объединить" action — only when the user has 2+
+                to_fill applications selected via the checkboxes. */}
+            <AnimatePresence>
+                {activeTab === 'to_fill' && mergeSelected.length >= 2 && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 24 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 24 }}
+                        transition={{ duration: 0.2, ease: [0.23, 1, 0.32, 1] }}
+                        className="fixed left-1/2 -translate-x-1/2 bottom-20 md:bottom-8 z-[90]"
+                    >
+                        <div className="flex items-center gap-2 bg-blue-600 text-white pl-4 pr-2 py-2 rounded-full shadow-2xl ring-4 ring-blue-600/10">
+                            <Link2 className="w-4 h-4" />
+                            <span className="text-sm font-bold">
+                                Выбрано: {mergeSelected.length}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={() => setMergeSelected([])}
+                                className="text-white/70 hover:text-white px-2 text-xs"
+                            >
+                                Сбросить
+                            </button>
+                            <button
+                                type="button"
+                                disabled={mergeBusy}
+                                onClick={handleMerge}
+                                className="bg-white text-blue-700 font-bold text-sm px-4 py-1.5 rounded-full hover:bg-blue-50 transition-colors disabled:opacity-50 active:scale-[0.98]"
+                            >
+                                {mergeBusy ? 'Объединение…' : 'Объединить'}
+                            </button>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </main>
     );
 }
@@ -560,6 +640,9 @@ function GroupedSMRList({
     smrUnlockTime,
     selectedForExport,
     setSelectedForExport,
+    mergeSelected,
+    toggleMergeSelect,
+    onUnmerge,
     onFill,
     onReview,
     onView,
@@ -615,6 +698,9 @@ function GroupedSMRList({
                                             smrUnlockTime={smrUnlockTime}
                                             selectedForExport={selectedForExport}
                                             setSelectedForExport={setSelectedForExport}
+                                            mergeSelected={mergeSelected}
+                                            toggleMergeSelect={toggleMergeSelect}
+                                            onUnmerge={onUnmerge}
                                             onFill={onFill}
                                             onReview={onReview}
                                             onView={onView}
@@ -636,15 +722,48 @@ function GroupedSMRList({
 function SMRGroupRow({
     app, tab, isOffice, tgId, isSmrLocked, smrUnlockTime,
     selectedForExport, setSelectedForExport,
+    mergeSelected, toggleMergeSelect, onUnmerge,
     onFill, onReview, onView, onArchive, onRemind, onDownload,
 }) {
     const isBrigadierSubmission = app.smr_filled_by_role === 'brigadier';
+    const mergedWith = Array.isArray(app.merged_with) ? app.merged_with : [];
+    const isMerged = mergedWith.length > 0;
+    const isMergeSelected = (mergeSelected || []).includes(app.id);
 
     return (
-        <li className="flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50/60 dark:bg-gray-900/20 hover:bg-gray-100 dark:hover:bg-gray-700/40 transition-colors">
+        <li
+            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+                isMergeSelected
+                    ? 'bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-300 dark:ring-blue-700'
+                    : isMerged
+                        ? 'bg-blue-50/40 dark:bg-blue-900/10'
+                        : 'bg-gray-50/60 dark:bg-gray-900/20 hover:bg-gray-100 dark:hover:bg-gray-700/40'
+            }`}
+        >
+            {/* Merge checkbox — only on the to_fill tab and only for
+                apps that aren't already part of a merged group. */}
+            {tab === 'to_fill' && !isMerged && (
+                <input
+                    type="checkbox"
+                    checked={isMergeSelected}
+                    onChange={() => toggleMergeSelect?.(app.id)}
+                    onClick={(e) => e.stopPropagation()}
+                    title="Выбрать для объединения"
+                    className="w-4 h-4 text-blue-600 rounded flex-shrink-0"
+                />
+            )}
+
             <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate flex items-center gap-1.5">
                     Заявка №{app.id}
+                    {isMerged && (
+                        <span
+                            className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-500/20 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5"
+                            title="Объединённая СМР"
+                        >
+                            <Link2 className="w-2.5 h-2.5" /> объединено
+                        </span>
+                    )}
                 </p>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate flex items-center gap-1.5">
                     <HardHat className="w-3 h-3 text-gray-400 flex-shrink-0" />
@@ -655,6 +774,18 @@ function SMRGroupRow({
                         </span>
                     )}
                 </p>
+                {isMerged && tab === 'to_fill' && (
+                    <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1.5 flex-wrap">
+                        <span>+ объединено с {mergedWith.map(m => `№${m.id}`).join(', ')}</span>
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); onUnmerge?.(app.id); }}
+                            className="text-[11px] font-bold text-blue-700 dark:text-blue-300 underline underline-offset-2 hover:text-blue-900 dark:hover:text-blue-100 inline-flex items-center gap-0.5"
+                        >
+                            <Link2Off className="w-3 h-3" /> Отменить
+                        </button>
+                    </p>
+                )}
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0">

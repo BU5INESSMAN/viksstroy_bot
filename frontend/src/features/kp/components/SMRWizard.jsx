@@ -82,14 +82,27 @@ export default function SMRWizard({
                     className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-3xl shadow-2xl overflow-hidden"
                 >
                     <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
-                        <div>
-                            <h1 className="text-lg font-bold text-gray-900 dark:text-white">
+                        <div className="min-w-0">
+                            <h1 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
                                 {approveMode ? 'Проверка отчёта СМР' : 'Заполнение отчёта СМР'}
+                                {Array.isArray(app?.merged_with) && app.merged_with.length > 0 && (
+                                    <span
+                                        className="text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-500/20 px-2 py-0.5 rounded-full"
+                                        title={`Объединённая СМР на ${app.merged_with.length + 1} заявок`}
+                                    >
+                                        объединено ({app.merged_with.length + 1})
+                                    </span>
+                                )}
                             </h1>
                             {app && (
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
                                     {(app.object_name || app.obj_name || app.object_address || '')}
                                     {app.date_target ? ` • ${app.date_target}` : ''}
+                                </p>
+                            )}
+                            {Array.isArray(app?.merged_with) && app.merged_with.length > 0 && (
+                                <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-0.5 truncate">
+                                    + {app.merged_with.map(m => `№${m.id}`).join(', ')}
                                 </p>
                             )}
                         </div>
