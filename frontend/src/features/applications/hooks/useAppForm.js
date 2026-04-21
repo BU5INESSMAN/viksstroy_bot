@@ -208,13 +208,22 @@ export default function useAppForm({
     // -------------------------------------------------------------------------
 
     const checkTeamStatus = (team_id) => {
-        // v2.4.4: partial-brigade aware.
+        // v2.4.4: partial-brigade aware — lean on the backend's own
+        // per-team "partial" signal (`teams_partial[team_id]`) so the
+        // frontend doesn't have to re-derive it from the raw
+        // comma-joined selected_members, which gets ambiguous the
+        // moment an app lists members across multiple brigades.
+        //
         //   free    — no other app on this date references the team.
-        //   partial — other apps pick SOME members; at least one is
-        //             still free for this new/edited app.
-        //   busy    — other apps either use the whole team
-        //             (empty selected_members) OR the union of their
-        //             picks already covers every member of the team.
+        //   partial — at least one app uses the team AND the backend
+        //             flags that use as partial (0 < used < total).
+        //             Picks are taken from the per-member `members_data`
+        //             rows so the count is scoped to THIS team only.
+        //   busy    — some app references the team but is NOT partial
+        //             (either empty selected_members ⇒ whole team,
+        //              or every member on this team is already taken),
+        //             OR the union of partial picks across all apps
+        //             already covers the whole roster.
         if (!data.kanban_apps) return { state: 'free' };
         const team = (data.teams || []).find(t => Number(t.id) === Number(team_id));
         const totalMembers = Number(team?.member_count || 0);
@@ -231,18 +240,28 @@ export default function useAppForm({
             if (appForm.id === a.id) continue;
             const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
             if (!tIds.includes(Number(team_id))) continue;
-            const otherSelected = a.selected_members
-                ? String(a.selected_members).split(',').map(s => Number(s.trim())).filter(Boolean)
-                : [];
-            if (otherSelected.length === 0) {
-                // Whole team booked — hard block.
+
+            const tp = a.teams_partial || {};
+            const isPartial = tp[team_id] === true || tp[String(team_id)] === true;
+
+            if (!isPartial) {
+                // Backend says this app is NOT partial for the team →
+                // it uses (effectively) the whole team. Hard block.
                 wholeTeamHit = {
                     state: 'busy',
                     message: `Бригада полностью занята в этот день на объекте:\n📍 ${a.object_address}`,
                 };
                 break;
             }
-            otherSelected.forEach(id => pickedAcrossApps.add(id));
+
+            // Partial: only count members whose team_id matches the
+            // one we're checking. `members_data` is populated by the
+            // backend's enrich step for every kanban app.
+            const perTeamMembers = (a.members_data || [])
+                .filter(m => Number(m.team_id) === Number(team_id))
+                .map(m => Number(m.id))
+                .filter(n => Number.isFinite(n));
+            perTeamMembers.forEach(id => pickedAcrossApps.add(id));
             lastHitMessage = `Бригада частично занята (заявка №${a.id} · ${a.object_address}). Свободных рабочих можно выбрать.`;
         }
 

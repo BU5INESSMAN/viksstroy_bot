@@ -90,10 +90,10 @@ export default function EditAppModal({
     const handleFormChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
     const checkTeamStatus = (team_id) => {
-        // Mirrors useAppForm.checkTeamStatus (partial-brigade aware).
-        // Only flags 'partial' when at least one member is still free —
-        // if the union of members picked across all other apps covers
-        // the whole roster, the team is 'busy'.
+        // Mirrors useAppForm.checkTeamStatus. Uses the backend's
+        // per-app teams_partial flag as the source of truth instead
+        // of re-parsing the raw comma-joined selected_members, which
+        // becomes ambiguous for multi-brigade apps.
         if (!data.kanban_apps) return { state: 'free' };
         const team = (data.teams || []).find(t => Number(t.id) === Number(team_id));
         const totalMembers = Number(team?.member_count || 0);
@@ -109,14 +109,19 @@ export default function EditAppModal({
             if (form.id === a.id) continue;
             const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
             if (!tIds.includes(Number(team_id))) continue;
-            const otherSelected = a.selected_members
-                ? String(a.selected_members).split(',').map(s => Number(s.trim())).filter(Boolean)
-                : [];
-            if (otherSelected.length === 0) {
+
+            const tp = a.teams_partial || {};
+            const isPartial = tp[team_id] === true || tp[String(team_id)] === true;
+            if (!isPartial) {
                 wholeTeamHit = { state: 'busy', message: `Бригада полностью занята в этот день на объекте:\n📍 ${a.object_address}` };
                 break;
             }
-            otherSelected.forEach(id => pickedAcrossApps.add(id));
+
+            const perTeamMembers = (a.members_data || [])
+                .filter(m => Number(m.team_id) === Number(team_id))
+                .map(m => Number(m.id))
+                .filter(n => Number.isFinite(n));
+            perTeamMembers.forEach(id => pickedAcrossApps.add(id));
             lastHitMessage = `Бригада частично занята (заявка №${a.id} · ${a.object_address}).`;
         }
 
