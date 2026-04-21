@@ -265,20 +265,30 @@ export default function useAppForm({
     const [showCrossBrigadeModal, setShowCrossBrigadeModal] = useState(false);
 
     const checkCrossBrigadeMembers = () => {
+        // Per-team warnings: "Вы выбрали часть бригады X без бригадира".
+        // Triggered when ≥1 member of a brigade is picked but the brigade's
+        // brigadier (is_foreman) is not included. SMR for that partial group
+        // can then only be filled by the foreman.
         const warnings = [];
         const teamIdSet = new Set(appForm.team_ids);
 
         for (const tid of teamIdSet) {
             const membersOfTeam = teamMembers.filter(m => m.team_id === tid);
+            if (membersOfTeam.length === 0) continue;
             const selectedFromTeam = membersOfTeam.filter(m => appForm.members.includes(m.id));
             const brigadier = membersOfTeam.find(m => m.is_foreman);
 
-            if (selectedFromTeam.length > 0 && brigadier && !appForm.members.includes(brigadier.id)) {
+            if (
+                selectedFromTeam.length > 0 &&
+                brigadier &&
+                !appForm.members.includes(brigadier.id)
+            ) {
                 const tname = membersOfTeam[0]?.team_name || `#${tid}`;
-                selectedFromTeam.forEach(m => {
-                    if (!m.is_foreman) {
-                        warnings.push({ member: m, fromTeam: { id: tid, name: tname } });
-                    }
+                warnings.push({
+                    team: { id: tid, name: tname },
+                    members: selectedFromTeam.filter(m => !m.is_foreman),
+                    selectedCount: selectedFromTeam.filter(m => !m.is_foreman).length,
+                    totalCount: membersOfTeam.filter(m => !m.is_foreman).length,
                 });
             }
         }
