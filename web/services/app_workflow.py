@@ -157,7 +157,7 @@ async def change_application_status(app_id: int, new_status: str, tg_id: int):
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     user_role = dict(user).get('role') if user else ''
-    if user_role not in ('admin', 'superadmin'):
+    if user_role not in ('moderator', 'boss', 'superadmin'):
         raise HTTPException(403, "Нет прав для смены статуса")
 
     mod_fio = dict(user).get('fio', 'Админ')
