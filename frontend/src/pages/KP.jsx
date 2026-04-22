@@ -730,6 +730,12 @@ function SMRGroupRow({
     const isMerged = mergedWith.length > 0;
     const isMergeSelected = (mergeSelected || []).includes(app.id);
 
+    const isRemindMode = tab === 'to_fill' && isOffice && app.foreman_id !== Number(tgId);
+    let rowAction = null;
+    if (tab === 'to_fill' && !isSmrLocked && !isRemindMode) rowAction = () => onFill(app);
+    else if (tab === 'pending_review') rowAction = () => onReview(app);
+    else if (tab === 'approved') rowAction = () => onView(app);
+
     return (
         <li
             className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
@@ -753,7 +759,10 @@ function SMRGroupRow({
                 />
             )}
 
-            <div className="flex-1 min-w-0">
+            <div
+                className={`flex-1 min-w-0 ${rowAction ? 'cursor-pointer' : ''}`}
+                onClick={rowAction || undefined}
+            >
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate flex items-center gap-1.5">
                     Заявка №{app.id}
                     {isMerged && (
