@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
-    FileText, CheckCircle, Clock, Search, X, MapPin,
+    FileText, CheckCircle, Search, X, MapPin,
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive,
     Calendar as CalendarIcon, Link2, Link2Off
 } from 'lucide-react';
@@ -91,7 +91,6 @@ export default function KP() {
     const [selectedForExport, setSelectedForExport] = useState([]);
     const [showSettings, setShowSettings] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
-    const [smrUnlockTime, setSmrUnlockTime] = useState('');
     const [extraWorksCatalog, setExtraWorksCatalog] = useState([]);
     const [extraWorks, setExtraWorks] = useState([]);
     const [showArchive, setShowArchive] = useState(false);
@@ -172,19 +171,6 @@ export default function KP() {
             toast.error(e?.response?.data?.detail || 'Не удалось отменить');
         }
     };
-
-    useEffect(() => {
-        axios.get('/api/settings').then(res => {
-            setSmrUnlockTime(res.data.smr_unlock_time || '');
-        }).catch(() => {});
-    }, []);
-
-    const isSmrLocked = (() => {
-        if (!smrUnlockTime || isOffice) return false;
-        const [h, m] = smrUnlockTime.split(':').map(Number);
-        const now = new Date();
-        return now.getHours() < h || (now.getHours() === h && now.getMinutes() < m);
-    })();
 
     const openModal = async (app) => {
         setModalApp(app);
@@ -387,8 +373,6 @@ export default function KP() {
                 tab={activeTab}
                 isOffice={isOffice}
                 tgId={tgId}
-                isSmrLocked={isSmrLocked}
-                smrUnlockTime={smrUnlockTime}
                 selectedForExport={selectedForExport}
                 setSelectedForExport={setSelectedForExport}
                 mergeSelected={mergeSelected}
@@ -636,8 +620,6 @@ function GroupedSMRList({
     tab,
     isOffice,
     tgId,
-    isSmrLocked,
-    smrUnlockTime,
     selectedForExport,
     setSelectedForExport,
     mergeSelected,
@@ -694,8 +676,6 @@ function GroupedSMRList({
                                             tab={tab}
                                             isOffice={isOffice}
                                             tgId={tgId}
-                                            isSmrLocked={isSmrLocked}
-                                            smrUnlockTime={smrUnlockTime}
                                             selectedForExport={selectedForExport}
                                             setSelectedForExport={setSelectedForExport}
                                             mergeSelected={mergeSelected}
@@ -720,7 +700,7 @@ function GroupedSMRList({
 }
 
 function SMRGroupRow({
-    app, tab, isOffice, tgId, isSmrLocked, smrUnlockTime,
+    app, tab, isOffice, tgId,
     selectedForExport, setSelectedForExport,
     mergeSelected, toggleMergeSelect, onUnmerge,
     onFill, onReview, onView, onArchive, onRemind, onDownload,
@@ -732,7 +712,7 @@ function SMRGroupRow({
 
     const isRemindMode = tab === 'to_fill' && isOffice && app.foreman_id !== Number(tgId);
     let rowAction = null;
-    if (tab === 'to_fill' && !isSmrLocked && !isRemindMode) rowAction = () => onFill(app);
+    if (tab === 'to_fill' && !isRemindMode) rowAction = () => onFill(app);
     else if (tab === 'pending_review') rowAction = () => onReview(app);
     else if (tab === 'approved') rowAction = () => onView(app);
 
@@ -815,10 +795,6 @@ function SMRGroupRow({
                     >
                         <Bell className="w-3.5 h-3.5" /> Напомнить
                     </button>
-                ) : tab === 'to_fill' && isSmrLocked ? (
-                    <span className="text-xs font-medium text-gray-400 italic flex items-center gap-1">
-                        <Clock className="w-3 h-3" /> до {smrUnlockTime}
-                    </span>
                 ) : tab === 'to_fill' ? (
                     <button
                         onClick={() => onFill(app)}
