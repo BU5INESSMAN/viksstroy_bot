@@ -193,15 +193,29 @@ export default function StepReview({
             )}
 
             {/* Actions */}
-            <div className="flex gap-3 pt-2">
-                <button
-                    type="button"
-                    onClick={onEdit}
-                    disabled={submitting}
-                    className="px-5 py-3.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors disabled:opacity-60 active:scale-[0.99] flex items-center gap-2"
-                >
-                    <ArrowLeft className="w-4 h-4" /> Редактировать
-                </button>
+            <div className="flex flex-col sm:flex-row gap-3 pt-2">
+                <div className="flex gap-2">
+                    <button
+                        type="button"
+                        onClick={() => onEdit?.('hours')}
+                        disabled={submitting}
+                        className="px-4 py-3.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors disabled:opacity-60 active:scale-[0.99] flex items-center gap-2"
+                        title="Изменить часы"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span className="hidden sm:inline">Редактировать&nbsp;</span>часы
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => onEdit?.('works')}
+                        disabled={submitting}
+                        className="px-4 py-3.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors disabled:opacity-60 active:scale-[0.99] flex items-center gap-2"
+                        title="Изменить работы"
+                    >
+                        <ArrowLeft className="w-4 h-4" />
+                        <span className="hidden sm:inline">Редактировать&nbsp;</span>работы
+                    </button>
+                </div>
                 <button
                     type="button"
                     onClick={onSubmit}

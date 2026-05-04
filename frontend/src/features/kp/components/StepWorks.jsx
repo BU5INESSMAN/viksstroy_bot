@@ -23,6 +23,14 @@ export default function StepWorks({
     setWorksData,
     extraWorksData,
     setExtraWorksData,
+    // v2.5 Commit 3: lifted to SMRWizard so re-mounting from Review's
+    // "Редактировать работы" preserves per-brigade volumes & toggle.
+    perBrigade,
+    setPerBrigade,
+    worksByTeam,
+    setWorksByTeam,
+    extraByTeam,
+    setExtraByTeam,
     onNext,
     onBack,
     readOnly = false,
@@ -32,14 +40,6 @@ export default function StepWorks({
     const [teams, setTeams] = useState([]);
     const [loading, setLoading] = useState(true);
     const [previousFiller, setPreviousFiller] = useState(null);
-
-    // v2.4.3: per-brigade mode.
-    //   common           — single form, worksMap is {kp_id: volume}
-    //   per-brigade      — worksByTeam is {team_id: {kp_id: volume}}
-    //                      extraByTeam is {team_id: [items]}
-    const [perBrigade, setPerBrigade] = useState(false);
-    const [worksByTeam, setWorksByTeam] = useState({});
-    const [extraByTeam, setExtraByTeam] = useState({});
 
     useEffect(() => {
         let alive = true;

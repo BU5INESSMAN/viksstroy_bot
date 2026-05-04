@@ -34,10 +34,24 @@ export default function SMRWizard({
     onSubmitted,
     approveMode = false,
 }) {
+    // ─── Wizard state — single source of truth ───
+    // Test scenarios for state preservation (Commit 3):
+    // 1. Fill hours → Next → fill works → Next → on Review click "Редактировать часы"
+    //    → land on StepHours WITH previous hours data visible
+    // 2. Same flow → "Редактировать работы" → StepWorks shows previous works data
+    //    (incl. per-brigade toggle + per-team volumes)
+    // 3. After editing on step 0 or 1, click Next → returns to Review with NEW data
+    // 4. Refresh browser mid-edit → draft restores from localStorage with current step
     const [step, setStep] = useState('hours');
     const [hoursData, setHoursData] = useState([]);
     const [worksData, setWorksData] = useState([]);
     const [extraWorksData, setExtraWorksData] = useState([]);
+    // v2.5 Commit 3: lifted from StepWorks so the "Редактировать работы"
+    // path on Review preserves per-brigade mode + per-team volumes when
+    // the step component remounts (AnimatePresence key={step} unmounts it).
+    const [perBrigade, setPerBrigade] = useState(false);
+    const [worksByTeam, setWorksByTeam] = useState({});
+    const [extraByTeam, setExtraByTeam] = useState({});
     const [submitting, setSubmitting] = useState(false);
     const [draftSavedAt, setDraftSavedAt] = useState(null);
     const [draftTick, setDraftTick] = useState(0);
@@ -56,17 +70,26 @@ export default function SMRWizard({
         if (Array.isArray(d.hoursData)) setHoursData(d.hoursData);
         if (Array.isArray(d.worksData)) setWorksData(d.worksData);
         if (Array.isArray(d.extraWorksData)) setExtraWorksData(d.extraWorksData);
+        if (typeof d.perBrigade === 'boolean') setPerBrigade(d.perBrigade);
+        if (d.worksByTeam && typeof d.worksByTeam === 'object') setWorksByTeam(d.worksByTeam);
+        if (d.extraByTeam && typeof d.extraByTeam === 'object') setExtraByTeam(d.extraByTeam);
         if (d.step === 'hours' || d.step === 'works' || d.step === 'review') setStep(d.step);
         setDraftSavedAt(found.savedAt);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [draftKey]);
 
     // Autosave whole wizard state under one key (debounced).
-    useDraft(draftKey, { hoursData, worksData, extraWorksData, step }, {
+    useDraft(draftKey, {
+        hoursData, worksData, extraWorksData,
+        perBrigade, worksByTeam, extraByTeam,
+        step,
+    }, {
         shouldSave: (d) =>
             (Array.isArray(d.hoursData) && d.hoursData.length > 0) ||
             (Array.isArray(d.worksData) && d.worksData.length > 0) ||
-            (Array.isArray(d.extraWorksData) && d.extraWorksData.length > 0),
+            (Array.isArray(d.extraWorksData) && d.extraWorksData.length > 0) ||
+            (d.worksByTeam && Object.keys(d.worksByTeam).length > 0) ||
+            (d.extraByTeam && Object.keys(d.extraByTeam).length > 0),
     });
 
     // Re-render the saved-X-ago label every 30s.
@@ -202,6 +225,12 @@ export default function SMRWizard({
                                         setWorksData={setWorksData}
                                         extraWorksData={extraWorksData}
                                         setExtraWorksData={setExtraWorksData}
+                                        perBrigade={perBrigade}
+                                        setPerBrigade={setPerBrigade}
+                                        worksByTeam={worksByTeam}
+                                        setWorksByTeam={setWorksByTeam}
+                                        extraByTeam={extraByTeam}
+                                        setExtraByTeam={setExtraByTeam}
                                         onNext={() => goTo('review')}
                                         onBack={() => goTo('hours')}
                                     />
@@ -213,7 +242,7 @@ export default function SMRWizard({
                                         hoursData={hoursData}
                                         worksData={worksData}
                                         extraWorksData={extraWorksData}
-                                        onEdit={() => goTo('hours')}
+                                        onEdit={(target) => goTo(target || 'hours')}
                                         onSubmit={submit}
                                         submitting={submitting}
                                         approveMode={approveMode}
