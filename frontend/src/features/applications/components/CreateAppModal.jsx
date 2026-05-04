@@ -11,6 +11,16 @@ import ExchangeDialog from './ExchangeDialog';
 import ObjectSelector from './ObjectSelector';
 import EquipmentSelector from './EquipmentSelector';
 import TeamSelector from './TeamSelector';
+import DraftRestorePrompt from '../../../components/ui/DraftRestorePrompt';
+import { useDraft } from '../../../hooks/useDraft';
+import { loadDraft, clearDraft, formatDraftAge } from '../../../utils/draftStorage';
+
+const DRAFT_KEY = 'create-app';
+const hasMeaningfulCreateData = (d) =>
+    !!(d?.object_id
+        || (Array.isArray(d?.team_ids) && d.team_ids.length > 0)
+        || (Array.isArray(d?.equipment) && d.equipment.length > 0)
+        || (typeof d?.comment === 'string' && d.comment.trim().length > 0));
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -30,6 +40,57 @@ export default function CreateAppModal({
     const [equipLoading, setEquipLoading] = useState(false);
     const [timeAutoSet, setTimeAutoSet] = useState(false);
     const [actionChoiceEquip, setActionChoiceEquip] = useState(null);
+
+    // ───── Draft autosave ─────
+    // On mount, look for a saved draft. If found AND the form is still
+    // empty (useAppForm resets on open), prompt the user to restore.
+    const [draftPrompt, setDraftPrompt] = useState(null);   // { savedAt, data } | null
+    const [draftSavedAt, setDraftSavedAt] = useState(null); // ISO string for the header indicator
+    const [draftTick, setDraftTick] = useState(0);
+    useEffect(() => {
+        if (appForm.isViewOnly) return;
+        const found = loadDraft(DRAFT_KEY);
+        if (found?.data && hasMeaningfulCreateData(found.data) && !hasMeaningfulCreateData(appForm)) {
+            setDraftPrompt({ savedAt: found.savedAt, data: found.data });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Re-render the "saved X ago" label every 30s while the modal is open.
+    useEffect(() => {
+        const t = setInterval(() => setDraftTick(n => n + 1), 30000);
+        return () => clearInterval(t);
+    }, []);
+
+    useDraft(DRAFT_KEY, appForm, {
+        enabled: !appForm.isViewOnly,
+        shouldSave: hasMeaningfulCreateData,
+    });
+
+    // Track whether anything has actually been autosaved this session so the
+    // indicator stays hidden on a pristine empty form.
+    useEffect(() => {
+        if (hasMeaningfulCreateData(appForm)) {
+            setDraftSavedAt(new Date().toISOString());
+        }
+    }, [appForm]);
+
+    const handleDraftRestore = () => {
+        const data = draftPrompt?.data;
+        if (data) {
+            // Only overwrite known fields — leave any defaults useAppForm
+            // computed (e.g. smartDates fallback for date_target) untouched
+            // when the draft is missing them.
+            setAppForm(prev => ({ ...prev, ...data }));
+        }
+        setDraftPrompt(null);
+    };
+
+    const handleDraftDiscard = () => {
+        clearDraft(DRAFT_KEY);
+        setDraftPrompt(null);
+        setDraftSavedAt(null);
+    };
 
     // Fetch equipment availability when date changes
     const fetchAvailability = useCallback(async (date) => {
@@ -170,10 +231,21 @@ export default function CreateAppModal({
                     )}
 
                     <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
-                        <h3 className="text-xl font-bold flex items-center gap-2 dark:text-white">
-                            <ClipboardList className="text-blue-500 w-6 h-6" />
-                            {appForm.id ? `Наряд №${appForm.id}` : 'Создание заявки'}
-                        </h3>
+                        <div className="flex items-baseline gap-3 min-w-0">
+                            <h3 className="text-xl font-bold flex items-center gap-2 dark:text-white">
+                                <ClipboardList className="text-blue-500 w-6 h-6" />
+                                {appForm.id ? `Наряд №${appForm.id}` : 'Создание заявки'}
+                            </h3>
+                            {draftSavedAt && !appForm.isViewOnly && (
+                                <span
+                                    key={draftTick}
+                                    className="text-xs opacity-50 dark:text-gray-300 truncate"
+                                    title="Черновик автоматически сохраняется в браузере"
+                                >
+                                    ✓ Черновик · {formatDraftAge(draftSavedAt)}
+                                </span>
+                            )}
+                        </div>
                         <button type="button" disabled={isSubmitting} onClick={() => setGlobalCreateAppOpen(false)} className="text-gray-400 hover:text-red-500 disabled:opacity-50 transition-colors bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-sm border border-gray-100 dark:border-gray-700">
                             <X className="w-6 h-6" />
                         </button>
@@ -391,6 +463,12 @@ export default function CreateAppModal({
                 />,
                 document.body
             )}
+            <DraftRestorePrompt
+                open={!!draftPrompt}
+                savedAt={draftPrompt?.savedAt}
+                onRestore={handleDraftRestore}
+                onDiscard={handleDraftDiscard}
+            />
         </motion.div>
     );
 }

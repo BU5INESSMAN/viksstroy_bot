@@ -3,6 +3,9 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import useConfirm from '../../../hooks/useConfirm';
 import useEquipDefaultTime from '../../../hooks/useEquipDefaultTime';
+import { clearDraft } from '../../../utils/draftStorage';
+
+const CREATE_APP_DRAFT_KEY = 'create-app';
 
 /**
  * Custom hook encapsulating all form state and handlers for the application
@@ -444,6 +447,9 @@ export default function useAppForm({
             } else {
                 const createRes = await axios.post('/api/applications/create', fd);
                 toast.success('Успешно отправлено на модерацию!');
+                // Submit-success → drop the create-app draft so the next
+                // open of the modal starts clean. Cancel/X paths skip this.
+                clearDraft(CREATE_APP_DRAFT_KEY);
 
                 // Send deferred exchange request if pending
                 if (appForm.pendingExchange && createRes.data?.id) {

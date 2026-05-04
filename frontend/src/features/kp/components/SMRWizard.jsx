@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,6 +7,8 @@ import StepHours from './StepHours';
 import StepWorks from './StepWorks';
 import StepReview from './StepReview';
 import ModalPortal from '../../../components/ui/ModalPortal';
+import { useDraft } from '../../../hooks/useDraft';
+import { loadDraft, clearDraft, formatDraftAge } from '../../../utils/draftStorage';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -37,6 +39,48 @@ export default function SMRWizard({
     const [worksData, setWorksData] = useState([]);
     const [extraWorksData, setExtraWorksData] = useState([]);
     const [submitting, setSubmitting] = useState(false);
+    const [draftSavedAt, setDraftSavedAt] = useState(null);
+    const [draftTick, setDraftTick] = useState(0);
+
+    const draftKey = `smr:${appId}`;
+
+    // ───── Silent draft restore ─────
+    // Per spec: SMR drafts restore without confirmation — the user is
+    // already mid-flow and a prompt would be friction. Each step's own
+    // initial-fetch will merge with restored values (StepHours + StepWorks
+    // both check `length === 0` before seeding from server).
+    useEffect(() => {
+        const found = loadDraft(draftKey);
+        if (!found?.data) return;
+        const d = found.data;
+        if (Array.isArray(d.hoursData)) setHoursData(d.hoursData);
+        if (Array.isArray(d.worksData)) setWorksData(d.worksData);
+        if (Array.isArray(d.extraWorksData)) setExtraWorksData(d.extraWorksData);
+        if (d.step === 'hours' || d.step === 'works' || d.step === 'review') setStep(d.step);
+        setDraftSavedAt(found.savedAt);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [draftKey]);
+
+    // Autosave whole wizard state under one key (debounced).
+    useDraft(draftKey, { hoursData, worksData, extraWorksData, step }, {
+        shouldSave: (d) =>
+            (Array.isArray(d.hoursData) && d.hoursData.length > 0) ||
+            (Array.isArray(d.worksData) && d.worksData.length > 0) ||
+            (Array.isArray(d.extraWorksData) && d.extraWorksData.length > 0),
+    });
+
+    // Re-render the saved-X-ago label every 30s.
+    useEffect(() => {
+        const t = setInterval(() => setDraftTick(n => n + 1), 30000);
+        return () => clearInterval(t);
+    }, []);
+
+    // Refresh the indicator timestamp whenever the user actually edits.
+    useEffect(() => {
+        if (hoursData.length || worksData.length || extraWorksData.length) {
+            setDraftSavedAt(new Date().toISOString());
+        }
+    }, [hoursData, worksData, extraWorksData]);
 
     const goTo = (next) => setStep(next);
 
@@ -62,6 +106,7 @@ export default function SMRWizard({
                         : 'Отчёт сохранён'
                 );
             }
+            clearDraft(draftKey);
             onSubmitted?.();
             onClose?.();
         } catch (e) {
@@ -98,6 +143,15 @@ export default function SMRWizard({
                                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 truncate">
                                     {(app.object_name || app.obj_name || app.object_address || '')}
                                     {app.date_target ? ` • ${app.date_target}` : ''}
+                                </p>
+                            )}
+                            {draftSavedAt && (
+                                <p
+                                    key={draftTick}
+                                    className="text-[11px] opacity-50 dark:text-gray-300 mt-0.5"
+                                    title="Черновик автоматически сохраняется в браузере"
+                                >
+                                    ✓ Черновик · {formatDraftAge(draftSavedAt)}
                                 </p>
                             )}
                             {Array.isArray(app?.merged_with) && app.merged_with.length > 0 && (

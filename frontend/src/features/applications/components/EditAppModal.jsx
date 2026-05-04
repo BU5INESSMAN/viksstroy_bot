@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
@@ -12,13 +12,31 @@ import ObjectSelector from './ObjectSelector';
 import EquipmentSelector from './EquipmentSelector';
 import TeamSelector from './TeamSelector';
 import useEquipDefaultTime from '../../../hooks/useEquipDefaultTime';
+import DraftRestorePrompt from '../../../components/ui/DraftRestorePrompt';
+import { useDraft } from '../../../hooks/useDraft';
+import { loadDraft, clearDraft, formatDraftAge } from '../../../utils/draftStorage';
+
+// Small structural diff helper. EditAppModal compares the current form
+// against the original app payload to decide whether anything is worth
+// autosaving — saving the unchanged baseline would just clutter storage.
+const sameFormShape = (a, b) => {
+    if (!a || !b) return false;
+    const arr = (x) => Array.isArray(x) ? [...x].sort() : [];
+    if (a.date_target !== b.date_target) return false;
+    if (Number(a.object_id || 0) !== Number(b.object_id || 0)) return false;
+    if ((a.comment || '') !== (b.comment || '')) return false;
+    if (JSON.stringify(arr(a.team_ids)) !== JSON.stringify(arr(b.team_ids))) return false;
+    if (JSON.stringify(arr(a.members)) !== JSON.stringify(arr(b.members))) return false;
+    if (JSON.stringify(a.equipment || []) !== JSON.stringify(b.equipment || [])) return false;
+    return true;
+};
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 export default function EditAppModal({
     app, onClose, onSaved, data, objectsList, smartDates, role, tgId, openProfile
 }) {
-    const [form, setForm] = useState(() => {
+    const initialForm = useMemo(() => {
         let eqData = [];
         if (app.equipment_data) {
             try { eqData = typeof app.equipment_data === 'string' ? JSON.parse(app.equipment_data) : app.equipment_data; } catch (_) {}
@@ -36,7 +54,11 @@ export default function EditAppModal({
             equipment: eqData,
             comment: app.comment || '',
         };
-    });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [app?.id]);
+
+    const [form, setForm] = useState(initialForm);
+    const DRAFT_KEY = `edit-app:${app.id}`;
 
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
@@ -47,6 +69,50 @@ export default function EditAppModal({
     const [timeAutoSet, setTimeAutoSet] = useState(false);
     const [actionChoiceEquip, setActionChoiceEquip] = useState(null);
     const defaultTime = useEquipDefaultTime();
+
+    // ───── Draft autosave ─────
+    const [draftPrompt, setDraftPrompt] = useState(null);
+    const [draftSavedAt, setDraftSavedAt] = useState(null);
+    const [draftTick, setDraftTick] = useState(0);
+
+    useEffect(() => {
+        const found = loadDraft(DRAFT_KEY);
+        // Only prompt if the saved draft actually differs from the
+        // freshly-loaded application baseline. Otherwise it would offer
+        // to "restore" the same data the user already sees.
+        if (found?.data && !sameFormShape(found.data, initialForm)) {
+            setDraftPrompt({ savedAt: found.savedAt, data: found.data });
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [DRAFT_KEY]);
+
+    useEffect(() => {
+        const t = setInterval(() => setDraftTick(n => n + 1), 30000);
+        return () => clearInterval(t);
+    }, []);
+
+    useDraft(DRAFT_KEY, form, {
+        shouldSave: (d) => !sameFormShape(d, initialForm),
+    });
+
+    useEffect(() => {
+        if (!sameFormShape(form, initialForm)) {
+            setDraftSavedAt(new Date().toISOString());
+        }
+    }, [form, initialForm]);
+
+    const handleDraftRestore = () => {
+        if (draftPrompt?.data) {
+            setForm(prev => ({ ...prev, ...draftPrompt.data, id: prev.id }));
+        }
+        setDraftPrompt(null);
+    };
+
+    const handleDraftDiscard = () => {
+        clearDraft(DRAFT_KEY);
+        setDraftPrompt(null);
+        setDraftSavedAt(null);
+    };
 
     // Fetch equipment availability when date changes
     const fetchAvailability = useCallback(async (date) => {
@@ -333,6 +399,7 @@ export default function EditAppModal({
 
             await axios.post(`/api/applications/${form.id}/update`, fd);
             toast.success("Заявка успешно обновлена!");
+            clearDraft(DRAFT_KEY);
             onSaved();
         } catch (err) {
             toast.error(err.response?.data?.detail || "Ошибка сохранения");
@@ -370,10 +437,21 @@ export default function EditAppModal({
                     )}
 
                     <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
-                        <h3 className="text-xl font-bold flex items-center gap-2 dark:text-white">
-                            <ClipboardList className="text-yellow-500 w-6 h-6" />
-                            Редактирование наряда #{form.id}
-                        </h3>
+                        <div className="flex items-baseline gap-3 min-w-0">
+                            <h3 className="text-xl font-bold flex items-center gap-2 dark:text-white">
+                                <ClipboardList className="text-yellow-500 w-6 h-6" />
+                                Редактирование наряда #{form.id}
+                            </h3>
+                            {draftSavedAt && (
+                                <span
+                                    key={draftTick}
+                                    className="text-xs opacity-50 dark:text-gray-300 truncate"
+                                    title="Черновик автоматически сохраняется в браузере"
+                                >
+                                    ✓ Черновик · {formatDraftAge(draftSavedAt)}
+                                </span>
+                            )}
+                        </div>
                         <button type="button" disabled={isSubmitting} onClick={onClose} className="text-gray-400 hover:text-red-500 disabled:opacity-50 transition-colors bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-sm border border-gray-100 dark:border-gray-700">
                             <X className="w-6 h-6" />
                         </button>
@@ -534,6 +612,12 @@ export default function EditAppModal({
                 />,
                 document.body
             )}
+            <DraftRestorePrompt
+                open={!!draftPrompt}
+                savedAt={draftPrompt?.savedAt}
+                onRestore={handleDraftRestore}
+                onDiscard={handleDraftDiscard}
+            />
         </motion.div>
     );
 }
