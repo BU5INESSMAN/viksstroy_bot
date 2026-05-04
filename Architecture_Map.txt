@@ -1,6 +1,6 @@
 ================================================================================
                     VIKSSTROY BOT -- ARCHITECTURE MAP
-          (generated 2026-04-16, graphify 1080 nodes / 1236 edges / 155 communities)
+          (updated 2026-04-22 for v2.5 — graphify last run 1080 nodes / 1236 edges)
 ================================================================================
 
 --- APP OVERVIEW ---
@@ -87,9 +87,16 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   |                          | EditEquipmentModal, EquipmentInviteModal            |
   | features/layout/         | Header, BottomNav (animated FAB + bottom sheet),   |
   |                          | ProfileModal (animated), SessionModal               |
-  | features/kp/components/  | v2.4 SMR wizard: SMRWizard (container),           |
-  |                          | StepHours, StepWorks, StepReview, ExtraWorksPicker |
-  | components/MaintenanceScr| Full-screen overlay when API is unreachable        |
+  | features/kp/components/  | SMR wizard: SMRWizard (container, 3-step flow),    |
+  |   SMRWizard.jsx          | merge/unmerge, общие/по бригадам toggle            |
+  |   StepHours.jsx          | Step 1: hours per team + per-member breakdown      |
+  |   StepWorks.jsx          | Step 2: plan works + extras, per-brigade toggle    |
+  |   StepReview.jsx         | Step 3: review summary + edit-back                 |
+  |   ExtraWorksPicker.jsx   | Collapsible category-based work picker             |
+  | components/MaintenanceScreen.jsx                                              |
+  |                          | Full-screen overlay when API is unreachable        |
+  | components/DebtorsRestorePill.jsx                                             |
+  |                          | Restore pill for hidden debtors widget             |
   | components/ui/IconPicker | Grid picker for Tabler equipment/team icons        |
   | components/ui/ObjectDispl| Object name + address on two lines (block/inline)  |
   | components/ui/TabBadge   | Floating counter badge for tabs                   |
@@ -187,9 +194,11 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   | account_merge.py         | Account merge logic: combine TG+MAX into one user |
   | pdf_parser.py            | SMR PDF parsing: extract works tables/text         |
   | smr_report.py            | SMR Excel generator (Часы/Работы/Доп.работы) —     |
-  |                          | authorship column, no ЗП/цены                       |
+  |                          | authorship column, no ЗП/цены, filename pattern    |
+  |                          | "Объект_Дата.xlsx"                                  |
   | push_templates.py        | Push notification payload builder (10 types)        |
-  | bot_commands.py          | Shared TG + MAX bot command registry                |
+  | bot_commands.py          | Shared TG + MAX bot command registry + text builders|
+  | utils_fio.py             | FIO helpers, user settings (notification prefs)    |
   | __init__.py              | Re-exports for backward compatibility              |
   +--------------------------+--------------------------------------------------+
 
@@ -217,11 +226,11 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   |                          | application_extra_works, object_kp_plan)            |
   +--------------------------+--------------------------------------------------+
 
-  KEY DATABASE CHANGES (v2.4)
+  KEY DATABASE CHANGES (v2.4 + v2.5)
   +--------------------------+--------------------------------------------------+
   | application_hours        | app_id, team_id, user_id (team_members.id),       |
   |                          | hours, filled_by_user_id, filled_at (UNIQUE on    |
-  |                          | app_id+team_id+user_id)                             |
+  |                          | app_id+team_id+user_id) — managed by HoursRepoMixin|
   | equipment_category_sett  | category TEXT PK, icon TEXT (Tabler icon key)      |
   | users.last_name/         | FIO split columns + specialty + settings JSON       |
   |   first_name/middle_name |                                                    |
@@ -229,8 +238,11 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   | applications.smr_status  | '' | draft | pending_review | approved             |
   | applications.smr_filled_ | 'foreman' | 'brigadier' — authorship at app level  |
   |   by_role                |                                                    |
+  | applications.smr_merge_id| v2.5: shared id linking merged apps for joint fill |
   | application_kp.filled_by_| Per-row authorship for the "Заполнил" column       |
   |   user_id / filled_at    |                                                    |
+  | application_kp.team_id   | v2.5: per-brigade attribution when "По бригадам"   |
+  |                          | toggle is on (NULL = общая работа на заявку)        |
   +--------------------------+--------------------------------------------------+
 
   BOT ENTRY POINTS
@@ -301,6 +313,17 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   6. COST TRACKING: KP cost estimation workflow per order and per site.
      KP catalog uploadable via Excel (superadmin only). PDF SMR parser
      auto-extracts works. Mass export to Excel for reporting.
+     SMR FILL (v2.5): 3-step wizard (Hours → Works → Review). Brigadiers
+     fill their own brigade → foreman reviews & approves; foremen fill
+     all brigades → directly to "Готовые". Multiple apps for the same
+     object/date can be merged for joint filling and unmerged before
+     submit. "Общие / По бригадам" toggle splits volumes per brigade
+     with auto-totals. Excel report (Часы / Работы / Доп. работы) with
+     authorship column, no salary/prices, filename Объект_Дата.xlsx.
+     PARTIAL BRIGADES (v2.5): app can claim part of a brigade; remaining
+     free members can join other apps the same date. Selector marks the
+     brigade "(част.)", greys out busy members with the source app
+     number, and warns when no brigadier is selected.
      [SECURITY: Depends(require_superadmin) for catalog upload (C-10)]
 
   7. FILES: Upload with safe_filename + UUID prefix + size/extension
@@ -320,9 +343,12 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
 
   superadmin  -- full system access, user management, settings, backups, logs
   boss        -- all except server logs, user management, broadcasts
-  moderator   -- approve/reject orders, manage users/teams/equipment/objects
-  foreman     -- create/edit own orders, manage own team, fill SMR reports
-  brigadier   -- view orders, fill SMR reports
+  moderator   -- approve/reject orders, change application status (v2.5),
+                 manage users/teams/equipment/objects
+  foreman     -- create/edit own orders, manage own team, fill SMR for all
+                 brigades on own apps (skips brigadier review)
+  brigadier   -- view orders, fill SMR for own brigade only (sent to foreman
+                 for review & approval)
   worker      -- view own assignments, free brigade
   driver      -- view own assignments, mark equipment free
 
