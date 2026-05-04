@@ -1,6 +1,6 @@
 ================================================================================
                     VIKSSTROY BOT -- CONTEXT & STAGE TRACKER
-                              (updated 2026-04-16)
+                              (updated 2026-04-22)
 ================================================================================
 
 --- PROJECT SUMMARY ---
@@ -157,10 +157,39 @@ Deps: 16 packages pinned (requirements.txt)
     - Session expiry: fullAuthCleanup + logoutAndRedirect (no infinite 401)
     - Push: VAPID `aud` claim derived per-subscription endpoint origin
 
+  v2.5 SMR Overhaul + Brigade Management (2026-04-22)                      [OK]
+    - 3-step SMR wizard (Hours → Works → Review) with role-based flow
+    - Per-brigade works toggle with auto-totals across brigades
+    - SMR merge/unmerge: combine multiple apps for joint filling, undo before send
+    - Partial brigade usage: free members available for other apps same date
+    - Yellow "(част.)" badge for partially-busy brigades; busy members shown
+      greyed-out with target app number, "Select all free" shortcut
+    - Warning when selecting partial brigade without brigadier (foreman-only fill)
+    - application_hours table with per-member hours and authorship
+    - Excel SMR report: hours + works + extras, no salary/prices,
+      filename pattern Объект_Дата.xlsx
+    - SMR page grouping by object → date
+    - Tabler Icons for equipment categories and teams
+    - MaintenanceScreen overlay when API unreachable, auto-reload on recovery
+    - Moderator can change application status
+    - Extended notification testing in Admin panel
+    - All bot commands implemented (TG + MAX parity)
+    - SMR fill no longer time-restricted — open until submitted
+    - Push notifications: VAPID aud claim per-subscription
+    - KP catalog parser: units from correct column
+    - Online users tracking via session cookie
+    - Equipment default times pulled from admin settings
+    - Full cleanup on session expiry (cookies, localStorage, IndexedDB, Cache)
+    - Object stats: data from filled reports + extra works section
+    - Object stats: chronology of all filled SMR reports by date
+    - Action buttons moved from ViewAppModal to Review page (read-only view)
+    - Compact equipment in kanban without driver names
+
 --- CURRENT STATUS ---
 
-  v2.4 shipped. Production ready.
-  468 commits across v1.0-v2.4.
+  ALL STAGES COMPLETE. v2.5 delivered.
+  Production ready.
+  ~480+ commits across v1.0-v2.5.
 
 --- TOOLING ---
 
