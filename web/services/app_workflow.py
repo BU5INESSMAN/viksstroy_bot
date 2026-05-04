@@ -439,3 +439,105 @@ async def send_remind_notification(app_dict):
         await notify_users([], msg, "kp", extra_tg_ids=[foreman_id], category="reports")
     except Exception as e:
         logger.error(f"Error sending SMR reminder for app #{app_dict.get('id')}: {e}")
+    # v2.5: brigadiers of the involved teams get the same reminder, scoped
+    # to their brigade (not the whole foreman dispatch).
+    try:
+        await notify_brigadiers_smr_fill(
+            app_id=app_dict.get('id'),
+            team_id_field=app_dict.get('team_id'),
+            object_name=app_dict.get('object_address', 'Неизвестный объект'),
+            date_target=app_dict.get('date_target', ''),
+            reason='manual_remind',
+        )
+    except Exception as e:
+        logger.error(f"Error notifying brigadiers SMR fill app #{app_dict.get('id')}: {e}")
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# v2.5: brigadier SMR-fill notifications
+#
+# Foreman flow (existing, do not modify):
+#   - scheduler.py TRIGGER 3 (`report_request_time`)  → "Пора заполнить отчёт!"
+#   - scheduler.py TRIGGER 4 (`auto_complete_time`)   → "Смена окончена!"
+#   - app_workflow.send_remind_notification()         → "⚠️ Напоминание..."
+#   All three call notify_users(..., extra_tg_ids=[foreman_id], category='reports').
+#   Push payload uses the generic ВиКС template (no typed push_type).
+#
+# Brigadier mirror (new):
+#   - scoped to brigadiers of every team referenced by `applications.team_id`
+#     (which is a comma-separated list per the v2.5 partial-brigade convention,
+#     parsed by hours_repo._parse_team_ids)
+#   - reuses category='reports' so per-user `notify_reports` and per-channel
+#     toggles in users.settings already gate dispatch via notify_users
+#   - uses push_type='smr_fill_brigadier' (push_templates.PUSH_TEMPLATES) so
+#     the device-side notification has a brigade-specific title
+# ──────────────────────────────────────────────────────────────────────────────
+def _parse_app_team_ids(team_id_field) -> list[int]:
+    if not team_id_field:
+        return []
+    out: list[int] = []
+    for part in str(team_id_field).split(','):
+        part = part.strip()
+        if part.isdigit():
+            out.append(int(part))
+    return out
+
+
+async def notify_brigadiers_smr_fill(*, app_id, team_id_field, object_name: str,
+                                      date_target: str, reason: str):
+    """Send the SMR-fill reminder to each brigadier whose brigade is on the
+    application. ``reason`` is logged but does not affect the message wording.
+
+    No-op if the app has no team_ids resolved or no brigadiers were found.
+    """
+    team_ids = _parse_app_team_ids(team_id_field)
+    if not team_ids:
+        return
+
+    seen: set[int] = set()
+    targets: list[tuple[int, int]] = []  # (user_id, team_id)
+    for tid in team_ids:
+        try:
+            brigadiers = await db.get_brigadiers_for_team(tid)
+        except Exception:
+            continue
+        for b in brigadiers:
+            uid = b.get('user_id')
+            if uid is None or uid in seen:
+                continue
+            seen.add(uid)
+            targets.append((int(uid), tid))
+
+    if not targets:
+        return
+
+    msg = (
+        f"🔧 <b>СМР по вашей бригаде</b>\n"
+        f"📍 Объект: <b>{object_name}</b>\n"
+        f"📅 Дата: <b>{date_target}</b>\n\n"
+        f"Пожалуйста, заполните часы и работы по своей бригаде."
+    )
+    push_body = f"{object_name} • {date_target}"
+
+    brigadier_ids = [uid for uid, _ in targets]
+    await notify_users(
+        [], msg, "kp",
+        extra_tg_ids=brigadier_ids,
+        category="reports",
+        push_type="smr_fill_brigadier",
+        push_body=push_body,
+    )
+
+    # Audit log per recipient — mirrors the implicit log entry that
+    # notify_users emits for the dispatch as a whole, but ties each
+    # brigadier to the specific team that triggered the notification.
+    for uid, tid in targets:
+        try:
+            await db.add_log(
+                0, 'Система',
+                f"Уведомление СМР бригадиру user_id={uid} (team_id={tid}, причина={reason})",
+                target_type='application', target_id=app_id,
+                details=f"channels=tg+max+push, category=reports, push_type=smr_fill_brigadier",
+            )
+        except Exception:
+            pass

@@ -140,3 +140,26 @@ class TeamsRepoMixin:
     async def register_member_tg(self, member_id: int, tg_id: int):
         await self.conn.execute("UPDATE team_members SET tg_user_id = ? WHERE id = ?", (tg_id, member_id))
         await self.conn.commit()
+
+    async def get_brigadiers_for_team(self, team_id: int) -> list[dict]:
+        """Return users with role='brigadier' who are members of the given team.
+
+        Used by the SMR fill notification flow (scheduler triggers 3+4 and
+        the manual `Напомнить` button) to mirror what the foreman receives,
+        scoped to brigadiers of the brigades actually involved in the app.
+        Each row exposes user_id (signed: TG positive / MAX negative), fio,
+        and the split FIO columns. Account linking is handled downstream by
+        notify_users → get_all_linked_ids.
+        """
+        async with self.conn.execute(
+            """
+            SELECT DISTINCT u.user_id, u.fio, u.last_name, u.first_name, u.middle_name
+            FROM team_members tm
+            JOIN users u ON u.user_id = tm.tg_user_id
+            WHERE tm.team_id = ?
+              AND u.role = 'brigadier'
+              AND u.is_blacklisted = 0
+            """,
+            (team_id,),
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]

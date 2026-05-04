@@ -9,6 +9,7 @@ sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from database_deps import db, TZ_BARNAUL
 from services.notifications import notify_users
+from services.app_workflow import notify_brigadiers_smr_fill
 from services.publish_service import execute_app_publish
 from schedule_generator import check_all_foremen_approved, publish_schedule_to_group
 
@@ -119,16 +120,29 @@ async def check_and_run_tasks():
             logger.info(f"📋 {current_time_str} - Запрос отчётов по активным нарядам...")
 
             async with db.conn.execute(
-                "SELECT id, object_address, foreman_id FROM applications WHERE date_target = ? AND status = 'in_progress'",
+                "SELECT id, object_address, foreman_id, team_id, date_target FROM applications WHERE date_target = ? AND status = 'in_progress'",
                 (today_date_str,)
             ) as cur:
                 active_apps = await cur.fetchall()
 
             for app in active_apps:
-                app_id, address, foreman_id = app
+                app_id, address, foreman_id, team_id_field, date_target = app
                 if foreman_id:
                     msg = f"📋 <b>Пора заполнить отчёт!</b>\n📍 Объект: {address}\n\nПожалуйста, заполните табель/отчет по этому наряду."
                     await notify_users([], msg, "dashboard", extra_tg_ids=[foreman_id], category="orders")
+                # v2.5: brigadiers of the involved teams get the same prompt,
+                # scoped to their brigade. notify_brigadiers_smr_fill handles
+                # the dispatch and audit log.
+                try:
+                    await notify_brigadiers_smr_fill(
+                        app_id=app_id,
+                        team_id_field=team_id_field,
+                        object_name=address or 'Объект',
+                        date_target=date_target or today_date_str,
+                        reason='report_request_time',
+                    )
+                except Exception as e:
+                    logger.error(f"Brigadier SMR notify failed for app #{app_id}: {e}")
 
         # =========================================================================
         # ТРИГГЕР 4: АВТО-ЗАВЕРШЕНИЕ НАРЯДА
@@ -137,12 +151,12 @@ async def check_and_run_tasks():
             logger.info(f"🏁 {current_time_str} - Завершение нарядов на сегодня...")
 
             async with db.conn.execute(
-                    "SELECT id, object_address, foreman_id FROM applications WHERE date_target = ? AND status IN ('in_progress', 'published')",
+                    "SELECT id, object_address, foreman_id, team_id, date_target FROM applications WHERE date_target = ? AND status IN ('in_progress', 'published')",
                     (today_date_str,)) as cur:
                 apps_to_complete = await cur.fetchall()
 
             for app in apps_to_complete:
-                app_id, address, foreman_id = app
+                app_id, address, foreman_id, team_id_field, date_target = app
 
                 await db.conn.execute(
                     "UPDATE applications SET status = 'completed', completed_at = ? WHERE id = ?",
@@ -162,6 +176,17 @@ async def check_and_run_tasks():
                 if foreman_id:
                     msg = f"📋 <b>Смена окончена!</b>\n📍 Объект: {address}\n\nПожалуйста, заполните табель/отчет по этому наряду."
                     await notify_users([], msg, "dashboard", extra_tg_ids=[foreman_id], category="orders")
+                # v2.5: brigadier mirror — see TRIGGER 3 above.
+                try:
+                    await notify_brigadiers_smr_fill(
+                        app_id=app_id,
+                        team_id_field=team_id_field,
+                        object_name=address or 'Объект',
+                        date_target=date_target or today_date_str,
+                        reason='auto_complete',
+                    )
+                except Exception as e:
+                    logger.error(f"Brigadier SMR notify failed for app #{app_id}: {e}")
 
             await db.conn.commit()
 

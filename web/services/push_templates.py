@@ -13,6 +13,7 @@ PUSH_TEMPLATES = {
     "support_reply":      {"title": "Ответ от поддержки",         "icon": "/push-icons/support-reply.png"},
     "exchange_request":   {"title": "Запрос обмена техникой",     "icon": "/push-icons/exchange-request.png"},
     "smr_debt":           {"title": "Заполните СМР",              "icon": "/push-icons/smr-debt.png"},
+    "smr_fill_brigadier": {"title": "Заполните СМР по бригаде",   "icon": "/push-icons/smr-debt.png"},
     "schedule_published": {"title": "Расстановка опубликована",   "icon": "/push-icons/schedule-published.png"},
     "object_request":     {"title": "Запрос на новый объект",     "icon": "/push-icons/object-request.png"},
     "user_registered":    {"title": "Новый пользователь",         "icon": "/push-icons/user-registered.png"},
