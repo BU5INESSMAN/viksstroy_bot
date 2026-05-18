@@ -261,18 +261,28 @@ async def _fetch_schedule_sections(target_date: str) -> list:
         sections.append({"title": tname, "rows": rows})
 
     # ── Техника (по категориям) ───────────────
+    # v2.6: driver name comes from users.default_equipment_id linkage;
+    # legacy equipment.driver_fio is the fallback for un-migrated rows.
     async with db.conn.execute(
-        "SELECT id, name, category, driver_fio, status FROM equipment "
-        "WHERE is_active = 1 ORDER BY category, driver_fio"
+        """SELECT e.id, e.name, e.category, e.driver_fio, e.status,
+                  u.fio AS default_driver_fio
+           FROM equipment e
+           LEFT JOIN users u
+                  ON u.default_equipment_id = e.id
+                 AND u.role = 'driver'
+                 AND u.is_blacklisted = 0
+           WHERE e.is_active = 1
+           ORDER BY e.category, COALESCE(u.fio, e.driver_fio)"""
     ) as cur:
         equip_rows = await cur.fetchall()
 
     eq_cats: dict[str, list] = {}
-    for eid, ename, cat, driver, eq_status in equip_rows:
+    for eid, ename, cat, legacy_driver, eq_status, new_driver in equip_rows:
         cat = cat or "Прочая техника"
         objs = equip_objs.get(eid, [])
+        driver_name = new_driver or legacy_driver or "—"
         eq_cats.setdefault(cat, []).append({
-            "name": driver or "—",
+            "name": driver_name,
             "role": ename or "—",
             "status": _get_status_label({'status': eq_status}, target_date),
             "object": _object_cell(objs),

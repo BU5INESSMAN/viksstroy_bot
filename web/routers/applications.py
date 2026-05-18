@@ -18,9 +18,12 @@ from auth_deps import get_current_user, require_role
 from services.notifications import notify_users
 from services.app_service import (
     ensure_app_columns, enrich_app_with_members_data, enrich_app_with_object_fields, get_active_objects_list,
+    enrich_app_with_drivers,
     create_application, update_application, delete_application,
     update_last_used_objects, get_last_used_objects,
 )
+from services.notifications import notify_driver_assignment
+from services import driver_service
 from services.app_workflow import (
     review_application, send_review_notifications,
     change_application_status, send_status_change_notification,
@@ -68,10 +71,13 @@ async def check_availability(
 async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form(""), object_id: int = Form(0),
+                     driver_assignments: str = Form(""),
                      current_user=Depends(get_current_user)):
     tg_id = current_user["tg_id"]
     new_app_id, real_tg_id, fio = await create_application(
-        tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id)
+        tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id,
+        driver_assignments=driver_assignments,
+    )
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"📝 <b>Новая заявка на выезд</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}\n🕒 Время: {now}",
@@ -83,14 +89,158 @@ async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
 async def update_app(app_id: int, team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form(""), object_id: int = Form(0),
+                     driver_assignments: str = Form(""),
                      current_user=Depends(get_current_user)):
     tg_id = current_user["tg_id"]
-    real_tg_id, fio = await update_application(
-        app_id, tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id)
+    real_tg_id, fio, diff = await update_application(
+        app_id, tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id,
+        driver_assignments=driver_assignments,
+    )
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"⚠️ <b>Заявка #{app_id} (Объект: {object_address}) была отредактирована</b>\n👤 Прораб: {fio}\n🕒 Время: {now}",
                        "review", category="orders"))
+
+    # Personal driver-change notifications.
+    if diff.get("added") or diff.get("removed"):
+        async def _notify_diff():
+            try:
+                eq_names: dict[int, str] = {}
+                all_eq = {p[0] for k in ("added", "removed") for p in diff.get(k, [])}
+                if all_eq:
+                    pl = ",".join(["?"] * len(all_eq))
+                    async with db.conn.execute(
+                        f"SELECT id, name FROM equipment WHERE id IN ({pl})",
+                        list(all_eq),
+                    ) as cur:
+                        for r in await cur.fetchall():
+                            eq_names[int(r[0])] = r[1]
+                for eq_id, drv_id in diff.get("added", []):
+                    await notify_driver_assignment(
+                        drv_id, eq_names.get(eq_id, f"#{eq_id}"),
+                        app_id, date_target, object_address, action="assigned",
+                    )
+                for eq_id, drv_id in diff.get("removed", []):
+                    await notify_driver_assignment(
+                        drv_id, eq_names.get(eq_id, f"#{eq_id}"),
+                        app_id, date_target, object_address, action="unassigned",
+                    )
+            except Exception as e:
+                logger.error(f"driver diff notify: {e}")
+        asyncio.create_task(_notify_diff())
+
+    return {"status": "ok"}
+
+
+@router.post("/api/applications/{app_id}/drivers")
+async def api_set_app_driver(
+    app_id: int,
+    equipment_id: int = Form(...),
+    driver_user_id: int = Form(...),
+    current_user=Depends(get_current_user),
+):
+    """Assign / replace a single driver for one equipment in this application.
+    Foreman (owner) or office+ may write.
+    """
+    async with db.conn.execute(
+        "SELECT foreman_id, status, date_target, object_address "
+        "FROM applications WHERE id = ?",
+        (app_id,),
+    ) as cur:
+        app_row = await cur.fetchone()
+    if not app_row:
+        raise HTTPException(404, "Заявка не найдена")
+    foreman_id, status, date_target, object_address = app_row[0], app_row[1], app_row[2], app_row[3]
+
+    role = current_user.get("role")
+    is_owner = current_user["tg_id"] == foreman_id
+    is_office = role in ("moderator", "boss", "superadmin")
+    if not (is_owner or is_office):
+        raise HTTPException(403, "Нет прав")
+
+    # Verify the equipment is actually attached to the app.
+    async with db.conn.execute(
+        "SELECT equipment_data FROM applications WHERE id = ?", (app_id,)
+    ) as cur:
+        eq_data_row = await cur.fetchone()
+    try:
+        eq_list = json.loads(eq_data_row[0] or "[]") if eq_data_row else []
+    except Exception:
+        eq_list = []
+    eq_ids = {int(e.get("id")) for e in eq_list if isinstance(e, dict) and e.get("id")}
+    if equipment_id not in eq_ids:
+        raise HTTPException(400, "Техника не выбрана в заявке")
+
+    await driver_service.assign_driver_to_application(
+        db, app_id, equipment_id, driver_user_id,
+    )
+
+    # Fire notification on assign.
+    async def _notify():
+        try:
+            async with db.conn.execute(
+                "SELECT name FROM equipment WHERE id = ?", (equipment_id,)
+            ) as c:
+                row = await c.fetchone()
+            eq_name = row[0] if row else f"#{equipment_id}"
+            await notify_driver_assignment(
+                driver_user_id, eq_name, app_id, date_target,
+                object_address, action="assigned",
+            )
+        except Exception as e:
+            logger.error(f"single-assign notify: {e}")
+    asyncio.create_task(_notify())
+
+    return {"status": "ok"}
+
+
+@router.delete("/api/applications/{app_id}/drivers/{equipment_id}")
+async def api_remove_app_driver(
+    app_id: int, equipment_id: int,
+    current_user=Depends(get_current_user),
+):
+    async with db.conn.execute(
+        "SELECT foreman_id, date_target, object_address FROM applications WHERE id = ?",
+        (app_id,),
+    ) as cur:
+        app_row = await cur.fetchone()
+    if not app_row:
+        raise HTTPException(404, "Заявка не найдена")
+    foreman_id, date_target, object_address = app_row[0], app_row[1], app_row[2]
+
+    role = current_user.get("role")
+    is_owner = current_user["tg_id"] == foreman_id
+    is_office = role in ("moderator", "boss", "superadmin")
+    if not (is_owner or is_office):
+        raise HTTPException(403, "Нет прав")
+
+    # Capture the driver about to be removed for the notification.
+    async with db.conn.execute(
+        "SELECT driver_user_id FROM application_drivers "
+        "WHERE application_id=? AND equipment_id=?",
+        (app_id, equipment_id),
+    ) as cur:
+        r = await cur.fetchone()
+    prev_drv = int(r[0]) if r else None
+
+    await driver_service.remove_driver_from_application(db, app_id, equipment_id)
+
+    if prev_drv:
+        async def _notify():
+            try:
+                async with db.conn.execute(
+                    "SELECT name FROM equipment WHERE id = ?", (equipment_id,)
+                ) as c:
+                    row = await c.fetchone()
+                eq_name = row[0] if row else f"#{equipment_id}"
+                await notify_driver_assignment(
+                    prev_drv, eq_name, app_id, date_target,
+                    object_address, action="unassigned",
+                )
+            except Exception as e:
+                logger.error(f"single-unassign notify: {e}")
+        asyncio.create_task(_notify())
+
     return {"status": "ok"}
 
 
@@ -125,6 +275,7 @@ async def get_review_apps(current_user=Depends(get_current_user)):
         enrich_app_with_team_name(app_dict, teams_dict)
         enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_drivers(app_dict)
         await enrich_app_with_object_fields(app_dict)
 
         if user_role in ('foreman', 'brigadier') and real_tg_id:
@@ -196,6 +347,7 @@ async def get_active_app(current_user=Depends(get_current_user)):
         enrich_app_with_team_name(app_dict, teams_dict)
         enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_drivers(app_dict)
         await enrich_app_with_object_fields(app_dict)
 
         involved = False
@@ -248,6 +400,7 @@ async def get_my_apps(current_user=Depends(get_current_user)):
         enrich_app_with_team_name(app_dict, teams_dict)
         enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_drivers(app_dict)
         await enrich_app_with_object_fields(app_dict)
 
         eq_data_str = app_dict.get('equipment_data', '')
@@ -356,6 +509,7 @@ async def get_archived_apps(date_from: str = "", date_to: str = "", current_user
         enrich_app_with_team_name(app_dict, teams_dict)
         enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_drivers(app_dict)
         await enrich_app_with_object_fields(app_dict)
         result.append(app_dict)
     return result
