@@ -30,3 +30,7 @@ export const ROLE_ICON_COLORS = {
     worker: 'text-gray-400',
     driver: 'text-cyan-500',
 };
+
+// v2.6: helper for office-only UI gates (driver mgmt, KP catalog import/export).
+export const OFFICE_ROLES = ['superadmin', 'boss', 'moderator'];
+export const isOffice = (role) => OFFICE_ROLES.includes(role);
