@@ -44,6 +44,7 @@ export default function useAppForm({
         members: [],
         members_data: [],
         equipment: [],
+        drivers: {},        // { [equipment_id]: { user_id, fio } | null }
         comment: '',
         isViewOnly: false,
         foreman_id: null,
@@ -190,13 +191,32 @@ export default function useAppForm({
         if (appForm.isViewOnly) return;
         setAppForm(prev => {
             const exists = prev.equipment.find(e => e.id === equip.id);
-            if (exists) return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id) };
+            if (exists) {
+                // Drop the matching driver assignment too.
+                const nextDrivers = { ...(prev.drivers || {}) };
+                delete nextDrivers[equip.id];
+                return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id), drivers: nextDrivers };
+            }
             const displayName = equip.driver
                 ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})`
                 : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
-            return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: defaultTime.start, time_end: defaultTime.end }] };
+            return {
+                ...prev,
+                equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: defaultTime.start, time_end: defaultTime.end }],
+                drivers: { ...(prev.drivers || {}), [equip.id]: null },
+            };
         });
     };
+
+    const setDriverForEquipment = (equipmentId, driver) => {
+        if (appForm.isViewOnly) return;
+        setAppForm(prev => ({
+            ...prev,
+            drivers: { ...(prev.drivers || {}), [equipmentId]: driver ? { user_id: driver.user_id, fio: driver.fio || driver.last_name } : null },
+        }));
+    };
+
+    const clearDriverForEquipment = (equipmentId) => setDriverForEquipment(equipmentId, null);
 
     const updateEquipmentTime = (id, field, value) => {
         if (!appForm.isViewOnly)
@@ -441,6 +461,18 @@ export default function useAppForm({
             fd.append('selected_members', appForm.members.join(','));
             fd.append('equipment_data', JSON.stringify(appForm.equipment));
 
+            // Driver assignments — only include entries for equipment that's
+            // still in the list and has a driver picked. Backend ignores
+            // falsy driver_user_id values.
+            const driversPayload = (appForm.equipment || [])
+                .map((eq) => {
+                    const drv = (appForm.drivers || {})[eq.id];
+                    if (!drv || !drv.user_id) return null;
+                    return { equipment_id: eq.id, driver_user_id: drv.user_id };
+                })
+                .filter(Boolean);
+            fd.append('drivers_data', JSON.stringify(driversPayload));
+
             if (appForm.id) {
                 await axios.post(`/api/applications/${appForm.id}/update`, fd);
                 toast.success('Заявка успешно обновлена!');
@@ -519,6 +551,8 @@ export default function useAppForm({
         selectAllFreeInTeam,
         toggleEquipmentSelection,
         updateEquipmentTime,
+        setDriverForEquipment,
+        clearDriverForEquipment,
         checkTeamStatus,
         checkEquipStatus,
         handleCreateApp,

@@ -65,6 +65,7 @@ export default function Home() {
         handleFormChange, handleObjectSelect, handleApplyDefaults,
         toggleTeamSelection, toggleAppMember, selectAllFreeInTeam,
         toggleEquipmentSelection, updateEquipmentTime,
+        setDriverForEquipment, clearDriverForEquipment,
         checkTeamStatus, checkEquipStatus,
         handleCreateApp, handleDeleteApp,
         crossBrigadeWarnings, showCrossBrigadeModal, setShowCrossBrigadeModal, confirmCrossBrigade,
@@ -355,6 +356,8 @@ export default function Home() {
                     checkEquipStatus={checkEquipStatus}
                     toggleEquipmentSelection={toggleEquipmentSelection}
                     updateEquipmentTime={updateEquipmentTime}
+                    setDriverForEquipment={setDriverForEquipment}
+                    clearDriverForEquipment={clearDriverForEquipment}
                     activeEqCategory={activeEqCategory}
                     setActiveEqCategory={setActiveEqCategory}
                     teamMembers={teamMembers}

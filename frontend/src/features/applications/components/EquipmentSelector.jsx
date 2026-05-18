@@ -1,10 +1,12 @@
 import { createPortal } from 'react-dom';
+import { useState } from 'react';
 import { IconTruck } from '@tabler/icons-react';
 import { getIconComponent, EQUIPMENT_ICONS, DEFAULT_EQUIPMENT_ICON } from '../../../utils/iconConfig';
 import {
     Truck, Clock, CheckCircle, ClipboardList,
-    XCircle, RefreshCw, Lock, ArrowLeftRight
+    XCircle, RefreshCw, Lock, ArrowLeftRight, User, UserPlus
 } from 'lucide-react';
+import DriverSelectorModal from './DriverSelectorModal';
 
 export default function EquipmentSelector({
     equipAvailability,
@@ -28,7 +30,12 @@ export default function EquipmentSelector({
     setActionChoiceEquip,
     handleFreeTimeSelect,
     openExchangeDialog,
+    // Driver assignment (Commit 5)
+    drivers,
+    setDriverForEquipment,
+    clearDriverForEquipment,
 }) {
+    const [driverPickerEq, setDriverPickerEq] = useState(null);
     return (
         <>
             {/* Category tabs — only shown in edit mode */}
@@ -182,6 +189,33 @@ export default function EquipmentSelector({
                                         <span className="pr-2 font-bold text-gray-400 text-sm">:00</span>
                                     </div>
                                 </div>
+
+                                {/* Driver assignment row */}
+                                {!eq.is_freed && drivers !== undefined && (
+                                    (() => {
+                                        const assigned = (drivers || {})[eq.id];
+                                        return (
+                                            <div className="basis-full">
+                                                {assigned && assigned.user_id ? (
+                                                    <button type="button" disabled={isViewOnly || isSubmitting}
+                                                        onClick={() => setDriverPickerEq(eq)}
+                                                        className="inline-flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800/50 hover:bg-emerald-100 transition active:scale-95 disabled:opacity-60">
+                                                        <User className="w-3.5 h-3.5" /> Водитель: {assigned.fio || `#${assigned.user_id}`}
+                                                        {!isViewOnly && <span className="text-[10px] uppercase text-emerald-600 dark:text-emerald-400/80 ml-1">· Изменить</span>}
+                                                    </button>
+                                                ) : (
+                                                    !isViewOnly && (
+                                                        <button type="button" disabled={isSubmitting}
+                                                            onClick={() => setDriverPickerEq(eq)}
+                                                            className="inline-flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50 hover:bg-amber-100 transition active:scale-95 disabled:opacity-60">
+                                                            <UserPlus className="w-3.5 h-3.5" /> Назначить водителя
+                                                        </button>
+                                                    )
+                                                )}
+                                            </div>
+                                        );
+                                    })()
+                                )}
                             </div>
                         );
                     })}
@@ -241,6 +275,18 @@ export default function EquipmentSelector({
                     </div>
                 </div>,
                 document.body
+            )}
+
+            {driverPickerEq && setDriverForEquipment && (
+                <DriverSelectorModal
+                    open={!!driverPickerEq}
+                    onClose={() => setDriverPickerEq(null)}
+                    equipmentId={driverPickerEq.id}
+                    equipmentName={driverPickerEq.name}
+                    currentDriverId={(drivers || {})[driverPickerEq.id]?.user_id || null}
+                    onSelect={(drv) => { setDriverForEquipment(driverPickerEq.id, drv); setDriverPickerEq(null); }}
+                    onClear={() => { clearDriverForEquipment && clearDriverForEquipment(driverPickerEq.id); setDriverPickerEq(null); }}
+                />
             )}
         </>
     );

@@ -44,6 +44,11 @@ export default function EditAppModal({
         const teamIds = app.team_id ? String(app.team_id).split(',').map(Number).filter(Boolean) : [];
         const memberIds = app.selected_members ? String(app.selected_members).split(',').map(Number).filter(Boolean) : [];
 
+        const driversMap = {};
+        (app.drivers || []).forEach((d) => {
+            driversMap[d.equipment_id] = { user_id: d.driver_user_id, fio: d.driver_fio };
+        });
+
         return {
             id: app.id,
             date_target: app.date_target || smartDates[1].val,
@@ -52,6 +57,7 @@ export default function EditAppModal({
             team_ids: teamIds,
             members: memberIds,
             equipment: eqData,
+            drivers: driversMap,
             comment: app.comment || '',
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -311,15 +317,31 @@ export default function EditAppModal({
     const toggleEquipmentSelection = (equip) => {
         setForm(prev => {
             const exists = prev.equipment.find(e => e.id === equip.id);
-            if (exists) return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id) };
+            if (exists) {
+                const nextDrivers = { ...(prev.drivers || {}) };
+                delete nextDrivers[equip.id];
+                return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id), drivers: nextDrivers };
+            }
             const displayName = equip.driver ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})` : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
-            return { ...prev, equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: defaultTime.start, time_end: defaultTime.end }] };
+            return {
+                ...prev,
+                equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: defaultTime.start, time_end: defaultTime.end }],
+                drivers: { ...(prev.drivers || {}), [equip.id]: null },
+            };
         });
     };
 
     const updateEquipmentTime = (id, field, value) => {
         setForm(prev => ({ ...prev, equipment: prev.equipment.map(e => e.id === id ? { ...e, [field]: value } : e) }));
     };
+
+    const setDriverForEquipment = (equipmentId, driver) => {
+        setForm(prev => ({
+            ...prev,
+            drivers: { ...(prev.drivers || {}), [equipmentId]: driver ? { user_id: driver.user_id, fio: driver.fio || driver.last_name } : null },
+        }));
+    };
+    const clearDriverForEquipment = (equipmentId) => setDriverForEquipment(equipmentId, null);
 
     const handleObjectSelect = async (objectId) => {
         const selObj = objectsList.find(o => o.id === parseInt(objectId));
@@ -396,6 +418,15 @@ export default function EditAppModal({
             fd.append('comment', form.comment);
             fd.append('selected_members', form.members.join(','));
             fd.append('equipment_data', JSON.stringify(form.equipment));
+
+            const driversPayload = (form.equipment || [])
+                .map((eq) => {
+                    const drv = (form.drivers || {})[eq.id];
+                    if (!drv || !drv.user_id) return null;
+                    return { equipment_id: eq.id, driver_user_id: drv.user_id };
+                })
+                .filter(Boolean);
+            fd.append('drivers_data', JSON.stringify(driversPayload));
 
             await axios.post(`/api/applications/${form.id}/update`, fd);
             toast.success("Заявка успешно обновлена!");
@@ -575,6 +606,9 @@ export default function EditAppModal({
                                 setActionChoiceEquip={setActionChoiceEquip}
                                 handleFreeTimeSelect={handleFreeTimeSelect}
                                 openExchangeDialog={openExchangeDialog}
+                                drivers={form.drivers}
+                                setDriverForEquipment={setDriverForEquipment}
+                                clearDriverForEquipment={clearDriverForEquipment}
                             />
                         </div>
 
