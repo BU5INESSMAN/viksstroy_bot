@@ -94,23 +94,98 @@ async def _check_fio_match(new_user_id: int, new_fio: str):
 
 @router.post("/api/auth/code")
 async def api_auth_by_code(code: str = Form(...)):
-    async with db.conn.execute("SELECT user_id, expires FROM link_codes WHERE code = ?", (code,)) as cur:
-        row = await cur.fetchone()
-    if not row or time.time() > row[1]: raise HTTPException(400, "Код недействителен или устарел")
-    primary_id = row[0]
-    user = await db.get_user(primary_id)
-    if not user: raise HTTPException(404, "Пользователь не найден")
-    user_dict = dict(user)
-    if user_dict.get('is_blacklisted'): raise HTTPException(status_code=403, detail="Ваш аккаунт заблокирован")
-    try:
-        await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (code,))
-        await db.conn.commit()
-    except:
-        pass
+    """Unified code redemption. Resolution order (v2.6):
 
-    token = await _create_session(primary_id)
-    return _make_auth_response(
-        {"status": "ok", "role": user_dict['role'], "tg_id": primary_id}, token)
+      1. link_codes — short-lived cross-platform pairing code (existing path).
+      2. users.invite_code — personal invite (new driver/foreman flow).
+         For SYNTHETIC drivers (user_id < 0), the auto-login would create
+         a session bound to the negative id with no platform link — that
+         is operationally useless. We refuse with a clear message that
+         the driver should log in via TG/MAX first and then redeem the
+         code from inside the authenticated session at /driver-invite.
+      3. team_members.invite_code — covered by /api/invite/join (out of
+         scope here; that endpoint requires an authenticated session).
+      4. equipment.invite_code — DEPRECATED legacy path. Bridged to the
+         new driver model: ensures a driver user exists for the FIO,
+         redirects to the appropriate users row.
+    """
+    from utils import normalize_invite_code as _norm
+
+    # Path 1: link_codes (cross-platform pairing) — original behavior.
+    async with db.conn.execute(
+        "SELECT user_id, expires FROM link_codes WHERE code = ?", (code,)
+    ) as cur:
+        row = await cur.fetchone()
+    if row and time.time() <= row[1]:
+        primary_id = row[0]
+        user = await db.get_user(primary_id)
+        if not user:
+            raise HTTPException(404, "Пользователь не найден")
+        user_dict = dict(user)
+        if user_dict.get("is_blacklisted"):
+            raise HTTPException(status_code=403, detail="Ваш аккаунт заблокирован")
+        try:
+            await db.conn.execute("DELETE FROM link_codes WHERE code = ?", (code,))
+            await db.conn.commit()
+        except Exception:
+            pass
+        token = await _create_session(primary_id)
+        return _make_auth_response(
+            {"status": "ok", "role": user_dict["role"], "tg_id": primary_id},
+            token,
+        )
+
+    # Path 2: users.invite_code (personal invite for drivers / foremen).
+    norm_code = _norm(code)
+    async with db.conn.execute(
+        "SELECT user_id, role, is_blacklisted, fio "
+        "FROM users WHERE invite_code = ?",
+        (norm_code,),
+    ) as cur:
+        u = await cur.fetchone()
+    if u:
+        user_id, role, blacklisted, fio = u[0], u[1], u[2], u[3]
+        if blacklisted:
+            raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
+        if int(user_id) < 0:
+            # Synthetic placeholder — cannot auto-login as a negative id.
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Этот код привязки водителя. "
+                    "Войдите через Telegram или MAX и затем откройте ссылку "
+                    "приглашения, чтобы привязать профиль."
+                ),
+            )
+        token = await _create_session(user_id)
+        logger.info("invite_code auto-login for user_id=%s role=%s", user_id, role)
+        return _make_auth_response(
+            {"status": "ok", "role": role, "tg_id": user_id}, token,
+        )
+
+    # Path 4: equipment.invite_code — legacy bridge.
+    async with db.conn.execute(
+        "SELECT id, name, driver_fio FROM equipment WHERE invite_code = ?",
+        (norm_code,),
+    ) as cur:
+        eq = await cur.fetchone()
+    if eq:
+        logger.warning(
+            "legacy equipment invite redeemed via /api/auth/code "
+            "for equipment_id=%s driver_fio=%s — bridge to driver model not "
+            "automatic via this endpoint; user should redeem from authenticated "
+            "session at /api/equipment/invite/join",
+            eq[0], eq[2],
+        )
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Эта ссылка устарела. Войдите через бот и откройте обновлённую "
+                "ссылку приглашения водителя."
+            ),
+        )
+
+    raise HTTPException(400, "Код недействителен или устарел")
 
 
 @router.post("/api/max/web_auth")

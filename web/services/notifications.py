@@ -585,6 +585,54 @@ async def notify_role_conflict(primary_id: int, secondary_id: int, primary_role:
     )
 
 
+async def notify_driver_assignment(
+    driver_user_id: int,
+    equipment_name: str,
+    app_id: int,
+    date_target: str,
+    object_name: str,
+    action: str = "assigned",  # "assigned" | "unassigned"
+):
+    """v2.6: personal driver notification when assigned to / removed from
+    an application's equipment unit. Synthetic drivers (id < 0) are
+    skipped — they have no platform link yet.
+    """
+    if not driver_user_id or int(driver_user_id) < 0:
+        return
+
+    if action == "unassigned":
+        push_type = "driver_unassigned"
+        body = f"{equipment_name} — {date_target}. Объект: {object_name}"
+        html = (
+            f"❎ <b>Вас сняли с техники</b>\n"
+            f"🚜 {equipment_name}\n"
+            f"📅 {date_target}\n"
+            f"📍 {object_name}"
+        )
+    else:
+        push_type = "driver_assigned"
+        body = f"{equipment_name} — {date_target}. Объект: {object_name}"
+        html = (
+            f"🚜 <b>Вас назначили на технику</b>\n"
+            f"📍 Техника: {equipment_name}\n"
+            f"📅 Дата: {date_target}\n"
+            f"🏗 Объект: {object_name}"
+        )
+
+    try:
+        await notify_users(
+            [],  # role-less — only the explicit driver_user_id
+            html,
+            url_path="dashboard",
+            extra_tg_ids=[driver_user_id],
+            category=None,
+            push_type=push_type,
+            push_body=body,
+        )
+    except Exception as e:
+        logger.error(f"notify_driver_assignment user={driver_user_id}: {e}")
+
+
 async def notify_fio_match(new_user_id: int, new_fio: str, existing_user_id: int, existing_fio: str):
     """Уведомляет модераторов+ о возможном совпадении аккаунтов на разных платформах."""
     platform_new = "TG" if new_user_id > 0 else "MAX"
