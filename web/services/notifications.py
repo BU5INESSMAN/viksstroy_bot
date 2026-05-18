@@ -585,6 +585,58 @@ async def notify_role_conflict(primary_id: int, secondary_id: int, primary_role:
     )
 
 
+async def notify_driver_assignment(
+    driver_user_id: int,
+    equipment_name: str,
+    app_id: int,
+    date_target: str,
+    object_name: str,
+    action: str = "assigned",  # "assigned" | "unassigned"
+):
+    """Send a personal notification when a driver is added to or removed
+    from an application's equipment assignment.
+
+    Honors users.settings notification toggles. Fires across TG / MAX / Push
+    via the standard ``notify_users`` dispatch using ``extra_tg_ids``.
+    """
+    if not driver_user_id:
+        return
+
+    if action == "unassigned":
+        title = "С техники сняли"
+        body = f"{equipment_name} — {date_target}. Объект: {object_name}"
+        push_type = "driver_unassigned"
+        html = (
+            f"❎ <b>Вас сняли с техники</b>\n"
+            f"🚜 {equipment_name}\n"
+            f"📅 {date_target}\n"
+            f"📍 {object_name}"
+        )
+    else:
+        title = "Вас назначили на технику"
+        body = f"{equipment_name} — {date_target}. Объект: {object_name}"
+        push_type = "driver_assigned"
+        html = (
+            f"🚜 <b>Вас назначили на технику</b>\n"
+            f"📍 Техника: {equipment_name}\n"
+            f"📅 Дата: {date_target}\n"
+            f"🏗 Объект: {object_name}"
+        )
+
+    try:
+        await notify_users(
+            [],  # role-less — only the explicit user id
+            html,
+            url_path="dashboard",
+            extra_tg_ids=[driver_user_id],
+            category=None,
+            push_type=push_type,
+            push_body=body,
+        )
+    except Exception as e:
+        logger.error(f"notify_driver_assignment failed for user {driver_user_id}: {e}")
+
+
 async def notify_fio_match(new_user_id: int, new_fio: str, existing_user_id: int, existing_fio: str):
     """Уведомляет модераторов+ о возможном совпадении аккаунтов на разных платформах."""
     platform_new = "TG" if new_user_id > 0 else "MAX"

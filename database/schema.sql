@@ -59,15 +59,20 @@ CREATE TABLE IF NOT EXISTS team_members (
 );
 
 -- Справочник техники
+-- DEPRECATED 2026-05: driver_fio, tg_id, invite_code are remnants of the
+-- old driver-attached-to-equipment model. Drivers now self-join via
+-- users.invite_code with driver_categories + default_equipment_id. The
+-- columns below are kept transitionally (legacy read paths) and will be
+-- dropped in a future migration once all consumers are migrated.
 CREATE TABLE IF NOT EXISTS equipment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     category TEXT,
-    driver_fio TEXT DEFAULT 'Не указан',
+    driver_fio TEXT DEFAULT 'Не указан',  -- DEPRECATED
     status TEXT DEFAULT 'free',
-    tg_id INTEGER NULL,
+    tg_id INTEGER NULL,                   -- DEPRECATED
     photo_url TEXT,
-    invite_code TEXT,
+    invite_code TEXT,                     -- DEPRECATED
     is_active INTEGER DEFAULT 1,
     license_plate TEXT DEFAULT ''
 );

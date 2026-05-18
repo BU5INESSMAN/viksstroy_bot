@@ -220,7 +220,23 @@ async def message_handler(event: MessageCreated):
 
         code = parts[1].strip()
 
-        # 1. Проверяем, код от бригады?
+        # 1. Code matches a driver (NEW driver-personal invite)?
+        async with db.conn.execute(
+            "SELECT user_id, fio FROM users WHERE invite_code = ? AND role = 'driver'", (code,)
+        ) as cur:
+            d_row = await cur.fetchone()
+        if d_row:
+            synth_id, d_fio = int(d_row[0]), d_row[1]
+            buttons = [
+                [CallbackButton(text="✅ Да, это я", payload=f"driver_yes|{synth_id}|{code}")],
+                [CallbackButton(text="❌ Отмена", payload="join_cancel")]
+            ]
+            payload = ButtonsPayload(buttons=buttons).pack()
+            return await send_max_msg(event,
+                                      f"🚜 Привязка профиля водителя\n👤 ФИО: {d_fio}\n\nПодтверждаете привязку?",
+                                      attachments=[payload])
+
+        # 2. Проверяем, код от бригады?
         async with db.conn.execute("SELECT id, name FROM teams WHERE invite_code = ? OR join_password = ?",
                                    (code, code)) as cur:
             t_row = await cur.fetchone()
@@ -718,6 +734,47 @@ async def message_callback(event: MessageCallback):
                 logger.error(f"MAX equip link notification error: {e}")
 
         asyncio.create_task(_send_equip_link_notification())
+
+    # ---------------- ПОДТВЕРЖДЕНИЕ ПРИВЯЗКИ (ВОДИТЕЛЬ) ----------------
+    if payload.startswith("driver_yes|"):
+        parts = payload.split("|")
+        if len(parts) != 3: return
+        _, synth_id_str, code = parts
+
+        target = await db.find_user_by_invite_code(code)
+        if not target or target.get("role") != "driver":
+            return await send_max_msg(event, "❌ Код больше не действителен.")
+        synth_id = int(target["user_id"])
+        fio = target.get("fio") or f"Пользователь {real_tg_id}"
+
+        if synth_id < 0:
+            try:
+                await db.redeem_synthetic_driver(synth_id, real_tg_id)
+            except Exception as e:
+                logger.exception("MAX driver redemption failed: %s", e)
+                return await send_max_msg(event, "❌ Не удалось привязать профиль.")
+        elif synth_id != real_tg_id:
+            return await send_max_msg(event, "❌ Этот код уже использован.")
+
+        await send_max_msg(event, f"✅ Успешно!\nВы привязаны как водитель: {fio}.")
+
+        try:
+            await db.add_log(real_tg_id, fio, "Привязал профиль водителя по приглашению (MAX)",
+                             target_type='driver', target_id=real_tg_id)
+        except Exception:
+            pass
+
+        now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+
+        async def _send_driver_link_notification():
+            try:
+                await notify_users(["report_group", "boss", "superadmin"],
+                                   f"🔗 Привязка водителя MAX\n👤 {fio}\n🕒 {now}",
+                                   "equipment")
+            except Exception as e:
+                logger.error(f"MAX driver link notification error: {e}")
+
+        asyncio.create_task(_send_driver_link_notification())
 
 
 # ═══════════════════════════════════════════════════════════════════════

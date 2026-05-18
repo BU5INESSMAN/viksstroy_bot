@@ -13,9 +13,10 @@ from database.objects_repo import ObjectsRepoMixin
 from database.kp_repo import KpRepoMixin
 from database.exchange_repo import ExchangeRepoMixin
 from database.hours_repo import HoursRepoMixin
+from database.drivers_repo import DriversRepoMixin
 
 
-class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin, ObjectsRepoMixin, KpRepoMixin, ExchangeRepoMixin, HoursRepoMixin):
+class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin, ObjectsRepoMixin, KpRepoMixin, ExchangeRepoMixin, HoursRepoMixin, DriversRepoMixin):
     def __init__(self, db_path: str):
         self.db_path = db_path
         self.conn = None

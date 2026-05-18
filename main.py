@@ -124,6 +124,14 @@ async def cmd_start(message: types.Message, command: CommandObject, state: FSMCo
             return await message.answer(
                 "Привязка техники. Нажмите на кнопку ниже, чтобы закрепить технику за вашим аккаунтом:",
                 reply_markup=kb)
+        elif args.startswith("driver_"):
+            code = args.split('_', 1)[1]
+            url = f"{WEB_APP_URL}/driver-invite/{code}"
+            kb = InlineKeyboardMarkup(
+                inline_keyboard=[[InlineKeyboardButton(text="Привязать профиль водителя", web_app=WebAppInfo(url=url))]])
+            return await message.answer(
+                "Привязка профиля водителя. Нажмите на кнопку ниже, чтобы закрепить ваш аккаунт за этим водителем:",
+                reply_markup=kb)
 
     raw_id = message.from_user.id
     tg_id = await resolve_id(raw_id)
@@ -218,7 +226,23 @@ async def cmd_join(message: types.Message, command: CommandObject):
     if not code:
         return await message.answer("❌ Укажите код приглашения. Пример: /join 123456")
 
-    # 1. Проверяем, код от бригады?
+    # 1. Code matches a driver user (NEW driver-personal invite)?
+    async with db.conn.execute(
+        "SELECT user_id, fio FROM users WHERE invite_code = ? AND role = 'driver'", (code,)
+    ) as cur:
+        d_row = await cur.fetchone()
+
+    if d_row:
+        synth_id, d_fio = int(d_row[0]), d_row[1]
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ Да, это я", callback_data=f"driver_yes|{synth_id}|{code}")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="join_cancel")]
+        ])
+        return await message.answer(
+            f"🚜 Привязка профиля водителя\n👤 ФИО: {d_fio}\n\nПодтверждаете привязку вашего аккаунта?",
+            reply_markup=kb)
+
+    # 2. Проверяем, код от бригады?
     async with db.conn.execute("SELECT id, name FROM teams WHERE invite_code = ? OR join_password = ?",
                                (code, code)) as cur:
         t_row = await cur.fetchone()
@@ -241,7 +265,7 @@ async def cmd_join(message: types.Message, command: CommandObject):
             f"👷‍♂️ Бригада: {team_name}\n\nВыберите ваш профиль из списка ниже:",
             reply_markup=kb)
 
-    # 2. Проверяем, код от техники?
+    # 3. Проверяем, код от техники? (LEGACY — оставлено для старых ссылок)
     async with db.conn.execute("SELECT id, name FROM equipment WHERE invite_code = ?", (code,)) as cur:
         e_row = await cur.fetchone()
 
@@ -371,6 +395,62 @@ async def handle_equip_yes(callback: types.CallbackQuery):
             logger.error(f"TG equip link notification error: {e}")
 
     asyncio.create_task(_send_equip_link_notification())
+
+
+@dp.callback_query(F.data.startswith("driver_yes|"))
+async def handle_driver_yes(callback: types.CallbackQuery):
+    parts = callback.data.split("|")
+    if len(parts) != 3:
+        return await callback.answer("Ошибка данных", show_alert=True)
+    _, synth_id_str, code = parts
+    try:
+        synth_id = int(synth_id_str)
+    except ValueError:
+        return await callback.answer("Ошибка данных", show_alert=True)
+
+    raw_id = callback.from_user.id
+    real_tg_id = await resolve_id(raw_id)
+
+    target = await db.find_user_by_invite_code(code)
+    if not target or target.get("role") != "driver":
+        return await callback.answer("❌ Код больше не действителен.", show_alert=True)
+    synth_id = int(target["user_id"])  # canonical from DB
+
+    fio = target.get("fio") or f"Пользователь {real_tg_id}"
+
+    if synth_id < 0:
+        try:
+            await db.redeem_synthetic_driver(synth_id, real_tg_id)
+        except Exception as e:
+            logger.exception("driver redemption failed: %s", e)
+            return await callback.answer("❌ Не удалось привязать профиль.", show_alert=True)
+    elif synth_id != real_tg_id:
+        return await callback.answer("❌ Этот код уже использован.", show_alert=True)
+    else:
+        # Already linked to this TG user — no-op.
+        pass
+
+    await callback.message.edit_text(
+        f"✅ Успешно!\nВы привязаны как водитель: {fio}.", reply_markup=None)
+    await callback.answer()
+
+    try:
+        await db.add_log(real_tg_id, fio, "Привязал профиль водителя по приглашению",
+                         target_type='driver', target_id=real_tg_id)
+    except Exception:
+        pass
+
+    now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+
+    async def _send_driver_link_notification():
+        try:
+            await notify_users(["report_group", "boss", "superadmin"],
+                               f"🔗 Привязка водителя TG\n👤 {fio}\n🕒 {now}",
+                               "equipment")
+        except Exception as e:
+            logger.error(f"TG driver link notification error: {e}")
+
+    asyncio.create_task(_send_driver_link_notification())
 
 
 @dp.callback_query(F.data == "join_cancel")

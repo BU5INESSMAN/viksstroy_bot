@@ -17,6 +17,8 @@ PUSH_TEMPLATES = {
     "schedule_published": {"title": "Расстановка опубликована",   "icon": "/push-icons/schedule-published.png"},
     "object_request":     {"title": "Запрос на новый объект",     "icon": "/push-icons/object-request.png"},
     "user_registered":    {"title": "Новый пользователь",         "icon": "/push-icons/user-registered.png"},
+    "driver_assigned":    {"title": "Вас назначили на технику",   "icon": "/push-icons/schedule-published.png"},
+    "driver_unassigned":  {"title": "С техники сняли",             "icon": "/push-icons/schedule-published.png"},
 }
 
 

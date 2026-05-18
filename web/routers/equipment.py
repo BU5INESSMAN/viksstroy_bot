@@ -362,39 +362,93 @@ async def get_equip_invite_info(invite_code: str):
 
 @router.post("/api/equipment/invite/join")
 async def join_equipment(invite_code: str = Form(...), current_user=Depends(get_current_user)):
+    """LEGACY: equipment-bound driver redemption.
+
+    Drivers now self-join via /api/drivers/invite/redeem using personal
+    invite codes on users.invite_code. This endpoint is retained so old
+    links remain functional, but it now bridges to the new model:
+      - If migration created a synthetic driver row pointing at this
+        equipment as default, swap that row to the redeeming user.
+      - Otherwise create a fresh driver linkage with the equipment's
+        category as the driver's category and the equipment as default.
+    Clears equipment.tg_id / equipment.invite_code on success so the
+    legacy link can no longer be reused.
+    """
     real_tg_id = current_user["tg_id"]
     invite_code = normalize_invite_code(invite_code)
 
-    async with db.conn.execute("SELECT id, name, driver_fio FROM equipment WHERE invite_code = ?", (invite_code,)) as cur:
+    async with db.conn.execute(
+        "SELECT id, name, category, driver_fio FROM equipment WHERE invite_code = ?",
+        (invite_code,),
+    ) as cur:
         eq_row = await cur.fetchone()
     if not eq_row: raise HTTPException(status_code=404, detail="Техника не найдена")
 
-    equip_driver_fio = eq_row[2] or ""
+    eq_id, eq_name, eq_category, equip_driver_fio = (
+        eq_row[0], eq_row[1], (eq_row[2] or ""), (eq_row[3] or "")
+    )
+    logger.warning(
+        "Legacy equipment invite redeemed for equipment_id=%s. "
+        "Consider re-issuing driver-personal code.",
+        eq_id,
+    )
+
     fio = current_user.get("fio", "")
 
     try:
-        await db.conn.execute("UPDATE equipment SET tg_id = ? WHERE id = ?", (real_tg_id, eq_row[0]))
-        user = await db.get_user(real_tg_id)
-        if not user:
-            fio = equip_driver_fio if equip_driver_fio and equip_driver_fio != "Не указан" else f"Пользователь {real_tg_id}"
-            await db.add_user(real_tg_id, fio, "driver")
+        # Path A: a synthetic driver was created during the 2026-05 migration.
+        async with db.conn.execute(
+            "SELECT user_id, fio FROM users WHERE role = 'driver' "
+            "AND default_equipment_id = ? AND user_id < 0 LIMIT 1",
+            (eq_id,),
+        ) as cur:
+            synth = await cur.fetchone()
+
+        if synth:
+            synth_id = int(synth[0])
+            try:
+                await db.redeem_synthetic_driver(synth_id, real_tg_id)
+                fio = synth[1] or fio
+            except Exception as e:
+                logger.error(f"Legacy redirect to synthetic driver failed: {e}")
+                raise
         else:
-            user_dict = dict(user)
-            fio = user_dict.get('fio', '')
-            if equip_driver_fio and equip_driver_fio != "Не указан":
-                if not fio or fio.startswith("Пользователь") or fio == "Не указан":
-                    fio = equip_driver_fio
-                    await db.conn.execute("UPDATE users SET fio = ? WHERE user_id = ?", (fio, real_tg_id))
-                    logger.info(f"Auto-set FIO '{fio}' for user {real_tg_id} from equipment '{eq_row[1]}'")
-                    try:
-                        await db.add_log(real_tg_id, fio, f"ФИО автоматически установлено из техники «{eq_row[1]}»", target_type='user', target_id=real_tg_id)
-                    except Exception:
-                        pass
-            if user_dict['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
-                await db.update_user_role(real_tg_id, "driver")
+            # Path B: no synthetic — create driver linkage on the redeeming user.
+            user = await db.get_user(real_tg_id)
+            if not user:
+                fio = equip_driver_fio if equip_driver_fio and equip_driver_fio != "Не указан" else f"Пользователь {real_tg_id}"
+                await db.add_user(real_tg_id, fio, "driver")
+            else:
+                user_dict = dict(user)
+                fio = user_dict.get('fio', '') or fio
+                if user_dict.get('role') not in ('foreman', 'moderator', 'boss', 'superadmin'):
+                    await db.update_user_role(real_tg_id, "driver")
+
+            await db.conn.execute(
+                "UPDATE users SET default_equipment_id = COALESCE(default_equipment_id, ?) "
+                "WHERE user_id = ?",
+                (eq_id, real_tg_id),
+            )
+            if eq_category:
+                await db.conn.execute(
+                    "INSERT OR IGNORE INTO driver_categories (user_id, category) VALUES (?, ?)",
+                    (real_tg_id, eq_category),
+                )
+
+        # Either path: invalidate the legacy equipment-side fields now that
+        # the link is driver-personal.
+        await db.conn.execute(
+            "UPDATE equipment SET tg_id = NULL, invite_code = NULL WHERE id = ?",
+            (eq_id,),
+        )
         await db.conn.commit()
-    except:
+    except HTTPException:
         await db.conn.rollback()
+        raise
+    except Exception as e:
+        await db.conn.rollback()
+        logger.exception("Legacy equipment redemption failed: %s", e)
+        raise HTTPException(status_code=500, detail="Не удалось завершить привязку")
 
     try:
         await db.add_log(real_tg_id, fio, f"Привязан к технике «{eq_row[1]}» по приглашению", target_type='equipment', target_id=eq_row[0])
