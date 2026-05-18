@@ -868,25 +868,41 @@ async def get_archived_kp(current_user=Depends(_require_office)):
 
 @router.get("/api/kp/catalog/download")
 async def download_kp_catalog(current_user=Depends(_require_office)):
-    """Отдает последний загруженный файл прайса. Office only."""
+    """Возвращает последний загруженный файл прайса. Office+ (moderator/boss/superadmin).
+
+    v2.6 (C-10 follow-up): every export is audit-logged with
+    action='catalog_exported' so the loosened threshold has traceability.
+    """
     path = db.get_latest_catalog_path()
     if not path or not os.path.exists(path):
         raise HTTPException(404, "Справочник еще не загружен на сервер")
 
     filename = os.path.basename(path)
+    try:
+        await db.add_log(
+            current_user["tg_id"], current_user.get("fio", "Система"),
+            f"Экспортировал справочник КП: {filename}",
+            target_type="kp_catalog", target_id=0,
+            details=f"action=catalog_exported · role={current_user.get('role','')} · file={filename}",
+        )
+    except Exception:
+        pass
     return FileResponse(path, filename=filename)
 
 
 @router.post("/api/kp/catalog/upload")
-async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_require_superadmin)):
+async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_require_office)):
     """Replace the global KP catalog from uploaded Excel.
-    SECURITY (C-10 fix): superadmin only — pricing data is business-critical.
+
+    v2.6 (C-10 follow-up, 2026-05-18): access threshold loosened from
+    require_superadmin to require_office (moderator/boss/superadmin).
+    Compensating control: every import is audit-logged with file name,
+    row count, and uploader role under target_type='kp_catalog'.
     """
     if not file.filename.lower().endswith(('.xlsx', '.csv')):
         raise HTTPException(400, "Допустимы только файлы .xlsx или .csv")
 
     content = await file.read()
-    # Validate size (max 10MB for Excel)
     if len(content) > 10 * 1024 * 1024:
         raise HTTPException(413, "Файл слишком большой (максимум 10MB)")
 
@@ -896,6 +912,22 @@ async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_
     if not success:
         raise HTTPException(500, "Ошибка при разборе файла. Проверьте структуру колонок.")
 
-    await db.add_log(current_user["tg_id"], current_user.get("fio", "Система"),
-                     f"Загрузил справочник КП: {os.path.basename(new_path)}", target_type='system')
-    return {"status": "ok", "file": os.path.basename(new_path)}
+    rows_count = 0
+    try:
+        async with db.conn.execute("SELECT COUNT(*) FROM kp_catalog") as cur:
+            row = await cur.fetchone()
+            rows_count = int(row[0]) if row else 0
+    except Exception:
+        pass
+
+    file_name = os.path.basename(new_path)
+    await db.add_log(
+        current_user["tg_id"], current_user.get("fio", "Система"),
+        f"Загрузил справочник КП: {file_name} ({rows_count} строк)",
+        target_type="kp_catalog", target_id=0,
+        details=(
+            f"action=catalog_imported · role={current_user.get('role','')} · "
+            f"file={file_name} · rows={rows_count}"
+        ),
+    )
+    return {"status": "ok", "file": file_name, "rows": rows_count}
