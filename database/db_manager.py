@@ -169,6 +169,37 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         # that changed AUTOINCREMENT IDs).
         await self.repair_orphaned_kp_references()
 
+        # v2.6: structured migration runner. Runs ALTERs that schema.sql
+        # cannot perform on existing tables (CREATE TABLE IF NOT EXISTS is
+        # a no-op for existing tables — only new columns added via ALTER
+        # land on upgrade DBs).
+        from database.migrations import run_all as _run_migrations
+        await _run_migrations(self.conn)
+
+        # Drift sanity check. Runs AFTER migrations so it validates the
+        # CONVERGED state: fresh installs got everything from schema.sql,
+        # existing installs caught up via ALTERs. If either is missing a
+        # column the migration adds, this raises with a clear message.
+        async with self.conn.execute("PRAGMA table_info(users)") as _cur:
+            _user_cols = {row[1] for row in await _cur.fetchall()}
+        _required_user_cols = {"invite_code", "default_equipment_id"}
+        _missing = _required_user_cols - _user_cols
+        if _missing:
+            raise RuntimeError(
+                f"DB drift: users table missing required columns {_missing}. "
+                f"schema.sql + migrations should have produced them."
+            )
+        for _tbl in ("driver_categories", "equipment_driver_usage",
+                     "application_drivers", "_migrations"):
+            async with self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                (_tbl,),
+            ) as _cur:
+                if not await _cur.fetchone():
+                    raise RuntimeError(
+                        f"DB drift: required table missing: {_tbl}"
+                    )
+
         logging.info("База данных успешно инициализирована.")
 
     async def close(self):

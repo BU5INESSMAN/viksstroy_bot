@@ -1,4 +1,15 @@
 -- Таблица пользователей системы
+--
+-- v2.6 (2026-05-18): columns `invite_code` and `default_equipment_id` are
+-- declared directly inside this CREATE TABLE so fresh installs get them on
+-- first executescript pass. For existing production DBs the columns are
+-- added by database/migrations/m_2026_05_drivers_refactor.py.
+--
+-- IMPORTANT: do NOT add a `CREATE INDEX ON users(invite_code)` to this
+-- schema.sql. CREATE TABLE IF NOT EXISTS is a no-op on existing tables
+-- (so the column isn't added on upgrade), and the index would then fail
+-- with "no such column: invite_code". The index lives in the migration
+-- after its ALTER TABLE step.
 CREATE TABLE IF NOT EXISTS users (
     user_id INTEGER PRIMARY KEY,
     fio TEXT,
@@ -21,6 +32,8 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url TEXT,
     last_used_objects TEXT DEFAULT '[]',
     linked_user_id INTEGER DEFAULT NULL,
+    invite_code TEXT,                -- v2.6: personal driver/foreman invite code
+    default_equipment_id INTEGER,    -- v2.6: drivers' default equipment unit
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -56,17 +69,63 @@ CREATE TABLE IF NOT EXISTS team_members (
 );
 
 -- Справочник техники
+--
+-- DEPRECATED (v2.6, 2026-05-18): driver_fio, tg_id, invite_code remain
+-- for backward-compat reads only. Drivers are now independent users with
+-- role='driver' and their own users.invite_code. Per-application driver
+-- assignment lives in application_drivers. Legacy redemption flow at
+-- /api/equipment/invite/join now bridges into the new model.
+-- See database/migrations/m_2026_05_drivers_refactor.py
 CREATE TABLE IF NOT EXISTS equipment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     category TEXT,
-    driver_fio TEXT DEFAULT 'Не указан',
+    driver_fio TEXT DEFAULT 'Не указан',  -- DEPRECATED v2.6
     status TEXT DEFAULT 'free',
-    tg_id INTEGER NULL,
+    tg_id INTEGER NULL,                   -- DEPRECATED v2.6
     photo_url TEXT,
-    invite_code TEXT,
+    invite_code TEXT,                     -- DEPRECATED v2.6
     is_active INTEGER DEFAULT 1,
     license_plate TEXT DEFAULT ''
+);
+
+-- v2.6: водители ↔ категории техники (м-к-м). Категория хранится по имени
+-- (equipment_category_settings.category — TEXT PRIMARY KEY).
+CREATE TABLE IF NOT EXISTS driver_categories (
+    user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    category TEXT NOT NULL REFERENCES equipment_category_settings(category) ON DELETE CASCADE,
+    PRIMARY KEY (user_id, category)
+);
+CREATE INDEX IF NOT EXISTS idx_driver_categories_category ON driver_categories(category);
+
+-- v2.6: популярность пары (техника, водитель). Инкрементируется при
+-- публикации наряда (publish_service.execute_app_publish).
+CREATE TABLE IF NOT EXISTS equipment_driver_usage (
+    equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    driver_user_id INTEGER NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+    last_used_at TEXT NOT NULL DEFAULT (datetime('now')),
+    usage_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (equipment_id, driver_user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_edu_eq_lastused ON equipment_driver_usage(equipment_id, last_used_at DESC);
+
+-- v2.6: назначение водителей в заявке на конкретную единицу техники.
+-- driver_user_id может быть отрицательным (синтетический водитель,
+-- созданный прорабом до того, как водитель залогинился через invite_code).
+-- Синтетика заменяется на реальный user_id через redeem_synthetic_driver().
+CREATE TABLE IF NOT EXISTS application_drivers (
+    application_id INTEGER NOT NULL REFERENCES applications(id) ON DELETE CASCADE,
+    equipment_id INTEGER NOT NULL REFERENCES equipment(id) ON DELETE CASCADE,
+    driver_user_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (application_id, equipment_id)
+);
+CREATE INDEX IF NOT EXISTS idx_app_drivers_driver ON application_drivers(driver_user_id);
+
+-- v2.6: маркер применённых миграций (см. database/migrations/__init__.py)
+CREATE TABLE IF NOT EXISTS _migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 -- Таблица заявок
