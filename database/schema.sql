@@ -21,8 +21,11 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url TEXT,
     last_used_objects TEXT DEFAULT '[]',
     linked_user_id INTEGER DEFAULT NULL,
+    invite_code TEXT,
+    default_equipment_id INTEGER,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code) WHERE invite_code IS NOT NULL;
 
 -- Таблица бригад
 CREATE TABLE IF NOT EXISTS teams (
@@ -67,6 +70,34 @@ CREATE TABLE IF NOT EXISTS equipment (
     invite_code TEXT,
     is_active INTEGER DEFAULT 1,
     license_plate TEXT DEFAULT ''
+);
+
+-- Драйверы ↔ категории техники (м-к-м). Категория хранится как имя.
+CREATE TABLE IF NOT EXISTS driver_categories (
+    user_id INTEGER NOT NULL,
+    category TEXT NOT NULL,
+    PRIMARY KEY (user_id, category),
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (category) REFERENCES equipment_category_settings(category) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_driver_cat_cat ON driver_categories(category);
+
+-- Популярность: какого водителя чаще/недавнее назначали на конкретную технику.
+CREATE TABLE IF NOT EXISTS equipment_driver_usage (
+    equipment_id INTEGER NOT NULL,
+    driver_user_id INTEGER NOT NULL,
+    last_used_at TEXT NOT NULL,
+    usage_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (equipment_id, driver_user_id),
+    FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE CASCADE,
+    FOREIGN KEY (driver_user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_edu_equipment ON equipment_driver_usage(equipment_id, last_used_at DESC, usage_count DESC);
+
+-- Маркер применённых миграций (см. database/migrations/).
+CREATE TABLE IF NOT EXISTS _migrations (
+    name TEXT PRIMARY KEY,
+    applied_at TEXT NOT NULL
 );
 
 -- Таблица заявок

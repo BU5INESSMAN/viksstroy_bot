@@ -169,6 +169,9 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         # that changed AUTOINCREMENT IDs).
         await self.repair_orphaned_kp_references()
 
+        from database.migrations.m_2026_05_drivers_refactor import run as run_drivers_migration
+        await run_drivers_migration(self.conn)
+
         logging.info("База данных успешно инициализирована.")
 
     async def close(self):
