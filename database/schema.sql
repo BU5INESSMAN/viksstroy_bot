@@ -136,6 +136,20 @@ CREATE TABLE IF NOT EXISTS applications (
     FOREIGN KEY (equipment_id) REFERENCES equipment (id)
 );
 
+-- Назначение водителей на единицу техники внутри заявки.
+-- Одна заявка → много (equipment_id, driver_user_id). Один водитель на ед. техники.
+CREATE TABLE IF NOT EXISTS application_drivers (
+    application_id INTEGER NOT NULL,
+    equipment_id INTEGER NOT NULL,
+    driver_user_id INTEGER NOT NULL,
+    PRIMARY KEY (application_id, equipment_id),
+    FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+    FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE CASCADE,
+    FOREIGN KEY (driver_user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_app_drivers_app ON application_drivers(application_id);
+CREATE INDEX IF NOT EXISTS idx_app_drivers_driver ON application_drivers(driver_user_id);
+
 -- Связь заявок с конкретными людьми (если есть)
 CREATE TABLE IF NOT EXISTS application_selected_staff (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

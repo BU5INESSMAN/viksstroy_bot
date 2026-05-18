@@ -1,5 +1,52 @@
 class AppsRepoMixin:
 
+    # ---- application_drivers junction (Commit 3) ---------------------
+
+    async def set_application_drivers(
+        self, app_id: int, assignments: list[tuple[int, int]]
+    ) -> None:
+        """Replace all driver assignments for the application in a single
+        transaction. ``assignments`` is a list of ``(equipment_id, driver_user_id)``.
+        Pass ``[]`` to clear all assignments.
+        """
+        try:
+            await self.conn.execute(
+                "DELETE FROM application_drivers WHERE application_id = ?",
+                (app_id,),
+            )
+            seen: set[int] = set()
+            for eq_id, drv_id in assignments or []:
+                if not eq_id or not drv_id:
+                    continue
+                if int(eq_id) in seen:
+                    continue
+                seen.add(int(eq_id))
+                await self.conn.execute(
+                    "INSERT INTO application_drivers (application_id, equipment_id, driver_user_id) "
+                    "VALUES (?, ?, ?)",
+                    (app_id, int(eq_id), int(drv_id)),
+                )
+            await self.conn.commit()
+        except Exception:
+            await self.conn.rollback()
+            raise
+
+    async def get_application_drivers(self, app_id: int) -> list[dict]:
+        sql = """
+            SELECT ad.equipment_id,
+                   e.name AS equipment_name,
+                   ad.driver_user_id,
+                   u.fio AS driver_fio,
+                   u.last_name, u.first_name, u.middle_name
+            FROM application_drivers ad
+            LEFT JOIN equipment e ON e.id = ad.equipment_id
+            LEFT JOIN users u ON u.user_id = ad.driver_user_id
+            WHERE ad.application_id = ?
+        """
+        async with self.conn.execute(sql, (app_id,)) as cur:
+            cols = [c[0] for c in cur.description]
+            return [dict(zip(cols, r)) for r in await cur.fetchall()]
+
     async def save_application(self, data: dict, foreman_id: int):
         app_id = data.get('edit_app_id')
 

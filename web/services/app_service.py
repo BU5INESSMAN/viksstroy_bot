@@ -71,6 +71,17 @@ async def enrich_app_with_object_fields(app_dict):
     app_dict['object_address'] = address
 
 
+async def enrich_app_with_drivers(app_dict):
+    """Populate ``drivers`` field on the application dict from the
+    `application_drivers` junction so the UI can render per-equipment
+    driver names and so notifications can dispatch on assignment changes."""
+    try:
+        rows = await db.get_application_drivers(int(app_dict.get('id')))
+    except Exception:
+        rows = []
+    app_dict['drivers'] = rows
+
+
 async def enrich_app_with_members_data(app_dict):
     selected_m = app_dict.get('selected_members')
     members_list = []
@@ -156,8 +167,38 @@ async def get_active_objects_list(tg_id: int = 0):
     return objects
 
 
+def _parse_drivers_json(drivers_data: str) -> list[tuple[int, int]]:
+    """Parse the optional drivers payload from create/update endpoints.
+
+    Accepts JSON list of `{equipment_id, driver_user_id}` objects.
+    Drops entries with falsy driver_user_id (i.e. "не назначен").
+    """
+    if not drivers_data:
+        return []
+    try:
+        raw = json.loads(drivers_data)
+    except Exception:
+        return []
+    out: list[tuple[int, int]] = []
+    if not isinstance(raw, list):
+        return out
+    for entry in raw:
+        if not isinstance(entry, dict):
+            continue
+        eq = entry.get('equipment_id')
+        drv = entry.get('driver_user_id')
+        if not eq or not drv:
+            continue
+        try:
+            out.append((int(eq), int(drv)))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 async def create_application(tg_id, team_id, date_target, object_address, comment,
-                             selected_members, equipment_data, object_id):
+                             selected_members, equipment_data, object_id,
+                             drivers_data: str = ""):
     """Create a new application. Returns (app_id, fio) or raises."""
     from fastapi import HTTPException
     await ensure_app_columns()
@@ -177,13 +218,23 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
         (real_tg_id, fio, team_id, object_id, date_target, object_address, comment, selected_members, equipment_data))
     new_app_id = cursor.lastrowid
     await db.conn.commit()
+
+    assignments = _parse_drivers_json(drivers_data)
+    if assignments:
+        await db.set_application_drivers(new_app_id, assignments)
+
     await db.add_log(real_tg_id, fio, f"Создал заявку на {object_address} ({date_target})", target_type='application', target_id=new_app_id)
     return new_app_id, real_tg_id, fio
 
 
 async def update_application(app_id, tg_id, team_id, date_target, object_address,
-                             comment, selected_members, equipment_data, object_id):
-    """Update an existing waiting application. Returns (real_tg_id, fio) or raises."""
+                             comment, selected_members, equipment_data, object_id,
+                             drivers_data: str = ""):
+    """Update an existing waiting application. Returns (real_tg_id, fio, driver_diff) or raises.
+
+    driver_diff = {"added": [(eq_id, drv_id), ...], "removed": [...], "kept": [...]}
+    for the caller to fire notify_driver_assignment on changes.
+    """
     from fastapi import HTTPException
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
@@ -200,6 +251,15 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
     if occupied:
         raise HTTPException(409, "Ошибка обновления наряда:\n" + "\n".join(occupied))
 
+    # Capture previous driver assignments BEFORE update so we can diff.
+    prev_pairs: set[tuple[int, int]] = set()
+    try:
+        prev_rows = await db.get_application_drivers(app_id)
+        for r in prev_rows:
+            prev_pairs.add((int(r['equipment_id']), int(r['driver_user_id'])))
+    except Exception:
+        pass
+
     try:
         await db.conn.execute(
             "UPDATE applications SET team_id=?, date_target=?, object_address=?, object_id=?, comment=?, selected_members=?, equipment_data=? WHERE id = ?",
@@ -208,9 +268,18 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
     except:
         await db.conn.rollback()
 
+    driver_diff = {"added": [], "removed": [], "kept": []}
+    if drivers_data is not None:
+        assignments = _parse_drivers_json(drivers_data)
+        await db.set_application_drivers(app_id, assignments)
+        new_pairs = set(assignments)
+        driver_diff["added"] = list(new_pairs - prev_pairs)
+        driver_diff["removed"] = list(prev_pairs - new_pairs)
+        driver_diff["kept"] = list(prev_pairs & new_pairs)
+
     fio = dict(user).get('fio', 'Пользователь')
     await db.add_log(real_tg_id, fio, f"Обновил заявку на {object_address} ({date_target})", target_type='application', target_id=app_id)
-    return real_tg_id, fio
+    return real_tg_id, fio, driver_diff
 
 
 async def delete_application(app_id, tg_id):

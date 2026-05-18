@@ -173,6 +173,27 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         from database.migrations.m_2026_05_drivers_refactor import run as run_drivers_migration
         await run_drivers_migration(self.conn)
 
+        # application_drivers — added in Commit 3. Idempotent so it works for
+        # both fresh installs and DBs that already ran the 2026-05 migration.
+        await self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS application_drivers (
+                application_id INTEGER NOT NULL,
+                equipment_id INTEGER NOT NULL,
+                driver_user_id INTEGER NOT NULL,
+                PRIMARY KEY (application_id, equipment_id),
+                FOREIGN KEY (application_id) REFERENCES applications(id) ON DELETE CASCADE,
+                FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE CASCADE,
+                FOREIGN KEY (driver_user_id) REFERENCES users(user_id) ON DELETE CASCADE
+            )
+        """)
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_drivers_app ON application_drivers(application_id)"
+        )
+        await self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_app_drivers_driver ON application_drivers(driver_user_id)"
+        )
+        await self.conn.commit()
+
         logging.info("База данных успешно инициализирована.")
 
     async def close(self):

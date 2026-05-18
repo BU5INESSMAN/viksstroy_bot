@@ -18,9 +18,11 @@ from auth_deps import get_current_user, require_role
 from services.notifications import notify_users
 from services.app_service import (
     ensure_app_columns, enrich_app_with_members_data, enrich_app_with_object_fields, get_active_objects_list,
+    enrich_app_with_drivers,
     create_application, update_application, delete_application,
     update_last_used_objects, get_last_used_objects,
 )
+from services.notifications import notify_driver_assignment
 from services.app_workflow import (
     review_application, send_review_notifications,
     change_application_status, send_status_change_notification,
@@ -68,10 +70,13 @@ async def check_availability(
 async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form(""), object_id: int = Form(0),
+                     drivers_data: str = Form(""),
                      current_user=Depends(get_current_user)):
     tg_id = current_user["tg_id"]
     new_app_id, real_tg_id, fio = await create_application(
-        tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id)
+        tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id,
+        drivers_data=drivers_data,
+    )
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"📝 <b>Новая заявка на выезд</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}\n🕒 Время: {now}",
@@ -83,14 +88,45 @@ async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
 async def update_app(app_id: int, team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form(""), object_id: int = Form(0),
+                     drivers_data: str = Form(""),
                      current_user=Depends(get_current_user)):
     tg_id = current_user["tg_id"]
-    real_tg_id, fio = await update_application(
-        app_id, tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id)
+    real_tg_id, fio, driver_diff = await update_application(
+        app_id, tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id,
+        drivers_data=drivers_data,
+    )
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"⚠️ <b>Заявка #{app_id} (Объект: {object_address}) была отредактирована</b>\n👤 Прораб: {fio}\n🕒 Время: {now}",
                        "review", category="orders"))
+
+    # Personal driver-change notifications: fire-and-forget per added/removed pair.
+    async def _notify_driver_changes():
+        try:
+            eq_names: dict[int, str] = {}
+            all_eq = {pair[0] for kind in ("added", "removed") for pair in driver_diff.get(kind, [])}
+            if all_eq:
+                pl = ",".join(["?"] * len(all_eq))
+                async with db.conn.execute(
+                    f"SELECT id, name FROM equipment WHERE id IN ({pl})", list(all_eq)
+                ) as cur:
+                    for row in await cur.fetchall():
+                        eq_names[int(row[0])] = row[1]
+            obj_name = object_address
+            for eq_id, drv_id in driver_diff.get("added", []):
+                await notify_driver_assignment(
+                    drv_id, eq_names.get(eq_id, f"#{eq_id}"), app_id, date_target, obj_name, action="assigned",
+                )
+            for eq_id, drv_id in driver_diff.get("removed", []):
+                await notify_driver_assignment(
+                    drv_id, eq_names.get(eq_id, f"#{eq_id}"), app_id, date_target, obj_name, action="unassigned",
+                )
+        except Exception as e:
+            logger.error(f"driver change notify error: {e}")
+
+    if driver_diff.get("added") or driver_diff.get("removed"):
+        asyncio.create_task(_notify_driver_changes())
+
     return {"status": "ok"}
 
 
@@ -125,6 +161,7 @@ async def get_review_apps(current_user=Depends(get_current_user)):
         enrich_app_with_team_name(app_dict, teams_dict)
         enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_drivers(app_dict)
         await enrich_app_with_object_fields(app_dict)
 
         if user_role in ('foreman', 'brigadier') and real_tg_id:
@@ -196,6 +233,7 @@ async def get_active_app(current_user=Depends(get_current_user)):
         enrich_app_with_team_name(app_dict, teams_dict)
         enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_drivers(app_dict)
         await enrich_app_with_object_fields(app_dict)
 
         involved = False
@@ -248,6 +286,7 @@ async def get_my_apps(current_user=Depends(get_current_user)):
         enrich_app_with_team_name(app_dict, teams_dict)
         enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_drivers(app_dict)
         await enrich_app_with_object_fields(app_dict)
 
         eq_data_str = app_dict.get('equipment_data', '')
@@ -356,6 +395,7 @@ async def get_archived_apps(date_from: str = "", date_to: str = "", current_user
         enrich_app_with_team_name(app_dict, teams_dict)
         enrich_app_with_icons(app_dict, teams_icon_map, category_icon_map, equip_category_map)
         await enrich_app_with_members_data(app_dict)
+        await enrich_app_with_drivers(app_dict)
         await enrich_app_with_object_fields(app_dict)
         result.append(app_dict)
     return result
