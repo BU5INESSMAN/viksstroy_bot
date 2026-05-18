@@ -336,12 +336,21 @@ export default function ViewAppModal({ app, onClose, data }) {
                         <div className="p-4 bg-emerald-50/20 dark:bg-emerald-900/5">
                             {eqList.length > 0 ? (
                                 <div className="space-y-2">
-                                    {eqList.map((eq, i) => {
+                                    {(() => {
+                                        // v2.6: build {eq_id → driver} map from API.
+                                        const driverMap = {};
+                                        (app.driver_assignments || []).forEach((d) => {
+                                            driverMap[d.equipment_id] = d;
+                                        });
+                                        return eqList.map((eq, i) => {
                                         const rawName = eq.name || `Техника #${eq.id}`;
-                                        // Extract driver from "Name [plate] (DriverFIO)" pattern
-                                        const driverMatch = rawName.match(/\(([^)]+)\)\s*$/);
-                                        const driver = driverMatch && driverMatch[1] !== 'Не указан' ? driverMatch[1] : null;
-                                        const eqName = driver ? rawName.replace(/\s*\([^)]+\)\s*$/, '') : rawName;
+                                        // Extract driver from legacy "Name [plate] (DriverFIO)" pattern
+                                        const legacyMatch = rawName.match(/\(([^)]+)\)\s*$/);
+                                        const legacyDriver = legacyMatch && legacyMatch[1] !== 'Не указан' ? legacyMatch[1] : null;
+                                        const eqName = legacyDriver ? rawName.replace(/\s*\([^)]+\)\s*$/, '') : rawName;
+                                        const assigned = driverMap[eq.id];
+                                        const driverFio = assigned?.driver_fio || legacyDriver;
+                                        const isSynthetic = assigned?.is_synthetic;
                                         const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || IconTruck;
                                         return (
                                             <div key={eq.id ?? i} className="flex items-center justify-between bg-white dark:bg-gray-800 p-3.5 rounded-xl border border-gray-100 dark:border-gray-700 gap-3">
@@ -354,8 +363,13 @@ export default function ViewAppModal({ app, onClose, data }) {
                                                         <p className={`text-sm font-bold truncate ${eq.is_freed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}>
                                                             {eqName}
                                                         </p>
-                                                        {driver && (
-                                                            <p className="text-[11px] text-gray-400 dark:text-gray-500 truncate">{driver}</p>
+                                                        {driverFio ? (
+                                                            <p className={`text-[11px] truncate ${isSynthetic ? 'text-amber-600 dark:text-amber-400' : 'text-gray-500 dark:text-gray-400'}`}>
+                                                                Водитель: {driverFio}
+                                                                {isSynthetic && <span className="ml-1 opacity-80">· не зарегистрирован</span>}
+                                                            </p>
+                                                        ) : (
+                                                            <p className="text-[11px] text-gray-400 dark:text-gray-500 italic truncate">водитель не назначен</p>
                                                         )}
                                                     </div>
                                                 </div>
@@ -368,7 +382,8 @@ export default function ViewAppModal({ app, onClose, data }) {
                                                 </span>
                                             </div>
                                         );
-                                    })}
+                                        });
+                                    })()}
                                 </div>
                             ) : (
                                 <p className="text-sm text-gray-400 italic text-center py-2">Техника не назначена</p>

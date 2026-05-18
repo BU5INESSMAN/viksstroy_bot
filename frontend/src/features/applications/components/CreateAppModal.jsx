@@ -32,6 +32,7 @@ export default function CreateAppModal({
     toggleTeamSelection, toggleAppMember, selectAllFreeInTeam,
     checkTeamStatus, checkEquipStatus,
     toggleEquipmentSelection, updateEquipmentTime,
+    setDriverForEquipment, clearDriverForEquipment,
     activeEqCategory, setActiveEqCategory, teamMembers, openProfile, openFreeModal,
     tgId
 }) {
@@ -388,6 +389,9 @@ export default function CreateAppModal({
                                 setActionChoiceEquip={setActionChoiceEquip}
                                 handleFreeTimeSelect={handleFreeTimeSelect}
                                 openExchangeDialog={openExchangeDialog}
+                                driverAssignments={appForm.driverAssignments}
+                                setDriverForEquipment={setDriverForEquipment}
+                                clearDriverForEquipment={clearDriverForEquipment}
                             />
                         </div>
 
