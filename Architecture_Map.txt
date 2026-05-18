@@ -1,6 +1,6 @@
 ================================================================================
                     VIKSSTROY BOT -- ARCHITECTURE MAP
-          (updated 2026-04-22 for v2.5 — graphify last run 1080 nodes / 1236 edges)
+          (updated 2026-05-18 for v2.6 — graphify last run 1080 nodes / 1236 edges)
 ================================================================================
 
 --- APP OVERVIEW ---
@@ -243,6 +243,39 @@ Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + fram
   |   user_id / filled_at    |                                                    |
   | application_kp.team_id   | v2.5: per-brigade attribution when "По бригадам"   |
   |                          | toggle is on (NULL = общая работа на заявку)        |
+  | users.invite_code        | v2.6: personal driver/foreman invite code          |
+  |   users.default_equip_id |   driver's default equipment unit                  |
+  | driver_categories        | v2.6: m-to-m driver ↔ equipment_category_settings  |
+  | equipment_driver_usage   | v2.6: per-(eq, driver) popularity tracker          |
+  |                          |   last_used_at + usage_count                       |
+  | application_drivers      | v2.6: per-app driver assignment per equipment      |
+  |                          |   driver_user_id may be negative (synthetic)       |
+  | _migrations              | v2.6: applied migrations marker                    |
+  +--------------------------+--------------------------------------------------+
+
+  v2.6 NEW SERVICES / ROUTERS
+  +--------------------------+--------------------------------------------------+
+  | web/services/driver_     | DriversRepoMixin equivalent (functional, not a    |
+  |   service.py             | mixin). CRUD, list_drivers_for_equipment with     |
+  |                          | server-side sort, increment_usage, assign/remove  |
+  |                          | _driver_to_application, redeem_synthetic_driver.  |
+  | web/routers/drivers.py   | /api/drivers/* CRUD + invite landing + redeem.    |
+  |                          | Office+ for writes, auth for reads.               |
+  | database/migrations/     | run_all(conn) iterates MIGRATIONS_ORDER, skips    |
+  |   __init__.py            | rows already in _migrations.                      |
+  | database/migrations/     | Idempotent ALTER+backfill: users columns, junction|
+  |   m_2026_05_drivers_     | tables, FIO scan to port equipment.driver_fio     |
+  |   refactor.py            | into users with role='driver'.                    |
+  +--------------------------+--------------------------------------------------+
+
+  v2.6 NEW FRONTEND FILES
+  +--------------------------+--------------------------------------------------+
+  | pages/Drivers.jsx        | Drivers tab on Resources page (CRUD)              |
+  | features/drivers/        | DriverCard, DriverEditModal, DriverInviteModal    |
+  |   components/            |                                                  |
+  | features/applications/   | DriverPickerModal — per-equipment driver picker   |
+  |   components/Driver…     | with default → recent → usage sort + "Другой"     |
+  |     PickerModal.jsx      | section + inline new-driver form                  |
   +--------------------------+--------------------------------------------------+
 
   BOT ENTRY POINTS

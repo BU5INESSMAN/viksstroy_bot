@@ -188,11 +188,59 @@ Deps: 16 packages pinned (requirements.txt)
     - Action buttons moved from ViewAppModal to Review page (read-only view)
     - Compact equipment in kanban without driver names
 
+  v2.6 Driver-equipment decoupling (2026-05-18)                            [OK]
+    - users.invite_code + users.default_equipment_id added directly
+      inside CREATE TABLE users in schema.sql (fresh installs);
+      ALTER TABLE in m_2026_05_drivers_refactor migration (existing DBs).
+      Unique index on invite_code lives in the migration, NOT schema.sql,
+      to avoid the executescript "no such column" trap.
+    - driver_categories (user_id ↔ category text, m-to-m).
+    - equipment_driver_usage (popularity tracker per (eq, driver)
+      with last_used_at + usage_count, bumped on app publish).
+    - application_drivers (per-app driver assignment per equipment;
+      driver_user_id may be negative-synthetic until redeemed).
+    - _migrations marker table + structured database/migrations/
+      runner; idempotent, fails-fast on schema drift via sanity check.
+    - DriversRepoMixin → driver_service.py: list/create/update/delete
+      drivers, list_drivers_for_equipment (sorted: default → recent →
+      usage → fio), increment_usage, assign/remove_driver_to_application,
+      redeem_synthetic_driver (atomic synth→real swap with merge).
+    - Drivers REST API at /api/drivers/* (office+ for writes, auth for
+      reads). Personal invite-code redemption at /api/drivers/invite/redeem
+      and via the extended /api/auth/code path.
+    - Legacy /api/equipment/invite/join now bridges to the new model
+      (if migration created a synthetic driver for the equipment, the
+      legacy redemption swaps that synth into the redeeming user;
+      otherwise upgrades the user to driver and links categories +
+      default_equipment_id).
+    - /api/applications/create + /update accept driver_assignments
+      JSON; diff-aware notify_driver_assignment (TG / MAX / web push)
+      on add/remove. Single-pair endpoints:
+        POST /api/applications/{id}/drivers and
+        DELETE /api/applications/{id}/drivers/{eq_id}.
+    - Publish flow records popularity per (eq, driver), fires personal
+      driver_assigned push template + TG/MAX notification for each
+      assigned non-synthetic driver, and includes "👤 Водитель: FIO"
+      per equipment in the published caption.
+    - Resources page: third tab "Водители" with DriverCard /
+      DriverEditModal / DriverInviteModal. Office+ sees full CRUD;
+      foreman sees read-only.
+    - CreateApp / EditApp: per-equipment driver pill via
+      DriverPickerModal (server-sorted, "По умолчанию" / category /
+      "Другой" sections, inline new-driver form). ViewAppModal shows
+      driver under each equipment line, distinguishing synthetic
+      placeholders.
+    - C-10 loosened: KP catalog import/export from require_superadmin
+      to require_office. Compensating control: every import/export
+      audit-logged with action, role, file, row count.
+    - Legacy equipment.driver_fio / tg_id / invite_code annotated
+      DEPRECATED in schema.sql; retained for backward-compat reads.
+
 --- CURRENT STATUS ---
 
-  ALL STAGES COMPLETE. v2.5 delivered.
+  ALL STAGES COMPLETE. v2.6 delivered.
   Production ready.
-  ~480+ commits across v1.0-v2.5.
+  ~490+ commits across v1.0-v2.6.
 
 --- TOOLING ---
 
