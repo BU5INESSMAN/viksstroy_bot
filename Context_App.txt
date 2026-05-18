@@ -119,6 +119,10 @@ Deps: 16 packages pinned (requirements.txt)
     - C-07: Git history scrubbed (no secrets in any commit)
     - C-08/C-09: Files authenticated + path-traversal protection
     - C-10: KP catalog upload restricted to superadmin
+            (2026-05-18: loosened to moderator+ — every import/export is
+             now audit-logged with action='catalog_imported' /
+             'catalog_exported', file name, row count, and uploader role.
+             Compensating control for the broader access threshold.)
     - H-01: Port 8000 bound to 127.0.0.1 only (docker-compose)
     - H-08: Path traversal: safe_filename + UUID + relative_to guard
     - H-09: Logout endpoint (session delete + cookie clear)
