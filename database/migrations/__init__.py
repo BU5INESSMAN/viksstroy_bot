@@ -25,6 +25,10 @@ logger = logging.getLogger(__name__)
 # Order matters: later migrations may depend on schema introduced by earlier ones.
 MIGRATIONS_ORDER = [
     "m_2026_05_drivers_refactor",
+    # FIO backfill MUST run AFTER drivers_refactor (which is what produced
+    # the synthetic 'Пользователь {id}' rows in the first place) and
+    # BEFORE any structural change that severs equipment.driver_fio.
+    "m_2026_05_fio_backfill",
 ]
 
 
