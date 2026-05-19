@@ -26,9 +26,15 @@ export default function Equipment() {
 
     const [activeTab, setActiveTab] = useState('list');
 
-    const [newEquip, setNewEquip] = useState({ name: '', driver: '', category: '', license_plate: '' });
+    // v2.6: `driver` removed from initial state. Driver is assigned on the
+    // Equipment card after creation; backend silently drops the field if
+    // a cached client still sends it.
+    const [newEquip, setNewEquip] = useState({ name: '', category: '', license_plate: '' });
     const [customCategory, setCustomCategory] = useState('');
     const [bulkText, setBulkText] = useState('');
+    // v2.6: structured error from /api/equipment/bulk_upload so
+    // BulkUploadForm can render it inline rather than as a generic toast.
+    const [bulkError, setBulkError] = useState(null);
 
     const [inviteInfo, setInviteInfo] = useState(null);
     const [copiedLink, setCopiedLink] = useState('');
@@ -76,11 +82,11 @@ export default function Equipment() {
         try {
             const fd = new FormData();
             fd.append('name', newEquip.name);
-            fd.append('driver', newEquip.driver);
+            // v2.6: no `driver` field — backend silently drops it anyway.
             fd.append('category', customCategory || newEquip.category);
             fd.append('license_plate', newEquip.license_plate || '');
             await axios.post('/api/equipment/create', fd);
-            setNewEquip({ name: '', driver: '', category: '', license_plate: '' });
+            setNewEquip({ name: '', category: '', license_plate: '' });
             setCustomCategory('');
             setActiveTab('list');
             fetchData();
@@ -90,15 +96,28 @@ export default function Equipment() {
 
     const handleBulkUpload = async (e) => {
         e.preventDefault();
+        setBulkError(null);
         try {
             const fd = new FormData();
             fd.append('text', bulkText);
             const res = await axios.post('/api/equipment/bulk_upload', fd);
+            const inserted = res.data?.inserted ?? res.data?.added ?? 0;
             setBulkText('');
             setActiveTab('list');
             fetchData();
-            toast.success(`Успешно загружено единиц: ${res.data.added}`);
-        } catch (e) { toast.error("Ошибка массовой загрузки"); }
+            toast.success(`Успешно загружено единиц: ${inserted}`);
+        } catch (err) {
+            // v2.6: the backend returns a structured 400 detail when the
+            // upload is rejected (bad_format / format_changed). Surface
+            // that inline in the form so the operator can see exactly
+            // which line tripped the parser instead of a generic toast.
+            const detail = err?.response?.data?.detail;
+            if (detail && typeof detail === 'object' && detail.error) {
+                setBulkError(detail);
+            } else {
+                toast.error('Ошибка массовой загрузки');
+            }
+        }
     };
 
     const handleDeleteEquip = async (id) => {
@@ -216,6 +235,8 @@ export default function Equipment() {
                     bulkText={bulkText}
                     setBulkText={setBulkText}
                     handleBulkUpload={handleBulkUpload}
+                    bulkError={bulkError}
+                    clearBulkError={() => setBulkError(null)}
                 />
             )}
 

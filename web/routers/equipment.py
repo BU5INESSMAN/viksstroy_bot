@@ -225,11 +225,34 @@ async def equipment_availability(date: str = Query(...), current_user=Depends(ge
 
 @router.post("/api/equipment/create")
 @router.post("/api/equipment/add")
-async def add_equipment(name: str = Form(...), category: str = Form(...), driver: str = Form(""),
-                        license_plate: str = Form(""), current_user=Depends(_require_office)):
+async def add_equipment(name: str = Form(...), category: str = Form(...),
+                        driver: str = Form(""),       # v2.6: legacy field, silently dropped
+                        driver_fio: str = Form(""),   # v2.6: legacy field, silently dropped
+                        license_plate: str = Form(""),
+                        current_user=Depends(_require_office)):
+    # v2.6: stop writing ФИО into equipment.driver / equipment.driver_fio
+    # from ingestion forms. The fields are still accepted in the form body
+    # for one release so a stale client (e.g. cached SPA bundle) doesn't
+    # 422; we just drop the values server-side. Driver identity now lives
+    # in `users.fio` and per-application assignment lives in
+    # application_drivers (commits 3+4). Default-driver-per-equipment is
+    # set on the Equipment page via PATCH .../default-driver (commit 2).
+    if driver or driver_fio:
+        logger.debug(
+            "single-add: ignored deprecated field(s) driver=%r driver_fio=%r "
+            "from legacy client (equipment.name=%r)",
+            driver, driver_fio, name,
+        )
+
     try:
-        await db.conn.execute("INSERT INTO equipment (name, category, driver, status, license_plate) VALUES (?, ?, ?, 'free', ?)",
-                              (name, category, driver, license_plate))
+        # Write NULL into driver / driver_fio — schema default is empty
+        # string / NULL respectively, so the row reads as "no legacy
+        # driver" to anything still looking at those columns.
+        await db.conn.execute(
+            "INSERT INTO equipment (name, category, driver, driver_fio, status, license_plate) "
+            "VALUES (?, ?, NULL, NULL, 'free', ?)",
+            (name, category, license_plate),
+        )
         await db.conn.commit()
     except:
         await db.conn.rollback()
@@ -252,6 +275,11 @@ async def add_equipment(name: str = Form(...), category: str = Form(...), driver
 
 @router.post("/api/equipment/bulk_add")
 async def bulk_add_equipment(request: Request, current_user=Depends(_require_office)):
+    # JSON-shaped bulk path. v2.6 still writes the `driver` column here for
+    # backward compatibility with any programmatic integration that posts
+    # to /bulk_add — its retirement is scheduled for commit 7 alongside
+    # equipment.driver / driver_fio. The text-based FE flow uses the
+    # /bulk_upload route below which never writes driver fields.
     data = await request.json()
     items = data.get("items", [])
     count = 0
@@ -281,6 +309,213 @@ async def bulk_add_equipment(request: Request, current_user=Depends(_require_off
     fio = current_user.get('fio', 'Админ')
     await db.add_log(current_user["tg_id"], fio, f"Массовая загрузка техники: {count} ед.", target_type='equipment')
     return {"status": "ok", "added": count}
+
+
+# =============================================
+# v2.6: text-based bulk import (Option B from BULK_IMPORT_ANALYSIS.md)
+# =============================================
+#
+# The frontend BulkUploadForm has been POSTing `text=...` to
+# /api/equipment/bulk_upload for a while; that endpoint never existed on
+# the backend, so the button was effectively a 404. This route fills
+# that gap with the Option-B semantics decided after the analysis pass:
+#
+#   - New format (3 fields per line, pipe-separated):
+#         <name> | <category> | <license_plate?>
+#     The 3rd field (plate) is optional; empty is allowed.
+#
+#   - Old format (3 fields, last is a person's ФИО) and any wider/narrower
+#     row are rejected up-front with HTTP 400 and a clear pointer to the
+#     Equipment page where drivers are now assigned.
+#
+# Pre-validation pass before any INSERT means a single bad row aborts
+# the entire upload — there is no partial-import state to clean up.
+#
+# The driver/driver_fio columns are NEVER written by this endpoint.
+
+
+# Russian plate pattern catches license_plate values like "А123АА22" /
+# "Е777ЕЕ123" (any letter/digit pattern with at least one digit). Used
+# as the "this is not a ФИО" signal.
+_PLATE_HAS_DIGIT = __import__("re").compile(r"\d")
+# Cyrillic-word heuristic. A ФИО has letters and is space-separated; a
+# plate does not. Anything containing whitespace AND letters AND NO
+# digits is suspicious enough to call as ФИО (false positive on a
+# multi-word category name is fine here since category goes in field 2,
+# not field 3).
+_LOOKS_LIKE_NAME = __import__("re").compile(r"^[^\d]+\s[^\d]+$")
+
+
+def _looks_like_fio(s: str) -> bool:
+    s = (s or "").strip()
+    if not s:
+        return False
+    # Plates always contain digits — quick exclusion.
+    if _PLATE_HAS_DIGIT.search(s):
+        return False
+    # >=2 words, none of which contain a digit → ФИО-ish.
+    return bool(_LOOKS_LIKE_NAME.match(s))
+
+
+@router.post("/api/equipment/bulk_upload")
+async def bulk_upload_equipment(
+    text: str = Form(...),
+    current_user=Depends(_require_office),
+):
+    """Text-based bulk equipment import (Option B, v2.6).
+
+    Format per line: ``name | category | plate``. Plate is optional —
+    omit the 3rd field or leave it blank. Comment lines (``#``) and
+    blanks are skipped.
+
+    Old format with a trailing ФИО column is rejected with HTTP 400
+    and a message pointing the operator at the Equipment page for
+    driver assignment.
+    """
+    raw_lines = (text or "").splitlines()
+
+    # ── Pre-validation pass ───────────────────────────────────────
+    parsed: list[tuple[int, str, str, str]] = []  # (line_no, name, category, plate)
+    for idx, raw in enumerate(raw_lines, start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        fields = [p.strip() for p in line.split("|")]
+
+        if len(fields) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "bad_format",
+                    "message": (
+                        "Каждая строка должна содержать минимум 2 поля, "
+                        "разделённых символом `|`: название и категория."
+                    ),
+                    "rejected_line_number": idx,
+                    "rejected_line": line[:200],
+                },
+            )
+        if len(fields) > 3:
+            # >3 strongly suggests the old "category|name|fio|extra" or
+            # the proposed-but-unused 5-field format. Either way, reject
+            # with the format-changed message.
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "format_changed",
+                    "message": (
+                        "Формат импорта изменён в v2.6: колонка ФИО водителя "
+                        "удалена. Используйте формат "
+                        "`название | категория | госномер`. "
+                        "Водитель назначается на странице «Техника» после "
+                        "загрузки (кнопка «Изменить» рядом с «Драйвер по "
+                        "умолчанию»)."
+                    ),
+                    "rejected_line_number": idx,
+                    "rejected_line": line[:200],
+                },
+            )
+
+        name = fields[0]
+        category = fields[1] if len(fields) >= 2 else ""
+        plate = fields[2] if len(fields) >= 3 else ""
+
+        if not name:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "bad_format",
+                    "message": "Поле «название» обязательно.",
+                    "rejected_line_number": idx,
+                    "rejected_line": line[:200],
+                },
+            )
+        if not category:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "bad_format",
+                    "message": "Поле «категория» обязательно.",
+                    "rejected_line_number": idx,
+                    "rejected_line": line[:200],
+                },
+            )
+
+        # ФИО-detection on the 3rd field: matches the legacy template
+        # "Категория | Название | ФИО" where the last column was a name.
+        if plate and _looks_like_fio(plate):
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "format_changed",
+                    "message": (
+                        "Похоже, последний столбец содержит ФИО водителя — "
+                        "это старый формат. В v2.6 ФИО больше не указывается "
+                        "при импорте: используйте "
+                        "`название | категория | госномер` и назначьте "
+                        "водителя на странице «Техника» после загрузки."
+                    ),
+                    "rejected_line_number": idx,
+                    "rejected_line": line[:200],
+                    "rejected_field": plate[:120],
+                },
+            )
+
+        parsed.append((idx, name, category, plate))
+
+    # ── Insert pass ───────────────────────────────────────────────
+    inserted = 0
+    try:
+        for _idx, name, category, plate in parsed:
+            await db.conn.execute(
+                "INSERT INTO equipment "
+                "(name, category, driver, driver_fio, status, license_plate) "
+                "VALUES (?, ?, NULL, NULL, 'free', ?)",
+                (name, category, plate),
+            )
+            inserted += 1
+        await db.conn.commit()
+    except Exception:
+        await db.conn.rollback()
+        raise HTTPException(status_code=500, detail="Ошибка вставки в БД")
+
+    # ── Audit log ─────────────────────────────────────────────────
+    try:
+        await db.add_log(
+            current_user["tg_id"],
+            current_user.get("fio", "Система"),
+            f"Массовая загрузка техники (текст): {inserted} ед.",
+            target_type="equipment",
+            target_id=None,
+            details=json.dumps({
+                "action": "equipment_bulk_upload",
+                "role": current_user.get("role", ""),
+                "format_version": 2,
+                "total_lines": len(raw_lines),
+                "inserted": inserted,
+                "skipped_blank_or_comment": len(raw_lines) - len(parsed),
+            }, ensure_ascii=False),
+        )
+    except Exception:
+        pass
+
+    # Fire-and-forget the same notification /bulk_add sends — keeps ops
+    # in the loop for either path.
+    async def _send_bulk_equip_notification():
+        try:
+            now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+            await notify_users(
+                ["report_group", "boss", "superadmin"],
+                f"🚜 <b>Массовая загрузка техники</b>\n"
+                f"✅ Загружено единиц: {inserted}\n🕒 Время: {now}",
+                "equipment", category="orders",
+            )
+        except Exception as e:
+            logger.error(f"Equipment bulk upload notification error: {e}")
+
+    asyncio.create_task(_send_bulk_equip_notification())
+
+    return {"ok": True, "inserted": inserted, "added": inserted}
 
 
 @router.post("/api/equipment/{equip_id}/update_photo")

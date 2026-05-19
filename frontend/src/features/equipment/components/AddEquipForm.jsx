@@ -22,10 +22,11 @@ export default function AddEquipForm({ newEquip, setNewEquip, customCategory, se
                         <input type="text" value={customCategory} onChange={e => setCustomCategory(e.target.value)} placeholder="Название новой категории" required className="w-full p-3.5 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-colors" />
                     )}
                 </div>
-                <div>
-                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">ФИО Водителя (по умолчанию)</label>
-                    <input type="text" value={newEquip.driver} onChange={e => setNewEquip({...newEquip, driver: e.target.value})} className="w-full p-3.5 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-colors" />
-                </div>
+                {/* v2.6: ФИО водителя поле удалено. Driver is assigned on
+                    the Equipment page (per-row "Драйвер по умолчанию"
+                    button) after the unit is created. The single-add
+                    backend silently drops `driver`/`driver_fio` if a
+                    cached client sends them. */}
                 <div>
                     <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Госномер (необязательно)</label>
                     <input type="text" value={newEquip.license_plate || ''} onChange={e => setNewEquip({...newEquip, license_plate: e.target.value})} placeholder="А123БВ22" className="w-full p-3.5 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-colors" />
