@@ -63,6 +63,23 @@ export default function Layout() {
         return () => { window.removeEventListener('storage', onStorage); clearInterval(id); };
     }, []);
 
+    // Live role updates — App.jsx's /api/auth/session reconciliation, or any
+    // future caller that updates localStorage via saveAuthData(), fires
+    // `auth:role-changed`. We re-read localStorage on the event so the
+    // sidebar / bottom-nav admin gate (canSeeAdmin) flips without a full
+    // remount when the server says the user was promoted or demoted.
+    useEffect(() => {
+        const onRoleChanged = (e) => {
+            const next = e?.detail?.role || localStorage.getItem('user_role') || 'Гость';
+            setRole(next);
+            // tg_id can change in the same flow (e.g. linked-account merge),
+            // mirror it so downstream effects that depend on it re-run.
+            setTgId(localStorage.getItem('tg_id'));
+        };
+        window.addEventListener('auth:role-changed', onRoleChanged);
+        return () => window.removeEventListener('auth:role-changed', onRoleChanged);
+    }, []);
+
     useEffect(() => {
         const publicPaths = ['/login', '/invite', '/equip-invite'];
         const isPublic = publicPaths.some(path => location.pathname.startsWith(path));
@@ -70,6 +87,17 @@ export default function Layout() {
             setSessionModalOpen(true);
         }
     }, [location.pathname, tgId]);
+
+    // Fired by the global axios 401 interceptor (main.jsx) whenever a
+    // protected request gets a 401 outside of the /api/auth/session +
+    // /api/auth/logout probes. The modal's only action is
+    // clearAuthAndRedirect(), so the user cannot loop back into the same
+    // broken state (the BUG 2 fix).
+    useEffect(() => {
+        const onExpired = () => setSessionModalOpen(true);
+        window.addEventListener('auth:session-expired', onExpired);
+        return () => window.removeEventListener('auth:session-expired', onExpired);
+    }, []);
 
     useEffect(() => {
         const root = window.document.documentElement; root.classList.remove('light', 'dark');

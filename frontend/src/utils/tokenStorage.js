@@ -108,6 +108,13 @@ export async function saveAuthData(tgId, role) {
     localStorage.setItem('user_role', data.user_role);
   } catch { /* quota / private-mode */ }
 
+  // Notify listeners (Layout.jsx) that the role may have changed so
+  // components rendering off `role` can re-read without remounting.
+  // Used by the App.jsx /api/auth/session reconciliation path.
+  try {
+    window.dispatchEvent(new CustomEvent('auth:role-changed', { detail: { role } }));
+  } catch { /* SSR / non-DOM env */ }
+
   // Session token lives ONLY in the HttpOnly cookie (set by server).
   // It is NOT stored in localStorage/IndexedDB/Cache API.
 
@@ -254,4 +261,72 @@ export function logoutAndRedirect() {
   fullAuthCleanup();
 
   window.location.href = '/';
+}
+
+/**
+ * Surgical logout used by the session-expired flow.
+ *
+ * Why not just call logoutAndRedirect()?
+ *   - logoutAndRedirect() runs fullAuthCleanup() which wipes IndexedDB
+ *     databases, all caches, the push subscription, etc. — useful on an
+ *     explicit "log out" click but heavy-handed for an expired session
+ *     where the user is about to log back in as the same account.
+ *   - We need a deterministic ordering: clear localStorage BEFORE the
+ *     navigation so the next App.jsx mount doesn't fast-path back into
+ *     the broken state (the cause of the session-expired modal loop).
+ *
+ * Steps:
+ *   1. Drop the role markers from ALL THREE persistence layers
+ *      (localStorage, IndexedDB, Cache API) so App.jsx falls off its
+ *      optimistic fast-path AND so loadAuthData()'s IDB/Cache fall-back
+ *      paths don't back-fill localStorage on the next page mount.
+ *      (Clearing only localStorage was an early bug — the next mount
+ *      ran loadAuthData(), found IDB populated, re-seeded localStorage,
+ *      and the user bounced right back into the protected area from
+ *      Login.jsx's useEffect — see test_sandbox/REPORT.md TEST 3.)
+ *   2. Best-effort POST /api/auth/logout — the cookie is HttpOnly so
+ *      JS cannot delete it; only the server can mark the session row
+ *      invalid + clear the cookie via Set-Cookie.
+ *   3. Either-way (`.finally`) hard-navigate to `target` so all in-memory
+ *      React state is destroyed and the next mount re-runs auth from
+ *      scratch.
+ *
+ * Why not just call logoutAndRedirect()? That helper wipes IndexedDB
+ * databases, all Cache API buckets, the push subscription, etc. — useful
+ * on an explicit "log out" click but heavy-handed for an expired session
+ * where the user is about to log back in as the same account. We only
+ * need to drop the auth tokens, not the entire installed-app state.
+ *
+ * @param {string} target  destination URL; defaults to '/login'.
+ */
+export function clearAuthAndRedirect(target = '/login') {
+  // Synchronous localStorage clear so App.jsx's fast-path can't read
+  // stale data even if the async clears below take a tick.
+  try {
+    localStorage.removeItem('tg_id');
+    localStorage.removeItem('user_role');
+  } catch { /* silent */ }
+
+  // Settle both side-effects (IDB+Cache clear, server logout) before
+  // we navigate. If we don't await the IDB clear, Login.jsx mounts on
+  // the next page, calls loadAuthData() which finds the IDB row still
+  // there, back-fills localStorage from it, and bounces the user
+  // straight back into the protected area.
+  const idbCacheClear = clearAuthData().catch(() => {});
+  const serverLogout = (() => {
+    try {
+      return fetch('/api/auth/logout', { method: 'POST', credentials: 'include' })
+        .catch(() => {});
+    } catch {
+      return Promise.resolve();
+    }
+  })();
+
+  Promise.allSettled([idbCacheClear, serverLogout]).then(() => {
+    // Full navigation, NOT reload — reload would re-mount with whatever
+    // state survived (sessionStorage flags, cached modules) and could
+    // race into the same expired-session UI before the new mount picks
+    // up the cleared localStorage.
+    window.location.href = target;
+  });
 }

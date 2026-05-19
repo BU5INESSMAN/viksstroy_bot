@@ -4,7 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import axios from 'axios';
 import Layout from './components/Layout';
 import SplashScreen from './components/SplashScreen';
-import { loadAuthData, saveAuthData, clearAuthData } from './utils/tokenStorage';
+import { loadAuthData, saveAuthData, clearAuthData, clearAuthAndRedirect } from './utils/tokenStorage';
 
 // Lazy-loaded pages
 const Login = lazy(() => import('./pages/Login'));
@@ -27,7 +27,10 @@ const Support = lazy(() => import('./pages/Support'));
 
 function ProtectedRoute({ children }) {
   const [authState, setAuthState] = useState(() => {
-    // Synchronous fast-path: localStorage already has auth data
+    // Optimistic render: if localStorage already has auth markers, mount
+    // the protected tree immediately to avoid a flash of the checking
+    // spinner. Reconciliation against /api/auth/session always happens
+    // in the useEffect below — see comment block there for the why.
     const role = localStorage.getItem('user_role');
     const tgId = localStorage.getItem('tg_id');
     if (role && tgId) return 'authenticated';
@@ -35,54 +38,57 @@ function ProtectedRoute({ children }) {
   });
 
   useEffect(() => {
-    // Fast-path hit: back-fill IndexedDB + Cache API from localStorage
-    // so they survive iOS localStorage eviction on next reopen.
-    if (authState === 'authenticated') {
-      const role = localStorage.getItem('user_role');
-      const tgId = localStorage.getItem('tg_id');
-      if (role && tgId) {
-        saveAuthData(tgId, role);  // fire-and-forget
-      }
-      return;
-    }
+    // Background reconciliation — the source of truth for `role` is the
+    // server, not localStorage. We ALWAYS probe /api/auth/session on
+    // mount, regardless of whether the optimistic fast-path already
+    // marked us authenticated. If the server reports a different role
+    // (promotion or demotion happened while logged in), saveAuthData
+    // rewrites localStorage and fires `auth:role-changed` so already-
+    // mounted components (Layout.jsx) update their `role` state without
+    // a remount. Cf. test_sandbox/REPORT.md hypothesis (A).
+    let cancelled = false;
 
-    async function checkAuth() {
-      // Step 1: Try all local storage layers (localStorage → IndexedDB → Cache API)
-      const stored = await loadAuthData();
-
-      if (stored?.user_role && stored?.tg_id) {
-        // Validate session via HttpOnly cookie (sent automatically by browser)
-        try {
-          const res = await axios.get('/api/auth/session');
-          if (res.data?.tg_id) {
-            await saveAuthData(res.data.tg_id, res.data.role);
-            setAuthState('authenticated');
-            return;
-          }
-        } catch {
-          // Session expired — clear all layers
-          await clearAuthData();
-        }
-      }
-
-      // Step 2: Try HttpOnly cookie with no stored data (fresh tab)
+    async function reconcileWithServer() {
       try {
         const res = await axios.get('/api/auth/session');
-        if (res.data?.tg_id) {
+        if (cancelled) return;
+        if (res?.data?.tg_id) {
+          // Always saveAuthData — even when the role matches, this
+          // back-fills IndexedDB + Cache API for iOS PWA persistence.
           await saveAuthData(res.data.tg_id, res.data.role);
           setAuthState('authenticated');
+        } else {
+          // Shouldn't happen (server returns 200 + payload OR 401), but
+          // be defensive.
+          await clearAuthData();
+          if (!cancelled) setAuthState('unauthenticated');
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const status = err?.response?.status;
+        if (status === 401) {
+          // Stored localStorage was lying. Don't flash the session-
+          // expired modal on cold start — that flow is for *running*
+          // sessions that just got their cookie revoked. Cold-start
+          // 401 is just a stale page after a logout; silently bounce.
+          clearAuthAndRedirect('/login');
           return;
         }
-      } catch {
-        // Cookie also failed
+        // Network / 5xx — keep whatever we optimistically rendered.
+        // useApiHealth will surface the maintenance screen if the API
+        // stays down. We log so the cause is visible in DevTools.
+        // eslint-disable-next-line no-console
+        console.warn('[auth] /api/auth/session reconciliation failed:', err?.message || status);
+        // If we never had localStorage to optimistically render from,
+        // we can't stay on 'checking' forever — drop to the Login page.
+        setAuthState((s) => (s === 'checking' ? 'unauthenticated' : s));
       }
-
-      // All methods exhausted — must log in
-      setAuthState('unauthenticated');
     }
 
-    checkAuth();
-  }, [authState]);
+    reconcileWithServer();
+
+    return () => { cancelled = true; };
+  }, []);  // run once per ProtectedRoute mount
 
   if (authState === 'checking') {
     return (
@@ -159,6 +165,8 @@ export default function App() {
       <Suspense fallback={SuspenseFallback}>
         <Routes>
           <Route path="/" element={<Login />} />
+          {/* /login is the explicit target of clearAuthAndRedirect — alias to Login */}
+          <Route path="/login" element={<Login />} />
           <Route path="/auth" element={<AuthRedirect />} />
           <Route path="/tma" element={<TMAAuth />} />
           <Route path="/max" element={<MAXAuth />} />

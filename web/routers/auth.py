@@ -477,6 +477,7 @@ async def validate_session(
         raise HTTPException(status_code=401, detail="Пользователь не найден")
     user_dict = dict(user)
 
+    # role MUST come from get_current_user (fresh DB), never from the session row — see test_sandbox/REPORT.md
     data = {"status": "ok", "tg_id": user_id, "role": user_dict['role'], "fio": user_dict.get('fio', '')}
 
     # If token came via query param (redirect flow), set HttpOnly cookie
