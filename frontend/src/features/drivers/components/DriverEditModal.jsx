@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import { X, User, Star, Save, Trash2, RefreshCw } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { X, User, Save, Trash2, RefreshCw } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { copyToClipboard } from '../../../utils/clipboard.js';
@@ -8,18 +8,21 @@ import { copyToClipboard } from '../../../utils/clipboard.js';
  * DriverEditModal — single component used for both create and edit.
  * `mode` controls which actions are shown.
  *
- * Validation: last/first required, at least one category. The
- * default-equipment select is filtered to equipment whose category is
- * currently selected — if you clear all categories the default clears too.
+ * Validation: last/first required, at least one category.
+ *
+ * v2.6: the "Техника по умолчанию" select was removed. Default driver
+ * is now an attribute of equipment, assigned by office on the Equipment
+ * page (features/equipment/components/DefaultDriverModal.jsx). The
+ * `equipment` prop is preserved for now in case any other consumer
+ * passes it; it's no longer read here.
  */
 export default function DriverEditModal({
-    mode, open, initial, categories, equipment, onClose, onSaved, onDeleted,
+    mode, open, initial, categories, onClose, onSaved, onDeleted,
 }) {
     const [lastName, setLastName] = useState('');
     const [firstName, setFirstName] = useState('');
     const [middleName, setMiddleName] = useState('');
     const [selectedCats, setSelectedCats] = useState([]);
-    const [defaultEqId, setDefaultEqId] = useState('');
     const [saving, setSaving] = useState(false);
     const [copied, setCopied] = useState('');
 
@@ -30,23 +33,11 @@ export default function DriverEditModal({
             setFirstName(initial.first_name || '');
             setMiddleName(initial.middle_name || '');
             setSelectedCats((initial.categories || []).map((c) => c.name));
-            setDefaultEqId(initial.default_equipment_id ? String(initial.default_equipment_id) : '');
         } else {
             setLastName(''); setFirstName(''); setMiddleName('');
-            setSelectedCats([]); setDefaultEqId('');
+            setSelectedCats([]);
         }
     }, [open, mode, initial]);
-
-    const eligibleEquipment = useMemo(() => {
-        if (!equipment || selectedCats.length === 0) return [];
-        return equipment.filter((e) => selectedCats.includes(e.category) && e.is_active !== 0);
-    }, [equipment, selectedCats]);
-
-    useEffect(() => {
-        if (defaultEqId && !eligibleEquipment.some((e) => String(e.id) === String(defaultEqId))) {
-            setDefaultEqId('');
-        }
-    }, [eligibleEquipment, defaultEqId]);
 
     if (!open) return null;
 
@@ -75,7 +66,10 @@ export default function DriverEditModal({
                 first_name: firstName.trim(),
                 middle_name: middleName.trim(),
                 categories: selectedCats,
-                default_equipment_id: defaultEqId ? Number(defaultEqId) : null,
+                // v2.6: default_equipment_id removed from this form. Office
+                // assigns defaults on the Equipment page instead. Backend
+                // still accepts the field for legacy clients (harmless
+                // no-op write).
             };
             const res = mode === 'edit' && initial
                 ? await axios.patch(`/api/drivers/${initial.user_id}`, body)
@@ -152,22 +146,9 @@ export default function DriverEditModal({
                     </div>
                 </div>
 
-                <div className="mb-5">
-                    <label className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">
-                        <Star className="w-3.5 h-3.5 text-amber-500" /> Техника по умолчанию (опционально)
-                    </label>
-                    <select value={defaultEqId} onChange={(e) => setDefaultEqId(e.target.value)}
-                        disabled={selectedCats.length === 0}
-                        className="w-full px-3 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 focus:outline-none focus:border-cyan-400 disabled:opacity-50">
-                        <option value="">Не задана</option>
-                        {eligibleEquipment.map((e) => (
-                            <option key={e.id} value={e.id}>{e.name} {e.license_plate ? `[${e.license_plate}]` : ''} — {e.category}</option>
-                        ))}
-                    </select>
-                    {selectedCats.length === 0 && (
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Сначала выберите категории.</p>
-                    )}
-                </div>
+                {/* v2.6: "Техника по умолчанию" select removed — see
+                    component docstring. Office assigns the default on the
+                    Equipment page. */}
 
                 {mode === 'edit' && initial?.invite_code && (
                     <div className="mb-5 p-3 rounded-xl bg-gray-50 dark:bg-gray-900/50 border border-gray-200 dark:border-gray-700 flex items-center justify-between gap-3">

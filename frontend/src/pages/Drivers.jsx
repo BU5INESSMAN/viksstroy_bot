@@ -14,7 +14,6 @@ export default function Drivers() {
 
     const [drivers, setDrivers] = useState([]);
     const [categories, setCategories] = useState([]);
-    const [equipment, setEquipment] = useState([]);
     const [loading, setLoading] = useState(true);
 
     const [editorOpen, setEditorOpen] = useState(false);
@@ -22,16 +21,17 @@ export default function Drivers() {
     const [editorInitial, setEditorInitial] = useState(null);
     const [inviteDriver, setInviteDriver] = useState(null);
 
+    // v2.6: equipment list no longer needed here — DriverEditModal lost its
+    // "Техника по умолчанию" select. Default-driver assignment now lives
+    // on the Equipment page.
     const fetchData = async () => {
         try {
-            const [drv, dash, eq] = await Promise.all([
+            const [drv, dash] = await Promise.all([
                 axios.get('/api/drivers'),
                 axios.get('/api/dashboard'),
-                axios.get('/api/equipment/admin_list').catch(() => ({ data: [] })),
             ]);
             setDrivers(drv.data || []);
             setCategories(dash.data?.equip_categories || []);
-            setEquipment(eq.data || []);
         } catch (e) {
             toast.error('Не удалось загрузить водителей');
         } finally { setLoading(false); }
@@ -122,7 +122,6 @@ export default function Drivers() {
                 open={editorOpen}
                 initial={editorInitial}
                 categories={categories}
-                equipment={equipment}
                 onClose={() => setEditorOpen(false)}
                 onSaved={handleSaved}
                 onDeleted={() => { setEditorOpen(false); fetchData(); }}

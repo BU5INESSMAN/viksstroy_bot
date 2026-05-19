@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-    User, Pencil, Send, Star, Settings, ChevronDown,
+    User, Pencil, Send, Settings, ChevronDown,
     Trash2, RefreshCw, Link2, ShieldAlert,
 } from 'lucide-react';
 import { displayFio } from '../../../utils/fioFormat';
@@ -11,9 +11,12 @@ import { EQUIPMENT_ICONS, getIconComponent, DEFAULT_EQUIPMENT_ICON } from '../..
  *
  * Visual language follows Teams/EquipmentCard: GlassCard-ish white box,
  * soft hover lift (Emil principle: subtle motion that confirms "I am
- * interactive" without competing with content), category chips, default
- * equipment line with star, pending invite_code shown explicitly for
- * not-yet-redeemed drivers.
+ * interactive" without competing with content), category chips, pending
+ * invite_code shown explicitly for not-yet-redeemed drivers.
+ *
+ * v2.6: the previous "По умолчанию: {equipment_name}" row was removed.
+ * Office assigns defaults on the Equipment page now — see
+ * features/equipment/components/DefaultDriverModal.jsx.
  */
 export default function DriverCard({
     driver, canManage,
@@ -60,12 +63,10 @@ export default function DriverCard({
                     </div>
                 )}
 
-                {driver.default_equipment_name && (
-                    <div className="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300 font-medium bg-amber-50/60 dark:bg-amber-900/20 p-2.5 rounded-lg border border-amber-100 dark:border-amber-800/30">
-                        <Star className="w-4 h-4 text-amber-500" />
-                        <span>По умолчанию: <b className="text-gray-800 dark:text-gray-200">{driver.default_equipment_name}</b></span>
-                    </div>
-                )}
+                {/* v2.6: "По умолчанию: ..." row removed — see component
+                    docstring. Default-driver assignment now lives on the
+                    Equipment page; the equipment card there shows which
+                    driver is its default. */}
 
                 {pending && driver.invite_code && (
                     <div className="mt-3 p-3 rounded-xl border border-dashed border-amber-300 dark:border-amber-700 bg-amber-50/40 dark:bg-amber-900/10">

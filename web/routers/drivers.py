@@ -137,6 +137,17 @@ async def api_create_driver(
 async def api_update_driver(
     user_id: int, payload: DriverPatch, current_user=Depends(require_office),
 ):
+    # v2.6: `default_equipment_id` is still accepted in the PATCH body
+    # for legacy clients (the field hasn't been dropped from the schema
+    # for one release for rollback safety). New writes from the v2.6 UI
+    # do NOT include it — defaults are set on the equipment side via
+    # PATCH /api/equipment/{id}/default-driver. Existing requests that
+    # still send default_equipment_id continue to succeed and write the
+    # legacy column; nothing reads from it post-v2.6 except the drift
+    # check in db_manager.py.
+    #
+    # No standalone /api/drivers/{id}/default-equipment endpoint ever
+    # existed, so there is nothing here that needs a 410-Gone stub.
     existing = await driver_service.get_driver(db, user_id)
     if not existing:
         raise HTTPException(status_code=404, detail="Водитель не найден")
