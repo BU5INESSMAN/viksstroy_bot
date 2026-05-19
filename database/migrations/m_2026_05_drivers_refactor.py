@@ -64,6 +64,29 @@ async def _next_synthetic_user_id(conn) -> int:
 
 
 async def run(conn) -> None:
+    # 0. users.created_at — added defensively at the TOP so the synthetic-
+    # driver INSERT below (which writes to created_at) can never crash
+    # against a pre-existing prod DB that's missing the column.
+    #
+    # Backstory: an older path (db_manager.upgrade_db_for_account_linking)
+    # tried to add this column with DEFAULT CURRENT_TIMESTAMP wrapped in a
+    # bare try/except. SQLite rejects non-constant defaults on ALTER TABLE
+    # ADD COLUMN against tables with existing rows ("Cannot add a column
+    # with non-constant default"), so the ALTER raised and was silently
+    # swallowed — every production DB ended up without the column. Then
+    # this migration's INSERT on line ~209 referenced `created_at` and
+    # crash-looped the API.
+    #
+    # We use DEFAULT NULL here (constant, SQLite-legal) so the ALTER
+    # succeeds on tables with rows. The INSERT below provides datetime('now')
+    # explicitly for new rows; existing rows get NULL (acceptable — no
+    # code reads users.created_at; see account_link_service.py).
+    if not await _column_exists(conn, "users", "created_at"):
+        await conn.execute(
+            "ALTER TABLE users ADD COLUMN created_at TIMESTAMP DEFAULT NULL"
+        )
+        logger.info("  + users.created_at column added")
+
     # 1. ALTERs for users — idempotent.
     if not await _column_exists(conn, "users", "invite_code"):
         await conn.execute("ALTER TABLE users ADD COLUMN invite_code TEXT")
