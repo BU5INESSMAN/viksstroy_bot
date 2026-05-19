@@ -199,6 +199,149 @@ def _parse_driver_assignments(payload: str) -> list[tuple[int, int]]:
     return out
 
 
+def _norm_slot(t) -> str:
+    """Normalize a slot time (int hour or 'HH' or 'HH:MM') to 'HH:MM'."""
+    if t is None:
+        return ""
+    s = str(t).strip()
+    if not s:
+        return ""
+    if ":" in s:
+        return s
+    try:
+        return f"{int(s):02d}:00"
+    except ValueError:
+        return s
+
+
+def _slot_for_equipment_in_payload(
+    equipment_data_json: str, equipment_id: int,
+) -> tuple[str, str]:
+    """Pull (time_start, time_end) for ``equipment_id`` out of the
+    equipment_data JSON the caller is submitting. Returns ('','') if the
+    equipment isn't in the payload.
+    """
+    if not equipment_data_json:
+        return "", ""
+    try:
+        arr = json.loads(equipment_data_json)
+    except Exception:
+        return "", ""
+    if not isinstance(arr, list):
+        return "", ""
+    for entry in arr:
+        if not isinstance(entry, dict):
+            continue
+        try:
+            if int(entry.get("id", -1)) == int(equipment_id):
+                return _norm_slot(entry.get("time_start")), _norm_slot(entry.get("time_end"))
+        except (TypeError, ValueError):
+            continue
+    return "", ""
+
+
+async def _check_driver_overlap(
+    date_target: str,
+    assignments: list[tuple[int, int]],
+    equipment_data_json: str,
+    exclude_app_id: int | None = None,
+) -> None:
+    """Raise HTTPException(400) if any (equipment_id, driver_user_id)
+    assignment in the new payload would collide with an existing
+    application_drivers row on the SAME date but on a DIFFERENT
+    equipment_id and an OVERLAPPING time slot.
+
+    A driver is allowed to swap onto/off the same equipment_id (same
+    machine, different driver covers a slot is fine). Two different
+    machines, same date, overlapping hours — NOT fine: a single human
+    can't be in two places at once.
+
+    Mirrors the equipment_availability slot-source: per-row time slots
+    live in the OTHER application's equipment_data JSON; the new app's
+    per-equipment slots come from the caller's own equipment_data JSON.
+    Falls back to the application-level time_start/time_end ints when
+    the JSON is missing or unparseable.
+    """
+    from fastapi import HTTPException
+
+    if not assignments:
+        return
+
+    # Pre-compute the new payload's per-equipment slots, normalised.
+    new_slots: dict[int, tuple[str, str]] = {}
+    for eq_id, _drv_id in assignments:
+        ts, te = _slot_for_equipment_in_payload(equipment_data_json, eq_id)
+        if not (ts and te):
+            # Shouldn't happen — the equipment is in the assignment list
+            # but not in equipment_data. Default to full day so any
+            # existing booking on that date triggers the check.
+            ts, te = "00:00", "24:00"
+        new_slots[eq_id] = (ts, te)
+
+    # One query per driver — driver-count is small (one per equipment
+    # in the new payload, usually <10) and the index on
+    # application_drivers covers it.
+    for eq_id, drv_id in assignments:
+        params: list = [drv_id, date_target]
+        sql = (
+            "SELECT a.id, ad.equipment_id, e.name, "
+            "       a.time_start, a.time_end, a.equipment_data "
+            "FROM application_drivers ad "
+            "JOIN applications a ON a.id = ad.application_id "
+            "LEFT JOIN equipment e ON e.id = ad.equipment_id "
+            "WHERE ad.driver_user_id = ? "
+            "  AND a.date_target = ? "
+            "  AND a.status NOT IN ('rejected','cancelled','archived') "
+            "  AND ad.equipment_id != ? "
+        )
+        params.append(eq_id)
+        if exclude_app_id is not None:
+            sql += "  AND a.id != ? "
+            params.append(exclude_app_id)
+
+        async with db.conn.execute(sql, params) as cur:
+            cols = [c[0] for c in cur.description]
+            existing = [dict(zip(cols, r)) for r in await cur.fetchall()]
+
+        ns, ne = new_slots[eq_id]
+        for ex in existing:
+            ex_ts, ex_te = _slot_for_equipment_in_payload(
+                ex.get("equipment_data") or "", int(ex["equipment_id"]),
+            )
+            if not (ex_ts and ex_te):
+                ex_ts = _norm_slot(ex.get("time_start"))
+                ex_te = _norm_slot(ex.get("time_end"))
+            if not (ex_ts and ex_te):
+                continue
+            # Half-open overlap: [a,b) intersects [c,d) iff a<d and c<b.
+            if ns < ex_te and ex_ts < ne:
+                # Resolve the driver's ФИО for a friendlier message.
+                async with db.conn.execute(
+                    "SELECT fio FROM users WHERE user_id = ?", (drv_id,),
+                ) as c2:
+                    r = await c2.fetchone()
+                drv_fio = (r[0] if r and r[0] else f"#{drv_id}")
+                other_eq_name = ex.get("name") or f"#{ex['equipment_id']}"
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "error": "driver_overlap",
+                        "message": (
+                            f"Водитель {drv_fio} уже занят на технике "
+                            f"«{other_eq_name}» в {ex_ts}–{ex_te}"
+                        ),
+                        "conflicting_application_id": ex["id"],
+                        "conflicting_equipment_id": ex["equipment_id"],
+                        "conflicting_equipment_name": other_eq_name,
+                        "driver_user_id": drv_id,
+                        "driver_fio": drv_fio,
+                        "requested_equipment_id": eq_id,
+                        "requested_time_start": ns,
+                        "requested_time_end": ne,
+                    },
+                )
+
+
 async def _apply_driver_assignments(app_id: int, assignments: list[tuple[int, int]]):
     """Replace all driver_assignments for the app in a single transaction.
     Returns (added, removed) tuples for diff-aware notifications."""
@@ -251,13 +394,23 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
     if occupied:
         raise HTTPException(409, "Ошибка создания наряда:\n" + "\n".join(occupied))
 
+    # v2.6 commit 3: defense-in-depth driver-overlap check. The FE
+    # DriverPickerModal already hard-blocks at picker time using the
+    # availability endpoint; this server-side check guards against
+    # stale-cache races and direct API callers (curl / scripts).
+    assignments = _parse_driver_assignments(driver_assignments)
+    if assignments:
+        await _check_driver_overlap(
+            date_target, assignments, equipment_data,
+            exclude_app_id=None,  # creating new app — no self to exclude
+        )
+
     cursor = await db.conn.execute(
         "INSERT INTO applications (foreman_id, foreman_name, team_id, object_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed, freed_team_ids) VALUES (?, ?, ?, ?, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0, '')",
         (real_tg_id, fio, team_id, object_id, date_target, object_address, comment, selected_members, equipment_data))
     new_app_id = cursor.lastrowid
     await db.conn.commit()
 
-    assignments = _parse_driver_assignments(driver_assignments)
     if assignments:
         await _apply_driver_assignments(new_app_id, assignments)
 
@@ -288,6 +441,19 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
     if occupied:
         raise HTTPException(409, "Ошибка обновления наряда:\n" + "\n".join(occupied))
 
+    # v2.6 commit 3: defense-in-depth driver-overlap check (UPDATE path).
+    # We exclude self (`exclude_app_id=app_id`) so re-saving an unchanged
+    # application doesn't trip over its own existing slot.
+    parsed_for_check = (
+        _parse_driver_assignments(driver_assignments)
+        if driver_assignments is not None else []
+    )
+    if parsed_for_check:
+        await _check_driver_overlap(
+            date_target, parsed_for_check, equipment_data,
+            exclude_app_id=app_id,
+        )
+
     try:
         await db.conn.execute(
             "UPDATE applications SET team_id=?, date_target=?, object_address=?, object_id=?, comment=?, selected_members=?, equipment_data=? WHERE id = ?",
@@ -298,8 +464,7 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
 
     diff = {"added": [], "removed": []}
     if driver_assignments is not None:
-        parsed = _parse_driver_assignments(driver_assignments)
-        added, removed = await _apply_driver_assignments(app_id, parsed)
+        added, removed = await _apply_driver_assignments(app_id, parsed_for_check)
         diff["added"] = added
         diff["removed"] = removed
 
