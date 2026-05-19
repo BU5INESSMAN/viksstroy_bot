@@ -2,52 +2,118 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Search, Star, Clock, ChevronDown, User, Trash2, Plus } from 'lucide-react';
+import { X, Search, Star, Clock, ChevronDown, User, Trash2, Plus, AlertTriangle } from 'lucide-react';
 import { EQUIPMENT_ICONS, getIconComponent, DEFAULT_EQUIPMENT_ICON } from '../../../utils/iconConfig';
 import { displayFio } from '../../../utils/fioFormat';
 
 /**
- * DriverPickerModal — pick a driver for one equipment unit inside an app.
+ * DriverPickerModal — pick a driver for one equipment unit inside an
+ * application.
  *
- * Backend (/api/drivers/by-equipment/{id}) returns primary[] pre-sorted as
- *   default → last_used_at DESC → usage_count DESC → fio ASC,
- * plus other_grouped[] for non-matching categories.
+ * v2.6 commit 4 rewrite. Three locked-in behaviours:
  *
- * Sections rendered:
- *   1. "По умолчанию" — only shown if any primary[i].is_default.
- *   2. "Водители категории {category_name}" — server-returned primary[].
- *   3. "Другой" — collapsible, grouped by category.
- *   4. "+ Новый водитель" inline form at the bottom.
+ *   1. **No auto-fill.** Even when this equipment has
+ *      `default_driver_user_id`, the slot starts EMPTY (the parent
+ *      manages that state via useAppForm). The default driver appears
+ *      first in the picker with a ⭐ "по умолчанию" badge but requires
+ *      an explicit click to assign. No magic.
  *
- * Free-text search filters all sections by FIO.
+ *   2. **Hard-block conflicts.** Drivers with overlapping time slots
+ *      on the same date (on DIFFERENT equipment — same-machine swap is
+ *      always fine) are visually marked ⚠ ЗАНЯТ with subtitle naming
+ *      the conflicting equipment and time range. The whole row button
+ *      is disabled (`pointer-events-none`, muted color, tooltip).
+ *      Backend has the same check as defense-in-depth (commit 3).
+ *
+ *   3. **"+ Новый водитель" inline form: ФИО + multi-select
+ *      categories only.** No "make default" checkbox (decision 1 —
+ *      defaults are office-owned now, set from the Equipment page),
+ *      no phone, no other fields. Current equipment's category is
+ *      pre-checked.
+ *
+ * Backend `/api/drivers/by-equipment/{id}` returns primary[] (sorted
+ * default → recency → usage → alphabetical) and other_grouped[]
+ * (every other category). `/api/drivers/availability?date=` returns a
+ * busy_slots map per driver for the application's date.
  */
 export default function DriverPickerModal({
     open, onClose,
     equipmentId, equipmentName,
     currentDriverId,
+    // v2.6 commit 4: availability context for conflict hard-block.
+    applicationDate,
+    applicationStartTime,
+    applicationEndTime,
+    currentApplicationId,
     onSelect, onClear,
 }) {
     const [data, setData] = useState({ primary: [], other_grouped: [], equipment: null });
     const [loading, setLoading] = useState(false);
     const [search, setSearch] = useState('');
     const [showOther, setShowOther] = useState(false);
+    const [busyByUserId, setBusyByUserId] = useState({});
 
-    // Inline new-driver form state
+    // v2.6 commit 4: inline new-driver form. Categories is now a Set of
+    // category names. Defaults to the current equipment's category once
+    // it's known.
     const [newOpen, setNewOpen] = useState(false);
     const [newLast, setNewLast] = useState('');
     const [newFirst, setNewFirst] = useState('');
     const [newMiddle, setNewMiddle] = useState('');
-    const [newDefault, setNewDefault] = useState(false);
+    const [newCats, setNewCats] = useState(new Set());
     const [creating, setCreating] = useState(false);
 
-    const fetchData = async () => {
+    // Single ФИО text input — backend parses last/first/middle.
+    const [newFio, setNewFio] = useState('');
+
+    const fetchAll = async () => {
         if (!equipmentId) return;
         setLoading(true);
         try {
-            const res = await axios.get(`/api/drivers/by-equipment/${equipmentId}`);
-            setData(res.data || { primary: [], other_grouped: [], equipment: null });
+            // Always need the driver list. Availability is optional —
+            // if no date is supplied (e.g. legacy caller without
+            // applicationDate), skip conflict marking entirely.
+            const calls = [axios.get(`/api/drivers/by-equipment/${equipmentId}`)];
+            if (applicationDate) {
+                calls.push(axios.get('/api/drivers/availability', { params: { date: applicationDate } }));
+            }
+            const results = await Promise.all(calls);
+            const driverPayload = results[0]?.data || { primary: [], other_grouped: [], equipment: null };
+            setData(driverPayload);
+
+            const availPayload = results[1]?.data || [];
+            // Map user_id → first overlapping slot (the picker only
+            // needs ONE conflicting slot to render the badge / tooltip).
+            const startNum = _hourToMinutes(applicationStartTime);
+            const endNum = _hourToMinutes(applicationEndTime);
+            const busy = {};
+            (Array.isArray(availPayload) ? availPayload : []).forEach((drv) => {
+                (drv.busy_slots || []).forEach((slot) => {
+                    // Skip the slot if it belongs to the application we're
+                    // currently editing — that's the driver's own row and
+                    // shouldn't count as a conflict.
+                    if (currentApplicationId && Number(slot.application_id) === Number(currentApplicationId)) {
+                        return;
+                    }
+                    const slotStart = _hourToMinutes(slot.time_start);
+                    const slotEnd = _hourToMinutes(slot.time_end);
+                    // Half-open overlap (matches backend validator):
+                    // [a,b) intersects [c,d) iff a<d and c<b.
+                    if (startNum != null && endNum != null && slotStart != null && slotEnd != null) {
+                        if (startNum < slotEnd && slotStart < endNum) {
+                            // Keep the first detected conflict per driver
+                            // — that's all the FE needs to show.
+                            if (!busy[drv.user_id]) {
+                                busy[drv.user_id] = slot;
+                            }
+                        }
+                    }
+                });
+            });
+            setBusyByUserId(busy);
         } catch (e) {
             setData({ primary: [], other_grouped: [], equipment: null });
+            setBusyByUserId({});
         } finally {
             setLoading(false);
         }
@@ -58,10 +124,36 @@ export default function DriverPickerModal({
         setSearch('');
         setShowOther(false);
         setNewOpen(false);
-        setNewLast(''); setNewFirst(''); setNewMiddle(''); setNewDefault(false);
-        fetchData();
+        setNewLast(''); setNewFirst(''); setNewMiddle(''); setNewFio('');
+        // Pre-tick the current equipment's category once the equipment
+        // metadata lands (see effect below).
+        setNewCats(new Set());
+        fetchAll();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open, equipmentId]);
+    }, [open, equipmentId, applicationDate, applicationStartTime, applicationEndTime, currentApplicationId]);
+
+    // Pre-check the current equipment's category in the new-driver form
+    // once we know what it is.
+    useEffect(() => {
+        const cat = data.equipment?.category;
+        if (!cat) return;
+        setNewCats((prev) => {
+            if (prev.has(cat)) return prev;
+            const next = new Set(prev);
+            next.add(cat);
+            return next;
+        });
+    }, [data.equipment]);
+
+    // Build the full category list for the new-driver multi-select from
+    // the data the picker already has: the current equipment's category
+    // + every category in `other_grouped`. No extra API round-trip.
+    const allCategories = useMemo(() => {
+        const set = new Set();
+        if (data.equipment?.category) set.add(data.equipment.category);
+        (data.other_grouped || []).forEach((g) => { if (g.category) set.add(g.category); });
+        return Array.from(set).sort((a, b) => a.localeCompare(b, 'ru'));
+    }, [data.equipment, data.other_grouped]);
 
     const matchesSearch = (d) => {
         if (!search) return true;
@@ -92,46 +184,69 @@ export default function DriverPickerModal({
 
     const driverRow = (d) => {
         const selected = currentDriverId && Number(currentDriverId) === Number(d.user_id);
+        const conflict = busyByUserId[d.user_id] || null;
+        const isBusy = !!conflict;
         const usage = Number(d.usage_count || 0);
         const lastUsed = d.last_used_at ? new Date(d.last_used_at) : null;
         const lastUsedLabel = lastUsed && !Number.isNaN(lastUsed.getTime())
             ? lastUsed.toLocaleDateString('ru-RU') : null;
 
+        const conflictTitle = conflict
+            ? `Занят: «${conflict.equipment_name}» ${conflict.time_start}–${conflict.time_end}`
+            : undefined;
+
         return (
             <motion.button
                 type="button" key={d.user_id}
-                onClick={() => onSelect && onSelect(d)}
+                onClick={isBusy ? undefined : () => onSelect && onSelect(d)}
+                disabled={isBusy}
+                title={conflictTitle}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0 }}
                 transition={{ duration: 0.16 }}
-                className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-all active:scale-[0.99]
-                    ${selected
-                        ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-300 dark:border-cyan-700 ring-1 ring-cyan-400'
-                        : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-cyan-300 dark:hover:border-cyan-700 hover:shadow-sm'}`}
+                className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-all
+                    ${isBusy
+                        ? 'bg-gray-50 dark:bg-gray-900/40 border-gray-200 dark:border-gray-700 opacity-60 cursor-not-allowed'
+                        : (selected
+                            ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-300 dark:border-cyan-700 ring-1 ring-cyan-400 active:scale-[0.99]'
+                            : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-cyan-300 dark:hover:border-cyan-700 hover:shadow-sm active:scale-[0.99]')}`}
             >
                 <div className="flex items-center gap-3 min-w-0">
-                    <div className={`p-2 rounded-lg ${selected ? 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700' : 'bg-gray-100 dark:bg-gray-700/60 text-gray-500'}`}>
+                    <div className={`p-2 rounded-lg ${isBusy ? 'bg-gray-100 dark:bg-gray-800 text-gray-400' : (selected ? 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700' : 'bg-gray-100 dark:bg-gray-700/60 text-gray-500')}`}>
                         <User className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">{displayFio(d)}</span>
+                            <span className={`text-sm font-bold truncate ${isBusy ? 'text-gray-500 dark:text-gray-400' : 'text-gray-800 dark:text-gray-100'}`}>
+                                {displayFio(d)}
+                            </span>
                             {d.is_default && (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100 text-amber-700 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800/50">
                                     <Star className="w-3 h-3" /> по умолчанию
                                 </span>
                             )}
+                            {isBusy && (
+                                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800/50">
+                                    <AlertTriangle className="w-3 h-3" /> ЗАНЯТ
+                                </span>
+                            )}
                         </div>
-                        {(usage > 0 || lastUsedLabel) && (
-                            <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
-                                {usage > 0 && <span className="font-medium">{usage}× назначений</span>}
-                                {lastUsedLabel && (
-                                    <span className="inline-flex items-center gap-1">
-                                        <Clock className="w-3 h-3" /> {lastUsedLabel}
-                                    </span>
-                                )}
+                        {isBusy ? (
+                            <div className="mt-0.5 text-[11px] text-red-600 dark:text-red-400 truncate">
+                                Уже на технике «{conflict.equipment_name}» {conflict.time_start}–{conflict.time_end}
                             </div>
+                        ) : (
+                            (usage > 0 || lastUsedLabel) && (
+                                <div className="flex items-center gap-2 mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                                    {usage > 0 && <span className="font-medium">{usage}× назначений</span>}
+                                    {lastUsedLabel && (
+                                        <span className="inline-flex items-center gap-1">
+                                            <Clock className="w-3 h-3" /> {lastUsedLabel}
+                                        </span>
+                                    )}
+                                </div>
+                            )
                         )}
                     </div>
                 </div>
@@ -139,24 +254,44 @@ export default function DriverPickerModal({
         );
     };
 
+    const toggleNewCat = (cat) => {
+        setNewCats((prev) => {
+            const next = new Set(prev);
+            if (next.has(cat)) next.delete(cat); else next.add(cat);
+            return next;
+        });
+    };
+
     const handleCreateInline = async () => {
-        if (!newLast.trim() || !newFirst.trim()) {
-            toast.error('Фамилия и имя обязательны');
+        const fio = (newFio || '').trim();
+        if (!fio) {
+            toast.error('Введите ФИО');
             return;
         }
-        const eqCategory = data.equipment?.category;
-        if (!eqCategory) {
-            toast.error('Не удалось определить категорию техники');
+        if (newCats.size === 0) {
+            toast.error('Выберите хотя бы одну категорию');
+            return;
+        }
+        // Naive parse — backend will also re-split. Keep it consistent so
+        // the picker doesn't display "#-N" while the backend writes the
+        // real ФИО.
+        const parts = fio.split(/\s+/);
+        const last = parts[0] || '';
+        const first = parts[1] || '';
+        const middle = parts.slice(2).join(' ');
+        if (!last || !first) {
+            toast.error('Введите хотя бы Фамилию и Имя');
             return;
         }
         setCreating(true);
         try {
             const body = {
-                last_name: newLast.trim(),
-                first_name: newFirst.trim(),
-                middle_name: newMiddle.trim(),
-                categories: [eqCategory],
-                default_equipment_id: newDefault ? equipmentId : null,
+                last_name: last,
+                first_name: first,
+                middle_name: middle,
+                categories: Array.from(newCats),
+                // v2.6: NO default_equipment_id field — defaults are
+                // office-owned, set on the Equipment page.
             };
             const res = await axios.post('/api/drivers', body);
             const newDriver = res.data;
@@ -245,7 +380,7 @@ export default function DriverPickerModal({
                                 <div>
                                     <button type="button" onClick={() => setShowOther((v) => !v)}
                                         className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-900/40 border border-gray-200 dark:border-gray-700 text-sm font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-900/60">
-                                        <span>Другой водитель</span>
+                                        <span>Показать всех водителей</span>
                                         <ChevronDown className={`w-4 h-4 transition-transform ${showOther ? 'rotate-180' : ''}`} />
                                     </button>
                                     <AnimatePresence>
@@ -279,7 +414,7 @@ export default function DriverPickerModal({
                                 </div>
                             )}
 
-                            {/* Inline new-driver form */}
+                            {/* Inline new-driver form: ФИО + multi-select categories only. */}
                             <div className="pt-2 border-t border-gray-100 dark:border-gray-700">
                                 {!newOpen ? (
                                     <button type="button" onClick={() => setNewOpen(true)}
@@ -287,26 +422,44 @@ export default function DriverPickerModal({
                                         <Plus className="w-4 h-4" /> Новый водитель
                                     </button>
                                 ) : (
-                                    <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40 space-y-2">
-                                        <div className="grid grid-cols-3 gap-2">
-                                            <input value={newLast} onChange={(e) => setNewLast(e.target.value)}
-                                                placeholder="Фамилия *"
-                                                className="px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:border-cyan-400" />
-                                            <input value={newFirst} onChange={(e) => setNewFirst(e.target.value)}
-                                                placeholder="Имя *"
-                                                className="px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:border-cyan-400" />
-                                            <input value={newMiddle} onChange={(e) => setNewMiddle(e.target.value)}
-                                                placeholder="Отчество"
-                                                className="px-2.5 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:border-cyan-400" />
+                                    <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/40 space-y-3">
+                                        <div>
+                                            <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">ФИО *</label>
+                                            <input value={newFio} onChange={(e) => setNewFio(e.target.value)}
+                                                placeholder="Иванов Иван Иванович"
+                                                className="w-full px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-sm focus:outline-none focus:border-cyan-400" />
+                                            <p className="mt-1 text-[10px] text-gray-500 dark:text-gray-400">
+                                                Фамилия Имя Отчество — через пробел.
+                                            </p>
                                         </div>
-                                        <label className="flex items-center gap-2 text-xs text-gray-700 dark:text-gray-300 select-none">
-                                            <input type="checkbox" checked={newDefault} onChange={(e) => setNewDefault(e.target.checked)} />
-                                            Сделать этой техники по умолчанию
-                                        </label>
+                                        <div>
+                                            <label className="block text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400 mb-1.5">
+                                                Категории техники *
+                                            </label>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {allCategories.length === 0 && (
+                                                    <span className="text-[11px] text-gray-500 dark:text-gray-400 italic">
+                                                        Категории недоступны — попробуйте перезагрузить страницу.
+                                                    </span>
+                                                )}
+                                                {allCategories.map((cat) => {
+                                                    const checked = newCats.has(cat);
+                                                    return (
+                                                        <button type="button" key={cat}
+                                                            onClick={() => toggleNewCat(cat)}
+                                                            className={`px-2.5 py-1 rounded-md text-[11px] font-bold border transition-all active:scale-95 ${checked
+                                                                ? 'bg-cyan-600 text-white border-cyan-700 shadow-sm'
+                                                                : 'bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:border-cyan-300'}`}>
+                                                            {cat}
+                                                        </button>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
                                         <div className="flex gap-2">
                                             <button type="button" onClick={handleCreateInline} disabled={creating}
                                                 className="flex-1 px-3 py-2 rounded-lg bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-bold disabled:opacity-60 active:scale-95">
-                                                {creating ? '...' : 'Создать'}
+                                                {creating ? '...' : 'Создать и назначить'}
                                             </button>
                                             <button type="button" onClick={() => setNewOpen(false)}
                                                 className="px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 text-sm font-bold active:scale-95">
@@ -335,4 +488,23 @@ export default function DriverPickerModal({
             </div>
         </div>
     );
+}
+
+
+// ── helpers ──────────────────────────────────────────────────────────
+
+function _hourToMinutes(t) {
+    if (t == null) return null;
+    if (typeof t === 'number') return t * 60;
+    const s = String(t).trim();
+    if (!s) return null;
+    if (s.includes(':')) {
+        const [h, m] = s.split(':');
+        const hh = parseInt(h, 10);
+        const mm = parseInt(m, 10);
+        if (Number.isNaN(hh)) return null;
+        return hh * 60 + (Number.isNaN(mm) ? 0 : mm);
+    }
+    const n = parseInt(s, 10);
+    return Number.isNaN(n) ? null : n * 60;
 }

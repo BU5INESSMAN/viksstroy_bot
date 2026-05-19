@@ -437,6 +437,24 @@ export default function useAppForm({
         if (appForm.team_ids.length > 0 && appForm.members.length === 0)
             return toast.error('Выберите хотя бы одного рабочего из бригады!');
 
+        // v2.6 commit 4: every selected equipment must have an explicit
+        // driver assignment (decision: no auto-fill, no magic). Block
+        // submit if any slot is empty so the foreman is forced to open
+        // the picker and confirm — the equipment card shows the empty
+        // state in muted "Назначить водителя" style.
+        const missing = (appForm.equipment || []).filter((eq) => {
+            if (eq.is_freed) return false;
+            const assigned = (appForm.driverAssignments || {})[eq.id];
+            return !assigned || !assigned.user_id;
+        });
+        if (missing.length > 0) {
+            const names = missing.map((e) => e.name).join(', ');
+            return toast.error(
+                `Выберите водителя для каждой единицы техники: ${names}`,
+                { duration: 6000 },
+            );
+        }
+
         // Cross-brigade warning check
         const cbWarnings = checkCrossBrigadeMembers();
         if (cbWarnings.length > 0) {
@@ -507,7 +525,17 @@ export default function useAppForm({
             setGlobalCreateAppOpen(false);
             fetchData();
         } catch (err) {
-            toast.error(err.response?.data?.detail || 'Ошибка сохранения');
+            // v2.6 commit 4: the backend driver-overlap validator returns
+            // a structured detail object. Surface the friendly Russian
+            // message instead of [object Object].
+            const detail = err.response?.data?.detail;
+            if (detail && typeof detail === 'object' && detail.error === 'driver_overlap') {
+                toast.error(detail.message || 'Конфликт назначения водителя', { duration: 7000 });
+            } else if (typeof detail === 'string') {
+                toast.error(detail);
+            } else {
+                toast.error('Ошибка сохранения');
+            }
         } finally {
             setIsSubmitting(false);
         }

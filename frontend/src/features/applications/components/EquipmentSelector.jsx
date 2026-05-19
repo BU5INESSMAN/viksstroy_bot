@@ -34,6 +34,12 @@ export default function EquipmentSelector({
     driverAssignments,
     setDriverForEquipment,
     clearDriverForEquipment,
+    // v2.6 commit 4: availability context for hard-block conflict marking
+    // inside DriverPickerModal. All three values are read by the picker
+    // when it fetches /api/drivers/availability and computes overlap
+    // against the new slot the foreman is editing.
+    applicationDate,
+    applicationId,
 }) {
     const [driverPickerEq, setDriverPickerEq] = useState(null);
     return (
@@ -127,9 +133,12 @@ export default function EquipmentSelector({
                                                         <span className={`text-sm font-bold truncate block ${state === 'unavailable' || state === 'in_exchange' ? 'text-gray-400' : 'dark:text-gray-200'}`}>
                                                             {eqA.name} {eqA.license_plate ? `[${eqA.license_plate}]` : ''}
                                                         </span>
-                                                        {(eqA.driver_fio && eqA.driver_fio !== 'Не указан') && (
-                                                            <span className="text-[11px] text-gray-400 dark:text-gray-500 truncate block">{eqA.driver_fio}</span>
-                                                        )}
+                                                        {/* v2.6 commit 4: legacy `driver_fio` text removed from the
+                                                            discovery list. Driver identity now lives on the SELECTED
+                                                            equipment's row (the "Назначить водителя" / "Водитель: ..."
+                                                            button below) — assigned per-application, not per-machine.
+                                                            equipment.default_driver_user_id surfaces inside the picker
+                                                            with a ⭐ badge once the row is selected. */}
                                                     </div>
                                                 </div>
                                                 {statusBadge}
@@ -290,6 +299,14 @@ export default function EquipmentSelector({
                     equipmentId={driverPickerEq.id}
                     equipmentName={driverPickerEq.name}
                     currentDriverId={(driverAssignments || {})[driverPickerEq.id]?.user_id || null}
+                    // v2.6 commit 4: pass the application's date and the
+                    // currently-edited equipment's slot so the picker can
+                    // hard-block drivers with overlapping bookings on
+                    // OTHER equipment on the same date.
+                    applicationDate={applicationDate}
+                    applicationStartTime={driverPickerEq.time_start}
+                    applicationEndTime={driverPickerEq.time_end}
+                    currentApplicationId={applicationId}
                     onSelect={(drv) => { setDriverForEquipment(driverPickerEq.id, drv); setDriverPickerEq(null); }}
                     onClear={() => { clearDriverForEquipment && clearDriverForEquipment(driverPickerEq.id); setDriverPickerEq(null); }}
                 />

@@ -392,6 +392,8 @@ export default function CreateAppModal({
                                 driverAssignments={appForm.driverAssignments}
                                 setDriverForEquipment={setDriverForEquipment}
                                 clearDriverForEquipment={clearDriverForEquipment}
+                                applicationDate={appForm.date_target}
+                                applicationId={appForm.id}
                             />
                         </div>
 

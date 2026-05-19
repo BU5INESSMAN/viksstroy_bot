@@ -617,6 +617,8 @@ export default function EditAppModal({
                                 driverAssignments={form.driverAssignments}
                                 setDriverForEquipment={setDriverForEquipment}
                                 clearDriverForEquipment={clearDriverForEquipment}
+                                applicationDate={form.date_target}
+                                applicationId={form.id}
                             />
                         </div>
 
