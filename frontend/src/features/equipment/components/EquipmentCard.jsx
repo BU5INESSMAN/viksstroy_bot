@@ -1,16 +1,25 @@
 import { useState } from 'react';
 import {
     Truck, User, Unplug, Link, CheckCircle, Wrench, Pencil,
-    Settings, ChevronDown, BarChart3
+    Settings, ChevronDown, BarChart3, Star, Pencil as PencilSm,
 } from 'lucide-react';
 import { formatEquipName } from '../../../utils/equipFormat';
 import { EQUIPMENT_ICONS, getIconComponent, DEFAULT_EQUIPMENT_ICON } from '../../../utils/iconConfig';
 
-export default function EquipmentCard({ eq, canManageEquipment, canDeleteEquipment, openProfile, handleUnlinkEquipment, generateInvite, handleEquipStatusChange, onEdit, onStats }) {
+export default function EquipmentCard({
+    eq, canManageEquipment, canDeleteEquipment, isOffice,
+    openProfile, handleUnlinkEquipment, generateInvite,
+    handleEquipStatusChange, onEdit, onStats, onSetDefaultDriver,
+}) {
     const [showMenu, setShowMenu] = useState(false);
     const hasDriver = eq.tg_id || (eq.driver_fio && eq.driver_fio !== 'Не указан');
     const CategoryIcon = getIconComponent(eq.category_icon, EQUIPMENT_ICONS)
         || getIconComponent(DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS);
+    // v2.6: equipment owns the default-driver relation. `default_driver_fio`
+    // is server-enriched by the admin_list endpoint (LEFT JOIN users on
+    // equipment.default_driver_user_id). Falsy → no default assigned yet.
+    const defaultDriverName = eq.default_driver_fio || '';
+    const hasDefault = !!eq.default_driver_user_id;
 
     return (
         <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all">
@@ -29,6 +38,28 @@ export default function EquipmentCard({ eq, canManageEquipment, canDeleteEquipme
                 <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 font-medium bg-gray-50 dark:bg-gray-700/30 p-2.5 rounded-lg border border-gray-100 dark:border-gray-600/50">
                     <User className="w-4 h-4 text-gray-400" />
                     <span>Водитель: <b className="text-gray-800 dark:text-gray-200">{eq.driver_fio || 'Не назначен'}</b></span>
+                </div>
+
+                {/* v2.6: default driver row — all roles see it; only office sees the edit button. */}
+                <div className={`mt-2 flex items-center gap-2 text-sm font-medium p-2.5 rounded-lg border ${hasDefault
+                    ? 'bg-amber-50/60 dark:bg-amber-900/20 text-gray-700 dark:text-gray-300 border-amber-100 dark:border-amber-800/30'
+                    : 'bg-gray-50 dark:bg-gray-700/30 text-gray-500 dark:text-gray-400 border-gray-100 dark:border-gray-600/50'}`}>
+                    <Star className={`w-4 h-4 shrink-0 ${hasDefault ? 'text-amber-500' : 'text-gray-400'}`} />
+                    <span className="flex-1 min-w-0 truncate">
+                        Драйвер по умолчанию: {hasDefault
+                            ? <b className="text-gray-800 dark:text-gray-200">{defaultDriverName || '—'}</b>
+                            : <span className="italic">не назначен</span>}
+                    </span>
+                    {isOffice && onSetDefaultDriver && (
+                        <button
+                            onClick={() => onSetDefaultDriver(eq)}
+                            title="Изменить водителя по умолчанию"
+                            className="shrink-0 inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-md bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800/50 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-900/30 transition-colors active:scale-95"
+                        >
+                            <PencilSm className="w-3 h-3" />
+                            Изменить
+                        </button>
+                    )}
                 </div>
             </div>
 

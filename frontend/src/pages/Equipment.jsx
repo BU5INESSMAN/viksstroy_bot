@@ -11,6 +11,7 @@ import EquipmentInviteModal from '../features/equipment/components/EquipmentInvi
 import EditEquipmentModal from '../features/equipment/components/EditEquipmentModal';
 import EquipmentStatsModal from '../features/equipment/components/EquipmentStatsModal';
 import CategorySettingsModal from '../features/equipment/components/CategorySettingsModal';
+import DefaultDriverModal from '../features/equipment/components/DefaultDriverModal';
 import useConfirm from '../hooks/useConfirm';
 import { EquipmentSkeleton } from '../components/ui/PageSkeletons';
 
@@ -33,6 +34,8 @@ export default function Equipment() {
     const [copiedLink, setCopiedLink] = useState('');
     const [editingEquip, setEditingEquip] = useState(null);
     const [statsEquip, setStatsEquip] = useState(null);
+    // v2.6: equipment whose default driver is being edited via the picker modal.
+    const [defaultDriverEquip, setDefaultDriverEquip] = useState(null);
 
     const canManageEquipment = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canDeleteEquipment = ['moderator', 'boss', 'superadmin'].includes(role);
@@ -176,12 +179,14 @@ export default function Equipment() {
                             eq={{ ...eq, category_icon: categoryIcons[eq.category] || '' }}
                             canManageEquipment={canManageEquipment}
                             canDeleteEquipment={canDeleteEquipment}
+                            isOffice={isOffice}
                             openProfile={openProfile}
                             handleUnlinkEquipment={handleUnlinkEquipment}
                             generateInvite={generateInvite}
                             handleEquipStatusChange={handleEquipStatusChange}
                             onEdit={setEditingEquip}
                             onStats={setStatsEquip}
+                            onSetDefaultDriver={setDefaultDriverEquip}
                         />
                     ))}
                     {equipment.filter(e => activeTab === 'list' || e.category === activeTab).length === 0 && (
@@ -238,6 +243,13 @@ export default function Equipment() {
                     onSaved={fetchCategoryIcons}
                 />
             )}
+            {/* v2.6: office-only default-driver picker. */}
+            <DefaultDriverModal
+                open={!!defaultDriverEquip}
+                equipment={defaultDriverEquip}
+                onClose={() => setDefaultDriverEquip(null)}
+                onSaved={fetchData}
+            />
             {ConfirmUI}
         </div>
     );

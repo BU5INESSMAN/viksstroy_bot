@@ -74,13 +74,23 @@ async def _enrich_driver(db, row: dict) -> dict:
 
 
 async def list_drivers(db, category: Optional[str] = None) -> list[dict]:
+    # v2.6: default ownership flipped to equipment.default_driver_user_id.
+    # We still expose a `default_equipment_name` field on the driver dict
+    # for any FE consumer not yet migrated, but the data source is now
+    # the equipment side. A driver can be the default for zero or more
+    # equipment units — we pick the first by equipment.id for stable
+    # display (Resources DriverCard's "По умолчанию" is being removed in
+    # commit 6, so multi-default disambiguation isn't user-visible).
     sql = """
         SELECT u.user_id, u.fio, u.last_name, u.first_name, u.middle_name,
                u.invite_code, u.default_equipment_id, u.is_active,
-               e.name AS default_equipment_name,
-               e.category AS default_equipment_category
+               (SELECT e.name FROM equipment e
+                 WHERE e.default_driver_user_id = u.user_id
+                 ORDER BY e.id LIMIT 1) AS default_equipment_name,
+               (SELECT e.category FROM equipment e
+                 WHERE e.default_driver_user_id = u.user_id
+                 ORDER BY e.id LIMIT 1) AS default_equipment_category
         FROM users u
-        LEFT JOIN equipment e ON e.id = u.default_equipment_id
         WHERE u.role = 'driver' AND u.is_blacklisted = 0
     """
     params: list = []
@@ -99,13 +109,18 @@ async def list_drivers(db, category: Optional[str] = None) -> list[dict]:
 
 
 async def get_driver(db, user_id: int) -> Optional[dict]:
+    # v2.6: default now lives on equipment.default_driver_user_id — see
+    # list_drivers above for the same inverted-lookup rationale.
     async with db.conn.execute(
         """SELECT u.user_id, u.fio, u.last_name, u.first_name, u.middle_name,
                   u.invite_code, u.default_equipment_id, u.is_active,
-                  e.name AS default_equipment_name,
-                  e.category AS default_equipment_category
+                  (SELECT e.name FROM equipment e
+                    WHERE e.default_driver_user_id = u.user_id
+                    ORDER BY e.id LIMIT 1) AS default_equipment_name,
+                  (SELECT e.category FROM equipment e
+                    WHERE e.default_driver_user_id = u.user_id
+                    ORDER BY e.id LIMIT 1) AS default_equipment_category
            FROM users u
-           LEFT JOIN equipment e ON e.id = u.default_equipment_id
            WHERE u.user_id = ? AND u.role = 'driver'""",
         (user_id,),
     ) as cur:
@@ -122,19 +137,27 @@ async def list_drivers_for_equipment(db, equipment_id: int) -> dict:
     and 'other_grouped' (other categories), plus equipment metadata.
 
     Primary sort order, applied by SQL:
-      1. default driver first (users.default_equipment_id == equipment_id)
+      1. default driver first (equipment.default_driver_user_id == user_id)
       2. most-recently-used pair (equipment_driver_usage.last_used_at DESC)
       3. most-frequently-used pair (usage_count DESC)
       4. alphabetical (last_name ASC, first_name ASC)
+
+    v2.6: ``is_default`` switched from
+    ``users.default_equipment_id == equipment_id`` to the inverse
+    ``equipment.default_driver_user_id == user_id``. Result shape is
+    unchanged; only the SQL data source moved.
     """
     async with db.conn.execute(
-        "SELECT id, name, category FROM equipment WHERE id = ?",
+        "SELECT id, name, category, default_driver_user_id FROM equipment "
+        "WHERE id = ?",
         (equipment_id,),
     ) as cur:
         eq_row = await cur.fetchone()
     if not eq_row:
         return {"equipment": None, "primary": [], "other_grouped": []}
-    eq_id, eq_name, eq_category = eq_row[0], eq_row[1], (eq_row[2] or "")
+    eq_id, eq_name, eq_category, default_driver_id = (
+        eq_row[0], eq_row[1], (eq_row[2] or ""), eq_row[3]
+    )
 
     async with db.conn.execute(
         "SELECT icon FROM equipment_category_settings WHERE category = ?",
@@ -148,20 +171,20 @@ async def list_drivers_for_equipment(db, equipment_id: int) -> dict:
                u.default_equipment_id,
                COALESCE(edu.usage_count, 0) AS usage_count,
                edu.last_used_at,
-               (u.default_equipment_id = ?) AS is_default
+               (u.user_id = ?) AS is_default
         FROM users u
         JOIN driver_categories dc ON dc.user_id = u.user_id
         LEFT JOIN equipment_driver_usage edu
                ON edu.driver_user_id = u.user_id AND edu.equipment_id = ?
         WHERE u.role = 'driver' AND u.is_blacklisted = 0
           AND dc.category = ?
-        ORDER BY (u.default_equipment_id = ?) DESC,
+        ORDER BY (u.user_id = ?) DESC,
                  edu.last_used_at DESC,
                  edu.usage_count DESC,
                  u.last_name, u.first_name
     """
     async with db.conn.execute(
-        primary_sql, (eq_id, eq_id, eq_category, eq_id)
+        primary_sql, (default_driver_id, eq_id, eq_category, default_driver_id)
     ) as cur:
         cols = [c[0] for c in cur.description]
         primary = [dict(zip(cols, r)) for r in await cur.fetchall()]
@@ -179,7 +202,6 @@ async def list_drivers_for_equipment(db, equipment_id: int) -> dict:
 
     others_sql = f"""
         SELECT u.user_id, u.fio, u.last_name, u.first_name, u.middle_name,
-               u.default_equipment_id,
                dc.category,
                ecs.icon AS category_icon,
                COALESCE(SUM(edu.usage_count), 0) AS usage_count_total,
@@ -214,7 +236,9 @@ async def list_drivers_for_equipment(db, equipment_id: int) -> dict:
             "last_name": r["last_name"],
             "first_name": r["first_name"],
             "middle_name": r["middle_name"],
-            "is_default": r["default_equipment_id"] == eq_id,
+            # v2.6: is_default now comes from equipment.default_driver_user_id
+            # (this equipment's default), not users.default_equipment_id.
+            "is_default": r["user_id"] == default_driver_id,
             "usage_count": r.get("usage_count_total", 0),
             "last_used_at": r.get("last_used_at"),
         })
@@ -335,6 +359,10 @@ async def update_driver(
 async def delete_driver(db, user_id: int) -> None:
     """Soft-delete per spec: clear role and links but keep the row so
     historical references (application_drivers) stay resolvable for audits.
+
+    v2.6: also detach this user from any ``equipment.default_driver_user_id``
+    that points at them, otherwise the equipment card would still show
+    them as default after they've lost the driver role.
     """
     await db.conn.execute(
         "DELETE FROM driver_categories WHERE user_id=?", (user_id,),
@@ -342,6 +370,11 @@ async def delete_driver(db, user_id: int) -> None:
     await db.conn.execute(
         "UPDATE users SET role=NULL, default_equipment_id=NULL "
         "WHERE user_id=? AND role='driver'",
+        (user_id,),
+    )
+    await db.conn.execute(
+        "UPDATE equipment SET default_driver_user_id=NULL "
+        "WHERE default_driver_user_id=?",
         (user_id,),
     )
     await db.conn.commit()
@@ -391,13 +424,15 @@ async def remove_driver_from_application(
 
 
 async def get_application_drivers(db, app_id: int) -> list[dict]:
+    # v2.6: ``is_default`` now compares ``equipment.default_driver_user_id``
+    # to the assigned driver — the equipment side owns the relation.
     sql = """
         SELECT ad.equipment_id,
                e.name AS equipment_name,
+               e.default_driver_user_id,
                ad.driver_user_id,
                COALESCE(u.fio, '') AS driver_fio,
-               u.last_name, u.first_name, u.middle_name,
-               u.default_equipment_id
+               u.last_name, u.first_name, u.middle_name
         FROM application_drivers ad
         LEFT JOIN equipment e ON e.id = ad.equipment_id
         LEFT JOIN users u ON u.user_id = ad.driver_user_id
@@ -408,7 +443,10 @@ async def get_application_drivers(db, app_id: int) -> list[dict]:
         rows = [dict(zip(cols, r)) for r in await cur.fetchall()]
     for r in rows:
         r["is_synthetic"] = int(r.get("driver_user_id", 0)) < 0
-        r["is_default"] = r.get("default_equipment_id") == r.get("equipment_id")
+        r["is_default"] = (
+            r.get("default_driver_user_id") is not None
+            and r.get("default_driver_user_id") == r.get("driver_user_id")
+        )
     return rows
 
 

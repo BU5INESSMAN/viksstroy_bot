@@ -86,7 +86,11 @@ CREATE TABLE IF NOT EXISTS equipment (
     photo_url TEXT,
     invite_code TEXT,                     -- DEPRECATED v2.6
     is_active INTEGER DEFAULT 1,
-    license_plate TEXT DEFAULT ''
+    license_plate TEXT DEFAULT '',
+    -- v2.6.0: office assigns this on the Equipment page. Existing prod
+    -- DBs get the column via migration m_2026_05_invert_default.py which
+    -- also backfills the value from users.default_equipment_id.
+    default_driver_user_id INTEGER REFERENCES users(user_id) DEFAULT NULL
 );
 
 -- v2.6: водители ↔ категории техники (м-к-м). Категория хранится по имени

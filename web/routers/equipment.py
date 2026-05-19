@@ -51,7 +51,18 @@ async def set_equipment_free(current_user=Depends(get_current_user)):
 
 @router.get("/api/equipment/admin_list")
 async def admin_equip_list(current_user=Depends(get_current_user)):
-    async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur:
+    # v2.6: enrich with the default-driver's ФИО via JOIN on
+    # equipment.default_driver_user_id (the office-owned relation
+    # introduced in m_2026_05_invert_default). The FE EquipmentCard
+    # renders `default_driver_fio` directly; the user_id stays in
+    # `default_driver_user_id` for the picker modal.
+    async with db.conn.execute(
+        """SELECT e.*,
+                  u.fio AS default_driver_fio
+             FROM equipment e
+             LEFT JOIN users u ON u.user_id = e.default_driver_user_id
+            ORDER BY e.category, e.name"""
+    ) as cur:
         rows = await cur.fetchall()
         equip = [dict(zip([c[0] for c in cur.description], r)) for r in rows]
 
@@ -504,6 +515,183 @@ async def unlink_equipment(equip_id: int, current_user=Depends(get_current_user)
     except:
         await db.conn.rollback()
     return {"status": "ok"}
+
+
+# =============================================
+# v2.6: default driver per equipment (office-owned)
+# =============================================
+#
+# These endpoints power the new "Драйвер по умолчанию" row on the
+# Equipment page card. Office (moderator+) writes; everyone reads.
+#
+# The picker (GET .../eligible-drivers) returns category-filtered
+# drivers by default; pass include_all=true to broaden to every driver
+# in the system (for nonstandard assignments — e.g. driver covering
+# outside their usual category).
+
+
+class SetDefaultDriverPayload(BaseModel):
+    user_id: Optional[int] = None  # None = clear the default
+
+
+@router.patch("/api/equipment/{equipment_id}/default-driver")
+async def set_default_driver(
+    equipment_id: int,
+    payload: SetDefaultDriverPayload,
+    current_user=Depends(_require_office),
+):
+    """Office assigns (or clears) the default driver for an equipment unit.
+
+    Validates that the equipment exists and, if a ``user_id`` is supplied,
+    that the target user has ``role='driver'``. Audit-logged with the
+    previous and new driver ids in JSON ``details`` so changes are
+    reviewable.
+    """
+    async with db.conn.execute(
+        "SELECT id, name, default_driver_user_id FROM equipment WHERE id = ?",
+        (equipment_id,),
+    ) as cur:
+        eq = await cur.fetchone()
+    if not eq:
+        raise HTTPException(status_code=404, detail="Техника не найдена")
+    eq_id, eq_name, prev_driver = eq[0], eq[1], eq[2]
+
+    new_driver = payload.user_id
+    if new_driver is not None:
+        async with db.conn.execute(
+            "SELECT user_id, fio, role FROM users WHERE user_id = ?",
+            (new_driver,),
+        ) as cur:
+            u = await cur.fetchone()
+        if not u:
+            raise HTTPException(status_code=404, detail="Пользователь не найден")
+        if (u[2] or "").lower() != "driver":
+            raise HTTPException(
+                status_code=400,
+                detail="Пользователь не является водителем",
+            )
+
+    try:
+        await db.conn.execute(
+            "UPDATE equipment SET default_driver_user_id = ? WHERE id = ?",
+            (new_driver, eq_id),
+        )
+        await db.conn.commit()
+    except Exception:
+        await db.conn.rollback()
+        raise HTTPException(status_code=500, detail="Ошибка базы данных")
+
+    try:
+        await db.add_log(
+            current_user["tg_id"],
+            current_user.get("fio", "Система"),
+            (
+                f"Назначил водителя по умолчанию для «{eq_name}»"
+                if new_driver is not None
+                else f"Снял водителя по умолчанию с «{eq_name}»"
+            ),
+            target_type="equipment",
+            target_id=eq_id,
+            details=json.dumps({
+                "action": "set_default_driver",
+                "role": current_user.get("role", ""),
+                "equipment_id": eq_id,
+                "equipment_name": eq_name,
+                "previous_driver_user_id": prev_driver,
+                "new_driver_user_id": new_driver,
+            }, ensure_ascii=False),
+        )
+    except Exception:
+        # Audit log is best-effort; the primary write already succeeded.
+        pass
+
+    return {
+        "status": "ok",
+        "equipment_id": eq_id,
+        "default_driver_user_id": new_driver,
+    }
+
+
+@router.get("/api/equipment/{equipment_id}/eligible-drivers")
+async def list_eligible_drivers(
+    equipment_id: int,
+    include_all: bool = Query(False),
+    current_user=Depends(get_current_user),
+):
+    """Drivers the picker offers for this equipment unit.
+
+    Default behaviour: only drivers whose ``driver_categories`` includes
+    the equipment's category, ordered by recency-of-use (most recent
+    first) then alphabetically.
+
+    With ``include_all=true``: every active driver in the system, same
+    ordering. The toggle exists so office can assign a driver outside
+    their usual category for a one-off arrangement.
+
+    Read-only — any authenticated user can list; the actual assignment
+    is gated by ``set_default_driver`` above.
+    """
+    async with db.conn.execute(
+        "SELECT id, name, category, default_driver_user_id FROM equipment "
+        "WHERE id = ?",
+        (equipment_id,),
+    ) as cur:
+        eq = await cur.fetchone()
+    if not eq:
+        raise HTTPException(status_code=404, detail="Техника не найдена")
+    eq_id, eq_name, eq_category, current_default = eq[0], eq[1], (eq[2] or ""), eq[3]
+
+    # Same column set in both branches so the FE doesn't have to switch.
+    common_cols = (
+        "u.user_id, u.fio, u.last_name, u.first_name, u.middle_name, "
+        "u.invite_code, "
+        "edu.last_used_at AS last_used_at, "
+        "COALESCE(edu.usage_count, 0) AS usage_count"
+    )
+    common_joins = (
+        f"LEFT JOIN equipment_driver_usage edu "
+        f"  ON edu.driver_user_id = u.user_id AND edu.equipment_id = ?"
+    )
+    order_clause = (
+        "ORDER BY edu.last_used_at IS NULL ASC, edu.last_used_at DESC, "
+        "u.last_name COLLATE NOCASE, u.first_name COLLATE NOCASE"
+    )
+
+    if include_all or not eq_category:
+        sql = (
+            f"SELECT {common_cols} FROM users u {common_joins} "
+            f"WHERE u.role = 'driver' AND COALESCE(u.is_blacklisted, 0) = 0 "
+            f"{order_clause}"
+        )
+        params = (eq_id,)
+    else:
+        sql = (
+            f"SELECT {common_cols} FROM users u "
+            f"JOIN driver_categories dc ON dc.user_id = u.user_id "
+            f"{common_joins} "
+            f"WHERE u.role = 'driver' AND COALESCE(u.is_blacklisted, 0) = 0 "
+            f"AND dc.category = ? "
+            f"{order_clause}"
+        )
+        params = (eq_id, eq_category)
+
+    async with db.conn.execute(sql, params) as cur:
+        cols = [c[0] for c in cur.description]
+        rows = [dict(zip(cols, r)) for r in await cur.fetchall()]
+    for r in rows:
+        r["is_default"] = (r["user_id"] == current_default)
+        r["is_synthetic"] = int(r.get("user_id") or 0) < 0
+
+    return {
+        "equipment": {
+            "id": eq_id,
+            "name": eq_name,
+            "category": eq_category,
+            "current_default_user_id": current_default,
+        },
+        "drivers": rows,
+        "include_all": bool(include_all),
+    }
 
 
 # =============================================

@@ -261,15 +261,15 @@ async def _fetch_schedule_sections(target_date: str) -> list:
         sections.append({"title": tname, "rows": rows})
 
     # ── Техника (по категориям) ───────────────
-    # v2.6: driver name comes from users.default_equipment_id linkage;
-    # legacy equipment.driver_fio is the fallback for un-migrated rows.
+    # v2.6: driver name comes from equipment.default_driver_user_id (the
+    # office-owned relation introduced in m_2026_05_invert_default).
+    # Legacy equipment.driver_fio is the fallback for un-migrated rows.
     async with db.conn.execute(
         """SELECT e.id, e.name, e.category, e.driver_fio, e.status,
                   u.fio AS default_driver_fio
            FROM equipment e
            LEFT JOIN users u
-                  ON u.default_equipment_id = e.id
-                 AND u.role = 'driver'
+                  ON u.user_id = e.default_driver_user_id
                  AND u.is_blacklisted = 0
            WHERE e.is_active = 1
            ORDER BY e.category, COALESCE(u.fio, e.driver_fio)"""

@@ -29,6 +29,12 @@ MIGRATIONS_ORDER = [
     # the synthetic 'Пользователь {id}' rows in the first place) and
     # BEFORE any structural change that severs equipment.driver_fio.
     "m_2026_05_fio_backfill",
+    # Invert default ownership: moves default from users.default_equipment_id
+    # to equipment.default_driver_user_id. Runs AFTER fio_backfill so the
+    # drivers being assigned as defaults already have their real names.
+    # users.default_equipment_id stays in schema for one release for
+    # rollback; drop scheduled for v2.6.1.
+    "m_2026_05_invert_default",
 ]
 
 
