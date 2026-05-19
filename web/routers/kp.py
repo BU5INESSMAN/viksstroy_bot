@@ -3,6 +3,8 @@ import os
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import json
+
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse, FileResponse
 from database_deps import db
@@ -870,20 +872,34 @@ async def get_archived_kp(current_user=Depends(_require_office)):
 async def download_kp_catalog(current_user=Depends(_require_office)):
     """Возвращает последний загруженный файл прайса. Office+ (moderator/boss/superadmin).
 
-    v2.6 (C-10 follow-up): every export is audit-logged with
-    action='catalog_exported' so the loosened threshold has traceability.
+    v2.6 (C-10 follow-up): every export is audit-logged with structured
+    JSON meta in ``logs.details``  — {filename, size_bytes, role,
+    action} — so the loosened threshold has traceability.
     """
     path = db.get_latest_catalog_path()
     if not path or not os.path.exists(path):
         raise HTTPException(404, "Справочник еще не загружен на сервер")
 
     filename = os.path.basename(path)
+    # Capture size_bytes BEFORE returning FileResponse so the audit row
+    # carries it. os.path.getsize is best-effort — if it raises for any
+    # reason (race, FS error) we still log the intent to serve.
+    try:
+        size_bytes = os.path.getsize(path)
+    except OSError:
+        size_bytes = None
+
     try:
         await db.add_log(
             current_user["tg_id"], current_user.get("fio", "Система"),
             f"Экспортировал справочник КП: {filename}",
             target_type="kp_catalog", target_id=0,
-            details=f"action=catalog_exported · role={current_user.get('role','')} · file={filename}",
+            details=json.dumps({
+                "action": "kp_catalog_download",
+                "role": current_user.get("role", ""),
+                "filename": filename,
+                "size_bytes": size_bytes,
+            }, ensure_ascii=False),
         )
     except Exception:
         pass
@@ -896,14 +912,18 @@ async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_
 
     v2.6 (C-10 follow-up, 2026-05-18): access threshold loosened from
     require_superadmin to require_office (moderator/boss/superadmin).
-    Compensating control: every import is audit-logged with file name,
-    row count, and uploader role under target_type='kp_catalog'.
+    Compensating control: every import is audit-logged with structured
+    JSON meta in ``logs.details`` — {filename, size_bytes, rows_count,
+    role, action} — under target_type='kp_catalog'. The audit row is
+    written only on the success path; a failed import (parser error)
+    raises before reaching add_log.
     """
     if not file.filename.lower().endswith(('.xlsx', '.csv')):
         raise HTTPException(400, "Допустимы только файлы .xlsx или .csv")
 
     content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
+    size_bytes = len(content)
+    if size_bytes > 10 * 1024 * 1024:
         raise HTTPException(413, "Файл слишком большой (максимум 10MB)")
 
     new_path = await db.save_catalog_file(content)
@@ -925,9 +945,12 @@ async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_
         current_user["tg_id"], current_user.get("fio", "Система"),
         f"Загрузил справочник КП: {file_name} ({rows_count} строк)",
         target_type="kp_catalog", target_id=0,
-        details=(
-            f"action=catalog_imported · role={current_user.get('role','')} · "
-            f"file={file_name} · rows={rows_count}"
-        ),
+        details=json.dumps({
+            "action": "kp_catalog_upload",
+            "role": current_user.get("role", ""),
+            "filename": file_name,
+            "size_bytes": size_bytes,
+            "rows_count": rows_count,
+        }, ensure_ascii=False),
     )
     return {"status": "ok", "file": file_name, "rows": rows_count}
