@@ -185,7 +185,9 @@ async def equipment_availability(date: str = Query(...), current_user=Depends(ge
                 "id": eid, "name": eq.get('name', ''),
                 "category": eq.get('category', ''),
                 "license_plate": eq.get('license_plate', ''),
-                "driver_fio": eq.get('driver_fio', eq.get('driver', '')),
+                # v2.6 commit 7: driver_fio dropped — drivers anchor on
+                # application_drivers per-app; default driver lives on
+                # equipment.default_driver_user_id.
                 "status": "repair",
                 "busy_slots": [], "free_slots": [],
                 "is_in_pending_exchange": in_exchange,
@@ -212,7 +214,7 @@ async def equipment_availability(date: str = Query(...), current_user=Depends(ge
             "id": eid, "name": eq.get('name', ''),
             "category": eq.get('category', ''),
             "license_plate": eq.get('license_plate', ''),
-            "driver_fio": eq.get('driver_fio', eq.get('driver', '')),
+            # v2.6 commit 7: driver_fio dropped from this response.
             "status": status,
             "busy_slots": busy_sorted,
             "free_slots": free_slots,
@@ -536,13 +538,21 @@ async def edit_equipment(equip_id: int, request: Request, current_user=Depends(_
     data = await request.json()
     name = data.get('name', '').strip()
     category = data.get('category', '').strip()
-    driver_fio = data.get('driver_fio', '').strip()
     license_plate = data.get('license_plate', '').strip()
+    # v2.6 commit 7: `driver_fio` in the request body is silently ignored.
+    # Driver identity now lives in users.fio + application_drivers; the
+    # default-driver-per-equipment is set via the dedicated endpoint
+    # PATCH /api/equipment/{id}/default-driver.
+    if 'driver_fio' in data and (data.get('driver_fio') or '').strip():
+        logger.debug(
+            "edit_equipment: ignored deprecated field driver_fio=%r "
+            "(equipment_id=%s)", data.get('driver_fio'), equip_id,
+        )
     if not name or not category:
         raise HTTPException(status_code=400, detail="Название и категория обязательны")
     try:
-        await db.conn.execute("UPDATE equipment SET name=?, category=?, driver_fio=?, license_plate=? WHERE id=?",
-                              (name, category, driver_fio, license_plate, equip_id))
+        await db.conn.execute("UPDATE equipment SET name=?, category=?, license_plate=? WHERE id=?",
+                              (name, category, license_plate, equip_id))
         await db.conn.commit()
     except:
         await db.conn.rollback()
@@ -610,16 +620,32 @@ async def get_equip_invite_info(invite_code: str):
 async def join_equipment(invite_code: str = Form(...), current_user=Depends(get_current_user)):
     """LEGACY (DEPRECATED v2.6): equipment-bound driver redemption.
 
-    Drivers now self-join via /api/drivers/invite/redeem using personal
-    codes on users.invite_code. This endpoint still works for backward
-    compat but transparently bridges to the new model:
-      • If a synthetic driver was created during the 2026-05 FIO migration
-        for this equipment, swap that synthetic row into the redeeming user
-        (cascades driver_categories and application_drivers automatically).
-      • Otherwise upgrade the redeeming user to role='driver' and attach
-        them to the equipment's category + set this equipment as default.
-      • Clears legacy equipment.tg_id and equipment.invite_code so the
-        old link can no longer be reused.
+    v2.6 commit 7: rewritten to use the inverted-ownership model. The
+    flow is now:
+
+      1. Look up equipment by legacy ``invite_code``.
+      2. If the equipment has a ``default_driver_user_id`` (set during
+         the v2.6 migrations or via the office "Драйвер по умолчанию"
+         picker), swap that synthetic driver row into the redeeming
+         user — application_drivers + driver_categories cascade
+         automatically via driver_service.redeem_synthetic_driver.
+      3. Otherwise, promote the redeeming user to role='driver',
+         attach them to the equipment's category, and (this is the
+         only legacy-style write left) set
+         ``equipment.default_driver_user_id`` to the redeeming user
+         so this equipment is now their default in the new model.
+      4. Invalidate legacy ``equipment.tg_id`` and
+         ``equipment.invite_code`` so the link cannot be reused.
+
+    NO read of ``equipment.driver_fio`` — the FIO comes from the
+    redeeming user's existing ``users.fio`` (or the bot-supplied
+    ``current_user['fio']``). NO write to ``users.default_equipment_id``
+    — the inverted model is the source of truth post-v2.6.
+
+    The new bridge endpoint at POST /api/auth/equip_invite_bridge
+    handles the *anonymous* saved-link case (when the user is not
+    already authenticated via TG/MAX); this endpoint stays for the
+    bot-driven flow where the user IS authenticated already.
     """
     from services import driver_service
 
@@ -627,40 +653,39 @@ async def join_equipment(invite_code: str = Form(...), current_user=Depends(get_
     invite_code = normalize_invite_code(invite_code)
 
     async with db.conn.execute(
-        "SELECT id, name, category, driver_fio FROM equipment WHERE invite_code = ?",
+        "SELECT id, name, category, default_driver_user_id "
+        "FROM equipment WHERE invite_code = ?",
         (invite_code,),
     ) as cur:
         eq_row = await cur.fetchone()
     if not eq_row:
         raise HTTPException(status_code=404, detail="Техника не найдена")
 
-    eq_id, eq_name, eq_category, equip_driver_fio = (
-        eq_row[0], eq_row[1], (eq_row[2] or ""), (eq_row[3] or "")
+    eq_id, eq_name, eq_category, default_drv_uid = (
+        eq_row[0], eq_row[1], (eq_row[2] or ""), eq_row[3],
     )
     logger.warning(
         "legacy equipment invite redeemed for equipment_id=%s — "
-        "bridging to driver-personal model",
+        "bridging to driver-personal model (v2.6)",
         eq_id,
     )
 
-    fio = current_user.get("fio", "") or equip_driver_fio
+    fio = current_user.get("fio", "")
 
     try:
-        # Path A: synthetic driver row from migration → swap.
-        async with db.conn.execute(
-            "SELECT user_id FROM users WHERE role='driver' "
-            "AND default_equipment_id=? AND user_id<0 LIMIT 1",
-            (eq_id,),
-        ) as c2:
-            synth = await c2.fetchone()
-
-        if synth:
+        # Path A: equipment already has a synthetic driver as its
+        # default — swap that row into the redeeming user. This
+        # cascades driver_categories and application_drivers.
+        if default_drv_uid is not None and int(default_drv_uid) < 0:
             await driver_service.redeem_synthetic_driver(
-                db, int(synth[0]), real_tg_id,
+                db, int(default_drv_uid), real_tg_id,
             )
         else:
-            # Path B: no synthetic — make sure the redeeming user is a driver,
-            # attach to category, set default_equipment_id.
+            # Path B: no synthetic to swap. Promote the redeeming user
+            # to role='driver' if they aren't already a higher role,
+            # attach them to the equipment's category, and set
+            # equipment.default_driver_user_id = redeeming user so the
+            # inverted-ownership model captures the new relation.
             user = await db.get_user(real_tg_id)
             if not user:
                 await db.add_user(real_tg_id, fio or f"Пользователь {real_tg_id}", "driver")
@@ -668,11 +693,6 @@ async def join_equipment(invite_code: str = Form(...), current_user=Depends(get_
                 role = dict(user).get("role")
                 if role not in ("foreman", "moderator", "boss", "superadmin"):
                     await db.update_user_role(real_tg_id, "driver")
-            await db.conn.execute(
-                "UPDATE users SET default_equipment_id = COALESCE(default_equipment_id, ?) "
-                "WHERE user_id = ?",
-                (eq_id, real_tg_id),
-            )
             if eq_category:
                 await db.conn.execute(
                     "INSERT OR IGNORE INTO equipment_category_settings (category, icon) "
@@ -684,6 +704,14 @@ async def join_equipment(invite_code: str = Form(...), current_user=Depends(get_
                     "VALUES (?, ?)",
                     (real_tg_id, eq_category),
                 )
+            # Set the inverted-ownership pointer only if no real
+            # driver is already the default (don't clobber an office
+            # assignment).
+            await db.conn.execute(
+                "UPDATE equipment SET default_driver_user_id = "
+                "COALESCE(default_driver_user_id, ?) WHERE id = ?",
+                (real_tg_id, eq_id),
+            )
 
         # Invalidate legacy equipment-side fields — link is now driver-personal.
         await db.conn.execute(

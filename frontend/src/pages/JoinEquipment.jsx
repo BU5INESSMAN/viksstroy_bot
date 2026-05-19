@@ -1,128 +1,133 @@
 import { useEffect, useState } from 'react';
-import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Truck, CheckCircle, XCircle } from 'lucide-react';
+import { Truck, CheckCircle, XCircle, LogIn } from 'lucide-react';
+import { saveAuthData } from '../utils/tokenStorage';
 
+/**
+ * Legacy equipment-invite landing page.
+ *
+ * v2.6 commit 7 rewrite: this page used to bind the redeemer's
+ * Telegram/MAX account to a specific piece of equipment. v2.6 inverted
+ * that model — drivers are now independent ``users`` rows with their own
+ * personal ``invite_code``. The legacy URL pattern
+ * ``/equip-invite/{code}`` is kept alive for users with saved/bookmarked
+ * links: clicking such a link now redeems them as the equipment's
+ * **default driver** (set on the Equipment page by office) via the
+ * new bridge endpoint, then drops them into the app authenticated.
+ *
+ * Flow:
+ *   1. POST /api/auth/equip_invite_bridge with the URL code.
+ *   2. On 200 — backend issued a session for the equipment's default
+ *      driver and invalidated the code. We save user_id+role in
+ *      localStorage and navigate to /dashboard.
+ *   3. On 400 ("no default driver") or 404 — render a friendly error
+ *      pointing the user at the dispatcher.
+ *
+ * The previous GET /api/equipment/invite/{code} preview + manual
+ * confirm-modal flow is gone. The bridge is one-click by design — the
+ * link itself is the redemption, just like an email-confirmation link.
+ */
 export default function JoinEquipment() {
-  const { code } = useParams();
-  const navigate = useNavigate();
-  const location = useLocation();
+    const { code } = useParams();
+    const navigate = useNavigate();
 
-  const [equipData, setEquipData] = useState(null);
-  const [error, setError] = useState('');
-  const [tgId, setTgId] = useState(localStorage.getItem('tg_id') || null);
+    const [status, setStatus] = useState('redeeming'); // 'redeeming' | 'ok' | 'error'
+    const [errorMsg, setErrorMsg] = useState('');
+    const [user, setUser] = useState(null);
 
-  const [isConfirmModalOpen, setConfirmModalOpen] = useState(false);
+    useEffect(() => {
+        let cancelled = false;
 
-  useEffect(() => {
-    axios.get(`/api/equipment/invite/${code}`)
-      .then(res => setEquipData(res.data))
-      .catch(err => setError(err.response?.data?.detail || "Ссылка недействительна"));
-  }, [code]);
-
-  useEffect(() => {
-    const getParam = (key) => {
-        const searchParams = new URLSearchParams(location.search);
-        const hashParams = new URLSearchParams(location.hash.replace('#', '?'));
-        return searchParams.get(key) || hashParams.get(key);
-    };
-
-    let detectedUserId = tgId;
-
-    if (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) { detectedUserId = window.Telegram.WebApp.initDataUnsafe.user.id; }
-
-    const webAppDataStr = getParam('WebAppData') || getParam('tgWebAppData');
-    if (webAppDataStr) {
-        try {
-            const params = new URLSearchParams(webAppDataStr);
-            const userParam = params.get('user');
-            if (userParam) {
-                const u = JSON.parse(userParam);
-                if (u.id || u.user_id) detectedUserId = u.id || u.user_id;
+        async function redeem() {
+            try {
+                const fd = new FormData();
+                fd.append('code', code);
+                const res = await axios.post(
+                    '/api/auth/equip_invite_bridge',
+                    fd,
+                    { withCredentials: true },
+                );
+                if (cancelled) return;
+                const { tg_id, role, fio } = res.data || {};
+                if (tg_id) {
+                    await saveAuthData(tg_id, role);
+                    setUser({ tg_id, role, fio });
+                    setStatus('ok');
+                    // Brief celebratory state before navigating so the
+                    // user knows what happened — 1.5s is enough to read
+                    // the ФИО + role.
+                    setTimeout(() => {
+                        if (!cancelled) navigate('/dashboard', { replace: true });
+                    }, 1500);
+                } else {
+                    setStatus('error');
+                    setErrorMsg('Не удалось получить данные сессии.');
+                }
+            } catch (e) {
+                if (cancelled) return;
+                setStatus('error');
+                setErrorMsg(e.response?.data?.detail || 'Ссылка недействительна.');
             }
-        } catch(e) {}
-    }
+        }
+        redeem();
 
-    if (!detectedUserId) {
-        const maxId = getParam('user_id') || getParam('max_id');
-        if (maxId) detectedUserId = maxId;
-    }
+        return () => { cancelled = true; };
+    }, [code, navigate]);
 
-    if (detectedUserId && detectedUserId !== tgId) {
-        setTgId(detectedUserId);
-        localStorage.setItem('tg_id', detectedUserId);
-    }
-  }, [location, tgId]);
-
-  const handleJoin = async () => {
-      if (!tgId) return toast.error("Не удалось определить ваш ID. Пожалуйста, откройте ссылку из бота.");
-      try {
-          const fd = new FormData();
-          fd.append('invite_code', code);
-          await axios.post('/api/equipment/invite/join', fd);
-          toast.success("Успешно привязано!");
-
-          if (window.location.search.includes('WebAppData') || window.location.pathname.includes('/max')) { navigate('/max'); }
-          else if (window.Telegram?.WebApp?.initData) { navigate('/tma'); }
-          else { navigate('/'); }
-      } catch (e) {
-          toast.error(e.response?.data?.detail || "Ошибка привязки");
-      }
-  };
-
-  if (error) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
-        <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-[2rem] shadow-xl max-w-sm w-full border-t-4 border-red-500">
-            <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
-            <h2 className="text-xl font-bold mb-2 dark:text-white">Ошибка</h2>
-            <p className="text-gray-600 dark:text-gray-400 text-sm font-medium">{error}</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 transition-colors">
-      <div className="w-full max-w-md">
-        {!equipData ? (
-          <div className="flex justify-center p-10"><div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600"></div></div>
-        ) : (
-          <div className="bg-white dark:bg-gray-800 p-8 rounded-[2rem] shadow-xl text-center border border-gray-100 dark:border-gray-700">
-            <div className="w-20 h-20 bg-blue-50 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-5 shadow-inner">
-                <Truck className="w-10 h-10 text-blue-500" />
-            </div>
-            <h2 className="text-2xl font-bold dark:text-white mb-2 tracking-tight">Привязка техники</h2>
-
-            <div className="p-5 bg-gray-50 dark:bg-gray-700/50 rounded-2xl mb-6 border border-gray-200 dark:border-gray-600 shadow-inner mt-4">
-                <p className="text-gray-400 dark:text-gray-500 text-[10px] font-extrabold uppercase tracking-widest mb-1.5">Машина</p>
-                <p className="text-xl font-bold text-gray-900 dark:text-white">{equipData.name}</p>
-            </div>
-
-            <p className="text-gray-500 dark:text-gray-400 mb-8 font-medium text-sm leading-relaxed">
-                Подтвердите закрепление этой техники за вашим аккаунтом мессенджера.
-            </p>
-
-            <button onClick={() => setConfirmModalOpen(true)} className="w-full bg-blue-600 text-white font-bold py-4 rounded-xl shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-[0.98] flex justify-center items-center gap-2">
-                <CheckCircle className="w-5 h-5" /> Подтвердить привязку
-            </button>
-          </div>
-        )}
-      </div>
-
-      {isConfirmModalOpen && (
-        <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm transition-opacity">
-            <div className="bg-white dark:bg-gray-800 p-8 rounded-[2rem] w-full max-w-sm text-center shadow-2xl border border-gray-100 dark:border-gray-700">
-                <h3 className="text-2xl font-bold mb-2 dark:text-white">Подтверждение</h3>
-                <p className="text-gray-500 dark:text-gray-400 mb-8 text-sm font-medium leading-relaxed">Привязать вас как водителя для: <br/><b className="text-xl text-gray-900 dark:text-white block mt-2">{equipData.name}</b></p>
-                <div className="flex gap-3">
-                    <button onClick={() => setConfirmModalOpen(false)} className="flex-1 bg-gray-100 dark:bg-gray-700 py-3.5 rounded-xl font-bold text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors active:scale-95">Отмена</button>
-                    <button onClick={handleJoin} className="flex-1 bg-blue-600 py-3.5 rounded-xl font-bold text-white shadow-md hover:bg-blue-700 transition-all active:scale-95">Да, это я</button>
+    if (status === 'redeeming') {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+                <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-[2rem] shadow-xl max-w-sm w-full border-t-4 border-blue-500">
+                    <div className="animate-spin rounded-full h-12 w-12 border-4 border-blue-200 border-t-blue-600 mx-auto mb-4" />
+                    <h2 className="text-xl font-bold mb-1 dark:text-white">Привязка водителя</h2>
+                    <p className="text-gray-500 dark:text-gray-400 text-sm font-medium">Проверяем ссылку…</p>
                 </div>
             </div>
+        );
+    }
+
+    if (status === 'error') {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+                <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-[2rem] shadow-xl max-w-sm w-full border-t-4 border-red-500">
+                    <XCircle className="w-16 h-16 text-red-500 mx-auto mb-4" />
+                    <h2 className="text-xl font-bold mb-2 dark:text-white">Ссылка устарела</h2>
+                    <p className="text-gray-600 dark:text-gray-400 text-sm font-medium leading-relaxed mb-6">
+                        {errorMsg}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+                        В v2.6 водители используют личный код входа. Обратитесь
+                        к диспетчеру за новой ссылкой или войдите через бот.
+                    </p>
+                    <button
+                        type="button"
+                        onClick={() => navigate('/login')}
+                        className="mt-6 w-full bg-blue-600 text-white font-bold py-3.5 rounded-xl shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-[0.98] flex justify-center items-center gap-2"
+                    >
+                        <LogIn className="w-5 h-5" /> На страницу входа
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
+    // status === 'ok' — brief success splash before redirect.
+    return (
+        <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4">
+            <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-[2rem] shadow-xl max-w-sm w-full border-t-4 border-emerald-500">
+                <div className="w-20 h-20 bg-emerald-50 dark:bg-emerald-900/30 rounded-full flex items-center justify-center mx-auto mb-4 shadow-inner">
+                    <CheckCircle className="w-10 h-10 text-emerald-500" />
+                </div>
+                <h2 className="text-2xl font-bold dark:text-white mb-2 tracking-tight">Добро пожаловать!</h2>
+                <p className="text-gray-700 dark:text-gray-200 font-bold mb-1">{user?.fio || '—'}</p>
+                <p className="text-gray-500 dark:text-gray-400 text-xs font-medium uppercase tracking-wider">
+                    {user?.role || 'driver'}
+                </p>
+                <p className="text-gray-400 text-xs mt-5">Перенаправляем на главную…</p>
+                <Truck className="w-5 h-5 text-blue-400 mx-auto mt-3 opacity-70" />
+            </div>
         </div>
-      )}
-    </div>
-  );
+    );
 }

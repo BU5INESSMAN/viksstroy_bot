@@ -33,8 +33,12 @@ MIGRATIONS_ORDER = [
     # to equipment.default_driver_user_id. Runs AFTER fio_backfill so the
     # drivers being assigned as defaults already have their real names.
     # users.default_equipment_id stays in schema for one release for
-    # rollback; drop scheduled for v2.6.1.
+    # rollback; drop scheduled for v2.7+.
     "m_2026_05_invert_default",
+    # v2.6 commit 7 — sever legacy equipment-as-identity. Invalidates
+    # active driver sessions so they re-login via users.invite_code.
+    # Runs LAST in the v2.6 sequence; nothing depends on it.
+    "m_2026_05_sever_legacy",
 ]
 
 

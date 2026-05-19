@@ -344,11 +344,19 @@ export default function ViewAppModal({ app, onClose, data }) {
                                         });
                                         return eqList.map((eq, i) => {
                                         const rawName = eq.name || `Техника #${eq.id}`;
-                                        // Extract driver from legacy "Name [plate] (DriverFIO)" pattern
+                                        // v2.6 commit 7: New applications no longer embed the
+                                        // driver's ФИО in the equipment display name (Create/
+                                        // EditAppModal.makeDisplayName dropped the "(DriverFIO)"
+                                        // suffix). This regex still runs to gracefully strip
+                                        // the suffix from HISTORIC apps that already saved
+                                        // names in the old format — pure presentation fallback,
+                                        // not a legacy DB-column read.
                                         const legacyMatch = rawName.match(/\(([^)]+)\)\s*$/);
                                         const legacyDriver = legacyMatch && legacyMatch[1] !== 'Не указан' ? legacyMatch[1] : null;
                                         const eqName = legacyDriver ? rawName.replace(/\s*\([^)]+\)\s*$/, '') : rawName;
                                         const assigned = driverMap[eq.id];
+                                        // `assigned.driver_fio` is the new-model output alias
+                                        // sourced from users.fio via application_drivers JOIN.
                                         const driverFio = assigned?.driver_fio || legacyDriver;
                                         const isSynthetic = assigned?.is_synthetic;
                                         const EqIcon = getIconComponent(eq.category_icon || DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS) || IconTruck;

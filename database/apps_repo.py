@@ -40,7 +40,7 @@ class AppsRepoMixin:
 
     async def get_application_details(self, app_id: int):
         cursor = await self.conn.execute(
-            """SELECT a.*, t.name as team_name, e.name as equip_name, e.driver_fio, u.fio as foreman_name
+            """SELECT a.*, t.name as team_name, e.name as equip_name, u.fio as foreman_name
                FROM applications a
                         LEFT JOIN teams t ON a.team_id = t.id
                         LEFT JOIN equipment e ON a.equipment_id = e.id
@@ -78,7 +78,7 @@ class AppsRepoMixin:
 
     async def get_daily_report(self, date_target: str):
         cursor = await self.conn.execute(
-            """SELECT a.*, u.fio as foreman_fio, e.name as equip_name, e.driver_fio
+            """SELECT a.*, u.fio as foreman_fio, e.name as equip_name
                FROM applications a
                         LEFT JOIN users u ON a.foreman_id = u.user_id
                         LEFT JOIN equipment e ON a.equipment_id = e.id

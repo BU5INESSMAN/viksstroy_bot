@@ -12,7 +12,6 @@ export default function EquipmentCard({
     handleEquipStatusChange, onEdit, onStats, onSetDefaultDriver,
 }) {
     const [showMenu, setShowMenu] = useState(false);
-    const hasDriver = eq.tg_id || (eq.driver_fio && eq.driver_fio !== 'Не указан');
     const CategoryIcon = getIconComponent(eq.category_icon, EQUIPMENT_ICONS)
         || getIconComponent(DEFAULT_EQUIPMENT_ICON, EQUIPMENT_ICONS);
     // v2.6: equipment owns the default-driver relation. `default_driver_fio`
@@ -20,6 +19,10 @@ export default function EquipmentCard({
     // equipment.default_driver_user_id). Falsy → no default assigned yet.
     const defaultDriverName = eq.default_driver_fio || '';
     const hasDefault = !!eq.default_driver_user_id;
+    // v2.6 commit 7: legacy `eq.tg_id` / `eq.driver_fio` reads severed.
+    // "Профиль водителя" menu now opens the default driver's user-page
+    // when one is assigned. No driver → no menu item.
+    const hasDriver = hasDefault;
 
     return (
         <div className="bg-white dark:bg-gray-800 p-5 rounded-2xl border border-gray-100 dark:border-gray-700 shadow-sm flex flex-col justify-between hover:shadow-md hover:border-blue-300 dark:hover:border-blue-600 transition-all">
@@ -35,10 +38,9 @@ export default function EquipmentCard({
                     </span>
                 </div>
                 <h3 className="font-bold text-gray-800 dark:text-gray-100 text-lg leading-tight mb-2">{formatEquipName(eq.name, eq.license_plate)}</h3>
-                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400 font-medium bg-gray-50 dark:bg-gray-700/30 p-2.5 rounded-lg border border-gray-100 dark:border-gray-600/50">
-                    <User className="w-4 h-4 text-gray-400" />
-                    <span>Водитель: <b className="text-gray-800 dark:text-gray-200">{eq.driver_fio || 'Не назначен'}</b></span>
-                </div>
+                {/* v2.6 commit 7: legacy "Водитель: {driver_fio}" row removed.
+                    The default driver row below is the single source of
+                    truth for driver-on-equipment display. */}
 
                 {/* v2.6: default driver row — all roles see it; only office sees the edit button. */}
                 <div className={`mt-2 flex items-center gap-2 text-sm font-medium p-2.5 rounded-lg border ${hasDefault
@@ -88,18 +90,19 @@ export default function EquipmentCard({
                                 <div className="fixed inset-0 z-10" onClick={() => setShowMenu(false)} />
                                 <div className="absolute right-0 top-full mt-1 z-20 w-52 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-xl overflow-hidden">
                                     {hasDriver && (
-                                        <button onClick={() => { openProfile(eq.tg_id, 'equip', eq.id); setShowMenu(false); }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center gap-2 transition-colors">
+                                        // v2.6 commit 7: opens the default driver's
+                                        // user-profile (was: equipment.tg_id, which
+                                        // is severed).
+                                        <button onClick={() => { openProfile(eq.default_driver_user_id, 'user', 0); setShowMenu(false); }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center gap-2 transition-colors">
                                             <User className="w-4 h-4 text-blue-500" /> Профиль водителя
                                         </button>
                                     )}
                                     <button onClick={() => { generateInvite(eq); setShowMenu(false); }} className="w-full text-left px-4 py-2.5 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center gap-2 transition-colors">
                                         <Link className="w-4 h-4 text-indigo-500" /> Дать доступ
                                     </button>
-                                    {eq.tg_id && (
-                                        <button onClick={() => { handleUnlinkEquipment(eq.id); setShowMenu(false); }} className="w-full text-left px-4 py-2.5 text-sm text-orange-600 dark:text-orange-400 hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center gap-2 transition-colors">
-                                            <Unplug className="w-4 h-4" /> Отвязать водителя
-                                        </button>
-                                    )}
+                                    {/* v2.6 commit 7: legacy `eq.tg_id`-based "Отвязать водителя"
+                                        action removed. Default-driver detachment now lives in
+                                        the DefaultDriverModal "Снять" button per equipment. */}
                                     <button onClick={() => { handleEquipStatusChange(eq.id, eq.status === 'repair' ? 'free' : 'repair'); setShowMenu(false); }} className="w-full text-left px-4 py-2.5 text-sm hover:bg-gray-50 dark:hover:bg-gray-700/50 flex items-center gap-2 transition-colors">
                                         {eq.status === 'repair'
                                             ? <><CheckCircle className="w-4 h-4 text-emerald-500" /> <span className="text-emerald-600 dark:text-emerald-400">Вернуть в строй</span></>

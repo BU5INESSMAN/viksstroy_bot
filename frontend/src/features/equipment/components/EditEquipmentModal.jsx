@@ -5,10 +5,13 @@ import toast from 'react-hot-toast';
 import useEnterToSubmit from '../../../hooks/useEnterToSubmit';
 
 export default function EditEquipmentModal({ equipment, categories, onClose, onUpdate }) {
+    // v2.6 commit 7: driver_fio removed from the edit form. Driver
+    // identity lives on users.fio + application_drivers; default
+    // driver per equipment is set on the equipment card via the
+    // "Изменить" button next to "Драйвер по умолчанию".
     const [form, setForm] = useState({
         name: equipment.name || '',
         category: equipment.category || '',
-        driver_fio: equipment.driver_fio || '',
         license_plate: equipment.license_plate || '',
     });
     const [saving, setSaving] = useState(false);
@@ -71,10 +74,9 @@ export default function EditEquipmentModal({ equipment, categories, onClose, onU
                         </select>
                     </div>
 
-                    <div>
-                        <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">ФИО водителя</label>
-                        <input type="text" value={form.driver_fio} onChange={e => setForm({ ...form, driver_fio: e.target.value })} className="w-full p-3 border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 dark:text-white transition-colors" />
-                    </div>
+                    {/* v2.6 commit 7: ФИО водителя input removed. Назначить
+                        водителя по умолчанию — на странице «Техника»,
+                        кнопка «Изменить» рядом с «Драйвер по умолчанию». */}
 
                     <div>
                         <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-wider">Госномер</label>

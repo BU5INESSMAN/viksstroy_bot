@@ -148,12 +148,47 @@ async def get_profile(target_id: int, member_id: int = 0, equip_id: int = 0,
                                                 "unregistered": True}, "links": {}}
 
     if equip_id > 0:
-        async with db.conn.execute("SELECT driver_fio, category FROM equipment WHERE id = ?", (equip_id,)) as cur:
+        # v2.6 commit 7: driver identity moved off equipment.driver_fio onto
+        # users.fio via equipment.default_driver_user_id. If the equipment
+        # has a default driver assigned, return that user's real profile;
+        # otherwise fall back to a synthetic "Водитель" stub keyed by the
+        # equipment's category so the UI still has something to render
+        # for un-assigned machines.
+        async with db.conn.execute(
+            "SELECT e.category, e.default_driver_user_id, u.user_id, u.fio "
+            "FROM equipment e "
+            "LEFT JOIN users u ON u.user_id = e.default_driver_user_id "
+            "WHERE e.id = ?",
+            (equip_id,),
+        ) as cur:
             e_row = await cur.fetchone()
         if e_row:
-            return {"status": "ok",
-                    "profile": {"user_id": 0, "fio": e_row[0] or "Водитель", "role": "driver", "position": e_row[1],
-                                "unregistered": True}, "links": {}}
+            category, default_uid, drv_uid, drv_fio = (
+                e_row[0], e_row[1], e_row[2], e_row[3],
+            )
+            if drv_uid:
+                # Real driver — return their full users-row profile.
+                async with db.conn.execute(
+                    "SELECT * FROM users WHERE user_id = ?", (int(drv_uid),),
+                ) as c2:
+                    u_row = await c2.fetchone()
+                    cols = [c[0] for c in c2.description]
+                if u_row:
+                    profile = dict(zip(cols, u_row))
+                    profile["position"] = category or ""
+                    return {"status": "ok", "profile": profile, "links": {}}
+            # No default driver assigned — synthetic stub for the slot.
+            return {
+                "status": "ok",
+                "profile": {
+                    "user_id": 0,
+                    "fio": drv_fio or "Водитель",
+                    "role": "driver",
+                    "position": category or "",
+                    "unregistered": True,
+                },
+                "links": {},
+            }
 
     raise HTTPException(404, "Профиль не найден")
 

@@ -221,9 +221,10 @@ export default function EditAppModal({
         return 'unavailable';
     };
 
-    const makeDisplayName = (eq) => eq.driver_fio
-        ? `${eq.name} [${eq.license_plate || 'нет г.н.'}] (${eq.driver_fio})`
-        : (eq.driver ? `${eq.name} [${eq.license_plate || 'нет г.н.'}] (${eq.driver})` : `${eq.name} [${eq.license_plate || 'нет г.н.'}]`);
+    // v2.6 commit 7: legacy `eq.driver_fio` / `eq.driver` hint dropped from
+    // the equipment display name (same as CreateAppModal).
+    const makeDisplayName = (eq) =>
+        `${eq.name} [${eq.license_plate || 'нет г.н.'}]`;
 
     const openExchangeDialog = (eqAvail) => {
         const exchangeSlot = eqAvail.busy_slots.find(s => s.can_exchange);
@@ -262,7 +263,7 @@ export default function EditAppModal({
         if (state === 'in_exchange') return toast.error('Эта техника уже участвует в обмене');
 
         const isSelected = form.equipment.some(eq => eq.id === eqAvail.id);
-        if (isSelected) return toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, driver: eqAvail.driver_fio, license_plate: eqAvail.license_plate });
+        if (isSelected) return toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate });
 
         if (state === 'both') {
             setActionChoiceEquip(eqAvail);
@@ -279,7 +280,7 @@ export default function EditAppModal({
             return;
         }
 
-        toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, driver: eqAvail.driver_fio, license_plate: eqAvail.license_plate });
+        toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate });
     };
 
     const toggleTeamSelection = (id) => {

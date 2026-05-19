@@ -32,8 +32,8 @@ CREATE TABLE IF NOT EXISTS users (
     avatar_url TEXT,
     last_used_objects TEXT DEFAULT '[]',
     linked_user_id INTEGER DEFAULT NULL,
-    invite_code TEXT,                -- v2.6: personal driver/foreman invite code
-    default_equipment_id INTEGER,    -- v2.6: drivers' default equipment unit
+    invite_code TEXT,                -- v2.6: personal driver/foreman invite code (auth anchor)
+    default_equipment_id INTEGER,    -- DEPRECATED v2.6 commit 7 — inverted to equipment.default_driver_user_id; to be dropped in v2.7+
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -70,21 +70,56 @@ CREATE TABLE IF NOT EXISTS team_members (
 
 -- Справочник техники
 --
--- DEPRECATED (v2.6, 2026-05-18): driver_fio, tg_id, invite_code remain
--- for backward-compat reads only. Drivers are now independent users with
--- role='driver' and their own users.invite_code. Per-application driver
--- assignment lives in application_drivers. Legacy redemption flow at
--- /api/equipment/invite/join now bridges into the new model.
--- See database/migrations/m_2026_05_drivers_refactor.py
+-- v2.6 (2026-05-19, commit 7 closes the release):
+-- The following columns on `equipment` are DEPRECATED. They remain in
+-- the schema for rollback safety only; the application code no longer
+-- reads any of them. Drop scheduled for v2.7+.
+--
+--   • driver TEXT              — was the free-text driver name field
+--                                used by Resources/Equipment cards.
+--                                Driver identity now lives in `users.fio`
+--                                + `application_drivers` junction
+--                                (per-application assignment) +
+--                                `equipment.default_driver_user_id`
+--                                (per-equipment office-assigned default).
+--   • driver_fio TEXT          — same legacy intent as `driver` above;
+--                                the parallel column from earlier
+--                                schema versions. Drivers' real ФИО
+--                                lives in `users.fio` resolved via the
+--                                v2.6 inverted relation.
+--   • tg_id INTEGER            — was the Telegram ID of the driver tied
+--                                to the equipment. Driver Telegram IDs
+--                                live in `users.user_id`; equipment
+--                                tracks who its default driver is via
+--                                `equipment.default_driver_user_id`.
+--   • invite_code TEXT         — was the equipment-bound driver invite.
+--                                Drivers now redeem `users.invite_code`.
+--                                Saved old links are gracefully bridged
+--                                by POST /api/auth/equip_invite_bridge
+--                                which resolves equipment.invite_code →
+--                                equipment.default_driver_user_id →
+--                                session for that user, then NULLs the
+--                                legacy code.
+--
+-- New, authoritative v2.6 fields:
+--   • default_driver_user_id   — office-owned default driver per
+--                                equipment unit. Set via PATCH
+--                                /api/equipment/{id}/default-driver
+--                                (require_office, audited).
+--
+-- See:
+--   • database/migrations/m_2026_05_drivers_refactor.py — initial cut
+--   • database/migrations/m_2026_05_invert_default.py — ownership flip
+--   • database/migrations/m_2026_05_sever_legacy.py — session invalidation
 CREATE TABLE IF NOT EXISTS equipment (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     name TEXT,
     category TEXT,
-    driver_fio TEXT DEFAULT 'Не указан',  -- DEPRECATED v2.6
+    driver_fio TEXT DEFAULT 'Не указан',  -- DEPRECATED v2.6 — to be dropped in v2.7+
     status TEXT DEFAULT 'free',
-    tg_id INTEGER NULL,                   -- DEPRECATED v2.6
+    tg_id INTEGER NULL,                   -- DEPRECATED v2.6 — to be dropped in v2.7+
     photo_url TEXT,
-    invite_code TEXT,                     -- DEPRECATED v2.6
+    invite_code TEXT,                     -- DEPRECATED v2.6 — to be dropped in v2.7+ (bridge: /api/auth/equip_invite_bridge)
     is_active INTEGER DEFAULT 1,
     license_plate TEXT DEFAULT '',
     -- v2.6.0: office assigns this on the Equipment page. Existing prod

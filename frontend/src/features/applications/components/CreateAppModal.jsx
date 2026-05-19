@@ -120,9 +120,11 @@ export default function CreateAppModal({
         return 'unavailable';
     };
 
-    const makeDisplayName = (eq) => eq.driver_fio
-        ? `${eq.name} [${eq.license_plate || 'нет г.н.'}] (${eq.driver_fio})`
-        : (eq.driver ? `${eq.name} [${eq.license_plate || 'нет г.н.'}] (${eq.driver})` : `${eq.name} [${eq.license_plate || 'нет г.н.'}]`);
+    // v2.6 commit 7: legacy `eq.driver_fio` / `eq.driver` hint dropped from
+    // the equipment display name. Driver identity surfaces in the per-app
+    // driver picker (DriverPickerModal) now, keyed by application_drivers.
+    const makeDisplayName = (eq) =>
+        `${eq.name} [${eq.license_plate || 'нет г.н.'}]`;
 
     const openExchangeDialog = (eqAvail) => {
         const exchangeSlot = eqAvail.busy_slots.find(s => s.can_exchange);
@@ -162,7 +164,7 @@ export default function CreateAppModal({
         if (state === 'in_exchange') return toast.error('Эта техника уже участвует в обмене');
 
         const isSelected = appForm.equipment.some(eq => eq.id === eqAvail.id);
-        if (isSelected) return toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, driver: eqAvail.driver_fio, license_plate: eqAvail.license_plate });
+        if (isSelected) return toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate });
 
         if (state === 'both') {
             setActionChoiceEquip(eqAvail);
@@ -180,14 +182,14 @@ export default function CreateAppModal({
         }
 
         // state === 'available'
-        toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, driver: eqAvail.driver_fio, license_plate: eqAvail.license_plate });
+        toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate });
     };
 
     // Deferred exchange: save intent, do NOT add occupied equipment to the list
     const handleDeferredExchange = ({ requested_equip_id, offered_equip_id, offeredEquipData }) => {
         const reqEquip = data.equipment?.find(eq => eq.id === requested_equip_id);
         const reqEquipName = reqEquip
-            ? (reqEquip.driver ? `${reqEquip.name} [${reqEquip.license_plate || 'нет г.н.'}] (${reqEquip.driver})` : `${reqEquip.name} [${reqEquip.license_plate || 'нет г.н.'}]`)
+            ? `${reqEquip.name} [${reqEquip.license_plate || 'нет г.н.'}]`
             : `Техника #${requested_equip_id}`;
 
         setAppForm(prev => {

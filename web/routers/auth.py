@@ -7,6 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from fastapi import APIRouter, Form, HTTPException, Query, Cookie, Request
 from fastapi.responses import JSONResponse
 import asyncio
+import json
 import time
 import hashlib
 import hmac
@@ -92,6 +93,125 @@ async def _check_fio_match(new_user_id: int, new_fio: str):
         pass  # Не ломаем регистрацию из-за ошибки поиска
 
 
+@router.post("/api/auth/equip_invite_bridge")
+async def equip_invite_bridge(code: str = Form(...)):
+    """v2.6 commit 7: one-time bridge for legacy equipment.invite_code links.
+
+    Old saved links (``https://miniapp.viks22.ru/equip-invite/{code}``)
+    were generated when drivers anchored on equipment rather than on
+    ``users``. v2.6 removed that model. This endpoint exists so saved
+    links don't 404 — it:
+
+      1. Looks up the equipment by legacy ``invite_code``.
+      2. Resolves ``equipment.default_driver_user_id`` — the office-
+         owned default driver (assigned during the v2.6 migrations or
+         on the Equipment page).
+      3. Issues a session cookie for that driver, exactly like a normal
+         login flow.
+      4. Invalidates ``equipment.invite_code`` so the link cannot be
+         redeemed twice.
+      5. Audit-logs the event with JSON details.
+
+    If the equipment has no default driver assigned, returns HTTP 400
+    pointing the redeemer at the dispatcher — no surprise account
+    creation, no implicit driver promotion (those flows live in
+    /api/equipment/invite/join for the BOT-driven path).
+    """
+    from utils import normalize_invite_code as _norm
+
+    norm_code = _norm(code)
+
+    async with db.conn.execute(
+        "SELECT id, name, default_driver_user_id "
+        "FROM equipment WHERE invite_code = ?",
+        (norm_code,),
+    ) as cur:
+        eq = await cur.fetchone()
+
+    if not eq:
+        raise HTTPException(
+            status_code=404,
+            detail="Код не найден или уже использован",
+        )
+    eq_id, eq_name, default_driver_uid = eq[0], eq[1], eq[2]
+
+    if default_driver_uid is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Этой технике не назначен водитель по умолчанию. "
+                "Обратитесь к диспетчеру."
+            ),
+        )
+
+    async with db.conn.execute(
+        "SELECT user_id, fio, role, is_blacklisted "
+        "FROM users WHERE user_id = ?",
+        (int(default_driver_uid),),
+    ) as cur:
+        user = await cur.fetchone()
+
+    if not user:
+        logger.error(
+            "equip_invite_bridge: equipment_id=%s points at "
+            "default_driver_user_id=%s but users row missing",
+            eq_id, default_driver_uid,
+        )
+        raise HTTPException(
+            status_code=500, detail="Внутренняя ошибка: водитель не найден",
+        )
+    user_id, user_fio, user_role, blacklisted = user[0], user[1], user[2], user[3]
+
+    if blacklisted:
+        raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
+    if (user_role or "").lower() != "driver":
+        logger.warning(
+            "equip_invite_bridge: default_driver_user_id=%s on "
+            "equipment_id=%s is not role=driver (role=%s) — refusing",
+            user_id, eq_id, user_role,
+        )
+        raise HTTPException(
+            status_code=400,
+            detail="Этот водитель более не активен. Обратитесь к диспетчеру.",
+        )
+
+    # Create a session for the default driver.
+    token = await _create_session(user_id)
+
+    # Invalidate the legacy code so it cannot be redeemed again.
+    try:
+        await db.conn.execute(
+            "UPDATE equipment SET invite_code = NULL WHERE id = ?",
+            (eq_id,),
+        )
+        await db.conn.commit()
+    except Exception:
+        await db.conn.rollback()
+        # The session was already minted; the audit row is the source of
+        # truth even if invalidation races.
+
+    # Audit log — structured JSON details so security review can grep.
+    try:
+        await db.add_log(
+            user_id, user_fio or "Система",
+            f"Вход по устаревшему коду техники «{eq_name}»",
+            target_type="equipment", target_id=eq_id,
+            details=json.dumps({
+                "action": "legacy_equip_invite_bridge",
+                "equipment_id": eq_id,
+                "equipment_name": eq_name,
+                "invalidated_code_prefix": (norm_code or "")[:4] + "...",
+            }, ensure_ascii=False),
+        )
+    except Exception:
+        pass
+
+    return _make_auth_response(
+        {"status": "ok", "role": user_role, "tg_id": user_id, "fio": user_fio},
+        token,
+    )
+
+
 @router.post("/api/auth/code")
 async def api_auth_by_code(code: str = Form(...)):
     """Unified code redemption. Resolution order (v2.6):
@@ -163,25 +283,30 @@ async def api_auth_by_code(code: str = Form(...)):
             {"status": "ok", "role": role, "tg_id": user_id}, token,
         )
 
-    # Path 4: equipment.invite_code — legacy bridge.
+    # Path 4: equipment.invite_code — DEPRECATED v2.6. The unauthenticated
+    # /api/auth/code flow can no longer redeem an equipment-bound code
+    # directly. Anonymous saved links go through the new bridge endpoint
+    # POST /api/auth/equip_invite_bridge (commit 7) which resolves the
+    # equipment's default_driver_user_id and issues a session for THAT
+    # user. We surface a friendly error here pointing the user at the
+    # new path; the FE JoinEquipment.jsx already calls the bridge.
     async with db.conn.execute(
-        "SELECT id, name, driver_fio FROM equipment WHERE invite_code = ?",
+        "SELECT id FROM equipment WHERE invite_code = ?",
         (norm_code,),
     ) as cur:
         eq = await cur.fetchone()
     if eq:
         logger.warning(
-            "legacy equipment invite redeemed via /api/auth/code "
-            "for equipment_id=%s driver_fio=%s — bridge to driver model not "
-            "automatic via this endpoint; user should redeem from authenticated "
-            "session at /api/equipment/invite/join",
-            eq[0], eq[2],
+            "legacy equipment invite redeemed via /api/auth/code for "
+            "equipment_id=%s — caller should use "
+            "/api/auth/equip_invite_bridge or open the link from a bot.",
+            eq[0],
         )
         raise HTTPException(
             status_code=400,
             detail=(
-                "Эта ссылка устарела. Войдите через бот и откройте обновлённую "
-                "ссылку приглашения водителя."
+                "Эта ссылка устарела. Откройте её через приложение — "
+                "вход произойдёт автоматически."
             ),
         )
 
