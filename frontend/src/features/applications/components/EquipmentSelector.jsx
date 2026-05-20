@@ -50,6 +50,38 @@ export default function EquipmentSelector({
 }) {
     const isModeratorEditor = editorRole !== 'foreman';
     const [driverPickerEq, setDriverPickerEq] = useState(null);
+
+    // v2.6.2: extract license plate from a selected-equipment row.
+    // `selectedEquipment` items carry a merged displayName of the form
+    // "Name [Plate]" or "Name [нет г.н.]" (built by useAppForm /
+    // EditAppModal at add time — we don't pass license_plate as a
+    // separate field on selected items). Splitting it back out here
+    // keeps the card cleanly two-row (name top, plate bottom) without
+    // touching the parent hook's shape.
+    const _splitMergedName = (mergedName) => {
+        const s = String(mergedName || '');
+        const m = s.match(/^(.*?)\s*\[([^\]]*)\]\s*$/);
+        if (!m) return { baseName: s, plate: '' };
+        const plate = (m[2] || '').trim();
+        // "нет г.н." was the v2.6 fallback placeholder — treat as empty.
+        return { baseName: m[1].trim(), plate: plate === 'нет г.н.' ? '' : plate };
+    };
+    // Plate-row component reused by discovery (single-name + plate)
+    // and selected (full 3-row card) variants. Bottom-aligned in a
+    // flex-col card via mt-auto on the wrapper.
+    const PlateRow = ({ plate, className = '' }) => (
+        <div className={`text-xs w-full truncate ${className}`}>
+            {plate ? (
+                <span className="font-mono tracking-tight text-gray-500 dark:text-gray-400">
+                    [{plate}]
+                </span>
+            ) : (
+                <span className="italic text-amber-500/80 dark:text-amber-400/70">
+                    Заполнить госномер
+                </span>
+            )}
+        </div>
+    );
     return (
         <>
             {/* Category tabs — only shown in edit mode */}
@@ -125,7 +157,8 @@ export default function EquipmentSelector({
                                             type="button"
                                             disabled={isDisabled}
                                             onClick={() => handleEquipClick(eqA)}
-                                            className={`w-full text-left p-3 rounded-xl border transition-all disabled:cursor-not-allowed ${rowBg}`}
+                                            title={eqA.name}
+                                            className={`w-full text-left p-3 rounded-xl border transition-all disabled:cursor-not-allowed flex flex-col gap-1 min-h-[68px] ${rowBg}`}
                                         >
                                             <div className="flex items-center justify-between gap-2">
                                                 <div className="flex items-center gap-2 min-w-0 flex-1">
@@ -138,8 +171,13 @@ export default function EquipmentSelector({
                                                         return <IconComp className={`w-4 h-4 flex-shrink-0 mt-0.5 ${state === 'repair' || state === 'unavailable' ? 'text-gray-300' : (state === 'exchange' || state === 'both') ? 'text-amber-500' : 'text-gray-500'}`} stroke={2} />;
                                                     })()}
                                                     <div className="min-w-0 flex-1">
+                                                        {/* v2.6.2: name on its own line with truncate +
+                                                            native title tooltip so users can read the
+                                                            full string on hover. Plate moves to its own
+                                                            row below (was inline, competed with status
+                                                            badge for width). */}
                                                         <span className={`text-sm font-bold truncate block ${state === 'unavailable' || state === 'in_exchange' ? 'text-gray-400' : 'dark:text-gray-200'}`}>
-                                                            {eqA.name} {eqA.license_plate ? `[${eqA.license_plate}]` : ''}
+                                                            {eqA.name}
                                                         </span>
                                                         {/* v2.6 commit 4: legacy `driver_fio` text removed from the
                                                             discovery list. Driver identity now lives on the SELECTED
@@ -151,8 +189,11 @@ export default function EquipmentSelector({
                                                 </div>
                                                 {statusBadge}
                                             </div>
+                                            {/* v2.6.2: dedicated plate row. Indented by ml-6 to
+                                                align under the name (past the icon column). */}
+                                            <PlateRow plate={eqA.license_plate} className="ml-6" />
                                             {subtitle && (
-                                                <p className="mt-1 ml-6 text-[11px] text-gray-400 truncate">{subtitle}</p>
+                                                <p className="ml-6 text-[11px] text-gray-400 truncate">{subtitle}</p>
                                             )}
                                         </button>
                                     );
@@ -172,21 +213,41 @@ export default function EquipmentSelector({
                         const isPartial = eq.isPartialTime;
                         const cardBorder = isPartial ? 'border-amber-200 dark:border-amber-700/50' : 'border-blue-100 dark:border-blue-700/50';
                         const cardBg = isPartial ? 'bg-amber-50/50 dark:bg-amber-900/10' : 'bg-white dark:bg-gray-800';
+                        // v2.6.2: split the merged displayName into base
+                        // name (top row, single-line truncate + title) and
+                        // plate (bottom row, dedicated). Existing data flow
+                        // packs the plate into the name string at add time;
+                        // we don't push a separate license_plate field
+                        // through useAppForm here — extracting at render
+                        // keeps the change CSS-only.
+                        const { baseName, plate } = _splitMergedName(eq.name);
                         return (
-                            <div key={eq.id} className={`flex flex-col sm:flex-row sm:items-center justify-between ${cardBg} p-4 rounded-xl border ${cardBorder} shadow-sm gap-4 hover:shadow-md transition-shadow`}>
+                            // v2.6.2: card is a vertical flex container so
+                            // the new plate row sits cleanly at the bottom.
+                            // The original horizontal name+time+driver
+                            // arrangement is preserved as one inner row
+                            // (sm:flex-row), with the plate row underneath.
+                            // min-h locks card height so the placeholder
+                            // ("Заполнить госномер") doesn't make some
+                            // cards shorter than others.
+                            <div key={eq.id} className={`flex flex-col ${cardBg} p-4 rounded-xl border ${cardBorder} shadow-sm gap-3 hover:shadow-md transition-shadow min-h-[112px]`}>
+                                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 {isViewOnly ? (
-                                    <button type="button" disabled={isSubmitting} onClick={() => { onCloseModal(); openProfile(0, 'equip', eq.id); }} className={`font-bold text-sm text-left hover:underline disabled:opacity-50 flex items-center gap-2 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
-                                        <div className={`p-1.5 rounded-lg ${eq.is_freed ? 'bg-gray-100 dark:bg-gray-700 text-gray-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-500'}`}>
+                                    <button type="button" disabled={isSubmitting} onClick={() => { onCloseModal(); openProfile(0, 'equip', eq.id); }} title={baseName} className={`font-bold text-sm text-left hover:underline disabled:opacity-50 flex items-center gap-2 min-w-0 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-blue-600 dark:text-blue-400'}`}>
+                                        <div className={`p-1.5 rounded-lg flex-shrink-0 ${eq.is_freed ? 'bg-gray-100 dark:bg-gray-700 text-gray-400' : 'bg-blue-100 dark:bg-blue-900/30 text-blue-500'}`}>
                                             <Truck className="w-4 h-4" />
                                         </div>
-                                        {eq.name}
-                                        {eq.is_freed && <CheckCircle className="w-4 h-4 text-emerald-500 ml-1" />}
+                                        <span className="truncate">{baseName}</span>
+                                        {eq.is_freed && <CheckCircle className="w-4 h-4 text-emerald-500 ml-1 flex-shrink-0" />}
                                     </button>
                                 ) : (
-                                    <div className="flex items-center gap-2 min-w-0">
+                                    <div className="flex items-center gap-2 min-w-0 flex-1">
                                         <Truck className={`w-5 h-5 flex-shrink-0 ${eq.is_freed ? 'text-gray-400' : isPartial ? 'text-amber-500' : 'text-blue-500'}`} />
-                                        <p className={`font-bold text-sm truncate ${eq.is_freed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}>
-                                            {eq.name}
+                                        {/* v2.6.2: name is single-line with truncate + native
+                                            title tooltip on hover for the full string. */}
+                                        <p className={`font-bold text-sm truncate flex-1 min-w-0 ${eq.is_freed ? 'text-gray-400 line-through' : 'text-gray-800 dark:text-gray-200'}`}
+                                           title={baseName}>
+                                            {baseName}
                                         </p>
                                         {eq.is_freed && <CheckCircle className="w-4 h-4 text-emerald-500 flex-shrink-0" />}
                                         {isPartial && <span className="text-[10px] font-bold text-amber-600 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded flex-shrink-0">Частичное</span>}
@@ -206,14 +267,19 @@ export default function EquipmentSelector({
                                         <span className="pr-2 font-bold text-gray-400 text-sm">:00</span>
                                     </div>
                                 </div>
+                                </div>{/* /v2.6.2 inner top row (name + time inputs) */}
 
-                                {/* v2.6: Driver assignment row */}
+                                {/* v2.6: Driver assignment row.
+                                    v2.6.2: pulled OUT of the inner top row
+                                    into its own row of the outer flex-col,
+                                    so `basis-full` is no longer needed —
+                                    it naturally takes one whole row now. */}
                                 {!eq.is_freed && driverAssignments !== undefined && (
                                     (() => {
                                         const assigned = (driverAssignments || {})[eq.id];
                                         const isSynthetic = assigned && Number(assigned.user_id) < 0;
                                         return (
-                                            <div className="basis-full">
+                                            <div>
                                                 {assigned && assigned.user_id ? (
                                                     <button type="button" disabled={isViewOnly || isSubmitting}
                                                         onClick={() => setDriverPickerEq(eq)}
@@ -255,6 +321,15 @@ export default function EquipmentSelector({
                                         );
                                     })()
                                 )}
+
+                                {/* v2.6.2: plate row — bottom of the card.
+                                    Pulled out of the merged displayName via
+                                    _splitMergedName(eq.name). When empty
+                                    (or the legacy 'нет г.н.' fallback),
+                                    the muted-amber italic placeholder
+                                    nudges the office to set the plate on
+                                    the Equipment page — non-blocking. */}
+                                <PlateRow plate={plate} className="mt-auto pt-1 border-t border-gray-100 dark:border-gray-700/40" />
                             </div>
                         );
                     })}
