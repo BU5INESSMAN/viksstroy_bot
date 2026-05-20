@@ -201,10 +201,26 @@ export default function useAppForm({
             const displayName = equip.driver
                 ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})`
                 : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
+            // v2.6.1: auto-fill the driver slot with the equipment's
+            // default driver when one is configured. Reverses the v2.6
+            // commit-4 "no auto-fill" stance — in practice defaults are
+            // nearly always correct, and the explicit-confirm-per-row
+            // tax was unnecessary work for foreman. They can still tap
+            // the slot to change.
+            //
+            // CreateAppModal: always auto-fill (no `mode` distinction here
+            // — useAppForm is the create-modal hook). EditAppModal uses
+            // its OWN toggleEquipmentSelection with a per-session
+            // newly-added-only check; see EditAppModal.jsx.
+            const defaultDriverId = equip.default_driver_user_id || null;
+            const defaultDriverFio = equip.default_driver_fio || '';
+            const autoDriver = defaultDriverId
+                ? { user_id: defaultDriverId, fio: defaultDriverFio }
+                : null;
             return {
                 ...prev,
                 equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: defaultTime.start, time_end: defaultTime.end }],
-                driverAssignments: { ...(prev.driverAssignments || {}), [equip.id]: null },
+                driverAssignments: { ...(prev.driverAssignments || {}), [equip.id]: autoDriver },
             };
         });
     };
@@ -361,17 +377,28 @@ export default function useAppForm({
                 }
                 if (type === 'equip') {
                     const ids = targetEquips.split(',').map(Number);
-                    const newEq = data.equipment
-                        .filter(e => ids.includes(e.id))
-                        .map(e => ({
-                            id: e.id,
-                            name: e.driver
-                                ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})`
-                                : `${e.name} [${e.license_plate || 'нет г.н.'}]`,
-                            time_start: defaultTime.start,
-                            time_end: defaultTime.end,
-                        }));
-                    setAppForm(prev => ({ ...prev, equipment: newEq }));
+                    const picked = data.equipment.filter(e => ids.includes(e.id));
+                    const newEq = picked.map(e => ({
+                        id: e.id,
+                        name: e.driver
+                            ? `${e.name} [${e.license_plate || 'нет г.н.'}] (${e.driver})`
+                            : `${e.name} [${e.license_plate || 'нет г.н.'}]`,
+                        time_start: defaultTime.start,
+                        time_end: defaultTime.end,
+                    }));
+                    // v2.6.1: bulk "Техника по умолчанию" also auto-fills
+                    // the driver from each piece's default_driver_user_id,
+                    // matching the per-row add behaviour.
+                    const autoAssignments = {};
+                    picked.forEach(e => {
+                        if (e.default_driver_user_id) {
+                            autoAssignments[e.id] = {
+                                user_id: e.default_driver_user_id,
+                                fio: e.default_driver_fio || '',
+                            };
+                        }
+                    });
+                    setAppForm(prev => ({ ...prev, equipment: newEq, driverAssignments: autoAssignments }));
                 }
                 toast.success('Ресурсы успешно подставлены!');
             }
@@ -437,21 +464,20 @@ export default function useAppForm({
         if (appForm.team_ids.length > 0 && appForm.members.length === 0)
             return toast.error('Выберите хотя бы одного рабочего из бригады!');
 
-        // v2.6 commit 4: every selected equipment must have an explicit
-        // driver assignment (decision: no auto-fill, no magic). Block
-        // submit if any slot is empty so the foreman is forced to open
-        // the picker and confirm — the equipment card shows the empty
-        // state in muted "Назначить водителя" style.
+        // v2.6.1: empty driver slots are now allowed on the foreman path.
+        // Moderator will assign them at review. We surface a soft toast
+        // so the foreman knows their choice was registered, but submit
+        // proceeds. Reverses v2.6 commit-4's hard-block — in practice
+        // foreman almost always wanted to delegate ambiguous slots.
         const missing = (appForm.equipment || []).filter((eq) => {
             if (eq.is_freed) return false;
             const assigned = (appForm.driverAssignments || {})[eq.id];
             return !assigned || !assigned.user_id;
         });
         if (missing.length > 0) {
-            const names = missing.map((e) => e.name).join(', ');
-            return toast.error(
-                `Выберите водителя для каждой единицы техники: ${names}`,
-                { duration: 6000 },
+            toast(
+                `Для ${missing.length} ед. техники водитель не выбран — назначит модератор при проверке.`,
+                { icon: 'ℹ️', duration: 4500 },
             );
         }
 

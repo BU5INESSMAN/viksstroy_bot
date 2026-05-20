@@ -245,6 +245,9 @@ async def _check_driver_overlap(
     assignments: list[tuple[int, int]],
     equipment_data_json: str,
     exclude_app_id: int | None = None,
+    current_user: dict | None = None,
+    force_assign: bool = False,
+    application_id: int | None = None,
 ) -> None:
     """Raise HTTPException(400) if any (equipment_id, driver_user_id)
     assignment in the new payload would collide with an existing
@@ -256,6 +259,11 @@ async def _check_driver_overlap(
     machines, same date, overlapping hours — NOT fine: a single human
     can't be in two places at once.
 
+    v2.6.1: when ``current_user`` is moderator+ and ``force_assign``
+    is True, the hard-block becomes a logged warning + audit row. The
+    foreman path is unchanged. ``force_assign`` is the explicit gesture
+    by the office editor; merely being moderator is not enough.
+
     Mirrors the equipment_availability slot-source: per-row time slots
     live in the OTHER application's equipment_data JSON; the new app's
     per-equipment slots come from the caller's own equipment_data JSON.
@@ -266,6 +274,11 @@ async def _check_driver_overlap(
 
     if not assignments:
         return
+
+    is_office = bool(
+        current_user
+        and current_user.get("role") in ("moderator", "boss", "superadmin")
+    )
 
     # Pre-compute the new payload's per-equipment slots, normalised.
     new_slots: dict[int, tuple[str, str]] = {}
@@ -322,6 +335,51 @@ async def _check_driver_overlap(
                     r = await c2.fetchone()
                 drv_fio = (r[0] if r and r[0] else f"#{drv_id}")
                 other_eq_name = ex.get("name") or f"#{ex['equipment_id']}"
+
+                # v2.6.1: office override path. Moderator+ may force-assign
+                # despite the conflict; the original raise becomes a warning
+                # + audit row so the override is recoverable from logs.
+                if is_office and force_assign:
+                    logger.warning(
+                        "driver_overlap_override: user=%s role=%s "
+                        "force-assigned driver=%s to app=%s "
+                        "despite conflict with app=%s on equipment=%s",
+                        current_user.get("tg_id") or current_user.get("user_id"),
+                        current_user.get("role"),
+                        drv_id, application_id,
+                        ex["id"], ex["equipment_id"],
+                    )
+                    try:
+                        await db.add_log(
+                            current_user.get("tg_id")
+                                or current_user.get("user_id") or 0,
+                            current_user.get("fio", ""),
+                            (
+                                f"driver_overlap_override: водитель {drv_fio} "
+                                f"назначен на технику {other_eq_name} "
+                                f"в {ex_ts}–{ex_te} (конфликт с заявкой "
+                                f"№{ex['id']})"
+                            ),
+                            target_type="application",
+                            target_id=application_id,
+                            details=json.dumps({
+                                "action": "driver_overlap_override",
+                                "driver_user_id": drv_id,
+                                "driver_fio": drv_fio,
+                                "conflicting_application_id": ex["id"],
+                                "conflicting_equipment_id": ex["equipment_id"],
+                                "conflicting_equipment_name": other_eq_name,
+                                "requested_equipment_id": eq_id,
+                                "requested_time_start": ns,
+                                "requested_time_end": ne,
+                                "force_assigned_by_role": current_user.get("role"),
+                            }, ensure_ascii=False),
+                        )
+                    except Exception as audit_err:
+                        logger.error("override audit log failed: %s", audit_err)
+                    # Move on to the next existing row — do NOT raise.
+                    continue
+
                 raise HTTPException(
                     status_code=400,
                     detail={
@@ -379,8 +437,16 @@ async def _apply_driver_assignments(app_id: int, assignments: list[tuple[int, in
 
 async def create_application(tg_id, team_id, date_target, object_address, comment,
                              selected_members, equipment_data, object_id,
-                             driver_assignments: str = ""):
-    """Create a new application. Returns (app_id, real_tg_id, fio) or raises."""
+                             driver_assignments: str = "",
+                             current_user: dict | None = None,
+                             force_assign: bool = False):
+    """Create a new application. Returns (app_id, real_tg_id, fio) or raises.
+
+    v2.6.1: ``current_user`` + ``force_assign`` are forwarded to the
+    driver-overlap check so moderator+ can override conflicts on the
+    review screen. CreateAppModal callers (foreman path) never set
+    force_assign, so behavior there is unchanged.
+    """
     from fastapi import HTTPException
     await ensure_app_columns()
     real_tg_id = await resolve_id(tg_id)
@@ -403,6 +469,8 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
         await _check_driver_overlap(
             date_target, assignments, equipment_data,
             exclude_app_id=None,  # creating new app — no self to exclude
+            current_user=current_user,
+            force_assign=force_assign,
         )
 
     cursor = await db.conn.execute(
@@ -420,18 +488,38 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
 
 async def update_application(app_id, tg_id, team_id, date_target, object_address,
                              comment, selected_members, equipment_data, object_id,
-                             driver_assignments: str = ""):
+                             driver_assignments: str = "",
+                             current_user: dict | None = None,
+                             force_assign: bool = False):
     """Update an existing waiting application. Returns
     (real_tg_id, fio, driver_diff) where driver_diff is
-    {"added": [(eq, drv), ...], "removed": [...]} for the caller to fire
-    notify_driver_assignment on changes."""
+    {"added": [(eq, drv), ...], "removed": [...], "changed_fields": [...],
+     "foreman_user_id": int} for the caller to fire
+    notify_driver_assignment + notify_foreman_of_moderator_edit on changes.
+
+    v2.6.1: ``current_user`` is recorded so the router can decide whether
+    to fire the moderator-edit summary notification. ``force_assign``
+    forwards to the driver-overlap check (office-only override).
+    """
     from fastapi import HTTPException
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
     if not user: raise HTTPException(403)
-    async with db.conn.execute("SELECT status FROM applications WHERE id = ?", (app_id,)) as cur:
-        row = await cur.fetchone()
-        if not row or row[0] != 'waiting': raise HTTPException(400, "Заявка уже в работе или проверена")
+
+    # v2.6.1: snapshot the previous state BEFORE the update so we can
+    # diff the editable fields and emit a summary notification when a
+    # moderator edits someone else's application.
+    async with db.conn.execute(
+        "SELECT status, foreman_id, team_id, date_target, object_id, "
+        "       object_address, comment, selected_members, equipment_data "
+        "FROM applications WHERE id = ?",
+        (app_id,),
+    ) as cur:
+        prev_row = await cur.fetchone()
+    if not prev_row or prev_row[0] != 'waiting':
+        raise HTTPException(400, "Заявка уже в работе или проверена")
+    (_prev_status, prev_foreman_id, prev_team_id, prev_date, prev_object_id,
+     prev_object_address, prev_comment, prev_members, prev_equipment_data) = prev_row
 
     occupied = await db.check_resource_availability(
         date_target, object_id, team_id, equipment_data,
@@ -452,6 +540,9 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
         await _check_driver_overlap(
             date_target, parsed_for_check, equipment_data,
             exclude_app_id=app_id,
+            current_user=current_user,
+            force_assign=force_assign,
+            application_id=app_id,
         )
 
     try:
@@ -462,11 +553,37 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
     except:
         await db.conn.rollback()
 
-    diff = {"added": [], "removed": []}
+    diff = {"added": [], "removed": [], "changed_fields": [], "foreman_user_id": prev_foreman_id}
     if driver_assignments is not None:
         added, removed = await _apply_driver_assignments(app_id, parsed_for_check)
         diff["added"] = added
         diff["removed"] = removed
+
+    # v2.6.1: compute the list of changed top-level fields for the
+    # moderator-edit summary notification. Field names only — no
+    # before/after values, no PII (the foreman re-opens the application
+    # to see what specifically changed).
+    changed: list[str] = []
+    if str(prev_date or "") != str(date_target or ""):
+        changed.append("date_target")
+    if int(prev_object_id or 0) != int(object_id or 0):
+        changed.append("object_id")
+    if (prev_object_address or "") != (object_address or ""):
+        # Object address changes only count if object_id didn't already
+        # — otherwise we'd double-count the same edit.
+        if "object_id" not in changed:
+            changed.append("object_address")
+    if (prev_comment or "") != (comment or ""):
+        changed.append("comment")
+    if str(prev_team_id or "") != str(team_id or ""):
+        changed.append("team_id")
+    if (prev_members or "") != (selected_members or ""):
+        changed.append("selected_members")
+    if (prev_equipment_data or "") != (equipment_data or ""):
+        changed.append("equipment")
+    if diff["added"] or diff["removed"]:
+        changed.append("drivers")
+    diff["changed_fields"] = changed
 
     fio = dict(user).get('fio', 'Пользователь')
     await db.add_log(real_tg_id, fio, f"Обновил заявку на {object_address} ({date_target})", target_type='application', target_id=app_id)

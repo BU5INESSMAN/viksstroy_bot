@@ -40,7 +40,15 @@ export default function EquipmentSelector({
     // against the new slot the foreman is editing.
     applicationDate,
     applicationId,
+    // v2.6.1: editorial mode. editorRole drives the empty-slot hint
+    // tone (foreman = muted "модератор разберётся", moderator = amber
+    // "требует внимания"); softConflicts flips the driver picker into
+    // soft-warning mode so a moderator can force-assign through
+    // a conflict (foreman picker stays hard-block).
+    editorRole = 'foreman',
+    softConflicts = false,
 }) {
+    const isModeratorEditor = editorRole !== 'foreman';
     const [driverPickerEq, setDriverPickerEq] = useState(null);
     return (
         <>
@@ -220,11 +228,27 @@ export default function EquipmentSelector({
                                                     </button>
                                                 ) : (
                                                     !isViewOnly && (
-                                                        <button type="button" disabled={isSubmitting}
-                                                            onClick={() => setDriverPickerEq(eq)}
-                                                            className="inline-flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800/50 hover:bg-amber-100 transition active:scale-95 disabled:opacity-60">
-                                                            <UserPlus className="w-3.5 h-3.5" /> Назначить водителя
-                                                        </button>
+                                                        // v2.6.1: empty-slot UX is mode-aware.
+                                                        // Foreman sees a muted "Назначит модератор"
+                                                        // hint (it's OK to leave empty — the
+                                                        // moderator will fill it on review).
+                                                        // Moderator on review-edit sees an amber
+                                                        // "⚠ Назначить водителя" — they ARE the
+                                                        // final editor and need to act.
+                                                        isModeratorEditor ? (
+                                                            <button type="button" disabled={isSubmitting}
+                                                                onClick={() => setDriverPickerEq(eq)}
+                                                                className="inline-flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-700 hover:bg-amber-100 transition active:scale-95 disabled:opacity-60 ring-1 ring-amber-300">
+                                                                <UserPlus className="w-3.5 h-3.5" /> ⚠ Назначить водителя
+                                                            </button>
+                                                        ) : (
+                                                            <button type="button" disabled={isSubmitting}
+                                                                onClick={() => setDriverPickerEq(eq)}
+                                                                className="inline-flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg bg-gray-50 dark:bg-gray-800/60 text-gray-600 dark:text-gray-400 border border-dashed border-gray-300 dark:border-gray-700 hover:bg-gray-100 transition active:scale-95 disabled:opacity-60">
+                                                                <UserPlus className="w-3.5 h-3.5" /> Выберите водителя
+                                                                <span className="text-[10px] uppercase opacity-70 ml-1">· Назначит модератор</span>
+                                                            </button>
+                                                        )
                                                     )
                                                 )}
                                             </div>
@@ -307,6 +331,10 @@ export default function EquipmentSelector({
                     applicationStartTime={driverPickerEq.time_start}
                     applicationEndTime={driverPickerEq.time_end}
                     currentApplicationId={applicationId}
+                    // v2.6.1: moderator-on-review gets soft warnings
+                    // instead of hard blocks (override is recorded in
+                    // the audit log on save).
+                    softConflicts={softConflicts}
                     onSelect={(drv) => { setDriverForEquipment(driverPickerEq.id, drv); setDriverPickerEq(null); }}
                     onClear={() => { clearDriverForEquipment && clearDriverForEquipment(driverPickerEq.id); setDriverPickerEq(null); }}
                 />

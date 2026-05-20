@@ -105,7 +105,16 @@ async def equipment_availability(date: str = Query(...), current_user=Depends(ge
     base_end_m = time_to_minutes(base_end)
 
     # Get all equipment
-    async with db.conn.execute("SELECT * FROM equipment WHERE is_active = 1 ORDER BY category, name") as cur:
+    # v2.6.1: include default_driver_fio so the create/edit modals can
+    # auto-fill the driver slot with a human-readable name on equipment
+    # add. Same JOIN shape as admin_equip_list and the dashboard bundle.
+    async with db.conn.execute(
+        """SELECT e.*, u.fio AS default_driver_fio
+             FROM equipment e
+             LEFT JOIN users u ON u.user_id = e.default_driver_user_id
+            WHERE e.is_active = 1
+            ORDER BY e.category, e.name"""
+    ) as cur:
         eq_rows = await cur.fetchall()
         eq_cols = [c[0] for c in cur.description]
     all_equip = [dict(zip(eq_cols, r)) for r in eq_rows]

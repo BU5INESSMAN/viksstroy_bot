@@ -633,6 +633,71 @@ async def notify_driver_assignment(
         logger.error(f"notify_driver_assignment user={driver_user_id}: {e}")
 
 
+async def notify_foreman_of_moderator_edit(
+    foreman_user_id: int,
+    application_id: int,
+    moderator_fio: str,
+    changed_fields: list[str],
+):
+    """v2.6.1: single summary notification sent to the application owner
+    after a moderator+ edits their pending application via the review
+    screen.
+
+    Field names only — no before/after values, no PII (the foreman
+    re-opens the application to see specifics). Drivers receive nothing
+    at this stage; they're notified only on publish with the final roster.
+    """
+    if not foreman_user_id or not changed_fields:
+        return
+
+    field_label_map = {
+        "drivers": "водители",
+        "date_target": "дата",
+        "object_id": "объект",
+        "object_address": "объект",
+        "team_id": "бригады",
+        "selected_members": "состав бригад",
+        "equipment": "техника",
+        "comment": "комментарий",
+    }
+    # De-dupe label list while preserving order (object_id + object_address
+    # collapse to the same label, drivers + equipment stay distinct).
+    seen: set[str] = set()
+    pretty: list[str] = []
+    for f in changed_fields:
+        label = field_label_map.get(f, f)
+        if label in seen:
+            continue
+        seen.add(label)
+        pretty.append(label)
+
+    fio = (moderator_fio or "").strip() or "модератор"
+    text = (
+        f"✏️ <b>Модератор {fio} отредактировал вашу заявку №{application_id}</b>\n"
+        f"Изменено: {', '.join(pretty)}.\n"
+        f"Откройте заявку, чтобы увидеть детали."
+    )
+    body = (
+        f"Модератор {fio} отредактировал заявку №{application_id}: "
+        f"{', '.join(pretty)}."
+    )
+    try:
+        await notify_users(
+            [],  # role-less — only the explicit foreman
+            text,
+            url_path="review",
+            extra_tg_ids=[int(foreman_user_id)],
+            category="orders",
+            push_type="app_edited_by_moderator",
+            push_body=body,
+        )
+    except Exception as e:
+        logger.error(
+            f"notify_foreman_of_moderator_edit user={foreman_user_id} "
+            f"app={application_id}: {e}"
+        )
+
+
 async def notify_fio_match(new_user_id: int, new_fio: str, existing_user_id: int, existing_fio: str):
     """Уведомляет модераторов+ о возможном совпадении аккаунтов на разных платформах."""
     platform_new = "TG" if new_user_id > 0 else "MAX"

@@ -22,7 +22,7 @@ from services.app_service import (
     create_application, update_application, delete_application,
     update_last_used_objects, get_last_used_objects,
 )
-from services.notifications import notify_driver_assignment
+from services.notifications import notify_driver_assignment, notify_foreman_of_moderator_edit
 from services import driver_service
 from services.app_workflow import (
     review_application, send_review_notifications,
@@ -72,11 +72,20 @@ async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form(""), object_id: int = Form(0),
                      driver_assignments: str = Form(""),
+                     force_assign: bool = Form(False),
                      current_user=Depends(get_current_user)):
     tg_id = current_user["tg_id"]
+    # v2.6.1: force_assign is the office-only override flag. Foreman
+    # callers may send it accidentally (e.g. stale client) — silently
+    # drop it instead of 400-ing, since the picker hard-block already
+    # prevented the conflict for them.
+    if force_assign and current_user.get("role") not in ("moderator", "boss", "superadmin"):
+        force_assign = False
     new_app_id, real_tg_id, fio = await create_application(
         tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id,
         driver_assignments=driver_assignments,
+        current_user=current_user,
+        force_assign=force_assign,
     )
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
@@ -90,16 +99,44 @@ async def update_app(app_id: int, team_id: str = Form("0"), date_target: str = F
                      object_address: str = Form(...), comment: str = Form(""), selected_members: str = Form(""),
                      equipment_data: str = Form(""), object_id: int = Form(0),
                      driver_assignments: str = Form(""),
+                     force_assign: bool = Form(False),
                      current_user=Depends(get_current_user)):
     tg_id = current_user["tg_id"]
+    # v2.6.1: force_assign honored only for moderator+. Silently dropped
+    # for foreman so a stale client doesn't get 400s.
+    if force_assign and current_user.get("role") not in ("moderator", "boss", "superadmin"):
+        force_assign = False
     real_tg_id, fio, diff = await update_application(
         app_id, tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id,
         driver_assignments=driver_assignments,
+        current_user=current_user,
+        force_assign=force_assign,
     )
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"⚠️ <b>Заявка #{app_id} (Объект: {object_address}) была отредактирована</b>\n👤 Прораб: {fio}\n🕒 Время: {now}",
                        "review", category="orders"))
+
+    # v2.6.1: moderator-edit summary notification. Fires only when the
+    # editor is office and the application is NOT theirs — foreman
+    # editing their own app does not get a self-notification. Drivers
+    # receive nothing here; they're notified only on publish (final
+    # roster) per the v2.6.1 decision.
+    foreman_uid = diff.get("foreman_user_id")
+    changed_fields = diff.get("changed_fields") or []
+    is_office = current_user.get("role") in ("moderator", "boss", "superadmin")
+    if (
+        is_office
+        and changed_fields
+        and foreman_uid
+        and int(foreman_uid) != int(real_tg_id)
+    ):
+        asyncio.create_task(notify_foreman_of_moderator_edit(
+            foreman_user_id=int(foreman_uid),
+            application_id=app_id,
+            moderator_fio=current_user.get("fio", "") or fio,
+            changed_fields=changed_fields,
+        ))
 
     # Personal driver-change notifications.
     if diff.get("added") or diff.get("removed"):

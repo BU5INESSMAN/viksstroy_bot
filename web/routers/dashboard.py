@@ -60,7 +60,15 @@ async def get_dashboard_data(current_user=Depends(get_current_user)):
                 await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (eq_id,))
         await db.conn.commit()
 
-    async with db.conn.execute("SELECT * FROM equipment ORDER BY category, name") as cur:
+    # v2.6.1: enrich with default_driver_fio so the create/edit modals can
+    # auto-fill the driver slot with a human-readable name (not just the
+    # user_id). Mirrors admin_equip_list's JOIN — same shape on both ends.
+    async with db.conn.execute(
+        """SELECT e.*, u.fio AS default_driver_fio
+             FROM equipment e
+             LEFT JOIN users u ON u.user_id = e.default_driver_user_id
+            ORDER BY e.category, e.name"""
+    ) as cur:
         equip = [dict(zip([c[0] for c in cur.description], row)) for row in await cur.fetchall()]
     # v2.4 FIX 10: enrich equipment with category icon from equipment_category_settings
     try:

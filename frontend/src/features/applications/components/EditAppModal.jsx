@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
@@ -33,9 +33,27 @@ const sameFormShape = (a, b) => {
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
+/**
+ * EditAppModal
+ *
+ * v2.6.1: introduces a `mode` prop to distinguish two editorial flows
+ * over the same form:
+ *
+ *   • mode='owner-edit' (default) — foreman editing their own pending
+ *     application. Hard-block conflicts in the driver picker. Submit
+ *     allowed with empty driver slots (soft toast warning).
+ *
+ *   • mode='review-edit' — moderator+ editing during review. The driver
+ *     picker shows conflicts as amber warnings but allows assignment
+ *     (the backend records an audit row via force_assign=true). Submit
+ *     BLOCKS empty driver slots because the moderator is the final
+ *     editor — leaving slots empty would just bounce the app back.
+ */
 export default function EditAppModal({
-    app, onClose, onSaved, data, objectsList, smartDates, role, tgId, openProfile
+    app, onClose, onSaved, data, objectsList, smartDates, role, tgId, openProfile,
+    mode = 'owner-edit',
 }) {
+    const isReviewEdit = mode === 'review-edit';
     const initialForm = useMemo(() => {
         let eqData = [];
         if (app.equipment_data) {
@@ -69,6 +87,14 @@ export default function EditAppModal({
 
     const [form, setForm] = useState(initialForm);
     const DRAFT_KEY = `edit-app:${app.id}`;
+
+    // v2.6.1: snapshot equipment ids present at modal open. Used to
+    // decide whether an equipment-add should auto-fill the driver slot:
+    // existing-since-open rows must stay untouched (the original
+    // assignment, possibly empty, is the user's intent), but
+    // newly-added-this-session rows pull in their default driver.
+    const originalEquipmentIds = useRef(new Set((initialForm.equipment || []).map(e => e.id)));
+    const isNewlyAdded = (equipmentId) => !originalEquipmentIds.current.has(equipmentId);
 
     const [teamMembers, setTeamMembers] = useState([]);
     const [activeEqCategory, setActiveEqCategory] = useState(null);
@@ -249,9 +275,17 @@ export default function EditAppModal({
         const tsHour = best.time_start.split(':')[0];
         const teHour = best.time_end.split(':')[0];
         const displayName = makeDisplayName(eqAvail);
+        // v2.6.1: auto-fill default driver for newly-added partial-time
+        // equipment (newly-added scope only — existing rows untouched).
+        const defaultDriverId = eqAvail.default_driver_user_id || null;
+        const defaultDriverFio = eqAvail.default_driver_fio || '';
+        const autoDriver = (isNewlyAdded(eqAvail.id) && defaultDriverId)
+            ? { user_id: defaultDriverId, fio: defaultDriverFio }
+            : null;
         setForm(prev => ({
             ...prev,
             equipment: [...prev.equipment, { id: eqAvail.id, name: displayName, time_start: tsHour, time_end: teHour, isPartialTime: true }],
+            driverAssignments: { ...(prev.driverAssignments || {}), [eqAvail.id]: autoDriver },
         }));
         setTimeAutoSet(true);
         toast('Время автоматически изменено. Проверьте время техники.', { icon: '⏰' });
@@ -263,7 +297,7 @@ export default function EditAppModal({
         if (state === 'in_exchange') return toast.error('Эта техника уже участвует в обмене');
 
         const isSelected = form.equipment.some(eq => eq.id === eqAvail.id);
-        if (isSelected) return toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate });
+        if (isSelected) return toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate, default_driver_user_id: eqAvail.default_driver_user_id, default_driver_fio: eqAvail.default_driver_fio });
 
         if (state === 'both') {
             setActionChoiceEquip(eqAvail);
@@ -280,7 +314,7 @@ export default function EditAppModal({
             return;
         }
 
-        toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate });
+        toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate, default_driver_user_id: eqAvail.default_driver_user_id, default_driver_fio: eqAvail.default_driver_fio });
     };
 
     const toggleTeamSelection = (id) => {
@@ -328,10 +362,18 @@ export default function EditAppModal({
                 return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id), driverAssignments: next };
             }
             const displayName = equip.driver ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})` : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
+            // v2.6.1: auto-fill default driver ONLY for newly-added
+            // equipment this session. Existing-since-open assignments
+            // are left as-is (the user already saw them).
+            const defaultDriverId = equip.default_driver_user_id || null;
+            const defaultDriverFio = equip.default_driver_fio || '';
+            const autoDriver = (isNewlyAdded(equip.id) && defaultDriverId)
+                ? { user_id: defaultDriverId, fio: defaultDriverFio }
+                : null;
             return {
                 ...prev,
                 equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: defaultTime.start, time_end: defaultTime.end }],
-                driverAssignments: { ...(prev.driverAssignments || {}), [equip.id]: null },
+                driverAssignments: { ...(prev.driverAssignments || {}), [equip.id]: autoDriver },
             };
         });
     };
@@ -417,6 +459,24 @@ export default function EditAppModal({
         if (form.team_ids.length === 0 && form.equipment.length === 0) return toast.error("Выберите бригаду или технику!");
         if (form.team_ids.length > 0 && form.members.length === 0) return toast.error("Выберите хотя бы одного рабочего из бригады!");
 
+        // v2.6.1: moderator on review IS the final editor — empty driver
+        // slots get hard-blocked here. Foreman submit allows empty slots
+        // (handled in useAppForm) since the moderator will fill them.
+        if (isReviewEdit) {
+            const missing = (form.equipment || []).filter((eq) => {
+                if (eq.is_freed) return false;
+                const assigned = (form.driverAssignments || {})[eq.id];
+                return !assigned || !assigned.user_id;
+            });
+            if (missing.length > 0) {
+                const names = missing.map(e => e.name).join(', ');
+                return toast.error(
+                    `Назначьте водителей для всех единиц техники перед сохранением: ${names}`,
+                    { duration: 7000 },
+                );
+            }
+        }
+
         setIsSubmitting(true);
         try {
             const fd = new FormData();
@@ -436,13 +496,31 @@ export default function EditAppModal({
                 })
                 .filter(Boolean);
             fd.append('driver_assignments', JSON.stringify(driversPayload));
+            // v2.6.1: review-edit submit sends force_assign so the
+            // backend lets the moderator save through driver-overlap
+            // conflicts. Foreman path does NOT send the flag; the
+            // backend would silently drop it anyway, but cleaner not
+            // to send. Boolean Form() needs a string truthy value.
+            if (isReviewEdit) {
+                fd.append('force_assign', 'true');
+            }
 
             await axios.post(`/api/applications/${form.id}/update`, fd);
             toast.success("Заявка успешно обновлена!");
             clearDraft(DRAFT_KEY);
             onSaved();
         } catch (err) {
-            toast.error(err.response?.data?.detail || "Ошибка сохранения");
+            // v2.6.1: surface the friendly Russian driver-overlap message
+            // (the foreman path can still hit this if a moderator hasn't
+            // force_assign'd it). Same pattern as useAppForm.
+            const detail = err.response?.data?.detail;
+            if (detail && typeof detail === 'object' && detail.error === 'driver_overlap') {
+                toast.error(detail.message || 'Конфликт назначения водителя', { duration: 7000 });
+            } else if (typeof detail === 'string') {
+                toast.error(detail);
+            } else {
+                toast.error('Ошибка сохранения');
+            }
         } finally {
             setIsSubmitting(false);
         }
@@ -620,6 +698,8 @@ export default function EditAppModal({
                                 clearDriverForEquipment={clearDriverForEquipment}
                                 applicationDate={form.date_target}
                                 applicationId={form.id}
+                                editorRole={isReviewEdit ? 'moderator' : 'foreman'}
+                                softConflicts={isReviewEdit}
                             />
                         </div>
 

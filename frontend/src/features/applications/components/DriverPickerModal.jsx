@@ -45,6 +45,11 @@ export default function DriverPickerModal({
     applicationStartTime,
     applicationEndTime,
     currentApplicationId,
+    // v2.6.1: when true, busy drivers are rendered with an amber
+    // warning instead of red disabled state; assignment is allowed.
+    // The backend records an audit row via force_assign on save.
+    // Foreman pickers leave this false → original hard-block behavior.
+    softConflicts = false,
     onSelect, onClear,
 }) {
     const [data, setData] = useState({ primary: [], other_grouped: [], equipment: null });
@@ -186,20 +191,34 @@ export default function DriverPickerModal({
         const selected = currentDriverId && Number(currentDriverId) === Number(d.user_id);
         const conflict = busyByUserId[d.user_id] || null;
         const isBusy = !!conflict;
+        // v2.6.1: moderator+ on review-edit gets soft conflicts —
+        // the row stays clickable, but the badge turns amber and a
+        // tooltip warns of the override. Foreman pickers keep the
+        // original hard-block (button disabled, red badge).
+        const blockClick = isBusy && !softConflicts;
         const usage = Number(d.usage_count || 0);
         const lastUsed = d.last_used_at ? new Date(d.last_used_at) : null;
         const lastUsedLabel = lastUsed && !Number.isNaN(lastUsed.getTime())
             ? lastUsed.toLocaleDateString('ru-RU') : null;
 
         const conflictTitle = conflict
-            ? `Занят: «${conflict.equipment_name}» ${conflict.time_start}–${conflict.time_end}`
+            ? (softConflicts
+                ? `Возможен конфликт — назначить можно, но проверьте расписание. Занят: «${conflict.equipment_name}» ${conflict.time_start}–${conflict.time_end}`
+                : `Занят: «${conflict.equipment_name}» ${conflict.time_start}–${conflict.time_end}`)
             : undefined;
+
+        // Two visual treatments for "busy":
+        //   blocked (foreman)  — row muted gray, button disabled, red badge.
+        //   warning (moderator) — row normal opacity, button enabled, amber badge.
+        const busyClasses = blockClick
+            ? 'bg-gray-50 dark:bg-gray-900/40 border-gray-200 dark:border-gray-700 opacity-60 cursor-not-allowed'
+            : 'bg-amber-50/40 dark:bg-amber-900/10 border-amber-300 dark:border-amber-800/60 ring-1 ring-amber-200 dark:ring-amber-800/40 hover:border-amber-400 hover:shadow-sm active:scale-[0.99]';
 
         return (
             <motion.button
                 type="button" key={d.user_id}
-                onClick={isBusy ? undefined : () => onSelect && onSelect(d)}
-                disabled={isBusy}
+                onClick={blockClick ? undefined : () => onSelect && onSelect(d)}
+                disabled={blockClick}
                 title={conflictTitle}
                 initial={{ opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
@@ -207,18 +226,18 @@ export default function DriverPickerModal({
                 transition={{ duration: 0.16 }}
                 className={`w-full flex items-center justify-between gap-3 px-4 py-3 rounded-xl border text-left transition-all
                     ${isBusy
-                        ? 'bg-gray-50 dark:bg-gray-900/40 border-gray-200 dark:border-gray-700 opacity-60 cursor-not-allowed'
+                        ? busyClasses
                         : (selected
                             ? 'bg-cyan-50 dark:bg-cyan-900/20 border-cyan-300 dark:border-cyan-700 ring-1 ring-cyan-400 active:scale-[0.99]'
                             : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 hover:border-cyan-300 dark:hover:border-cyan-700 hover:shadow-sm active:scale-[0.99]')}`}
             >
                 <div className="flex items-center gap-3 min-w-0">
-                    <div className={`p-2 rounded-lg ${isBusy ? 'bg-gray-100 dark:bg-gray-800 text-gray-400' : (selected ? 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700' : 'bg-gray-100 dark:bg-gray-700/60 text-gray-500')}`}>
+                    <div className={`p-2 rounded-lg ${blockClick ? 'bg-gray-100 dark:bg-gray-800 text-gray-400' : (isBusy ? 'bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-400' : (selected ? 'bg-cyan-100 dark:bg-cyan-900/40 text-cyan-700' : 'bg-gray-100 dark:bg-gray-700/60 text-gray-500'))}`}>
                         <User className="w-4 h-4" />
                     </div>
                     <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                            <span className={`text-sm font-bold truncate ${isBusy ? 'text-gray-500 dark:text-gray-400' : 'text-gray-800 dark:text-gray-100'}`}>
+                            <span className={`text-sm font-bold truncate ${blockClick ? 'text-gray-500 dark:text-gray-400' : 'text-gray-800 dark:text-gray-100'}`}>
                                 {displayFio(d)}
                             </span>
                             {d.is_default && (
@@ -227,13 +246,19 @@ export default function DriverPickerModal({
                                 </span>
                             )}
                             {isBusy && (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800/50">
-                                    <AlertTriangle className="w-3 h-3" /> ЗАНЯТ
-                                </span>
+                                blockClick ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-red-100 text-red-700 border border-red-200 dark:bg-red-900/30 dark:text-red-300 dark:border-red-800/50">
+                                        <AlertTriangle className="w-3 h-3" /> ЗАНЯТ
+                                    </span>
+                                ) : (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-md bg-amber-100 text-amber-700 border border-amber-300 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700">
+                                        <AlertTriangle className="w-3 h-3" /> Занят (можно назначить)
+                                    </span>
+                                )
                             )}
                         </div>
                         {isBusy ? (
-                            <div className="mt-0.5 text-[11px] text-red-600 dark:text-red-400 truncate">
+                            <div className={`mt-0.5 text-[11px] truncate ${blockClick ? 'text-red-600 dark:text-red-400' : 'text-amber-700 dark:text-amber-400'}`}>
                                 Уже на технике «{conflict.equipment_name}» {conflict.time_start}–{conflict.time_end}
                             </div>
                         ) : (

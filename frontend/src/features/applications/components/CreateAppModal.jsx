@@ -150,9 +150,18 @@ export default function CreateAppModal({
         const tsHour = best.time_start.split(':')[0];
         const teHour = best.time_end.split(':')[0];
         const displayName = makeDisplayName(eqAvail);
+        // v2.6.1: also auto-fill the default driver for the partial-time
+        // selection path. Same rule as toggleEquipmentSelection — keep
+        // the two add paths consistent.
+        const defaultDriverId = eqAvail.default_driver_user_id || null;
+        const defaultDriverFio = eqAvail.default_driver_fio || '';
+        const autoDriver = defaultDriverId
+            ? { user_id: defaultDriverId, fio: defaultDriverFio }
+            : null;
         setAppForm(prev => ({
             ...prev,
             equipment: [...prev.equipment, { id: eqAvail.id, name: displayName, time_start: tsHour, time_end: teHour, isPartialTime: true }],
+            driverAssignments: { ...(prev.driverAssignments || {}), [eqAvail.id]: autoDriver },
         }));
         setTimeAutoSet(true);
         toast('Время автоматически изменено. Проверьте время техники.', { icon: '⏰' });
@@ -164,7 +173,7 @@ export default function CreateAppModal({
         if (state === 'in_exchange') return toast.error('Эта техника уже участвует в обмене');
 
         const isSelected = appForm.equipment.some(eq => eq.id === eqAvail.id);
-        if (isSelected) return toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate });
+        if (isSelected) return toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate, default_driver_user_id: eqAvail.default_driver_user_id, default_driver_fio: eqAvail.default_driver_fio });
 
         if (state === 'both') {
             setActionChoiceEquip(eqAvail);
@@ -182,7 +191,7 @@ export default function CreateAppModal({
         }
 
         // state === 'available'
-        toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate });
+        toggleEquipmentSelection({ id: eqAvail.id, name: eqAvail.name, license_plate: eqAvail.license_plate, default_driver_user_id: eqAvail.default_driver_user_id, default_driver_fio: eqAvail.default_driver_fio });
     };
 
     // Deferred exchange: save intent, do NOT add occupied equipment to the list

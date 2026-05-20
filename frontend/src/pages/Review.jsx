@@ -572,6 +572,13 @@ export default function Review() {
                     role={role}
                     tgId={tgId}
                     openProfile={openProfile}
+                    // v2.6.1: opened from the review screen — moderator+ gets
+                    // full editorial powers with soft-warning conflicts and
+                    // a force_assign override. Foreman owners of their own
+                    // app still enter through this path; the picker stays
+                    // hard-block for them (the BE drops the force_assign
+                    // flag when the caller isn't office).
+                    mode={['moderator', 'boss', 'superadmin'].includes(role) ? 'review-edit' : 'owner-edit'}
                 />
             )}
             <ScheduleModal isOpen={isScheduleOpen} onClose={() => setScheduleOpen(false)} tgId={tgId} />
