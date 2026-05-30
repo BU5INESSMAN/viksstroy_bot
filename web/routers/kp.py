@@ -175,6 +175,15 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
             'team_icon': team.get('icon') or '',
             'members': members_out,
         })
+
+    # v2.7 — brigadier/worker scope: only their own brigade(s) are returned.
+    # Other brigades on the application are not sent over the wire, so the
+    # picker physically cannot show them (foreman/office scope unchanged).
+    role = current_user.get('role', 'worker')
+    if role in ('brigadier', 'worker'):
+        my_team_ids = set(await db.get_user_team_ids(current_user['tg_id']))
+        result = [t for t in result if int(t['team_id']) in my_team_ids]
+
     return result
 
 
@@ -250,8 +259,13 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     if not app_row:
         raise HTTPException(404, "Заявка не найдена")
 
-    # Brigadier scope: filter hours to their own teams
-    user_team_ids = set(await db.get_user_team_ids(tg_id)) if role in ('brigadier', 'worker') else None
+    # Brigadier scope: filter hours to their own teams (v2.7 hard block —
+    # an unattached brigadier cannot submit SMR at all).
+    user_team_ids = None
+    if role in ('brigadier', 'worker'):
+        user_team_ids = set(await db.get_user_team_ids(tg_id))
+        if not user_team_ids:
+            raise HTTPException(403, "Вы не привязаны ни к одной бригаде. Обратитесь к администратору.")
 
     # 1. Hours
     hours_items = data.get('hours') or []

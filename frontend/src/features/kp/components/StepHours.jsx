@@ -143,9 +143,13 @@ export default function StepHours({
     }
 
     if (visibleTeams.length === 0) {
+        // v2.7 — unattached brigadier/worker: muted "contact admin" notice.
+        const unattached = userRole === 'brigadier' || userRole === 'worker';
         return (
-            <div className="text-center py-12 text-gray-400 dark:text-gray-500">
-                Нет бригад, доступных для заполнения часов.
+            <div className="text-center py-12 text-gray-400 dark:text-gray-500 text-sm">
+                {unattached
+                    ? 'Вы не привязаны ни к одной бригаде. Обратитесь к администратору.'
+                    : 'Нет бригад, доступных для заполнения часов.'}
             </div>
         );
     }
