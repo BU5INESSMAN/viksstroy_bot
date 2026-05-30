@@ -1,0 +1,36 @@
+# Production image build excludes — keep dev-only / non-runtime files out.
+
+# Dev-only test auth backdoor — must never be baked into a prod image (v2.7.1).
+web/routers/_test_auth.py
+
+# Local QA / repro sandbox + audit artifacts (not for production)
+test_sandbox/
+local_test/
+skill-reports/
+.understand-anything/
+
+# VCS + tooling
+.git/
+.gitignore
+.idea/
+.claude/
+
+# Python caches / build
+__pycache__/
+*.pyc
+*.pyo
+dist/
+build/
+*.egg-info/
+
+# Node / frontend dev (the built assets are produced separately)
+frontend/node_modules/
+
+# Local env + secrets (never copy a real .env into the image)
+.env
+.env.*
+!.env.example
+
+# Graphify output
+graphify-out/
+codebase_graph.md
