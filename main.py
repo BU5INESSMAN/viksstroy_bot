@@ -1226,28 +1226,46 @@ async def order_cancel(callback: types.CallbackQuery, state: FSMContext):
 # ═══════════════════════════════════════════════════════════════════════
 
 
-async def call_api(endpoint):
+async def call_api(endpoint, headers=None):
     url = f"{API_URL}{endpoint}"
     async with aiohttp.ClientSession() as session:
         try:
-            await session.post(url)
+            await session.post(url, headers=headers)
         except:
             pass
 
 
+# v2.7.3: the API cron guard (web/routers/dashboard.py::_verify_cron_secret)
+# fails CLOSED since v2.7.1 — it rejects /api/cron/* requests that don't carry
+# a valid X-Cron-Secret header. These three APScheduler jobs are the SOLE
+# trigger for daily start/end/timeout automation, so they must send the secret.
+CRON_SECRET = os.getenv("CRON_SECRET", "")
+if not CRON_SECRET:
+    logger.warning(
+        "CRON_SECRET not set in bot env — /api/cron/* calls will be rejected (503) "
+        "by the fail-closed API guard; daily start/end/timeout automation will not run"
+    )
+
+
+def _cron_headers():
+    """Header dict for internal /api/cron/* calls. Matches the API guard's
+    expected key exactly (X-Cron-Secret)."""
+    return {"X-Cron-Secret": CRON_SECRET}
+
+
 async def start_day_jobs():
     logger.info("Запуск утренних заявок (07:00 Барнаул)")
-    await call_api("/api/cron/start_day")
+    await call_api("/api/cron/start_day", headers=_cron_headers())
 
 
 async def end_day_jobs():
     logger.info("Завершение заявок (23:00 Барнаул)")
-    await call_api("/api/cron/end_day")
+    await call_api("/api/cron/end_day", headers=_cron_headers())
 
 
 async def check_equip_timeouts():
     logger.info("Проверка просроченной техники")
-    await call_api("/api/cron/check_timeouts")
+    await call_api("/api/cron/check_timeouts", headers=_cron_headers())
 
 
 async def backup_database():
