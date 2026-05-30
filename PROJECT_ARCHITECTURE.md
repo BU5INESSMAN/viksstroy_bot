@@ -44,7 +44,7 @@
 
 ### Веб-сервер (FastAPI)
 
-`web/api_main.py` — Точка входа FastAPI-приложения. Подключает 8 роутеров (`/api/auth`, `/api/dashboard`, `/api/users`, `/api/teams`, `/api/equipment`, `/api/applications`, `/api/objects`, `/api/kp`). Настраивает CORS, монтирует статические файлы (`data/uploads`). Инициализация: создание БД, таблиц веб-кодов/привязок, запуск планировщика, импорт КП-каталога из CSV. Глобальный обработчик ошибок с отправкой критических ошибок в Telegram-группу отчётов.
+`web/api_main.py` — Точка входа FastAPI-приложения. Подключает 13 роутеров: `auth`, `dashboard`, `users`, `teams`, `equipment`, `applications`, `objects`, `kp`, `system`, `exchange`, `support`, `push`, `drivers`. Настраивает CORS (env-aware: localhost только в режиме разработки), файлы отдаются через аутентифицированный `/api/files/{id}/download` (статический mount `/uploads` убран — N-01). Инициализация: создание БД, таблиц веб-кодов/привязок, запуск планировщика, импорт КП-каталога из CSV. Глобальный обработчик ошибок с отправкой критических ошибок в Telegram-группу отчётов.
 
 `web/database_deps.py` — Глобальный экземпляр `DatabaseManager` и часовой пояс `TZ_BARNAUL` (Asia/Barnaul). Импортируется всеми роутерами для доступа к БД.
 
@@ -74,7 +74,7 @@
 
 `database/schema.sql` — SQL-схема: 13 таблиц. `users` (роль, блокировка, уведомления, аватар), `teams` (код приглашения, пароль, создатель), `team_members` (позиция, tg_user_id, is_foreman), `equipment` (статус, tg_id, фото, invite_code), `applications` (статус, selected_members TEXT, equipment_data JSON, is_team_freed, freed_team_ids, kp_status), `application_selected_staff`, `logs`, `web_codes`, `account_links`, `link_codes`, `objects` (default_team_ids, default_equip_ids, is_archived), `kp_catalog` (category, unit, salary, price), `object_kp_plan`, `application_kp` (volume, current_salary, current_price).
 
-`database/db_manager.py` — Центральный менеджер `DatabaseManager`, наследуется от 7 миксинов: UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin, ObjectsRepoMixin, KpRepoMixin. Содержит `init_db()` (aiosqlite, schema.sql, автомиграции ALTER TABLE, импорт КП из CSV), `close()`, а также кросс-доменные методы: `get_foremen_count()`, `get_today_apps_count()`, `get_missing_foremen_today()`, `get_general_statistics()`.
+`database/db_manager.py` — Центральный менеджер `DatabaseManager`, наследуется от 9 миксинов: UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin, ObjectsRepoMixin, KpRepoMixin, ExchangeRepoMixin, HoursRepoMixin. Содержит `init_db()` (aiosqlite, schema.sql, автомиграции ALTER TABLE, импорт КП из CSV), `close()`, а также кросс-доменные методы: `get_foremen_count()`, `get_today_apps_count()`, `get_missing_foremen_today()`, `get_general_statistics()`.
 
 `database/users_repo.py` — Миксин `UsersRepoMixin`. Методы: `get_user`, `add_user` (INSERT OR REPLACE), `get_all_users`, `update_user_role`, `toggle_user_status`, `increment_failed_attempts`, `get_user_full_profile` (с бригадой и позицией), `update_user_profile_data` (синхронизация с team_members), `update_user_avatar`, `get_admins_and_moderators`, `get_specific_user_logs`.
 
@@ -89,6 +89,12 @@
 `database/objects_repo.py` — Миксин `ObjectsRepoMixin`. Методы: `get_objects`, `create_object`, `update_object` (с ресурсами по умолчанию), `archive_object`, `restore_object`, `get_kp_catalog`, `get_object_kp_plan`, `add_kp_to_object`.
 
 `database/kp_repo.py` — Миксин `KpRepoMixin`. Методы: `get_kp_dashboard_apps` (распределение по вкладкам), `get_app_kp_items`, `submit_kp_report` (с условным одобрением для foreman+), `review_kp_report`, `update_kp_volumes_only`, `generate_mass_excel` (Excel через pandas/openpyxl).
+
+`database/exchange_repo.py` — Миксин `ExchangeRepoMixin` (Stage 5A, биржа техники). Методы создания/ответа/отмены обменов техникой между прорабами и обработки тайм-аутов (`equipment_exchanges`).
+
+`database/hours_repo.py` — Миксин `HoursRepoMixin` (СМР wizard, шаг 1 «Часы»). Методы: `get_app_hours`, `save_app_hours`, `get_teams_for_app`, `get_user_team_ids` (область видимости бригадира). Хранит часы по участникам бригад в `application_hours`.
+
+> Примечание (v2.7.1): помимо перечисленных, в `web/routers/` есть ещё роутеры `system`, `exchange`, `support`, `push`, `drivers` — итого 13 (см. `web/api_main.py`). Их эндпоинты здесь не расписаны построчно; полный перечень регистрируется в `api_main.py`.
 
 ---
 
