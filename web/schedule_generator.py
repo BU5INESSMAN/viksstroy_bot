@@ -480,6 +480,8 @@ def _render_schedule_image(date_str: str, sections: list, include_driver_status:
 # ─────────────────────────────────────────────
 # Публичный API
 # ─────────────────────────────────────────────
+# DEPRECATED v2.7.2: all callers moved to generate_schedule_images (two-image
+# split). Kept for safety; remove in a future cleanup.
 async def generate_schedule_image(target_date: str = None) -> io.BytesIO:
     """Генерирует PNG-расстановку. По умолчанию — на завтра."""
     if target_date is None:

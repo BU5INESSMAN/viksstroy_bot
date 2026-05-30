@@ -30,7 +30,7 @@ from services.app_workflow import (
     publish_applications, free_equipment, free_team,
     archive_application, unarchive_application, remind_foreman_smr, send_remind_notification,
 )
-from schedule_generator import generate_schedule_image, publish_schedule_to_group
+from schedule_generator import publish_schedule_to_group
 
 logger = logging.getLogger(__name__)
 

@@ -16,7 +16,7 @@ from services.image_service import strip_html
 from services.schedule_helpers import get_waiting_apps_for_date, get_schedule_dates
 from services.max_api import get_max_dm_chat_id, send_max_message
 from services.broadcast_service import broadcast_group, broadcast_dm_roles, broadcast_dm_users, run_test_notification
-from schedule_generator import publish_schedule_to_group, generate_schedule_image
+from schedule_generator import publish_schedule_to_group, generate_schedule_images
 import asyncio
 import aiohttp
 from services.tg_session import get_tg_session
@@ -242,8 +242,8 @@ async def api_test_schedule(current_user=Depends(_require_boss_plus)):
 
     tomorrow = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
     try:
-        from schedule_generator import generate_schedule_image
-        buf = await generate_schedule_image(tomorrow)
+        # v2.7.2: route through the two-image generator (бригады + техника).
+        buf_a, buf_b = await generate_schedule_images(tomorrow)
     except Exception as e:
         raise HTTPException(500, f"Не удалось сгенерировать PNG: {e}")
 
@@ -255,19 +255,29 @@ async def api_test_schedule(current_user=Depends(_require_boss_plus)):
     if tg_id <= 0:
         raise HTTPException(400, "TG не привязан — откройте через Telegram")
 
+    # v2.7.2: two images — бригады first, техника second.
+    images = [
+        (buf_a, f'Тестовая расстановка на {tomorrow} — Бригады'),
+        (buf_b, f'Тестовая расстановка на {tomorrow} — Техника'),
+    ]
+    ok = True
+    resp_text = ""
     try:
         import aiohttp as _aiohttp
-        form = _aiohttp.FormData()
-        form.add_field('chat_id', str(tg_id))
-        form.add_field('caption', f'Тестовая расстановка на {tomorrow}')
-        form.add_field('photo', buf.getvalue(), filename='schedule.png',
-                       content_type='image/png')
         async with _aiohttp.ClientSession() as session:
-            async with session.post(
-                f"https://api.telegram.org/bot{token}/sendPhoto", data=form
-            ) as resp:
-                ok = resp.status == 200
-                resp_text = await resp.text()
+            for _buf, _caption in images:
+                _buf.seek(0)
+                form = _aiohttp.FormData()
+                form.add_field('chat_id', str(tg_id))
+                form.add_field('caption', _caption)
+                form.add_field('photo', _buf.getvalue(), filename='schedule.png',
+                               content_type='image/png')
+                async with session.post(
+                    f"https://api.telegram.org/bot{token}/sendPhoto", data=form
+                ) as resp:
+                    if resp.status != 200:
+                        ok = False
+                        resp_text = await resp.text()
     except Exception as e:
         raise HTTPException(500, f"Ошибка отправки: {e}")
 
@@ -450,14 +460,26 @@ async def api_send_schedule_self(date: str = Form(""), current_user=Depends(_req
 
     async def _do_send_self():
         try:
-            buf = await generate_schedule_image(date)
+            # v2.7.2: two images (бригады + техника), matching group publish.
+            # Generate BOTH up-front — if either fails, send neither.
+            buf_a, buf_b = await generate_schedule_images(date)
 
             import time as _time
-            filename = f"schedule_{date}_{int(_time.time())}.png"
-            filepath = os.path.join("data", "uploads", filename)
-            os.makedirs(os.path.dirname(filepath), exist_ok=True)
-            with open(filepath, "wb") as f:
-                f.write(buf.getvalue())
+            ts = int(_time.time())
+            os.makedirs(os.path.join("data", "uploads"), exist_ok=True)
+
+            def _save(buf, suffix):
+                fn = f"schedule_{date}_{suffix}_{ts}.png"
+                fp = os.path.join("data", "uploads", fn)
+                with open(fp, "wb") as f:
+                    f.write(buf.getvalue())
+                return fp
+
+            filepath_a = _save(buf_a, "a_brigades")
+            filepath_b = _save(buf_b, "b_equipment")
+
+            cap_a = f"📋 Расстановка на {date} — Бригады"
+            cap_b = f"📋 Расстановка на {date} — Техника"
 
             linked_ids = await get_all_linked_ids(real_id)
             tg_ids = [lid for lid in linked_ids if lid > 0]
@@ -467,27 +489,27 @@ async def api_send_schedule_self(date: str = Form(""), current_user=Depends(_req
             max_bot_token = os.getenv("MAX_BOT_TOKEN")
 
             if bot_token and tg_ids:
-                buf.seek(0)
-                photo_bytes = buf.getvalue()
                 async with await get_tg_session() as session:
                     for tid in tg_ids:
-                        try:
-                            form = aiohttp.FormData()
-                            form.add_field("chat_id", str(tid))
-                            form.add_field("photo", photo_bytes, filename="schedule.png", content_type="image/png")
-                            form.add_field("caption", f"📋 Расстановка на {date}")
-                            form.add_field("parse_mode", "HTML")
-                            await session.post(
-                                f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=form
-                            )
-                        except Exception:
-                            pass
+                        for _buf, _caption in ((buf_a, cap_a), (buf_b, cap_b)):
+                            try:
+                                _buf.seek(0)
+                                form = aiohttp.FormData()
+                                form.add_field("chat_id", str(tid))
+                                form.add_field("photo", _buf.getvalue(), filename="schedule.png", content_type="image/png")
+                                form.add_field("caption", _caption)
+                                form.add_field("parse_mode", "HTML")
+                                await session.post(
+                                    f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=form
+                                )
+                            except Exception:
+                                pass
 
             if max_bot_token and max_ids:
                 for mid in max_ids:
                     dm_chat_id = await get_max_dm_chat_id(str(mid))
-                    await send_max_message(max_bot_token, dm_chat_id,
-                                           f"📋 Расстановка на {date}", filepath)
+                    await send_max_message(max_bot_token, dm_chat_id, cap_a, filepath_a)
+                    await send_max_message(max_bot_token, dm_chat_id, cap_b, filepath_b)
 
             await db.add_log(real_id, user_fio,
                              f"Запросил расстановку на {date} себе в ЛС",
