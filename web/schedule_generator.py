@@ -61,6 +61,50 @@ def _get_status_label(member: dict, target_date: str) -> str:
     return STATUS_LABELS.get(status, 'Акт')  # default is always 'Акт'
 
 
+def _shift_time_for_equipment(equipment_data_json, equipment_id: int) -> str:
+    """v2.8: per-equipment shift time 'HH:MM-HH:MM' pulled from an
+    application's ``equipment_data`` JSON ([{id, time_start, time_end}, …]).
+
+    Returns '' when the equipment isn't in the JSON or the times are missing.
+    Bare-hour values like '7' / '07' are normalised to '07:00'.
+    """
+    if not equipment_data_json:
+        return ""
+
+    def _norm(t) -> str:
+        if t is None:
+            return ""
+        s = str(t).strip()
+        if not s:
+            return ""
+        if ":" in s:
+            return s
+        try:
+            return f"{int(s):02d}:00"
+        except ValueError:
+            return s
+
+    try:
+        arr = json.loads(equipment_data_json)
+    except (ValueError, TypeError):
+        return ""
+    if not isinstance(arr, list):
+        return ""
+    for e in arr:
+        if not isinstance(e, dict):
+            continue
+        try:
+            same = int(e.get("id", -1)) == int(equipment_id)
+        except (ValueError, TypeError):
+            same = False
+        if same:
+            ts = _norm(e.get("time_start"))
+            te = _norm(e.get("time_end"))
+            if ts and te:
+                return f"{ts}-{te}"
+    return ""
+
+
 def _load_font(size: int, bold: bool = False):
     """Calibri → Arial → Roboto → default."""
     candidates = [
@@ -261,88 +305,114 @@ async def _fetch_schedule_sections(target_date: str) -> list:
         sections.append({"title": tname, "rows": rows, "kind": "brigade"})
 
     # ── Техника (по категориям) ───────────────
-    # v2.6: driver name comes from equipment.default_driver_user_id (the
-    # office-owned relation introduced in m_2026_05_invert_default).
-    # Legacy equipment.driver_fio is the fallback for un-migrated rows.
+    # v2.8: the whole ACTIVE fleet always lists, but the displayed driver /
+    # status / object come from the date's APPROVED application_drivers
+    # assignments — NOT from equipment.default_driver_user_id. Equipment with
+    # no approved assignment that date renders EMPTY driver / Ст.вод. / object
+    # cells (never the default driver, never "Акт", never "—"). The
+    # equipment's OWN status column (Статус техники) still reflects
+    # equipment.status (Акт/Рем) regardless of assignment.
     async with db.conn.execute(
-        """SELECT e.id, e.name, e.category, e.driver_fio, e.status,
-                  u.fio AS default_driver_fio
+        """SELECT e.id, e.name, e.category, e.status
            FROM equipment e
-           LEFT JOIN users u
-                  ON u.user_id = e.default_driver_user_id
-                 AND u.is_blacklisted = 0
            WHERE e.is_active = 1
-           ORDER BY e.category, COALESCE(u.fio, e.driver_fio)"""
+           ORDER BY e.category, e.name"""
     ) as cur:
         equip_rows = await cur.fetchall()
 
-    # v2.7: per-application driver assignments for this date. The new
-    # «Ст. вод.» column on image B reflects the driver actually assigned to
-    # the equipment for the day (application_drivers.driver_user_id), not the
-    # office default driver shown in the name column. First app on the date
-    # for a given equipment wins (deterministic via ORDER BY a.id).
-    eq_app_driver: dict[int, int] = {}
+    # Per-date APPROVED driver assignments, keyed by equipment_id: the driver,
+    # the application's equipment_data (for the per-equipment shift time) and
+    # the object. First approved app per equipment wins (deterministic via
+    # ORDER BY a.id). Only status='approved' feeds equipment assignments.
+    eq_assign: dict[int, dict] = {}
+    driver_equipment_count: dict[int, set] = {}   # driver_user_id → {equipment_id, …}
     try:
         async with db.conn.execute(
-            """SELECT ad.equipment_id, ad.driver_user_id
+            """SELECT ad.equipment_id, ad.driver_user_id,
+                      a.equipment_data, a.object_id, a.object_address,
+                      o.name AS object_name
                FROM application_drivers ad
                JOIN applications a ON a.id = ad.application_id
+               LEFT JOIN objects o ON o.id = a.object_id
                WHERE a.date_target = ?
-                 AND a.status IN ('approved','published','in_progress')
+                 AND a.status = 'approved'
                ORDER BY a.id""",
             (target_date,),
         ) as _adc:
-            for _eid, _did in await _adc.fetchall():
+            for _eid, _did, _eqdata, _oid, _oaddr, _oname in await _adc.fetchall():
                 if _eid is None or _did is None:
                     continue
-                eq_app_driver.setdefault(int(_eid), int(_did))
+                _eid = int(_eid); _did = int(_did)
+                if _eid not in eq_assign:
+                    eq_assign[_eid] = {
+                        "driver_user_id": _did,
+                        "equipment_data": _eqdata,
+                        "object_name": (_oname or _oaddr or "").strip(),
+                    }
+                # Count DISTINCT equipment per driver for the shift-time rule
+                # (decision 5): only render time when a driver works 2+ machines.
+                driver_equipment_count.setdefault(_did, set()).add(_eid)
     except Exception:
-        eq_app_driver = {}
+        eq_assign = {}
+        driver_equipment_count = {}
 
-    # Status of those drivers, reusing team_members.status — the same column
-    # that drives brigade-member badges. A driver with no team_members row
-    # falls through to 'available' → "Акт" (decision: reuse team_members.status).
+    # Assigned-driver display names + statuses come from users (v2.8:
+    # users.member_status, the same Акт/Бол/Отп mechanism as brigade members).
+    assigned_ids = list({v["driver_user_id"] for v in eq_assign.values()})
+    driver_name_map: dict[int, str] = {}
     driver_status_map: dict[int, dict] = {}
-    driver_ids = list({v for v in eq_app_driver.values()})
-    if driver_ids:
-        pl = ",".join("?" * len(driver_ids))
+    if assigned_ids:
+        pl = ",".join("?" * len(assigned_ids))
         try:
             async with db.conn.execute(
-                f"""SELECT tg_user_id, status, status_from, status_until
-                    FROM team_members WHERE tg_user_id IN ({pl})""",
-                driver_ids,
-            ) as _dsc:
-                for _uid, _st, _sf, _su in await _dsc.fetchall():
+                f"""SELECT user_id, fio, member_status, status_from, status_until
+                    FROM users WHERE user_id IN ({pl})""",
+                assigned_ids,
+            ) as _uc:
+                for _uid, _fio, _ms, _sf, _su in await _uc.fetchall():
                     if _uid is None:
                         continue
-                    driver_status_map.setdefault(int(_uid), {
-                        'status': _st, 'status_from': _sf, 'status_until': _su,
-                    })
+                    driver_name_map[int(_uid)] = _fio or "—"
+                    driver_status_map[int(_uid)] = {
+                        "status": _ms, "status_from": _sf, "status_until": _su,
+                    }
         except Exception:
+            driver_name_map = {}
             driver_status_map = {}
 
     eq_cats: dict[str, list] = {}
-    for eid, ename, cat, legacy_driver, eq_status, new_driver in equip_rows:
+    for eid, ename, cat, eq_status in equip_rows:
         cat = cat or "Прочая техника"
-        objs = equip_objs.get(eid, [])
-        driver_name = new_driver or legacy_driver or "—"
-        # v2.7 «Ст. вод.» — per-app driver status. No driver assigned for the
-        # date → "—" (empty equipment slot); assigned but no status row → "Акт".
-        _did = eq_app_driver.get(int(eid))
-        if not _did:
-            driver_status_label = "—"
+        assign = eq_assign.get(int(eid))
+        if assign:
+            _did = assign["driver_user_id"]
+            driver_name = driver_name_map.get(_did, "—")
+            # Assigned driver ALWAYS gets a real label (Акт/Бол/Отп), never "—".
+            driver_status_label = _get_status_label(
+                driver_status_map.get(_did, {}), target_date
+            )
+            object_cell = assign["object_name"]
+            # Shift time in parentheses ONLY for a driver on 2+ equipment that
+            # date — so the two shifts are distinguishable (decision 5).
+            if len(driver_equipment_count.get(_did, set())) >= 2:
+                shift = _shift_time_for_equipment(assign["equipment_data"], int(eid))
+                if shift and object_cell:
+                    object_cell = f"{object_cell} ({shift})"
+                elif shift:
+                    object_cell = f"({shift})"
         else:
-            _srow = driver_status_map.get(int(_did), {})
-            driver_status_label = _get_status_label({
-                'status': _srow.get('status'),
-                'status_from': _srow.get('status_from'),
-                'status_until': _srow.get('status_until'),
-            }, target_date)
+            # No approved assignment that date → genuinely blank cells
+            # (NOT "—", NOT the default driver, NOT "Акт").
+            driver_name = ""
+            driver_status_label = ""
+            object_cell = ""
         eq_cats.setdefault(cat, []).append({
             "name": driver_name,
             "role": ename or "—",
+            # Equipment's own status (Статус техники) — unchanged, from
+            # equipment.status (Акт/Рем), independent of driver assignment.
             "status": _get_status_label({'status': eq_status}, target_date),
-            "object": _object_cell(objs),
+            "object": object_cell,
             "driver_status": driver_status_label,
         })
 
