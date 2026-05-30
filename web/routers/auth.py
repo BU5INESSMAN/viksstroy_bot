@@ -18,10 +18,50 @@ from datetime import datetime, timedelta
 from database_deps import db
 from utils import resolve_id
 from services.notifications import notify_users, notify_fio_match
+from rate_limit import registration_limiter
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Auth"])
+
+# v2.7.1 (M-1): office-tier roles cannot be self-provisioned by a static role
+# password alone. The password registration endpoints below provision only
+# worker-tier roles (foreman); moderator/boss/superadmin must be granted by an
+# already-authenticated superadmin via the can_change_role elevation path
+# (web/services/user_service.py). A leaked *_PASS therefore can no longer mint
+# an office account.
+OFFICE_ROLES = {"moderator", "boss", "superadmin"}
+
+
+async def _registration_rate_check(key: int) -> None:
+    """Throttle registration attempts (5 / 15 min) keyed by the supplied
+    platform id. Records the attempt in the sliding window and immediately
+    releases the concurrency slot — registration is not a concurrency concern.
+    Raises HTTP 429 when the window is exceeded."""
+    try:
+        ok, reason = await registration_limiter.acquire(int(key))
+    except (TypeError, ValueError):
+        return  # unparseable key — don't block on a limiter edge case
+    if ok:
+        await registration_limiter.release(int(key))
+    else:
+        raise HTTPException(status_code=429, detail=reason or "Слишком много попыток. Попробуйте позже.")
+
+
+async def _audit_office_role_block(uid: int, fio: str, requested_role: str, method: str) -> None:
+    """Audit-log a blocked office-role provisioning attempt (M-1)."""
+    try:
+        await db.add_log(
+            uid, fio or "Регистрация",
+            f"Заблокирована регистрация роли «{requested_role}» (пароль без приглашения суперадмина)",
+            target_type="user", target_id=None,
+            details=json.dumps(
+                {"action": "user_registration_blocked", "requested_role": requested_role, "method": method},
+                ensure_ascii=False,
+            ),
+        )
+    except Exception:
+        pass
 
 
 def _check_role_password(provided: str, env_var: str) -> bool:
@@ -380,6 +420,9 @@ async def api_max_auth(code: str = Form(...)):
 @router.post("/api/max/register")
 async def register_max(max_id: int = Form(...), first_name: str = Form(""), last_name: str = Form(""),
                        password: str = Form(...)):
+    pseudo_tg_id = -int(max_id)
+    # v2.7.1 (M-1/M-3): throttle registration attempts before checking passwords.
+    await _registration_rate_check(pseudo_tg_id)
     role = None
     if _check_role_password(password, "FOREMAN_PASS"):
         role = "foreman"
@@ -390,10 +433,17 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
     elif _check_role_password(password, "SUPERADMIN_PASS"):
         role = "superadmin"
     if not role: raise HTTPException(status_code=401, detail="Неверный пароль")
-    pseudo_tg_id = -int(max_id)
     fio = f"{last_name} {first_name}".strip() or f"Пользователь MAX {max_id}"
+    # v2.7.1 (M-1): a static role password cannot self-provision an office role.
+    if role in OFFICE_ROLES:
+        await _audit_office_role_block(pseudo_tg_id, fio, role, "password")
+        raise HTTPException(
+            status_code=403,
+            detail="Роли модератор/босс/суперадмин выдаются только по приглашению от суперадмина.",
+        )
     await db.add_user(pseudo_tg_id, fio, role)
-    await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался через MAX (Роль: {role})", target_type='user', target_id=pseudo_tg_id)
+    await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался через MAX (Роль: {role})", target_type='user', target_id=pseudo_tg_id,
+                     details=json.dumps({"action": "user_registration", "requested_role": role, "method": "password"}, ensure_ascii=False))
 
     async def _send_register_max_notifications():
         try:
@@ -538,6 +588,8 @@ async def api_tma_auth(init_data: str = Form(...)):
 @router.post("/api/register_telegram")
 async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form(""),
                             password: str = Form(...), photo_url: str = Form("")):
+    # v2.7.1 (M-1/M-3): throttle registration attempts before checking passwords.
+    await _registration_rate_check(tg_id)
     role = None
     if _check_role_password(password, "FOREMAN_PASS"):
         role = "foreman"
@@ -549,9 +601,17 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
         role = "superadmin"
     if not role: raise HTTPException(status_code=401, detail="Неверный пароль")
     fio = f"{last_name} {first_name}".strip() or f"Пользователь {tg_id}"
+    # v2.7.1 (M-1): a static role password cannot self-provision an office role.
+    if role in OFFICE_ROLES:
+        await _audit_office_role_block(tg_id, fio, role, "password")
+        raise HTTPException(
+            status_code=403,
+            detail="Роли модератор/босс/суперадмин выдаются только по приглашению от суперадмина.",
+        )
     await db.add_user(tg_id, fio, role)
     if photo_url: await db.update_user_avatar(tg_id, photo_url)
-    await db.add_log(tg_id, fio, f"Зарегистрировался (Роль: {role})", target_type='user', target_id=tg_id)
+    await db.add_log(tg_id, fio, f"Зарегистрировался (Роль: {role})", target_type='user', target_id=tg_id,
+                     details=json.dumps({"action": "user_registration", "requested_role": role, "method": "password"}, ensure_ascii=False))
 
     async def _send_register_tg_notifications():
         try:

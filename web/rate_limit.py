@@ -52,3 +52,10 @@ class UserRateLimiter:
 
 # Global instance for support chat: 10 messages/minute, max 3 concurrent
 support_limiter = UserRateLimiter(max_per_window=10, window_sec=60, max_concurrent=3)
+
+# v2.7.1 (M-1/M-3): throttle the password-registration endpoints so a leaked
+# role password can't be brute-forced or used to mass-provision accounts.
+# 5 attempts per 15 minutes, keyed by the supplied platform id. max_concurrent
+# is generous — registration is not a concurrency concern; the sliding window
+# is what throttles abuse.
+registration_limiter = UserRateLimiter(max_per_window=5, window_sec=900, max_concurrent=5)
