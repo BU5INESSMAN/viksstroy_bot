@@ -307,13 +307,17 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
 
 def _verify_cron_secret(request: Request):
     """Check X-Cron-Secret header matches CRON_SECRET env var.
-    Falls through if CRON_SECRET is empty (legacy: not yet configured).
+
+    v2.7.1 (M-2): fails CLOSED. When CRON_SECRET is unset the guard rejects
+    every request (503) instead of letting it through — the previous
+    behaviour left the cron endpoints fully unauthenticated on a
+    misconfigured deploy. The comparison stays timing-safe
+    (hmac.compare_digest, H-10).
     """
     cron_secret = os.getenv("CRON_SECRET", "")
     if not cron_secret:
-        # Not configured yet — allow but log a warning
-        logger.warning("CRON_SECRET not set — cron endpoints are unprotected")
-        return
+        logger.warning("cron rejected: CRON_SECRET not configured — cron endpoints disabled until set")
+        raise HTTPException(503, "Cron disabled: CRON_SECRET not configured")
     provided = request.headers.get("X-Cron-Secret", "")
     if not provided or not _hmac.compare_digest(cron_secret, provided):
         raise HTTPException(403, "Forbidden")

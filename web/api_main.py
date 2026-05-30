@@ -147,6 +147,13 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.on_event("startup")
 async def startup():
     await db.init_db()
+    # v2.7.1 (M-2): cron endpoints fail closed when CRON_SECRET is unset.
+    # Warn loudly at startup so a misconfigured deploy is obvious — cron
+    # stays disabled (rejects all) until the secret is configured.
+    if not os.getenv("CRON_SECRET"):
+        logging.getLogger(__name__).warning(
+            "CRON_SECRET not configured — cron endpoints are disabled until it is set"
+        )
     try:
         from services.notifications import validate_vapid_keys
         validate_vapid_keys()
