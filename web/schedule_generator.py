@@ -382,9 +382,14 @@ def _render_schedule_image(date_str: str, sections: list, include_driver_status:
     font = _load_font(14, bold=False)
     font_bold = _load_font(14, bold=True)
 
-    # Ширины колонок: ФИО | Должность | Статус | Объект [| Ст. вод.]
+    # Ширины колонок.
+    #   image A (бригады):          ФИО | Должность | Статус | Объект
+    #   image B (техника, v2.7.3):  ФИО водителя | Ст. вод. | Техника | Статус техники | Объект
+    #   — «Ст. вод.» теперь второй столбец, сразу после имени водителя
+    #     (раньше был крайним правым). Ширины те же, только порядок изменён,
+    #     поэтому общая ширина изображения не меняется.
     if include_driver_status:
-        COL_W = [200, 270, 50, 240, 110]
+        COL_W = [200, 110, 270, 50, 240]
     else:
         COL_W = [200, 270, 50, 240]
     TABLE_W = sum(COL_W)
@@ -438,24 +443,29 @@ def _render_schedule_image(date_str: str, sections: list, include_driver_status:
             x += cw
         draw.text((PX, y + PY), section["title"], fill=BLACK, font=font_bold)
         if include_driver_status:
-            # Label the new column inside each section's yellow header row.
+            # Label the «Ст. вод.» column — now column 2 (index 1), right after
+            # the driver-name column — inside each section's yellow header row.
             hdr = "Ст. вод."
             hbb = draw.textbbox((0, 0), hdr, font=font_bold)
-            hx = sum(COL_W[:4]) + (COL_W[4] - (hbb[2] - hbb[0])) // 2
+            hx = COL_W[0] + (COL_W[1] - (hbb[2] - hbb[0])) // 2
             draw.text((hx, y + PY), hdr, fill=BLACK, font=font_bold)
         y += ROW_H
 
         # ── Строки данных ──
         for row in section["rows"]:
             x = 0
-            vals = [row["name"], row["role"], str(row["status"]), row.get("object", "")]
             if include_driver_status:
-                vals.append(str(row.get("driver_status", "—")))
+                # image B (v2.7.3): ФИО водителя | Ст. вод. | Техника | Статус техники | Объект
+                vals = [row["name"], str(row.get("driver_status", "—")), row["role"],
+                        str(row["status"]), row.get("object", "")]
+                status_cols = (1, 3)  # driver-status (1) + equipment-status (3)
+            else:
+                vals = [row["name"], row["role"], str(row["status"]), row.get("object", "")]
+                status_cols = (2,)    # member/equipment status
             for ci, val in enumerate(vals):
                 draw.rectangle([x, y, x + COL_W[ci], y + ROW_H], fill=WHITE, outline=BLACK)
-                # Status columns — centered, color-coded: equipment status (2)
-                # and, on image B only, the new driver-status column (4).
-                if ci == 2 or (include_driver_status and ci == 4):  # Status column — centered, color-coded
+                # Status columns — centered, color-coded.
+                if ci in status_cols:  # Status column — centered, color-coded
                     clipped = _clip_text(draw, str(val), font, COL_W[ci] - PX * 2)
                     text_color = STATUS_COLORS.get(clipped, BLACK)
                     status_font = font_bold if clipped in ("Акт", "Отп", "Бол", "Рем") else font
