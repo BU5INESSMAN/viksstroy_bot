@@ -150,3 +150,50 @@ class HoursRepoMixin:
             (tg_user_id,),
         ) as cur:
             return [r[0] for r in await cur.fetchall() if r[0] is not None]
+
+    async def get_adhoc_candidate_members(self, exclude_member_ids: set[int] | None = None) -> list[dict]:
+        """v2.7 — candidate workers for the foreman's "add ad-hoc worker" picker.
+
+        Returns every ``team_members`` row that belongs to a brigade,
+        excluding people already present in the SMR (``exclude_member_ids``,
+        which are ``team_members.id`` values) and excluding drivers /
+        superadmins by the linked ``users`` role. Members with no linked
+        account are kept — they are plain brigade staff with no role to
+        veto. ``member_id`` is what the hours payload calls ``user_id``.
+        """
+        exclude = {int(x) for x in (exclude_member_ids or set())}
+        async with self.conn.execute(
+            """
+            SELECT tm.id            AS member_id,
+                   tm.team_id       AS team_id,
+                   tm.fio           AS fio,
+                   tm.position      AS specialty,
+                   tm.tg_user_id    AS user_id,
+                   tm.is_foreman    AS is_foreman,
+                   tm.status        AS status,
+                   t.name           AS team_name,
+                   t.icon           AS team_icon,
+                   u.role           AS role
+            FROM team_members tm
+            JOIN teams t ON t.id = tm.team_id
+            LEFT JOIN users u ON u.user_id = tm.tg_user_id
+            WHERE (u.role IS NULL OR u.role NOT IN ('superadmin', 'driver'))
+              AND (u.is_blacklisted IS NULL OR u.is_blacklisted = 0)
+            ORDER BY t.name, tm.is_foreman DESC, tm.fio
+            """
+        ) as cur:
+            rows = [dict(r) for r in await cur.fetchall()]
+        return [r for r in rows if int(r['member_id']) not in exclude]
+
+    async def member_belongs_to_team(self, member_id: int, team_id: int) -> bool:
+        """True when ``member_id`` is a real ``team_members`` row of ``team_id``.
+
+        Used to validate a foreman-supplied ad-hoc worker before it is
+        written into ``application_hours`` — keeps junk (team/member
+        mismatch, deleted member) out of the SMR.
+        """
+        async with self.conn.execute(
+            "SELECT 1 FROM team_members WHERE id = ? AND team_id = ? LIMIT 1",
+            (int(member_id), int(team_id)),
+        ) as cur:
+            return await cur.fetchone() is not None

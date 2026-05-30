@@ -59,6 +59,67 @@ async def _expand_merge_group(app_id: int) -> list[int]:
     return ids or [app_id]
 
 
+# ──────────────────────────────────────────────────────────────────────
+# v2.7 — ad-hoc worker helpers (Commit 2)
+# ──────────────────────────────────────────────────────────────────────
+
+async def _roster_member_keys(group_ids: list[int]) -> set[tuple[int, int]]:
+    """Set of (team_id, member_id) that form the SMR's declared roster
+    across the merge group. A saved hours row outside this set is an
+    AD-HOC worker — someone who wasn't in the application but worked."""
+    keys: set[tuple[int, int]] = set()
+    for aid in group_ids:
+        for t in await db.get_teams_for_app(aid):
+            tid = int(t.get('id') or 0)
+            for m in t.get('members') or []:
+                keys.add((tid, int(m['id'])))
+    return keys
+
+
+async def _current_smr_member_ids(app_id: int) -> set[int]:
+    """Every team_members.id already represented in the SMR — declared
+    roster plus any saved ad-hoc workers — so the picker can exclude them."""
+    group_ids = await _expand_merge_group(app_id)
+    ids: set[int] = {mid for _tid, mid in await _roster_member_keys(group_ids)}
+    for aid in group_ids:
+        for r in await db.get_app_hours(aid):
+            ids.add(int(r['member_id']))
+    return ids
+
+
+async def _guard_adhoc_hours(app_id: int, hours_items: list, role: str) -> list:
+    """Enforce that only foreman/office may add ad-hoc workers.
+
+    Any hours row whose (team_id, user_id=member_id) is not part of the
+    declared roster is an ad-hoc add. Foreman/office: validated (the member
+    must really belong to the team) and kept. Brigadier/worker: hard 403 —
+    they cannot add anyone beyond the application roster. Roster rows pass
+    through untouched, so the normal path has zero behaviour change.
+    """
+    group_ids = await _expand_merge_group(app_id)
+    roster = await _roster_member_keys(group_ids)
+    out = []
+    for it in hours_items:
+        try:
+            tid = int(it.get('team_id'))
+            mid = int(it.get('user_id'))
+        except (TypeError, ValueError):
+            continue
+        if (tid, mid) in roster:
+            out.append(it)
+            continue
+        # Out-of-roster → ad-hoc.
+        if role in ('foreman', 'moderator', 'boss', 'superadmin'):
+            if not await db.member_belongs_to_team(mid, tid):
+                raise HTTPException(400, "Некорректный сотрудник для бригады")
+            out.append(it)
+        else:
+            raise HTTPException(
+                403, "Только прораб может добавлять дополнительных сотрудников"
+            )
+    return out
+
+
 @router.get("/api/kp/apps/{app_id}/items")
 async def get_app_kp_items(app_id: int, current_user=Depends(get_current_user)):
     # Merge-aware: aggregate plan items across every app in the same
@@ -160,6 +221,7 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
                 'fio': m.get('fio', ''),
                 'specialty': m.get('position', ''),
                 'is_foreman': bool(m.get('is_foreman', 0)),
+                'is_ad_hoc': False,
                 'status': m.get('status') or 'available',
                 'status_from': m.get('status_from') or '',
                 'status_until': m.get('status_until') or '',
@@ -173,8 +235,52 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
             'team_id': team['id'],
             'team_name': team['name'],
             'team_icon': team.get('icon') or '',
+            'is_virtual': False,
             'members': members_out,
         })
+
+    # v2.7 — surface previously-saved AD-HOC workers. These are
+    # application_hours rows whose (team_id, member_id) is NOT part of the
+    # application's declared roster (team_id list + selected_members). They
+    # are reconstructed here so re-opening the wizard shows them; they are
+    # NEVER written into applications.team_id/selected_members, so an ad-hoc
+    # worker gains no visibility into the SMR (spec decision 2c).
+    covered = {(int(t['team_id']), int(m['member_id'])) for t in result for m in t['members']}
+    result_by_team = {int(t['team_id']): t for t in result}
+    for (tid, mid), row in by_key.items():
+        if (tid, mid) in covered:
+            continue
+        member_entry = {
+            'user_id': mid,
+            'member_id': mid,
+            'fio': row.get('fio', ''),
+            'specialty': row.get('specialty', ''),
+            'is_foreman': False,
+            'is_ad_hoc': True,
+            'status': row.get('member_status') or 'available',
+            'status_from': row.get('status_from') or '',
+            'status_until': row.get('status_until') or '',
+            'tg_user_id': row.get('tg_user_id'),
+            'hours': float(row.get('hours') or 0),
+            'filled_by_fio': row.get('filled_by_fio') or '',
+            'filled_by_role': row.get('filled_by_role') or '',
+            'filled_at': row.get('filled_at') or '',
+        }
+        existing_team = result_by_team.get(tid)
+        if existing_team is not None:
+            # Ad-hoc worker attached to a brigade already on the application.
+            existing_team['members'].append(member_entry)
+        else:
+            # Brigade not on the application → virtual brigade with one worker.
+            virt = {
+                'team_id': tid,
+                'team_name': row.get('team_name') or f'Бригада {tid}',
+                'team_icon': row.get('team_icon') or '',
+                'is_virtual': True,
+                'members': [member_entry],
+            }
+            result.append(virt)
+            result_by_team[tid] = virt
 
     # v2.7 — brigadier/worker scope: only their own brigade(s) are returned.
     # Other brigades on the application are not sent over the wire, so the
@@ -185,6 +291,29 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
         result = [t for t in result if int(t['team_id']) in my_team_ids]
 
     return result
+
+
+@router.get("/api/kp/apps/{app_id}/available_workers")
+async def get_available_workers(app_id: int, current_user=Depends(get_current_user)):
+    """v2.7 — candidate workers for the foreman's "add ad-hoc worker" picker.
+
+    Foreman / office only. Lists brigade members (excluding drivers,
+    superadmins, and anyone already in the SMR), each carrying their
+    brigade so the frontend can append them under the right team — or, if
+    that brigade isn't on the application, create a virtual brigade entry.
+    """
+    role = current_user.get('role', 'worker')
+    if role not in ('foreman', 'moderator', 'boss', 'superadmin'):
+        raise HTTPException(403, "Только прораб может добавлять дополнительных сотрудников")
+    if db.conn is None:
+        await db.init_db()
+    async with db.conn.execute(
+        "SELECT id FROM applications WHERE id = ?", (app_id,)
+    ) as cur:
+        if not await cur.fetchone():
+            raise HTTPException(404, "Заявка не найдена")
+    exclude = await _current_smr_member_ids(app_id)
+    return await db.get_adhoc_candidate_members(exclude)
 
 
 @router.post("/api/kp/apps/{app_id}/hours")
@@ -206,6 +335,10 @@ async def save_app_hours_endpoint(app_id: int, request: Request, current_user=De
 
     role = current_user.get('role', 'worker')
     tg_id = current_user['tg_id']
+
+    # v2.7 — only foreman/office may add ad-hoc workers (raises 403 for a
+    # brigadier who tries). Roster rows pass through unchanged.
+    items = await _guard_adhoc_hours(app_id, items, role)
 
     if role in ('worker', 'driver', 'brigadier'):
         user_team_ids = set(await db.get_user_team_ids(tg_id))
@@ -269,6 +402,10 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
 
     # 1. Hours
     hours_items = data.get('hours') or []
+    # v2.7 — only foreman/office may add ad-hoc workers. Run BEFORE the
+    # brigadier team-filter so a brigadier hitting the backend directly
+    # with an out-of-roster worker gets a 403 rather than a silent drop.
+    hours_items = await _guard_adhoc_hours(app_id, hours_items, role)
     if user_team_ids is not None:
         hours_items = [h for h in hours_items if int(h.get('team_id') or 0) in user_team_ids]
     if hours_items:

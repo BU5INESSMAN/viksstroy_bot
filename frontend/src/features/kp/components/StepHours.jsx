@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, User, Crown, ArrowRight } from 'lucide-react';
+import { ChevronDown, User, Crown, ArrowRight, UserPlus, X, Search } from 'lucide-react';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -34,6 +34,13 @@ export default function StepHours({
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(() => new Set());
     const [customOverrides, setCustomOverrides] = useState(() => new Set());
+
+    // v2.7 — ad-hoc worker picker (foreman/office only).
+    const canAddAdHoc = ['foreman', 'moderator', 'boss', 'superadmin'].includes(userRole);
+    const [showAddWorker, setShowAddWorker] = useState(false);
+    const [candidates, setCandidates] = useState([]);
+    const [candLoading, setCandLoading] = useState(false);
+    const [candSearch, setCandSearch] = useState('');
 
     useEffect(() => {
         let alive = true;
@@ -122,6 +129,71 @@ export default function StepHours({
         });
     };
 
+    // ───── v2.7 ad-hoc worker picker ─────
+    const openAddWorker = async () => {
+        setShowAddWorker(true);
+        setCandSearch('');
+        setCandLoading(true);
+        try {
+            const res = await axios.get(`/api/kp/apps/${appId}/available_workers`);
+            // Also drop anyone already present locally (just-added ad-hocs the
+            // server hasn't seen yet, since nothing is persisted until submit).
+            const present = new Set();
+            for (const t of teams) for (const m of (t.members || [])) present.add(Number(m.user_id));
+            setCandidates((res.data || []).filter(c => !present.has(Number(c.member_id))));
+        } catch {
+            toast.error('Не удалось загрузить сотрудников');
+            setCandidates([]);
+        } finally {
+            setCandLoading(false);
+        }
+    };
+
+    const addAdHocWorker = (cand) => {
+        const teamId = cand.team_id;
+        const newMember = {
+            user_id: cand.member_id,
+            member_id: cand.member_id,
+            fio: cand.fio,
+            specialty: cand.specialty || '',
+            is_foreman: !!cand.is_foreman,
+            is_ad_hoc: true,
+            status: cand.status || 'available',
+            tg_user_id: cand.user_id,
+            hours: 0,
+        };
+        setTeams(prev => {
+            const exists = prev.find(t => Number(t.team_id) === Number(teamId));
+            if (exists) {
+                if ((exists.members || []).some(m => Number(m.user_id) === Number(cand.member_id))) {
+                    return prev;
+                }
+                return prev.map(t => Number(t.team_id) === Number(teamId)
+                    ? { ...t, members: [...(t.members || []), newMember] }
+                    : t);
+            }
+            return [...prev, {
+                team_id: teamId,
+                team_name: cand.team_name || `Бригада ${teamId}`,
+                team_icon: cand.team_icon || '',
+                is_virtual: true,
+                members: [newMember],
+            }];
+        });
+        setExpanded(prev => new Set(prev).add(teamId));
+        setCandidates(prev => prev.filter(c => Number(c.member_id) !== Number(cand.member_id)));
+        toast.success(`${cand.fio} добавлен`);
+        setShowAddWorker(false);
+    };
+
+    const filteredCandidates = useMemo(() => {
+        const q = candSearch.trim().toLowerCase();
+        if (!q) return candidates;
+        return candidates.filter(c =>
+            `${c.fio} ${c.team_name || ''} ${c.specialty || ''}`.toLowerCase().includes(q)
+        );
+    }, [candidates, candSearch]);
+
     const getTeamLevel = (team) => {
         // If all non-vacation members share the same non-zero value and have
         // no individual override, show that as the team-level value.
@@ -142,8 +214,9 @@ export default function StepHours({
         );
     }
 
-    if (visibleTeams.length === 0) {
+    if (visibleTeams.length === 0 && !canAddAdHoc) {
         // v2.7 — unattached brigadier/worker: muted "contact admin" notice.
+        // Foreman/office fall through so they can still add an ad-hoc worker.
         const unattached = userRole === 'brigadier' || userRole === 'worker';
         return (
             <div className="text-center py-12 text-gray-400 dark:text-gray-500 text-sm">
@@ -162,6 +235,24 @@ export default function StepHours({
                     Укажите отработанные часы. Значение на уровне бригады подставится всем участникам.
                 </p>
             </div>
+
+            {/* v2.7 — foreman/office can append a worker who showed up but
+                wasn't in the application. Placed above the brigade list. */}
+            {!readOnly && canAddAdHoc && (
+                <button
+                    type="button"
+                    onClick={openAddWorker}
+                    className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold border border-dashed border-blue-300 dark:border-blue-700/60 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors active:scale-[0.99]"
+                >
+                    <UserPlus className="w-4 h-4" /> Добавить сотрудника
+                </button>
+            )}
+
+            {visibleTeams.length === 0 && (
+                <div className="text-center py-8 text-gray-400 dark:text-gray-500 text-sm italic border border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
+                    Нет бригад. Добавьте сотрудника кнопкой выше.
+                </div>
+            )}
 
             {visibleTeams.map(team => {
                 const isOpen = expanded.has(team.team_id);
@@ -188,6 +279,11 @@ export default function StepHours({
                                 <span className="font-bold text-sm text-gray-900 dark:text-white truncate">
                                     {team.team_name}
                                 </span>
+                                {team.is_virtual && (
+                                    <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 rounded" title="Бригады не было в заявке">
+                                        доп.
+                                    </span>
+                                )}
                                 <span className="text-[10px] font-bold text-gray-400 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
                                     {team.members?.length || 0}
                                 </span>
@@ -239,6 +335,11 @@ export default function StepHours({
                                                         </p>
                                                         <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
                                                             {m.specialty || '—'}
+                                                            {m.is_ad_hoc && (
+                                                                <span className="ml-2 text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 rounded" title="Добавлен сверх заявки">
+                                                                    доп.
+                                                                </span>
+                                                            )}
                                                             {badge && (
                                                                 <span className={`ml-2 text-[10px] font-bold px-1.5 py-0.5 rounded ${badge.cls}`}>
                                                                     {badge.label}
@@ -292,6 +393,91 @@ export default function StepHours({
                     )}
                 </div>
             )}
+
+            {/* v2.7 — ad-hoc worker picker modal */}
+            <AnimatePresence>
+                {showAddWorker && (
+                    <motion.div
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="fixed inset-0 z-[9999] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4"
+                        onClick={() => setShowAddWorker(false)}
+                    >
+                        <motion.div
+                            initial={prefersReducedMotion ? false : { opacity: 0, y: 12 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={prefersReducedMotion ? {} : { opacity: 0, y: 12 }}
+                            transition={{ duration: 0.2, ease: EASE }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col max-h-[80vh]"
+                        >
+                            <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100 dark:border-gray-700">
+                                <h3 className="text-base font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                    <UserPlus className="w-5 h-5 text-blue-500" /> Добавить сотрудника
+                                </h3>
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddWorker(false)}
+                                    className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    aria-label="Закрыть"
+                                >
+                                    <X className="w-5 h-5" />
+                                </button>
+                            </div>
+
+                            <div className="px-5 py-3 border-b border-gray-100 dark:border-gray-700">
+                                <div className="relative">
+                                    <Search className="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                                    <input
+                                        type="text"
+                                        value={candSearch}
+                                        onChange={(e) => setCandSearch(e.target.value)}
+                                        placeholder="Поиск по ФИО или бригаде…"
+                                        className="w-full pl-9 pr-4 py-2.5 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 rounded-xl outline-none focus:ring-2 focus:ring-blue-400 dark:text-white text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto custom-scrollbar p-2">
+                                {candLoading ? (
+                                    <p className="text-center text-sm text-gray-400 py-8">Загрузка…</p>
+                                ) : filteredCandidates.length === 0 ? (
+                                    <p className="text-center text-sm text-gray-400 italic py-8">
+                                        {candidates.length === 0
+                                            ? 'Нет доступных сотрудников'
+                                            : 'Ничего не найдено'}
+                                    </p>
+                                ) : (
+                                    <ul className="divide-y divide-gray-50 dark:divide-gray-700/60">
+                                        {filteredCandidates.map(c => (
+                                            <li key={c.member_id}>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => addAdHocWorker(c)}
+                                                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors text-left"
+                                                >
+                                                    <span className="inline-flex items-center justify-center w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-400 flex-shrink-0">
+                                                        {c.is_foreman ? <Crown className="w-4 h-4" /> : <User className="w-4 h-4" />}
+                                                    </span>
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">{c.fio}</p>
+                                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                                                            {c.team_name}{c.specialty ? ` · ${c.specialty}` : ''}
+                                                        </p>
+                                                    </div>
+                                                    <UserPlus className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                                                </button>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 }
