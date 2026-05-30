@@ -6,11 +6,16 @@ import { Plus, Users } from 'lucide-react';
 import DriverCard from '../features/drivers/components/DriverCard';
 import DriverEditModal from '../features/drivers/components/DriverEditModal';
 import DriverInviteModal from '../features/drivers/components/DriverInviteModal';
+import DriverStatusModal from '../features/drivers/components/DriverStatusModal';
 import { isOffice } from '../utils/roleConfig';
+
+const STATUS_ROLES = ['foreman', 'moderator', 'boss', 'superadmin'];
 
 export default function Drivers() {
     const role = localStorage.getItem('user_role') || 'Гость';
     const canManage = isOffice(role);
+    // v2.8: driver status change is foreman+ (broader than office).
+    const canStatus = STATUS_ROLES.includes((role || '').toLowerCase());
 
     const [drivers, setDrivers] = useState([]);
     const [categories, setCategories] = useState([]);
@@ -20,6 +25,7 @@ export default function Drivers() {
     const [editorMode, setEditorMode] = useState('create');
     const [editorInitial, setEditorInitial] = useState(null);
     const [inviteDriver, setInviteDriver] = useState(null);
+    const [statusDriver, setStatusDriver] = useState(null);
 
     // v2.6: equipment list no longer needed here — DriverEditModal lost its
     // "Техника по умолчанию" select. Default-driver assignment now lives
@@ -108,10 +114,12 @@ export default function Drivers() {
                             key={d.user_id}
                             driver={d}
                             canManage={canManage}
+                            canStatus={canStatus}
                             onEdit={(drv) => { setEditorMode('edit'); setEditorInitial(drv); setEditorOpen(true); }}
                             onDelete={handleDelete}
                             onRegenerateInvite={handleRegenerate}
                             onShowInvite={(drv) => setInviteDriver(drv)}
+                            onStatus={(drv) => setStatusDriver(drv)}
                         />
                     ))}
                 </div>
@@ -129,6 +137,14 @@ export default function Drivers() {
 
             {inviteDriver && (
                 <DriverInviteModal driver={inviteDriver} onClose={() => setInviteDriver(null)} />
+            )}
+
+            {statusDriver && (
+                <DriverStatusModal
+                    driver={statusDriver}
+                    onClose={() => setStatusDriver(null)}
+                    onSaved={fetchData}
+                />
             )}
         </div>
     );

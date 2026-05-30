@@ -1,10 +1,17 @@
 import { useState } from 'react';
 import {
     User, Pencil, Send, Settings, ChevronDown,
-    Trash2, RefreshCw, Link2, ShieldAlert,
+    Trash2, RefreshCw, Link2, ShieldAlert, Activity,
 } from 'lucide-react';
 import { displayFio } from '../../../utils/fioFormat';
 import { EQUIPMENT_ICONS, getIconComponent, DEFAULT_EQUIPMENT_ICON } from '../../../utils/iconConfig';
+
+// v2.8: driver work-status badge — same labels/colors as the brigade-member
+// status badge (see ManageTeamModal). 'available' shows no badge.
+const STATUS_BADGES = {
+    vacation: { label: 'Отпуск', className: 'bg-yellow-50 text-yellow-600 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-700' },
+    sick: { label: 'Больничный', className: 'bg-red-50 text-red-500 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-700' },
+};
 
 /**
  * DriverCard — one driver tile on the Resources → Водители tab.
@@ -19,11 +26,14 @@ import { EQUIPMENT_ICONS, getIconComponent, DEFAULT_EQUIPMENT_ICON } from '../..
  * features/equipment/components/DefaultDriverModal.jsx.
  */
 export default function DriverCard({
-    driver, canManage,
-    onEdit, onDelete, onRegenerateInvite, onShowInvite,
+    driver, canManage, canStatus,
+    onEdit, onDelete, onRegenerateInvite, onShowInvite, onStatus,
 }) {
     const [showMenu, setShowMenu] = useState(false);
     const fio = displayFio(driver);
+    const statusBadge = (driver.member_status && driver.member_status !== 'available')
+        ? STATUS_BADGES[driver.member_status]
+        : null;
 
     const isLinked = !driver.is_synthetic && (driver.tg_id || driver.max_id);
     const pending = driver.is_synthetic;
@@ -47,7 +57,14 @@ export default function DriverCard({
                     )}
                 </div>
 
-                <h3 className="font-bold text-gray-800 dark:text-gray-100 text-lg leading-tight mb-2">{fio}</h3>
+                <div className="flex items-center gap-2 flex-wrap mb-2">
+                    <h3 className="font-bold text-gray-800 dark:text-gray-100 text-lg leading-tight">{fio}</h3>
+                    {statusBadge && (
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border whitespace-nowrap ${statusBadge.className}`}>
+                            {statusBadge.label}{driver.status_until ? ` до ${driver.status_until}` : ''}
+                        </span>
+                    )}
+                </div>
 
                 {driver.categories?.length > 0 && (
                     <div className="flex flex-wrap gap-1.5 mb-3">
@@ -76,12 +93,23 @@ export default function DriverCard({
                 )}
             </div>
 
-            {canManage && (
+            {(canManage || canStatus) && (
                 <div className="mt-5 pt-4 border-t border-gray-100 dark:border-gray-700 flex gap-2">
+                    {/* v2.8: status control — foreman+ (canStatus), even when
+                        driver CRUD (canManage) is office-only. */}
+                    {canStatus && (
+                        <button onClick={() => onStatus?.(driver)} title="Статус водителя" className="flex-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 dark:border-gray-700 dark:bg-gray-700/50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 active:scale-95">
+                            <Activity className="w-3.5 h-3.5" />
+                            <span className="hidden lg:inline">Статус</span>
+                        </button>
+                    )}
+                    {canManage && (
                     <button onClick={() => onEdit(driver)} title="Редактировать" className="flex-1 bg-gray-50 hover:bg-gray-100 border border-gray-200 dark:border-gray-700 dark:bg-gray-700/50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 active:scale-95">
                         <Pencil className="w-3.5 h-3.5" />
                         <span className="hidden lg:inline">Изменить</span>
                     </button>
+                    )}
+                    {canManage && (
                     <div className="relative flex-1">
                         <button onClick={() => setShowMenu(!showMenu)} title="Параметры" className="w-full bg-gray-50 hover:bg-gray-100 border border-gray-200 dark:border-gray-700 dark:bg-gray-700/50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 py-2.5 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5 active:scale-95">
                             <Settings className="w-3.5 h-3.5" />
@@ -105,6 +133,7 @@ export default function DriverCard({
                             </>
                         )}
                     </div>
+                    )}
                 </div>
             )}
         </div>

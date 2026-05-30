@@ -84,6 +84,7 @@ async def list_drivers(db, category: Optional[str] = None) -> list[dict]:
     sql = """
         SELECT u.user_id, u.fio, u.last_name, u.first_name, u.middle_name,
                u.invite_code, u.default_equipment_id, u.is_active,
+               u.member_status, u.status_from, u.status_until,
                (SELECT e.name FROM equipment e
                  WHERE e.default_driver_user_id = u.user_id
                  ORDER BY e.id LIMIT 1) AS default_equipment_name,
@@ -114,6 +115,7 @@ async def get_driver(db, user_id: int) -> Optional[dict]:
     async with db.conn.execute(
         """SELECT u.user_id, u.fio, u.last_name, u.first_name, u.middle_name,
                   u.invite_code, u.default_equipment_id, u.is_active,
+                  u.member_status, u.status_from, u.status_until,
                   (SELECT e.name FROM equipment e
                     WHERE e.default_driver_user_id = u.user_id
                     ORDER BY e.id LIMIT 1) AS default_equipment_name,
