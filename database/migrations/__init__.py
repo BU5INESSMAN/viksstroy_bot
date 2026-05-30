@@ -39,6 +39,12 @@ MIGRATIONS_ORDER = [
     # active driver sessions so they re-login via users.invite_code.
     # Runs LAST in the v2.6 sequence; nothing depends on it.
     "m_2026_05_sever_legacy",
+    # v2.8 — driver status mechanism: adds users.member_status / status_from /
+    # status_until so drivers get the same Акт/Бол/Отп statuses as brigade
+    # members. Independent of the v2.6 sequence; safe to run last. Without
+    # this entry the migration file is never executed, the column is missing,
+    # and the equipment schedule shows "—" for every assigned driver.
+    "m_2026_05_driver_status",
 ]
 
 
