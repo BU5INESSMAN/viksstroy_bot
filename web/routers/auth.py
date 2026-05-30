@@ -88,7 +88,14 @@ def _make_auth_response(data: dict, session_token: str) -> JSONResponse:
 
 
 async def _create_session(user_id: int) -> str:
-    """Generate a session token and store it in DB with 30-day expiry."""
+    """Generate a session token and store it in DB with 30-day expiry.
+
+    v2.7.1 (session integrity, ECC B-1): the INSERT failure is NEVER
+    swallowed. Previously a failed insert still returned a token, handing
+    out a cookie with no backing ``sessions`` row (an orphaned, unusable
+    session). Now the failure is logged, rolled back, and re-raised as an
+    HTTP 500 so the caller returns an error with NO token and NO cookie set.
+    """
     token = secrets.token_urlsafe(32)
     try:
         await db.conn.execute(
@@ -97,7 +104,12 @@ async def _create_session(user_id: int) -> str:
         )
         await db.conn.commit()
     except Exception:
-        pass
+        logger.exception("session insert failed for user_id=%s", user_id)
+        try:
+            await db.conn.rollback()
+        except Exception:
+            pass
+        raise HTTPException(status_code=500, detail="Не удалось создать сессию")
     return token
 
 
