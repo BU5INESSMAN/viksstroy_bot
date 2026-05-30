@@ -54,6 +54,13 @@ class DriverPatch(BaseModel):
     default_equipment_id: Optional[int] = None
 
 
+class DriverStatusPayload(BaseModel):
+    # v2.8: matches the brigade-member status enum exactly.
+    status: str
+    status_from: Optional[str] = None
+    status_until: Optional[str] = None
+
+
 # ─────────── reads ───────────
 
 
@@ -337,6 +344,66 @@ async def api_update_driver(
         target_type="driver", target_id=user_id,
     )
     return updated
+
+
+@router.post("/api/drivers/{user_id}/status")
+async def update_driver_status(
+    user_id: int,
+    payload: DriverStatusPayload,
+    current_user=Depends(get_current_user),
+):
+    """v2.8: set a driver's work status (Акт/Бол/Отп).
+
+    Role gate: foreman+ (foreman/moderator/boss/superadmin) — same as the
+    brigade-member status control (web/routers/teams.py::update_member_status),
+    which is broader than ``require_office`` (foreman is intentionally
+    included), so the check is inline rather than via the office dependency.
+    Status enum matches brigade members exactly: available / vacation / sick.
+    """
+    if current_user.get("role") not in ("foreman", "moderator", "boss", "superadmin"):
+        raise HTTPException(403, "Только прораб и выше может менять статус водителя")
+
+    if payload.status not in ("available", "vacation", "sick"):
+        raise HTTPException(400, "Недопустимый статус")
+
+    if db.conn is None:
+        await db.init_db()
+
+    # Target must be an existing driver.
+    async with db.conn.execute(
+        "SELECT user_id, fio FROM users WHERE user_id = ? AND role = 'driver'",
+        (user_id,),
+    ) as cur:
+        drv = await cur.fetchone()
+    if not drv:
+        raise HTTPException(404, "Водитель не найден")
+
+    await db.conn.execute(
+        "UPDATE users SET member_status = ?, status_from = ?, status_until = ? "
+        "WHERE user_id = ? AND role = 'driver'",
+        (payload.status, payload.status_from or None, payload.status_until or None, user_id),
+    )
+    await db.conn.commit()
+
+    status_labels = {"available": "Доступен", "vacation": "Отпуск", "sick": "Больничный"}
+    label = status_labels.get(payload.status, payload.status)
+    period = (
+        f" ({payload.status_from} — {payload.status_until})"
+        if payload.status_from and payload.status_until and payload.status != "available"
+        else ""
+    )
+    drv_fio = drv[1] if drv else f"#{user_id}"
+    await db.add_log(
+        current_user["tg_id"], current_user.get("fio", ""),
+        f"Изменил статус водителя {drv_fio}: {label}{period}",
+        target_type="user", target_id=user_id,
+        details=json.dumps(
+            {"action": "driver_status_change", "status": payload.status,
+             "status_from": payload.status_from, "status_until": payload.status_until},
+            ensure_ascii=False,
+        ),
+    )
+    return {"status": "ok"}
 
 
 @router.delete("/api/drivers/{user_id}")

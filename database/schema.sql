@@ -34,6 +34,12 @@ CREATE TABLE IF NOT EXISTS users (
     linked_user_id INTEGER DEFAULT NULL,
     invite_code TEXT,                -- v2.6: personal driver/foreman invite code (auth anchor)
     default_equipment_id INTEGER,    -- DEPRECATED v2.6 commit 7 — inverted to equipment.default_driver_user_id; to be dropped in v2.7+
+    -- v2.8: driver status mechanism (mirrors team_members.status shape) so
+    -- role='driver' users get the same Акт/Бол/Отп statuses. Added to existing
+    -- prod DBs by database/migrations/m_2026_05_driver_status.py.
+    member_status TEXT DEFAULT 'available',
+    status_from TEXT,
+    status_until TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
