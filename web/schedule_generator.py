@@ -229,7 +229,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
                 "status": _get_status_label({}, target_date),
                 "object": _object_cell(objs),
             })
-        sections.append({"title": "ПРОРАБЫ", "rows": rows})
+        sections.append({"title": "ПРОРАБЫ", "rows": rows, "kind": "foreman"})
 
     # ── Бригады (машины) ─────────────────────
     async with db.conn.execute("SELECT id, name FROM teams ORDER BY name") as cur:
@@ -258,7 +258,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
                 "status": _get_status_label(member, target_date),
                 "object": _object_cell(objs),
             })
-        sections.append({"title": tname, "rows": rows})
+        sections.append({"title": tname, "rows": rows, "kind": "brigade"})
 
     # ── Техника (по категориям) ───────────────
     # v2.6: driver name comes from equipment.default_driver_user_id (the
@@ -276,20 +276,78 @@ async def _fetch_schedule_sections(target_date: str) -> list:
     ) as cur:
         equip_rows = await cur.fetchall()
 
+    # v2.7: per-application driver assignments for this date. The new
+    # «Ст. вод.» column on image B reflects the driver actually assigned to
+    # the equipment for the day (application_drivers.driver_user_id), not the
+    # office default driver shown in the name column. First app on the date
+    # for a given equipment wins (deterministic via ORDER BY a.id).
+    eq_app_driver: dict[int, int] = {}
+    try:
+        async with db.conn.execute(
+            """SELECT ad.equipment_id, ad.driver_user_id
+               FROM application_drivers ad
+               JOIN applications a ON a.id = ad.application_id
+               WHERE a.date_target = ?
+                 AND a.status IN ('approved','published','in_progress')
+               ORDER BY a.id""",
+            (target_date,),
+        ) as _adc:
+            for _eid, _did in await _adc.fetchall():
+                if _eid is None or _did is None:
+                    continue
+                eq_app_driver.setdefault(int(_eid), int(_did))
+    except Exception:
+        eq_app_driver = {}
+
+    # Status of those drivers, reusing team_members.status — the same column
+    # that drives brigade-member badges. A driver with no team_members row
+    # falls through to 'available' → "Акт" (decision: reuse team_members.status).
+    driver_status_map: dict[int, dict] = {}
+    driver_ids = list({v for v in eq_app_driver.values()})
+    if driver_ids:
+        pl = ",".join("?" * len(driver_ids))
+        try:
+            async with db.conn.execute(
+                f"""SELECT tg_user_id, status, status_from, status_until
+                    FROM team_members WHERE tg_user_id IN ({pl})""",
+                driver_ids,
+            ) as _dsc:
+                for _uid, _st, _sf, _su in await _dsc.fetchall():
+                    if _uid is None:
+                        continue
+                    driver_status_map.setdefault(int(_uid), {
+                        'status': _st, 'status_from': _sf, 'status_until': _su,
+                    })
+        except Exception:
+            driver_status_map = {}
+
     eq_cats: dict[str, list] = {}
     for eid, ename, cat, legacy_driver, eq_status, new_driver in equip_rows:
         cat = cat or "Прочая техника"
         objs = equip_objs.get(eid, [])
         driver_name = new_driver or legacy_driver or "—"
+        # v2.7 «Ст. вод.» — per-app driver status. No driver assigned for the
+        # date → "—" (empty equipment slot); assigned but no status row → "Акт".
+        _did = eq_app_driver.get(int(eid))
+        if not _did:
+            driver_status_label = "—"
+        else:
+            _srow = driver_status_map.get(int(_did), {})
+            driver_status_label = _get_status_label({
+                'status': _srow.get('status'),
+                'status_from': _srow.get('status_from'),
+                'status_until': _srow.get('status_until'),
+            }, target_date)
         eq_cats.setdefault(cat, []).append({
             "name": driver_name,
             "role": ename or "—",
             "status": _get_status_label({'status': eq_status}, target_date),
             "object": _object_cell(objs),
+            "driver_status": driver_status_label,
         })
 
     for cat, rows in eq_cats.items():
-        sections.append({"title": cat, "rows": rows})
+        sections.append({"title": cat, "rows": rows, "kind": "equipment"})
 
     return sections
 
@@ -313,13 +371,22 @@ def _clip_text(draw: ImageDraw.ImageDraw, text: str, font, max_w: int) -> str:
     return "…"
 
 
-def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
-    """Рисует таблицу-расстановку в стиле Excel и возвращает PNG-буфер."""
+def _render_schedule_image(date_str: str, sections: list, include_driver_status: bool = False) -> io.BytesIO:
+    """Рисует таблицу-расстановку в стиле Excel и возвращает PNG-буфер.
+
+    v2.7: when ``include_driver_status`` is True (equipment image B) a 5th
+    column «Ст. вод.» is appended on the right showing the per-app driver's
+    status. Image A (foremen + brigades) passes False and is byte-identical
+    to the historic single-image top portion.
+    """
     font = _load_font(14, bold=False)
     font_bold = _load_font(14, bold=True)
 
-    # Ширины колонок: ФИО | Должность | Статус | Объект
-    COL_W = [200, 270, 50, 240]
+    # Ширины колонок: ФИО | Должность | Статус | Объект [| Ст. вод.]
+    if include_driver_status:
+        COL_W = [200, 270, 50, 240, 110]
+    else:
+        COL_W = [200, 270, 50, 240]
     TABLE_W = sum(COL_W)
     ROW_H = 20
     PX = 4   # padding-x
@@ -370,15 +437,25 @@ def _render_schedule_image(date_str: str, sections: list) -> io.BytesIO:
             draw.rectangle([x, y, x + cw, y + ROW_H], fill=YELLOW, outline=BLACK)
             x += cw
         draw.text((PX, y + PY), section["title"], fill=BLACK, font=font_bold)
+        if include_driver_status:
+            # Label the new column inside each section's yellow header row.
+            hdr = "Ст. вод."
+            hbb = draw.textbbox((0, 0), hdr, font=font_bold)
+            hx = sum(COL_W[:4]) + (COL_W[4] - (hbb[2] - hbb[0])) // 2
+            draw.text((hx, y + PY), hdr, fill=BLACK, font=font_bold)
         y += ROW_H
 
         # ── Строки данных ──
         for row in section["rows"]:
             x = 0
             vals = [row["name"], row["role"], str(row["status"]), row.get("object", "")]
+            if include_driver_status:
+                vals.append(str(row.get("driver_status", "—")))
             for ci, val in enumerate(vals):
                 draw.rectangle([x, y, x + COL_W[ci], y + ROW_H], fill=WHITE, outline=BLACK)
-                if ci == 2:  # Status column — centered, color-coded
+                # Status columns — centered, color-coded: equipment status (2)
+                # and, on image B only, the new driver-status column (4).
+                if ci == 2 or (include_driver_status and ci == 4):  # Status column — centered, color-coded
                     clipped = _clip_text(draw, str(val), font, COL_W[ci] - PX * 2)
                     text_color = STATUS_COLORS.get(clipped, BLACK)
                     status_font = font_bold if clipped in ("Акт", "Отп", "Бол", "Рем") else font
@@ -413,56 +490,94 @@ async def generate_schedule_image(target_date: str = None) -> io.BytesIO:
     return _render_schedule_image(target_date, sections)
 
 
-async def publish_schedule_to_group(target_date: str = None) -> bool:
-    """Генерирует и отправляет расстановку в групповой чат (TG + MAX)."""
+async def generate_schedule_images(target_date: str = None) -> tuple[io.BytesIO, io.BytesIO]:
+    """v2.7: split расстановка into two PNGs.
+
+    Returns ``(image_a, image_b)`` where:
+      • image_a — ПРОРАБЫ + бригады (today's top portion, unchanged renderer);
+      • image_b — техника по категориям + новая колонка «Ст. вод.».
+
+    Both are rendered before either is returned, so the caller can post them
+    atomically (publish neither if generation fails). One DB pass feeds both.
+    """
     if target_date is None:
         tomorrow = datetime.now(TZ_BARNAUL) + timedelta(days=1)
         target_date = tomorrow.strftime("%Y-%m-%d")
 
-    buf = await generate_schedule_image(target_date)
+    sections = await _fetch_schedule_sections(target_date)
+    sections_a = [s for s in sections if s.get("kind") != "equipment"]
+    sections_b = [s for s in sections if s.get("kind") == "equipment"]
 
-    # Сохраняем файл
+    buf_a = _render_schedule_image(target_date, sections_a)
+    buf_b = _render_schedule_image(target_date, sections_b, include_driver_status=True)
+    return buf_a, buf_b
+
+
+async def publish_schedule_to_group(target_date: str = None) -> bool:
+    """Генерирует и отправляет расстановку в групповой чат (TG + MAX).
+
+    v2.7: two images posted sequentially — A (бригады) first, B (техника)
+    second — to the same TG and MAX groups. Atomic: BOTH images are
+    generated up-front; if generation raises, neither is posted.
+    """
+    if target_date is None:
+        tomorrow = datetime.now(TZ_BARNAUL) + timedelta(days=1)
+        target_date = tomorrow.strftime("%Y-%m-%d")
+
+    buf_a, buf_b = await generate_schedule_images(target_date)
+
+    # Сохраняем оба файла
     import time as _time
-    filename = f"schedule_{target_date}_{int(_time.time())}.png"
-    filepath = os.path.join("data", "uploads", filename)
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    with open(filepath, "wb") as f:
-        f.write(buf.getvalue())
+    ts = int(_time.time())
+    os.makedirs(os.path.join("data", "uploads"), exist_ok=True)
+
+    def _save(buf: io.BytesIO, suffix: str) -> str:
+        fn = f"schedule_{target_date}_{suffix}_{ts}.png"
+        fp = os.path.join("data", "uploads", fn)
+        with open(fp, "wb") as f:
+            f.write(buf.getvalue())
+        return fp
+
+    filepath_a = _save(buf_a, "a_brigades")
+    filepath_b = _save(buf_b, "b_equipment")
 
     bot_token = os.getenv("BOT_TOKEN")
     group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
     max_group_id = await get_max_group_id()
 
+    cap_a = f"📋 Расстановка на {target_date} — Бригады"
+    cap_b = f"📋 Расстановка на {target_date} — Техника"
+
     published = False
 
-    # TG — отправляем фото в группу
+    # TG — отправляем два фото в группу: сначала A, затем B
     if bot_token and group_id:
-        buf.seek(0)
-        data = aiohttp.FormData()
-        data.add_field("chat_id", str(group_id))
-        data.add_field("photo", buf.getvalue(), filename="schedule.png", content_type="image/png")
-        data.add_field("caption", f"📋 Расстановка на {target_date}")
-        data.add_field("parse_mode", "HTML")
-        try:
-            async with await get_tg_session() as session:
-                async with session.post(
-                    f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=data
-                ) as resp:
-                    if resp.status == 200:
-                        published = True
-        except Exception:
-            pass
+        for buf, cap in ((buf_a, cap_a), (buf_b, cap_b)):
+            buf.seek(0)
+            data = aiohttp.FormData()
+            data.add_field("chat_id", str(group_id))
+            data.add_field("photo", buf.getvalue(), filename="schedule.png", content_type="image/png")
+            data.add_field("caption", cap)
+            data.add_field("parse_mode", "HTML")
+            try:
+                async with await get_tg_session() as session:
+                    async with session.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=data
+                    ) as resp:
+                        if resp.status == 200:
+                            published = True
+            except Exception:
+                pass
 
-    # MAX — отправляем фото в группу
+    # MAX — отправляем два фото в группу: сначала A, затем B
     if max_bot_token and max_group_id:
-        result = await send_max_message(
-            max_bot_token, max_group_id,
-            f"📋 Расстановка на {target_date}",
-            filepath,
-        )
-        if result:
-            published = True
+        for fp, cap in ((filepath_a, cap_a), (filepath_b, cap_b)):
+            result = await send_max_message(
+                max_bot_token, max_group_id, cap, fp,
+            )
+            if result:
+                published = True
 
     return published
 
