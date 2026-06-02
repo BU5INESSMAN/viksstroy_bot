@@ -198,45 +198,126 @@ class ObjectsRepoMixin:
             return []
 
     async def get_object_history(self, object_id: int):
-        """Хронологическая история выполненных объемов по датам/заявкам.
+        """Хронологическая история выполненных работ по датам/заявкам.
 
-        v2.4.8: drop the `kp_status = 'approved'` filter — the SMR wizard
-        flow leaves brigadier submissions in `kp_status = 'submitted' /
-        smr_status = 'pending_review'` until a foreman reviews them. The
-        work itself has been reported, so it should appear in history.
-        We still require akp.volume > 0 to hide empty rows, and surface
-        `smr_status` + authorship so the UI can flag pending entries.
+        v2.9: broadened from a plan-only read to a UNION ALL across all
+        three SMR sources, because most reported work does NOT live in
+        application_kp:
+          - 'plan'  → application_kp        (KP plan works)
+          - 'extra' → application_extra_works (доп. работы)
+          - 'hours' → application_hours     (per-member hours)
+        Each row carries an `entry_type` discriminator so the UI can render
+        the three kinds in separate sub-sections. Hours rows take the MEMBER
+        name from team_members (application_hours.user_id == team_members.id;
+        unlinked staff have no users row), reusing the canonical join from
+        hours_repo.get_app_hours.
+
+        v2.4.8 (kept): NO status filter — brigadier submissions sit in
+        pending_review until reviewed but the work is already reported, so
+        it belongs in history. Each arm filters only by object id and a
+        positive quantity (volume > 0 / hours > 0).
+
+        Unified columns (same order in every arm):
+            entry_type, app_id, date_target, smr_status, smr_filled_by_role,
+            category, name, unit, volume, hours, team_id, team_name,
+            filled_at, filled_by_fio, filled_by_role
         """
         query = """
-            SELECT a.id as app_id,
-                   a.date_target,
-                   a.smr_status,
-                   a.smr_filled_by_role,
-                   k.category,
-                   k.name,
-                   COALESCE(
-                       NULLIF(
-                           CASE WHEN LOWER(TRIM(akp.unit)) IN ('nan','none','null')
-                                  OR TRIM(akp.unit) GLOB '[0-9]*' THEN ''
-                                ELSE TRIM(akp.unit) END,
-                           ''),
-                       NULLIF(
-                           CASE WHEN LOWER(TRIM(k.unit)) IN ('nan','none','null')
-                                  OR TRIM(k.unit) GLOB '[0-9]*' THEN ''
-                                ELSE TRIM(k.unit) END,
-                           ''),
-                       ''
-                   ) as unit,
-                   akp.volume,
-                   akp.filled_at,
-                   u_filled.fio as filled_by_fio,
-                   u_filled.role as filled_by_role
-            FROM application_kp akp
-            JOIN applications a ON akp.application_id = a.id
-            JOIN kp_catalog k ON akp.kp_id = k.id
-            LEFT JOIN users u_filled ON u_filled.user_id = akp.filled_by_user_id
-            WHERE a.object_id = ? AND akp.volume > 0
-            ORDER BY a.date_target DESC, akp.filled_at DESC, k.category, k.id
+            SELECT * FROM (
+                -- Arm A: plan works (application_kp)
+                SELECT 'plan'                  AS entry_type,
+                       a.id                    AS app_id,
+                       a.date_target           AS date_target,
+                       a.smr_status            AS smr_status,
+                       a.smr_filled_by_role    AS smr_filled_by_role,
+                       k.category              AS category,
+                       k.name                  AS name,
+                       COALESCE(
+                           NULLIF(CASE WHEN LOWER(TRIM(akp.unit)) IN ('nan','none','null')
+                                         OR TRIM(akp.unit) GLOB '[0-9]*' THEN ''
+                                       ELSE TRIM(akp.unit) END, ''),
+                           NULLIF(CASE WHEN LOWER(TRIM(k.unit)) IN ('nan','none','null')
+                                         OR TRIM(k.unit) GLOB '[0-9]*' THEN ''
+                                       ELSE TRIM(k.unit) END, ''),
+                           ''
+                       )                       AS unit,
+                       akp.volume              AS volume,
+                       NULL                    AS hours,
+                       akp.team_id             AS team_id,
+                       t.name                  AS team_name,
+                       akp.filled_at           AS filled_at,
+                       uf.fio                  AS filled_by_fio,
+                       uf.role                 AS filled_by_role
+                FROM application_kp akp
+                JOIN applications a ON akp.application_id = a.id
+                JOIN kp_catalog k ON akp.kp_id = k.id
+                LEFT JOIN teams t ON t.id = akp.team_id
+                LEFT JOIN users uf ON uf.user_id = akp.filled_by_user_id
+                WHERE a.object_id = ? AND akp.volume > 0
+
+                UNION ALL
+
+                -- Arm B: extra works (application_extra_works)
+                SELECT 'extra'                 AS entry_type,
+                       a.id                    AS app_id,
+                       a.date_target           AS date_target,
+                       a.smr_status            AS smr_status,
+                       a.smr_filled_by_role    AS smr_filled_by_role,
+                       NULL                    AS category,
+                       COALESCE(NULLIF(TRIM(e.custom_name), ''), ewc.name, 'Без названия') AS name,
+                       COALESCE(
+                           NULLIF(CASE WHEN LOWER(TRIM(e.unit)) IN ('nan','none','null')
+                                         OR TRIM(e.unit) GLOB '[0-9]*' THEN ''
+                                       ELSE TRIM(e.unit) END, ''),
+                           NULLIF(CASE WHEN LOWER(TRIM(ewc.unit)) IN ('nan','none','null')
+                                         OR TRIM(ewc.unit) GLOB '[0-9]*' THEN ''
+                                       ELSE TRIM(ewc.unit) END, ''),
+                           'шт'
+                       )                       AS unit,
+                       e.volume                AS volume,
+                       NULL                    AS hours,
+                       e.team_id               AS team_id,
+                       t.name                  AS team_name,
+                       e.filled_at             AS filled_at,
+                       uf.fio                  AS filled_by_fio,
+                       uf.role                 AS filled_by_role
+                FROM application_extra_works e
+                JOIN applications a ON e.application_id = a.id
+                LEFT JOIN extra_works_catalog ewc ON ewc.id = e.extra_work_id
+                LEFT JOIN teams t ON t.id = e.team_id
+                LEFT JOIN users uf ON uf.user_id = e.filled_by_user_id
+                WHERE a.object_id = ? AND e.volume > 0
+
+                UNION ALL
+
+                -- Arm C: per-member hours (application_hours)
+                SELECT 'hours'                 AS entry_type,
+                       a.id                    AS app_id,
+                       a.date_target           AS date_target,
+                       a.smr_status            AS smr_status,
+                       a.smr_filled_by_role    AS smr_filled_by_role,
+                       NULL                    AS category,
+                       tm.fio                  AS name,
+                       'ч'                     AS unit,
+                       NULL                    AS volume,
+                       ah.hours                AS hours,
+                       ah.team_id              AS team_id,
+                       t.name                  AS team_name,
+                       ah.filled_at            AS filled_at,
+                       uf.fio                  AS filled_by_fio,
+                       uf.role                 AS filled_by_role
+                FROM application_hours ah
+                JOIN applications a ON ah.app_id = a.id
+                LEFT JOIN team_members tm ON tm.id = ah.user_id
+                LEFT JOIN teams t ON t.id = ah.team_id
+                LEFT JOIN users uf ON uf.user_id = ah.filled_by_user_id
+                WHERE a.object_id = ? AND ah.hours > 0
+            )
+            ORDER BY date_target DESC, app_id,
+                     CASE entry_type WHEN 'plan' THEN 0 WHEN 'extra' THEN 1 ELSE 2 END
         """
-        async with self.conn.execute(query, (object_id,)) as cur:
-            return [dict(row) for row in await cur.fetchall()]
+        try:
+            async with self.conn.execute(query, (object_id, object_id, object_id)) as cur:
+                return [dict(row) for row in await cur.fetchall()]
+        except Exception:
+            return []

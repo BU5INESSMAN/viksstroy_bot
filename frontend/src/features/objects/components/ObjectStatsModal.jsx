@@ -230,14 +230,15 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                                             </button>
                                                             {open && (
                                                                 <div className="divide-y divide-gray-50 dark:divide-gray-700">
-                                                                    {group.items.map((h, i) => (
-                                                                        <div
-                                                                            key={i}
-                                                                            className="flex justify-between items-center gap-3 px-4 py-2 text-sm"
-                                                                        >
-                                                                            <span className="text-gray-700 dark:text-gray-300 truncate">
-                                                                                {h.name}
-                                                                            </span>
+                                                                    {(() => {
+                                                                        // v2.9: split the date+app group into three
+                                                                        // visually separated sub-sections by entry_type
+                                                                        // (plan -> extra -> hours). Rows arrive already
+                                                                        // in that order from get_object_history.
+                                                                        const plan = group.items.filter(h => (h.entry_type || 'plan') === 'plan');
+                                                                        const extra = group.items.filter(h => h.entry_type === 'extra');
+                                                                        const hours = group.items.filter(h => h.entry_type === 'hours');
+                                                                        const qtyCell = (h) => (
                                                                             <span className="font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap shrink-0">
                                                                                 {h.volume}
                                                                                 {(() => {
@@ -247,8 +248,45 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                                                                     ) : null;
                                                                                 })()}
                                                                             </span>
-                                                                        </div>
-                                                                    ))}
+                                                                        );
+                                                                        const workRow = (h, key) => (
+                                                                            <div key={key} className="flex justify-between items-center gap-3 px-4 py-2 text-sm">
+                                                                                <span className="text-gray-700 dark:text-gray-300 truncate">{h.name}</span>
+                                                                                {qtyCell(h)}
+                                                                            </div>
+                                                                        );
+                                                                        return (
+                                                                            <>
+                                                                                {/* План СМР (emerald/gray, as before) */}
+                                                                                {plan.map((h, i) => workRow(h, `p${i}`))}
+                                                                                {/* Доп. работы (amber) */}
+                                                                                {extra.length > 0 && (
+                                                                                    <>
+                                                                                        <div className="px-4 py-1.5 bg-amber-50/40 dark:bg-amber-900/10 text-[10px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400">
+                                                                                            Доп. работы
+                                                                                        </div>
+                                                                                        {extra.map((h, i) => workRow(h, `e${i}`))}
+                                                                                    </>
+                                                                                )}
+                                                                                {/* Часы (blue) — member is the row title */}
+                                                                                {hours.length > 0 && (
+                                                                                    <>
+                                                                                        <div className="px-4 py-1.5 bg-blue-50/40 dark:bg-blue-900/10 text-[10px] font-bold uppercase tracking-wider text-blue-600 dark:text-blue-400">
+                                                                                            Часы
+                                                                                        </div>
+                                                                                        {hours.map((h, i) => (
+                                                                                            <div key={`h${i}`} className="flex justify-between items-center gap-3 px-4 py-2 text-sm">
+                                                                                                <span className="text-gray-700 dark:text-gray-300 truncate">{h.name}</span>
+                                                                                                <span className="font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap shrink-0">
+                                                                                                    {h.hours}<span className="text-gray-400 font-normal text-xs ml-1">ч</span>
+                                                                                                </span>
+                                                                                            </div>
+                                                                                        ))}
+                                                                                    </>
+                                                                                )}
+                                                                            </>
+                                                                        );
+                                                                    })()}
                                                                 </div>
                                                             )}
                                                         </div>
