@@ -58,10 +58,14 @@ async def api_create_object(request: Request, current_user=Depends(_require_offi
     address = data.get("address", "")
     kp_ids = data.get("kp_ids", [])
     target_volumes = data.get("target_volumes", {})
+    # v2.9: "Объект без КП" — empty plan is allowed ONLY when the caller
+    # explicitly opted in. An empty plan with no flag stays an error so
+    # accidental empty objects are still blocked.
+    no_kp = bool(data.get("no_kp", False))
 
     if not name:
         raise HTTPException(400, "Название обязательно")
-    if not kp_ids:
+    if not kp_ids and not no_kp:
         raise HTTPException(400, "КП обязательна при создании объекта")
 
     obj_id = await db.create_object(name, address)
@@ -648,8 +652,10 @@ async def api_review_object_request(req_id: int, request: Request, current_user=
         address = data.get("address", req_dict['address'] or '')
         kp_ids = data.get("kp_ids", [])
         target_volumes = data.get("target_volumes", {})
+        # v2.9: same "Объект без КП" opt-in as the create endpoint.
+        no_kp = bool(data.get("no_kp", False))
 
-        if not kp_ids:
+        if not kp_ids and not no_kp:
             raise HTTPException(400, "КП обязательна при создании объекта")
 
         obj_id = await db.create_object(name, address)

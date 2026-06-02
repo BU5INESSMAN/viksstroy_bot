@@ -37,6 +37,8 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
     const [kpSearch, setKpSearch] = useState('');
     const [showKpSection, setShowKpSection] = useState(isRequestMode);
     const [kpError, setKpError] = useState('');
+    // v2.9: "Объект без КП" — create the object with an empty KP plan.
+    const [noKp, setNoKp] = useState(false);
 
     useEffect(() => {
         axios.get('/api/kp/catalog').then(res => setKpCatalog(res.data || [])).catch(() => {});
@@ -65,6 +67,7 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
         setTargetVolumes({});
         setKpSearch('');
         setKpError('');
+        setNoKp(false);
     };
 
     const handleClose = () => { reset(); onClose(); };
@@ -73,7 +76,7 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
 
     const handleCreate = async (e) => {
         if (e) e.preventDefault();
-        if (selectedKp.length === 0) {
+        if (!noKp && selectedKp.length === 0) {
             setKpError('Необходимо добавить СМР работы');
             setShowKpSection(true);
             return;
@@ -84,8 +87,9 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
                     action: 'approve',
                     name: newObj.name,
                     address: newObj.address,
-                    kp_ids: selectedKp,
-                    target_volumes: targetVolumes,
+                    kp_ids: noKp ? [] : selectedKp,
+                    target_volumes: noKp ? {} : targetVolumes,
+                    no_kp: noKp,
                 });
                 toast.success('Объект создан по запросу!');
                 if (onRequestApproved) onRequestApproved(requestData.id);
@@ -93,8 +97,9 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
                 await axios.post('/api/objects/create', {
                     name: newObj.name,
                     address: newObj.address,
-                    kp_ids: selectedKp,
-                    target_volumes: targetVolumes,
+                    kp_ids: noKp ? [] : selectedKp,
+                    target_volumes: noKp ? {} : targetVolumes,
+                    no_kp: noKp,
                 });
                 toast.success('Объект успешно создан!');
             }
@@ -315,8 +320,24 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
                                 />
                             </div>
 
-                            {/* Toggle KP section */}
-                            {!showKpSection ? (
+                            {/* v2.9: "Объект без КП" — create with an empty KP plan */}
+                            <label className="flex items-start gap-2.5 p-3 rounded-xl border border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/40 transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={noKp}
+                                    onChange={e => { setNoKp(e.target.checked); if (e.target.checked) setKpError(''); }}
+                                    className="w-4 h-4 mt-0.5 text-emerald-600 rounded flex-shrink-0"
+                                />
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-bold text-gray-800 dark:text-gray-200">Объект без КП</span>
+                                    <span className="block text-[11px] text-gray-500 dark:text-gray-400 mt-0.5">
+                                        СМР (доп. работы, часы) заполняется как обычно; план КП можно добавить позже.
+                                    </span>
+                                </span>
+                            </label>
+
+                            {/* Toggle KP section — hidden when "Объект без КП" is checked */}
+                            {!noKp && (!showKpSection ? (
                                 <button
                                     type="button"
                                     onClick={() => setShowKpSection(true)}
@@ -326,7 +347,7 @@ export default function ObjectCreateModal({ onClose, onCreated, requestData, onR
                                 </button>
                             ) : (
                                 kpSection
-                            )}
+                            ))}
 
                             <button
                                 type="button"
