@@ -103,7 +103,12 @@ class AppsRepoMixin:
             })
         return report
 
-    async def get_object_history(self, user_id: int):
+    # v2.9.2: renamed from get_object_history -> get_foreman_recent_object_addresses.
+    # The old name collided with ObjectsRepoMixin.get_object_history; because
+    # AppsRepoMixin is listed before ObjectsRepoMixin in DatabaseManager's bases,
+    # this (caller-less) method silently shadowed the object-chronology method, so
+    # db.get_object_history(object_id) ran this foreman query and returned [].
+    async def get_foreman_recent_object_addresses(self, user_id: int):
         async with self.conn.execute(
                 "SELECT DISTINCT object_address FROM applications WHERE foreman_id = ? ORDER BY id DESC LIMIT 5",
                 (user_id,)) as cursor:

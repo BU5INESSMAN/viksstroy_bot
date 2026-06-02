@@ -320,4 +320,11 @@ class ObjectsRepoMixin:
             async with self.conn.execute(query, (object_id, object_id, object_id)) as cur:
                 return [dict(row) for row in await cur.fetchall()]
         except Exception:
+            # v2.9.2: NON-silent — a bare `except: return []` hid the real cause
+            # (an MRO name-collision, not a query error) for a whole debug cycle.
+            # Log it so any future failure is visible instead of an empty history.
+            import logging
+            logging.getLogger(__name__).exception(
+                "get_object_history failed for object %s", object_id
+            )
             return []
