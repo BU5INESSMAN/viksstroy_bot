@@ -22,6 +22,10 @@ async def get_smr_debtors():
         "FROM applications a "
         "LEFT JOIN objects o ON a.object_id = o.id "
         "WHERE a.status = 'in_progress' AND a.date_target <= ? AND a.foreman_id IS NOT NULL "
+        # v2.9.3: exclude no-labor (equipment-only) apps — no brigades means no
+        # members and therefore no SMR to report, so they must not make their
+        # foreman an SMR debtor. team_id '0'/''/NULL = no brigades.
+        "AND a.team_id IS NOT NULL AND TRIM(a.team_id) <> '' AND TRIM(a.team_id) <> '0' "
         "ORDER BY a.date_target ASC",
         (today_str,)
     ) as cur:

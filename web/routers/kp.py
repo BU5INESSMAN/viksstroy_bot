@@ -802,6 +802,18 @@ async def get_smr_list(current_user=Depends(get_current_user)):
 
     apps = [a for a in rows if _is_accessible(a)]
 
+    # v2.9.3: drop no-labor (equipment-only) apps from ALL SMR buckets. SMR
+    # labor is driven entirely by team_id — no brigades implies no members,
+    # so there is nothing to report. A brigade exists iff team_id has a
+    # comma-part that is a non-zero integer ('0'/''/NULL = no brigades).
+    def _has_brigade(app: dict) -> bool:
+        for part in str(app.get('team_id') or '').split(','):
+            part = part.strip()
+            if part.isdigit() and int(part) != 0:
+                return True
+        return False
+    apps = [a for a in apps if _has_brigade(a)]
+
     to_fill: list[dict] = []
     pending: list[dict] = []
     completed: list[dict] = []
