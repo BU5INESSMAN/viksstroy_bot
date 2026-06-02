@@ -53,25 +53,74 @@ export default function StepWorks({
             .then(([itemsRes, extraRes, catRes, hoursRes]) => {
                 if (!alive) return;
 
-                const items = (itemsRes.data || []).map(i => ({
-                    kp_id: i.kp_id,
-                    name: i.name,
-                    category: i.category,
-                    unit: i.unit || '',
-                    volume: i.volume ?? '',
-                    filled_by_fio: i.filled_by_fio || '',
-                    filled_by_user_id: i.filled_by_user_id || null,
-                }));
+                // v2.9: the server now returns one row per (kp_id, team_id).
+                // Build a DISTINCT catalog (one row per kp_id) for rendering;
+                // per-brigade volumes live in worksByTeam[team_id][kp_id].
+                const raw = itemsRes.data || [];
+                const hasTeamRows = raw.some(i => i.team_id !== null && i.team_id !== undefined);
+
+                const seenKp = new Set();
+                const items = [];
+                for (const i of raw) {
+                    if (seenKp.has(i.kp_id)) continue;
+                    seenKp.add(i.kp_id);
+                    items.push({
+                        kp_id: i.kp_id,
+                        name: i.name,
+                        category: i.category,
+                        unit: i.unit || '',
+                        volume: i.volume ?? '',
+                        filled_by_fio: i.filled_by_fio || '',
+                        filled_by_user_id: i.filled_by_user_id || null,
+                    });
+                }
                 setPlanItems(items);
 
-                // Seed worksData from server if local is empty (common mode).
-                if (worksData.length === 0 && items.some(i => Number(i.volume) > 0)) {
+                if (hasTeamRows) {
+                    // Per-brigade submission (e.g. the foreman reviewing a
+                    // brigadier's "По бригадам" fill): auto-enable per-brigade
+                    // mode and seed the per-team volumes from the server so the
+                    // brigade split is re-entered, not collapsed into a common
+                    // view. Guards keep an in-progress draft from being clobbered.
+                    setPerBrigade(true);
+                    if (Object.keys(worksByTeam).length === 0) {
+                        const seededWorks = {};
+                        for (const i of raw) {
+                            const tid = i.team_id;
+                            if (tid === null || tid === undefined) continue;
+                            if (!(Number(i.volume) > 0)) continue;
+                            if (!seededWorks[tid]) seededWorks[tid] = {};
+                            seededWorks[tid][i.kp_id] = Number(i.volume);
+                        }
+                        if (Object.keys(seededWorks).length > 0) setWorksByTeam(seededWorks);
+                    }
+                    if (Object.keys(extraByTeam).length === 0) {
+                        const seededExtra = {};
+                        for (const ew of (extraRes.data || [])) {
+                            const tid = ew.team_id;
+                            if (tid === null || tid === undefined) continue;
+                            if (!(Number(ew.volume) > 0)) continue;
+                            if (!seededExtra[tid]) seededExtra[tid] = [];
+                            seededExtra[tid].push({
+                                kp_id: ew.extra_work_id || 0,
+                                name: ew.custom_name || ew.catalog_name || '',
+                                unit: ew.display_unit || ew.catalog_unit || 'шт',
+                                volume: ew.volume ?? '',
+                            });
+                        }
+                        if (Object.keys(seededExtra).length > 0) setExtraByTeam(seededExtra);
+                    }
+                } else if (worksData.length === 0 && items.some(i => Number(i.volume) > 0)) {
+                    // Common mode: seed flat worksData from server (unchanged).
                     setWorksData(items
                         .filter(i => Number(i.volume) > 0)
                         .map(i => ({ kp_id: i.kp_id, volume: i.volume }))
                     );
                 }
 
+                // Common-mode extra-works seed. Used when NOT per-brigade;
+                // harmless otherwise since handleNext re-derives extras from
+                // extraByTeam before submit in per-brigade mode.
                 if (extraWorksData.length === 0) {
                     setExtraWorksData((extraRes.data || []).map(ew => ({
                         kp_id: ew.extra_work_id || 0,

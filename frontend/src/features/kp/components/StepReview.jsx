@@ -62,10 +62,24 @@ export default function StepReview({
     }, [teams, hoursData]);
 
     const worksView = useMemo(() => {
+        // v2.9: worksData may carry several per-brigade entries per kp_id, and
+        // /items now returns one planItems row per (kp_id, team_id). Sum the
+        // volumes by kp_id and de-duplicate planItems so the review summary
+        // shows one line per work with the combined total. Common mode (one
+        // entry per kp_id) is unchanged: sum == the single value.
         const byId = new Map();
-        for (const w of worksData) byId.set(Number(w.kp_id), Number(w.volume));
+        for (const w of worksData) {
+            const k = Number(w.kp_id);
+            byId.set(k, (byId.get(k) || 0) + Number(w.volume || 0));
+        }
+        const seen = new Set();
         return planItems
-            .filter(i => byId.has(Number(i.kp_id)))
+            .filter(i => {
+                const k = Number(i.kp_id);
+                if (!byId.has(k) || seen.has(k)) return false;
+                seen.add(k);
+                return true;
+            })
             .map(i => ({
                 name: i.name,
                 unit: i.unit || '',

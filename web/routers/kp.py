@@ -130,11 +130,20 @@ async def get_app_kp_items(app_id: int, current_user=Depends(get_current_user)):
     for aid in group_ids:
         batch = await db.get_app_kp_items(aid)
         for it in batch:
-            # Sum volumes per kp_id across the group so the wizard shows
-            # one row per catalog item with the combined plan volume.
-            key = int(it.get('kp_id') or it.get('id') or 0)
+            # v2.9: key by (kp_id, team_id) so per-brigade rows ("По бригадам",
+            # team_id NOT NULL) are returned SEPARATELY and never summed across
+            # brigades. For common-mode rows (team_id NULL) the key degrades to
+            # one-per-kp_id, preserving the original merge-summing behavior.
+            kp_key = int(it.get('kp_id') or it.get('id') or 0)
+            team_key = it.get('team_id')
+            key = (kp_key, team_key)
             if key in seen_keys:
-                existing = next((x for x in items if int(x.get('kp_id') or x.get('id') or 0) == key), None)
+                existing = next(
+                    (x for x in items
+                     if int(x.get('kp_id') or x.get('id') or 0) == kp_key
+                     and x.get('team_id') == team_key),
+                    None,
+                )
                 if existing is not None:
                     try:
                         existing['volume'] = float(existing.get('volume') or 0) + float(it.get('volume') or 0)

@@ -203,8 +203,15 @@ export default function KP() {
         } catch (e) { toast.error("Ошибка загрузки"); setModalApp(null); }
     };
 
-    const handleVolumeChange = (kp_id, value) => {
-        setKpItems(prev => prev.map(i => i.kp_id === kp_id ? { ...i, volume: value } : i));
+    // v2.9: match by composite (kp_id, team_id) so editing one brigade's
+    // volume no longer mutates every row that shares the kp_id. team_id is
+    // null for common-mode rows.
+    const handleVolumeChange = (kp_id, team_id, value) => {
+        setKpItems(prev => prev.map(i =>
+            (i.kp_id === kp_id && (i.team_id ?? null) === (team_id ?? null))
+                ? { ...i, volume: value }
+                : i
+        ));
     };
 
     const submitVolumes = async () => {
@@ -215,6 +222,7 @@ export default function KP() {
                     items: kpItems.map(i => ({
                         kp_id: i.kp_id,
                         volume: i.volume || 0,
+                        team_id: i.team_id ?? null,
                         ...(isOffice ? { salary: i.current_salary, price: i.current_price } : {}),
                     })),
                 }),
@@ -429,15 +437,22 @@ export default function KP() {
                                             <div className="bg-gray-50 dark:bg-gray-900/50 px-4 py-2 text-xs font-bold text-gray-500 uppercase">{cat}</div>
                                             <div className="divide-y divide-gray-50 dark:divide-gray-700">
                                                 {items.map(item => (
-                                                    <div key={item.kp_id} className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+                                                    <div key={`${item.kp_id}_${item.team_id ?? 'common'}`} className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
                                                         <div className="flex-1">
-                                                            <p className="font-bold text-sm text-gray-800 dark:text-gray-100">{item.name}</p>
+                                                            <p className="font-bold text-sm text-gray-800 dark:text-gray-100 flex items-center gap-2 flex-wrap">
+                                                                {item.name}
+                                                                {item.team_name && (
+                                                                    <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded">
+                                                                        {item.team_name}
+                                                                    </span>
+                                                                )}
+                                                            </p>
                                                             {isOffice && (
                                                                 <p className="text-[10px] text-gray-400 mt-1">ЗП: {item.current_salary}₽ · Цена: {item.current_price}₽</p>
                                                             )}
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            <input type="number" min="0" step="0.1" disabled={activeTab !== 'to_fill' && !(activeTab === 'approved' && isOffice) && !(activeTab === 'pending_review' && isEditing)} value={item.volume} onChange={(e) => handleVolumeChange(item.kp_id, e.target.value)} className="w-20 p-2 text-center font-bold border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-white" />
+                                                            <input type="number" min="0" step="0.1" disabled={activeTab !== 'to_fill' && !(activeTab === 'approved' && isOffice) && !(activeTab === 'pending_review' && isEditing)} value={item.volume} onChange={(e) => handleVolumeChange(item.kp_id, item.team_id ?? null, e.target.value)} className="w-20 p-2 text-center font-bold border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-white" />
                                                             <span className="min-w-[2.5rem] text-xs font-semibold text-gray-500 dark:text-gray-400">{item.unit || ''}</span>
                                                         </div>
                                                     </div>
@@ -484,7 +499,7 @@ export default function KP() {
                                             </button>
                                             <button onClick={async () => {
                                                 const payload = { action: 'approve' };
-                                                if (isEditing) payload.items = kpItems.map(i => ({ kp_id: i.kp_id, volume: i.volume || 0 }));
+                                                if (isEditing) payload.items = kpItems.map(i => ({ kp_id: i.kp_id, volume: i.volume || 0, team_id: i.team_id ?? null }));
                                                 await axios.post(`/api/kp/apps/${modalApp.id}/review`, payload);
                                                 setModalApp(null); fetchApps();
                                             }} className="flex-1 bg-emerald-500 text-white font-bold py-4 rounded-xl">Одобрить</button>

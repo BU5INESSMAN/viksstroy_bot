@@ -50,21 +50,31 @@ class KpRepoMixin:
             if not row or not row[0]: return []
             obj_id = row[0]
 
+        # v2.9: carry akp.team_id (NULL = common mode) and the brigade name so
+        # the fill/review UI can render and edit each brigade's volume as a
+        # separate row. The LEFT JOIN to application_kp legitimately produces
+        # MULTIPLE rows per kp_id when several brigades filled the same work
+        # ("По бригадам" / model (a)). Do NOT collapse or GROUP BY kp_id here —
+        # an unfilled/common plan item still returns its single base row
+        # (team_id NULL, volume 0) exactly as before.
         query = """
-                SELECT k.id                    as kp_id, \
-                       k.category, \
-                       k.name, \
-                       k.unit, \
-                       k.salary, \
+                SELECT k.id                    as kp_id,
+                       k.category,
+                       k.name,
+                       k.unit,
+                       k.salary,
                        k.price,
                        COALESCE(akp.volume, 0) as volume,
                        akp.current_salary      as saved_salary,
-                       akp.current_price       as saved_price
+                       akp.current_price       as saved_price,
+                       akp.team_id             as team_id,
+                       t.name                  as team_name
                 FROM object_kp_plan okp
                          JOIN kp_catalog k ON okp.kp_id = k.id
                          LEFT JOIN application_kp akp ON k.id = akp.kp_id AND akp.application_id = ?
+                         LEFT JOIN teams t ON t.id = akp.team_id
                 WHERE okp.object_id = ?
-                ORDER BY k.category, k.id \
+                ORDER BY k.category, k.id, akp.team_id
                 """
         async with self.conn.execute(query, (app_id, obj_id)) as cur:
             return [dict(row) for row in await cur.fetchall()]
@@ -146,13 +156,23 @@ class KpRepoMixin:
         await self.conn.commit()
 
     async def update_kp_volumes_only(self, app_id: int, items: list):
+        # v2.9: target a SINGLE brigade's row. team_id is NULL for common-mode
+        # rows, so we use `team_id IS ?` (NULL-safe) — a NULL target matches the
+        # common row, a concrete team_id matches only that brigade's row.
+        # Editing one brigade's volume no longer mutates every row sharing kp_id.
         for item in items:
+            raw_team = item.get('team_id')
+            try:
+                team_id = int(raw_team) if raw_team not in (None, '', 0, '0') else None
+            except (TypeError, ValueError):
+                team_id = None
             await self.conn.execute("""
                                     UPDATE application_kp
                                     SET volume = ?
                                     WHERE application_id = ?
                                       AND kp_id = ?
-                                    """, (item['volume'], app_id, item['kp_id']))
+                                      AND team_id IS ?
+                                    """, (item['volume'], app_id, item['kp_id'], team_id))
         await self.conn.commit()
 
     # ==========================================
