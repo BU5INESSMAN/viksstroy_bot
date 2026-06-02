@@ -1,5 +1,7 @@
 // Bump this integer whenever sw.js or cache strategy changes.
-const CACHE_VERSION = 2;
+// v2.9.1: bumped 2 -> 3 to purge the pre-v2.9 cache-first /assets/* bundle so
+// clients fetch the new object-chronology render instead of the stale one.
+const CACHE_VERSION = 3;
 const CACHE_NAME = 'viks-cache-v' + CACHE_VERSION;
 
 const MAINTENANCE_HTML = `
