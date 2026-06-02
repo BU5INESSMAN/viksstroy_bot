@@ -57,7 +57,15 @@ export default function StepWorks({
                 // Build a DISTINCT catalog (one row per kp_id) for rendering;
                 // per-brigade volumes live in worksByTeam[team_id][kp_id].
                 const raw = itemsRes.data || [];
-                const hasTeamRows = raw.some(i => i.team_id !== null && i.team_id !== undefined);
+                // v2.9.4: per-brigade mode must also engage when only the EXTRA
+                // works carry a team_id — e.g. no-KP objects (empty
+                // object_kp_plan) where /items returns nothing but the brigadier
+                // filled extras under their brigade. Without this, hasTeamRows
+                // stayed false and extraByTeam was never seeded from the server.
+                const extraHasTeam = (extraRes.data || []).some(
+                    e => e.team_id !== null && e.team_id !== undefined && String(e.team_id) !== '0'
+                );
+                const hasTeamRows = raw.some(i => i.team_id !== null && i.team_id !== undefined) || extraHasTeam;
 
                 const seenKp = new Set();
                 const items = [];
