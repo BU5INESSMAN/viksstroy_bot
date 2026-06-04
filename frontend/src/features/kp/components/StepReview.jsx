@@ -50,11 +50,14 @@ export default function StepReview({
         const out = [];
         for (const t of teams) {
             const rows = (t.members || [])
+                // v2.10 (D8): include members PRESENT in the payload (incl. an
+                // explicit 0) — not just hours>0 — so a deliberately-zeroed
+                // member still shows in the review summary.
+                .filter(m => selected.has(`${t.team_id}:${m.user_id}`))
                 .map(m => ({
                     ...m,
                     hours: selected.get(`${t.team_id}:${m.user_id}`) || 0,
-                }))
-                .filter(m => m.hours > 0);
+                }));
             if (rows.length > 0) {
                 out.push({ team_id: t.team_id, team_name: t.team_name, members: rows });
             }

@@ -60,7 +60,11 @@ export default function StepHours({
                     const seed = [];
                     for (const team of data) {
                         for (const m of (team.members || [])) {
-                            if (m.hours > 0) {
+                            // v2.10 (D8): seed members with hours OR a persisted
+                            // row (filled_at present = a deliberate save, incl. a
+                            // saved 0) so a reopened report re-shows "0". Never-
+                            // saved members (no filled_at) stay blank → no row.
+                            if (m.hours > 0 || m.filled_at) {
                                 seed.push({ team_id: team.team_id, user_id: m.user_id, hours: m.hours });
                             }
                         }
@@ -96,7 +100,12 @@ export default function StepHours({
         const numeric = value === '' ? '' : value;
         setHoursData(prev => {
             const others = prev.filter(h => !(h.team_id === team_id && h.user_id === user_id));
-            if (numeric === '' || Number(numeric) === 0) return others;
+            // v2.10 (D8): three-way split. '' (cleared / never-set) → remove the
+            // row; an explicit 0 → KEEP it as a visible 0-hours row so the zero
+            // persists and overwrites any prior value on submit; otherwise keep
+            // the typed value. Never-touched members never reach here → no row.
+            if (numeric === '') return others;
+            if (Number(numeric) === 0) return [...others, { team_id, user_id, hours: 0 }];
             return [...others, { team_id, user_id, hours: Number(numeric) }];
         });
         setCustomOverrides(prev => {
