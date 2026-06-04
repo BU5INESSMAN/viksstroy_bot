@@ -10,7 +10,7 @@ import {
 import { motion, AnimatePresence } from 'framer-motion';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
 import TabBadge from '../components/ui/TabBadge';
-import ExtraWorksPicker from '../features/kp/components/ExtraWorksPicker';
+import ExtraWorksPicker, { genRowId } from '../features/kp/components/ExtraWorksPicker';
 import SMRWizard from '../features/kp/components/SMRWizard';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
 
@@ -193,6 +193,7 @@ export default function KP() {
             // Restore existing extra works. Legacy rows may lack kp_id —
             // in that case we keep them in view-only form via custom_name.
             setExtraWorks((ewRes.data || []).map(ew => ({
+                rid: genRowId(),
                 kp_id: ew.extra_work_id || null,
                 name: ew.custom_name || ew.catalog_name || '',
                 unit: ew.display_unit || ew.catalog_unit || 'шт',

@@ -10,6 +10,22 @@ const expandTransition = prefersReducedMotion
     ? { duration: 0 }
     : { duration: 0.2, ease };
 
+// Stable per-row id for a selected extra-work row. Identity must NOT depend
+// on kp_id / extra_work_id: catalog-sourced extras are all stored with
+// extra_work_id = 0, so every reseeded saved row carries kp_id = 0. Keying a
+// row by kp_id therefore collided every reseeded row onto id 0 — editing one
+// rewrote them all and removing one removed all (the "1.77777 on every row"
+// production bug, D1). Exported so every seed site (StepWorks, KP.jsx) can
+// stamp a row with the same kind of id the picker uses internally.
+let _ridSeq = 0;
+export function genRowId() {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+        return crypto.randomUUID();
+    }
+    _ridSeq += 1;
+    return `rid_${Date.now()}_${_ridSeq}`;
+}
+
 /**
  * Collapsible category-based picker for extra works. Data source is the
  * global KP catalog (/api/kp/catalog); selected items each carry a
@@ -70,10 +86,28 @@ export default function ExtraWorksPicker({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [debounced]);
 
+    // Catalog "is-checked" lookup, keyed by the catalog item id used at
+    // add-time. Use `!= null` rather than a truthy check so a real saved
+    // extra with kp_id = 0 is not silently treated as unchecked (D11). A
+    // reseeded row still won't light up a catalog checkbox (its catalog
+    // origin is lost as 0), which is acceptable — per-row edit/remove no
+    // longer relies on this map, it uses the stable `rid` below.
     const selectedMap = useMemo(() => {
         const m = {};
-        for (const s of selected) if (s?.kp_id) m[s.kp_id] = s;
+        for (const s of selected) if (s?.kp_id != null) m[s.kp_id] = s;
         return m;
+    }, [selected]);
+
+    // Defensive self-heal: guarantee every selected row carries a stable rid,
+    // even when it arrives from a pre-v2.10 localStorage draft or any seed
+    // site that predates this fix. Runs only while some row lacks a rid; the
+    // parent persists the assigned rid, so it stabilizes after one render and
+    // never loops.
+    useEffect(() => {
+        if (selected.length && selected.some(s => !s.rid)) {
+            onChange(selected.map(s => (s.rid ? s : { ...s, rid: genRowId() })));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selected]);
 
     const toggle = (item) => {
@@ -83,6 +117,7 @@ export default function ExtraWorksPicker({
             onChange(selected.filter(s => s.kp_id !== item.id));
         } else {
             onChange([...selected, {
+                rid: genRowId(),
                 kp_id: item.id,
                 name: item.name,
                 unit: item.unit || '',
@@ -91,14 +126,14 @@ export default function ExtraWorksPicker({
         }
     };
 
-    const updateVolume = (kp_id, value) => {
+    const updateVolume = (rid, value) => {
         if (disabled) return;
-        onChange(selected.map(s => s.kp_id === kp_id ? { ...s, volume: value } : s));
+        onChange(selected.map(s => s.rid === rid ? { ...s, volume: value } : s));
     };
 
-    const remove = (kp_id) => {
+    const remove = (rid) => {
         if (disabled) return;
-        onChange(selected.filter(s => s.kp_id !== kp_id));
+        onChange(selected.filter(s => s.rid !== rid));
     };
 
     const totalCount = categoryNames.reduce((n, c) => n + grouped[c].length, 0);
@@ -143,9 +178,9 @@ export default function ExtraWorksPicker({
                             {/* Selected items — pinned above the picker */}
                             {selected.length > 0 && (
                                 <div className="space-y-1.5 pb-2 border-b border-amber-100 dark:border-amber-900/30">
-                                    {selected.map(s => (
+                                    {selected.map((s, idx) => (
                                         <div
-                                            key={s.kp_id}
+                                            key={s.rid ?? idx}
                                             className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800/40"
                                         >
                                             <div className="flex-1 min-w-0">
@@ -159,7 +194,7 @@ export default function ExtraWorksPicker({
                                                 step="0.1"
                                                 disabled={disabled}
                                                 value={s.volume}
-                                                onChange={e => updateVolume(s.kp_id, e.target.value)}
+                                                onChange={e => updateVolume(s.rid, e.target.value)}
                                                 placeholder="0"
                                                 className="w-20 p-1.5 text-center text-sm font-bold border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-amber-400"
                                             />
@@ -169,7 +204,7 @@ export default function ExtraWorksPicker({
                                             {!disabled && (
                                                 <button
                                                     type="button"
-                                                    onClick={() => remove(s.kp_id)}
+                                                    onClick={() => remove(s.rid)}
                                                     className="text-gray-300 hover:text-red-500 transition-colors p-1 active:scale-90"
                                                     title="Удалить"
                                                 >

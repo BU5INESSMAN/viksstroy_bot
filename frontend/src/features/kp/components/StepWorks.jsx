@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { AlertTriangle, ArrowLeft, ArrowRight, Users } from 'lucide-react';
 import { IconUsersGroup } from '@tabler/icons-react';
 import { getIconComponent, TEAM_ICONS, DEFAULT_TEAM_ICON } from '../../../utils/iconConfig';
-import ExtraWorksPicker from './ExtraWorksPicker';
+import ExtraWorksPicker, { genRowId } from './ExtraWorksPicker';
 
 /**
  * Wizard step 2 — plan works (from object_kp_plan via /api/kp/apps/{id}/items)
@@ -110,6 +110,7 @@ export default function StepWorks({
                             if (!(Number(ew.volume) > 0)) continue;
                             if (!seededExtra[tid]) seededExtra[tid] = [];
                             seededExtra[tid].push({
+                                rid: genRowId(),
                                 kp_id: ew.extra_work_id || 0,
                                 name: ew.custom_name || ew.catalog_name || '',
                                 unit: ew.display_unit || ew.catalog_unit || 'шт',
@@ -131,6 +132,7 @@ export default function StepWorks({
                 // extraByTeam before submit in per-brigade mode.
                 if (extraWorksData.length === 0) {
                     setExtraWorksData((extraRes.data || []).map(ew => ({
+                        rid: genRowId(),
                         kp_id: ew.extra_work_id || 0,
                         name: ew.custom_name || ew.catalog_name || '',
                         unit: ew.display_unit || ew.catalog_unit || 'шт',
