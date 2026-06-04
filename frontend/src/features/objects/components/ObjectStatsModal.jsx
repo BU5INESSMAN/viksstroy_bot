@@ -249,9 +249,19 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                                                                 })()}
                                                                             </span>
                                                                         );
+                                                                        // v2.10 доп.отчёт: amber "добавлено позже · {date}" on
+                                                                        // rows added after the main report (is_additional=1).
+                                                                        const addedBadge = (h) => (Number(h.is_additional) ? (
+                                                                            <span className="text-[9px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded whitespace-nowrap flex-shrink-0">
+                                                                                добавлено позже{h.filled_at ? ` · ${String(h.filled_at).split('T')[0]}` : ''}
+                                                                            </span>
+                                                                        ) : null);
                                                                         const workRow = (h, key) => (
                                                                             <div key={key} className="flex justify-between items-center gap-3 px-4 py-2 text-sm">
-                                                                                <span className="text-gray-700 dark:text-gray-300 truncate">{h.name}</span>
+                                                                                <span className="flex items-center gap-1.5 min-w-0 text-gray-700 dark:text-gray-300">
+                                                                                    <span className="truncate">{h.name}</span>
+                                                                                    {addedBadge(h)}
+                                                                                </span>
                                                                                 {qtyCell(h)}
                                                                             </div>
                                                                         );
@@ -276,7 +286,10 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                                                                         </div>
                                                                                         {hours.map((h, i) => (
                                                                                             <div key={`h${i}`} className="flex justify-between items-center gap-3 px-4 py-2 text-sm">
-                                                                                                <span className="text-gray-700 dark:text-gray-300 truncate">{h.name}</span>
+                                                                                                <span className="flex items-center gap-1.5 min-w-0 text-gray-700 dark:text-gray-300">
+                                                                                                    <span className="truncate">{h.name}</span>
+                                                                                                    {addedBadge(h)}
+                                                                                                </span>
                                                                                                 <span className="font-bold text-gray-800 dark:text-gray-200 whitespace-nowrap shrink-0">
                                                                                                     {h.hours}<span className="text-gray-400 font-normal text-xs ml-1">ч</span>
                                                                                                 </span>

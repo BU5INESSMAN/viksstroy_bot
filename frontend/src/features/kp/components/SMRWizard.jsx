@@ -33,6 +33,7 @@ export default function SMRWizard({
     onClose,
     onSubmitted,
     approveMode = false,
+    addendumMode = false,
 }) {
     // ─── Wizard state — single source of truth ───
     // Test scenarios for state preservation (Commit 3):
@@ -56,7 +57,9 @@ export default function SMRWizard({
     const [draftSavedAt, setDraftSavedAt] = useState(null);
     const [draftTick, setDraftTick] = useState(0);
 
-    const draftKey = `smr:${appId}`;
+    // v2.10: addendum drafts use a separate key so they never collide with
+    // the main report's draft for the same application.
+    const draftKey = `${addendumMode ? 'smr-add' : 'smr'}:${appId}`;
 
     // ───── Silent draft restore ─────
     // Per spec: SMR drafts restore without confirmation — the user is
@@ -115,7 +118,12 @@ export default function SMRWizard({
                 works: worksData,
                 extra_works: extraWorksData,
             };
-            if (approveMode) {
+            if (addendumMode) {
+                // Доп.отчёт: pure-INSERT addendum — send ONLY the newly entered
+                // rows; the backend never deletes, so the main report stays.
+                await axios.post(`/api/kp/apps/${appId}/smr/additional`, payload);
+                toast.success('Доп. отчёт сохранён');
+            } else if (approveMode) {
                 await axios.post(`/api/kp/apps/${appId}/smr/review`, {
                     action: 'edit',
                     ...payload,
@@ -152,7 +160,7 @@ export default function SMRWizard({
                     <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
                         <div className="min-w-0">
                             <h1 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
-                                {approveMode ? 'Проверка отчёта СМР' : 'Заполнение отчёта СМР'}
+                                {addendumMode ? 'Дополнительный отчёт СМР' : approveMode ? 'Проверка отчёта СМР' : 'Заполнение отчёта СМР'}
                                 {Array.isArray(app?.merged_with) && app.merged_with.length > 0 && (
                                     <span
                                         className="text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-500/20 px-2 py-0.5 rounded-full"
@@ -213,6 +221,7 @@ export default function SMRWizard({
                                         tgId={tgId}
                                         hoursData={hoursData}
                                         setHoursData={setHoursData}
+                                        addendumMode={addendumMode}
                                         onNext={() => goTo('works')}
                                     />
                                 )}
@@ -231,6 +240,7 @@ export default function SMRWizard({
                                         setWorksByTeam={setWorksByTeam}
                                         extraByTeam={extraByTeam}
                                         setExtraByTeam={setExtraByTeam}
+                                        addendumMode={addendumMode}
                                         onNext={() => goTo('review')}
                                         onBack={() => goTo('hours')}
                                     />
@@ -246,6 +256,7 @@ export default function SMRWizard({
                                         onSubmit={submit}
                                         submitting={submitting}
                                         approveMode={approveMode}
+                                        addendumMode={addendumMode}
                                     />
                                 )}
                             </motion.div>

@@ -187,6 +187,13 @@ export default function ExtraWorksPicker({
                                                 <p className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate leading-tight">
                                                     {s.name}
                                                 </p>
+                                                {/* v2.10: addendum (доп.отчёт) rows carry is_additional;
+                                                    editable rows never do, so this is inert there. */}
+                                                {s.is_additional ? (
+                                                    <span className="inline-block mt-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
+                                                        добавлено позже{s.filled_at ? ` · ${String(s.filled_at).split('T')[0]}` : ''}
+                                                    </span>
+                                                ) : null}
                                             </div>
                                             <input
                                                 type="number"

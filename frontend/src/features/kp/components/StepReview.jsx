@@ -17,6 +17,7 @@ export default function StepReview({
     onSubmit,
     submitting,
     approveMode = false,
+    addendumMode = false,
 }) {
     const [teams, setTeams] = useState([]);
     const [planItems, setPlanItems] = useState([]);
@@ -238,6 +239,8 @@ export default function StepReview({
                 >
                     {submitting ? (
                         <><Loader2 className="w-4 h-4 animate-spin" /> Отправка…</>
+                    ) : addendumMode ? (
+                        <><Plus className="w-4 h-4" /> Сохранить доп. отчёт</>
                     ) : approveMode ? (
                         <><Check className="w-4 h-4" /> Одобрить отчёт</>
                     ) : (

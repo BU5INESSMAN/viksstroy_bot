@@ -29,6 +29,7 @@ export default function StepHours({
     setHoursData,
     onNext,
     readOnly = false,
+    addendumMode = false,
 }) {
     const [teams, setTeams] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -52,7 +53,10 @@ export default function StepHours({
                 setTeams(data);
 
                 // Seed hoursData on first load — use any pre-saved values.
-                if (hoursData.length === 0) {
+                // v2.10: in addendum mode the editable buckets stay EMPTY so
+                // only NEW hours are collected (existing hours are shown
+                // read-only for reference below). Never seed here.
+                if (!addendumMode && hoursData.length === 0) {
                     const seed = [];
                     for (const team of data) {
                         for (const m of (team.members || [])) {
@@ -232,9 +236,37 @@ export default function StepHours({
             <div>
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white">Часы</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Укажите отработанные часы. Значение на уровне бригады подставится всем участникам.
+                    {addendumMode
+                        ? 'Добавьте часы, забытые в основном отчёте. Существующие записи не меняются.'
+                        : 'Укажите отработанные часы. Значение на уровне бригады подставится всем участникам.'}
                 </p>
             </div>
+
+            {/* v2.10 доп.отчёт: read-only reference of hours already recorded. */}
+            {addendumMode && (() => {
+                const ref = [];
+                for (const t of visibleTeams) {
+                    for (const m of (t.members || [])) {
+                        if (Number(m.hours) > 0) ref.push({ team: t.team_name, fio: m.fio, hours: m.hours });
+                    }
+                }
+                if (ref.length === 0) return null;
+                return (
+                    <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/30 overflow-hidden">
+                        <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-500 bg-gray-100/70 dark:bg-gray-800/50">
+                            Уже в отчёте — часы (справка)
+                        </div>
+                        <ul className="divide-y divide-gray-100 dark:divide-gray-700/60 max-h-40 overflow-y-auto">
+                            {ref.map((r, i) => (
+                                <li key={i} className="flex items-center gap-2 px-4 py-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                    <span className="flex-1 truncate">{r.fio}{r.team ? ` · ${r.team}` : ''}</span>
+                                    <span className="font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">{r.hours} ч</span>
+                                </li>
+                            ))}
+                        </ul>
+                    </div>
+                );
+            })()}
 
             {/* v2.7 — foreman/office can append a worker who showed up but
                 wasn't in the application. Placed above the brigade list. */}
@@ -381,12 +413,12 @@ export default function StepHours({
                     <button
                         type="button"
                         onClick={onNext}
-                        disabled={!hasAnyHours}
+                        disabled={!addendumMode && !hasAnyHours}
                         className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl transition-colors active:scale-[0.99] flex items-center justify-center gap-2"
                     >
                         Далее — работы <ArrowRight className="w-4 h-4" />
                     </button>
-                    {!hasAnyHours && (
+                    {!addendumMode && !hasAnyHours && (
                         <p className="text-xs text-gray-400 text-center mt-2">
                             Введите хотя бы одного участника с ненулевыми часами
                         </p>

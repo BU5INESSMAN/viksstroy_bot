@@ -34,19 +34,25 @@ export default function StepWorks({
     onNext,
     onBack,
     readOnly = false,
+    addendumMode = false,
 }) {
     const [planItems, setPlanItems] = useState([]);
     const [catalog, setCatalog] = useState([]);
     const [teams, setTeams] = useState([]);
     const [loading, setLoading] = useState(true);
     const [previousFiller, setPreviousFiller] = useState(null);
+    // v2.10 доп.отчёт: existing rows shown read-only for reference (not seeded).
+    const [refPlan, setRefPlan] = useState([]);
+    const [refExtras, setRefExtras] = useState([]);
 
     useEffect(() => {
         let alive = true;
         setLoading(true);
         Promise.all([
             axios.get(`/api/kp/apps/${appId}/items`),
-            axios.get(`/api/kp/apps/${appId}/extra_works`),
+            // v2.10: in addendum mode pull ALL existing extras (incl. prior
+            // addenda) for the read-only reference so the user doesn't re-add.
+            axios.get(`/api/kp/apps/${appId}/extra_works${addendumMode ? '?include_additional=1' : ''}`),
             axios.get('/api/kp/catalog'),
             axios.get(`/api/kp/apps/${appId}/hours`).catch(() => ({ data: [] })),
         ])
@@ -84,7 +90,26 @@ export default function StepWorks({
                 }
                 setPlanItems(items);
 
-                if (hasTeamRows) {
+                if (addendumMode) {
+                    // Addendum mode: NEVER seed the editable buckets — collect
+                    // only NEW rows. Capture existing rows for read-only display.
+                    setRefPlan(raw.filter(i => Number(i.volume) > 0).map(i => ({
+                        name: i.name,
+                        unit: i.unit || '',
+                        volume: i.volume,
+                        team_name: i.team_name || '',
+                        is_additional: i.is_additional,
+                    })));
+                    setRefExtras((extraRes.data || []).filter(e => Number(e.volume) > 0).map(e => ({
+                        name: e.custom_name || e.catalog_name || '',
+                        unit: e.display_unit || e.catalog_unit || 'шт',
+                        volume: e.volume,
+                        is_additional: e.is_additional,
+                        filled_at: e.filled_at,
+                    })));
+                }
+
+                if (!addendumMode && hasTeamRows) {
                     // Per-brigade submission (e.g. the foreman reviewing a
                     // brigadier's "По бригадам" fill): auto-enable per-brigade
                     // mode and seed the per-team volumes from the server so the
@@ -119,7 +144,7 @@ export default function StepWorks({
                         }
                         if (Object.keys(seededExtra).length > 0) setExtraByTeam(seededExtra);
                     }
-                } else if (worksData.length === 0 && items.some(i => Number(i.volume) > 0)) {
+                } else if (!addendumMode && worksData.length === 0 && items.some(i => Number(i.volume) > 0)) {
                     // Common mode: seed flat worksData from server (unchanged).
                     setWorksData(items
                         .filter(i => Number(i.volume) > 0)
@@ -129,8 +154,9 @@ export default function StepWorks({
 
                 // Common-mode extra-works seed. Used when NOT per-brigade;
                 // harmless otherwise since handleNext re-derives extras from
-                // extraByTeam before submit in per-brigade mode.
-                if (extraWorksData.length === 0) {
+                // extraByTeam before submit in per-brigade mode. Skipped in
+                // addendum mode so the picker starts empty (new rows only).
+                if (!addendumMode && extraWorksData.length === 0) {
                     setExtraWorksData((extraRes.data || []).map(ew => ({
                         rid: genRowId(),
                         kp_id: ew.extra_work_id || 0,
@@ -158,7 +184,7 @@ export default function StepWorks({
                 const otherAuthor = (itemsRes.data || []).find(i =>
                     Number(i.volume) > 0 && i.filled_by_user_id && Number(i.filled_by_user_id) !== Number(tgId)
                 );
-                setPreviousFiller(otherAuthor ? {
+                setPreviousFiller((!addendumMode && otherAuthor) ? {
                     fio: otherAuthor.filled_by_fio || 'другой пользователь',
                     filled_at: otherAuthor.filled_at || '',
                 } : null);
@@ -324,9 +350,34 @@ export default function StepWorks({
             <div>
                 <h2 className="text-lg font-bold text-gray-900 dark:text-white">Работы</h2>
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                    Укажите фактический объём выполненных работ.
+                    {addendumMode
+                        ? 'Добавьте работы, забытые в основном отчёте. Существующие записи не меняются.'
+                        : 'Укажите фактический объём выполненных работ.'}
                 </p>
             </div>
+
+            {/* v2.10 доп.отчёт: read-only reference of what's already reported. */}
+            {addendumMode && (refPlan.length > 0 || refExtras.length > 0) && (
+                <div className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/60 dark:bg-gray-900/30 overflow-hidden">
+                    <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-500 bg-gray-100/70 dark:bg-gray-800/50">
+                        Уже в отчёте (только для справки)
+                    </div>
+                    <ul className="divide-y divide-gray-100 dark:divide-gray-700/60 max-h-48 overflow-y-auto">
+                        {refPlan.map((r, i) => (
+                            <li key={`rp${i}`} className="flex items-center gap-2 px-4 py-1.5 text-xs text-gray-500 dark:text-gray-400">
+                                <span className="flex-1 truncate">{r.name}{r.team_name ? ` · ${r.team_name}` : ''}</span>
+                                <span className="font-semibold text-gray-600 dark:text-gray-300 whitespace-nowrap">{r.volume} {r.unit}</span>
+                            </li>
+                        ))}
+                        {refExtras.map((r, i) => (
+                            <li key={`re${i}`} className="flex items-center gap-2 px-4 py-1.5 text-xs text-amber-600/80 dark:text-amber-400/70">
+                                <span className="flex-1 truncate">+ {r.name}{r.is_additional ? ' (добавлено позже)' : ''}</span>
+                                <span className="font-semibold whitespace-nowrap">{r.volume} {r.unit}</span>
+                            </li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             {previousFiller && (
                 <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/40 rounded-xl p-3 flex items-start gap-2.5">

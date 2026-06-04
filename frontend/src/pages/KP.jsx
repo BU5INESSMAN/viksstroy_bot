@@ -68,6 +68,8 @@ export default function KP() {
 
     const isOffice = ['moderator', 'boss', 'superadmin'].includes(role);
     const isForemanOrBrigadier = ['foreman', 'brigadier'].includes(role);
+    // v2.10 доп.отчёт: who may create an addendum (backend re-enforces scope).
+    const canCreateAddendum = ['foreman', 'brigadier', 'moderator', 'boss', 'superadmin'].includes(role);
 
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState({ to_fill: [], pending_review: [], approved: [] });
@@ -98,6 +100,9 @@ export default function KP() {
     // v2.4.5 SMR wizard integration
     const [wizardApp, setWizardApp] = useState(null);
     const [wizardApproveMode, setWizardApproveMode] = useState(false);
+    // v2.10 доп.отчёт: addendum-mode wizard + the app picker that opens it.
+    const [wizardAddendumMode, setWizardAddendumMode] = useState(false);
+    const [showAddendumPicker, setShowAddendumPicker] = useState(false);
     // v2.4.4 SMR merge — only applies to the "to_fill" tab.
     const [mergeSelected, setMergeSelected] = useState([]);
     const [mergeBusy, setMergeBusy] = useState(false);
@@ -179,7 +184,10 @@ export default function KP() {
         try {
             const [res, ewRes, catRes] = await Promise.all([
                 axios.get(`/api/kp/apps/${app.id}/items`),
-                axios.get(`/api/kp/apps/${app.id}/extra_works`),
+                // v2.10: read-only VIEW context — include addendum extras so the
+                // "добавлено позже" badge can show them (the editable wizard
+                // uses the default main-only read instead).
+                axios.get(`/api/kp/apps/${app.id}/extra_works?include_additional=1`),
                 axios.get('/api/kp/catalog'),
             ]);
             setKpItems(res.data.map(i => ({
@@ -200,6 +208,10 @@ export default function KP() {
                 volume: ew.volume ?? '',
                 salary: ew.salary || 0,
                 price: ew.price || 0,
+                // v2.10: carry the addendum flag + date so ExtraWorksPicker
+                // badges доп.отчёт rows ("добавлено позже · {date}").
+                is_additional: ew.is_additional,
+                filled_at: ew.filled_at,
             })));
         } catch (e) { toast.error("Ошибка загрузки"); setModalApp(null); }
     };
@@ -374,6 +386,18 @@ export default function KP() {
                 <div className="flex justify-between items-center bg-emerald-50/50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
                     <button onClick={() => setSelectedForExport(selectedForExport.length === data.approved.length ? [] : data.approved.map(a => a.id))} className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Выделить все</button>
                     <button disabled={selectedForExport.length === 0 || isSubmitting} onClick={() => handleExportReport(selectedForExport)} className="bg-emerald-600 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-md flex items-center gap-2 disabled:opacity-50"><Download className="w-4 h-4" /> Скачать отчет ({selectedForExport.length})</button>
+                </div>
+            )}
+
+            {/* v2.10 доп.отчёт: create an addendum to an already-completed report. */}
+            {activeTab === 'approved' && canCreateAddendum && (
+                <div className="flex justify-end">
+                    <button
+                        onClick={() => setShowAddendumPicker(true)}
+                        className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm flex items-center gap-2 transition-colors active:scale-[0.99]"
+                    >
+                        <Plus className="w-4 h-4" /> Создать отчёт
+                    </button>
                 </div>
             )}
 
@@ -577,6 +601,54 @@ export default function KP() {
                 </div>
             )}
 
+            {showAddendumPicker && (
+                <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
+                        <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700">
+                            <h3 className="text-lg font-bold dark:text-white flex items-center gap-2">
+                                <Plus className="w-5 h-5 text-amber-500" /> Создать доп. отчёт
+                            </h3>
+                            <button onClick={() => setShowAddendumPicker(false)} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-2 border border-gray-100 dark:border-gray-700">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-4">
+                            <p className="text-xs text-gray-500 dark:text-gray-400 px-2 pb-3 leading-relaxed">
+                                Выберите готовый отчёт, чтобы добавить забытые работы или часы. Существующие данные не изменятся — записи только добавляются.
+                            </p>
+                            {data.approved.length === 0 ? (
+                                <p className="text-center text-gray-400 text-sm py-8">Нет готовых отчётов</p>
+                            ) : (
+                                <div className="max-h-[60vh] overflow-y-auto custom-scrollbar space-y-1.5">
+                                    {data.approved.map(app => (
+                                        <button
+                                            key={app.id}
+                                            onClick={() => {
+                                                setShowAddendumPicker(false);
+                                                setWizardApproveMode(false);
+                                                setWizardAddendumMode(true);
+                                                setWizardApp(app);
+                                            }}
+                                            className="w-full text-left flex items-center gap-3 px-3 py-2.5 rounded-xl bg-gray-50/60 dark:bg-gray-900/20 hover:bg-amber-50 dark:hover:bg-amber-900/20 transition-colors active:scale-[0.99]"
+                                        >
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">
+                                                    {app.object_name || app.obj_name || app.object_address || 'Объект'}
+                                                </p>
+                                                <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                                                    №{app.id} · {app.date_target || '—'}{app.foreman_name ? ` · ${app.foreman_name}` : ''}
+                                                </p>
+                                            </div>
+                                            <Plus className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {wizardApp && (
                 <SMRWizard
                     appId={wizardApp.id}
@@ -584,7 +656,8 @@ export default function KP() {
                     userRole={role}
                     tgId={tgId}
                     approveMode={wizardApproveMode}
-                    onClose={() => { setWizardApp(null); setWizardApproveMode(false); }}
+                    addendumMode={wizardAddendumMode}
+                    onClose={() => { setWizardApp(null); setWizardApproveMode(false); setWizardAddendumMode(false); }}
                     onSubmitted={() => { fetchApps(); }}
                 />
             )}
