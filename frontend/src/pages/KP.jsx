@@ -70,16 +70,22 @@ export default function KP() {
     const isForemanOrBrigadier = ['foreman', 'brigadier'].includes(role);
     // v2.10 доп.отчёт: who may create an addendum (backend re-enforces scope).
     const canCreateAddendum = ['foreman', 'brigadier', 'moderator', 'boss', 'superadmin'].includes(role);
+    // v2.10: workers get READ-ONLY access to the Готовые tab only — no
+    // to_fill/pending tabs, no fill/review/addendum affordances.
+    const isViewerOnly = role === 'worker';
 
     const [loading, setLoading] = useState(true);
     const [data, setData] = useState({ to_fill: [], pending_review: [], approved: [] });
     const [activeTab, setActiveTab] = useState(() => {
+        // Workers can only ever see Готовые — ignore any ?tab= override.
+        if (isViewerOnly) return 'approved';
         const tab = searchParams.get('tab');
         if (tab && ['to_fill', 'pending_review', 'approved'].includes(tab)) return tab;
         return isOffice ? 'approved' : 'to_fill';
     });
 
     useEffect(() => {
+        if (isViewerOnly) return;   // workers stay pinned to Готовые
         const tab = searchParams.get('tab');
         if (tab && ['to_fill', 'pending_review', 'approved'].includes(tab)) {
             setActiveTab(tab);
@@ -122,7 +128,11 @@ export default function KP() {
                 approved: res.data.completed || [],
             };
             setData(mapped);
-            if (mapped[activeTab]?.length === 0) {
+            if (isViewerOnly) {
+                // Workers only have the Готовые tab — never auto-switch them
+                // onto the hidden to_fill/pending tabs.
+                setActiveTab('approved');
+            } else if (mapped[activeTab]?.length === 0) {
                 if (mapped.to_fill.length > 0) setActiveTab('to_fill');
                 else if (mapped.pending_review.length > 0) setActiveTab('pending_review');
                 else if (mapped.approved.length > 0) setActiveTab('approved');
@@ -318,7 +328,7 @@ export default function KP() {
     const totalPrice = kpItems.reduce((acc, curr) => acc + (parseFloat(curr.volume || 0) * parseFloat(curr.current_price || 0)), 0)
         + extraWorks.reduce((acc, ew) => acc + (parseFloat(ew.volume || 0) * parseFloat(ew.price || 0)), 0);
 
-    if (!['superadmin', 'boss', 'moderator', 'foreman', 'brigadier'].includes(role)) {
+    if (!['superadmin', 'boss', 'moderator', 'foreman', 'brigadier', 'worker'].includes(role)) {
         return (
             <main className="px-4 sm:px-6 lg:px-8 space-y-6 pb-24 flex flex-col items-center justify-center min-h-[60vh] text-gray-400 dark:text-gray-500">
                 <div className="bg-gray-100 dark:bg-gray-800 p-6 rounded-full mb-6 shadow-inner">
@@ -355,13 +365,15 @@ export default function KP() {
             </div>
 
             <div className="flex bg-gray-100 dark:bg-gray-800 rounded-2xl p-1.5 overflow-x-auto custom-scrollbar gap-1" data-tour="kp-tabs">
-                <button
-                    onClick={() => setActiveTab('to_fill')}
-                    className={`relative flex-1 min-w-[100px] py-3 px-3 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'to_fill' ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                >
-                    К заполнению
-                    <TabBadge count={data.to_fill.length} active={activeTab === 'to_fill'} />
-                </button>
+                {!isViewerOnly && (
+                    <button
+                        onClick={() => setActiveTab('to_fill')}
+                        className={`relative flex-1 min-w-[100px] py-3 px-3 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'to_fill' ? 'bg-white dark:bg-gray-700 text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        К заполнению
+                        <TabBadge count={data.to_fill.length} active={activeTab === 'to_fill'} />
+                    </button>
+                )}
                 {(isForemanOrBrigadier || isOffice) && (
                     <button
                         onClick={() => setActiveTab('pending_review')}
@@ -371,7 +383,7 @@ export default function KP() {
                         <TabBadge count={data.pending_review.length} active={activeTab === 'pending_review'} />
                     </button>
                 )}
-                {(isForemanOrBrigadier || isOffice) && (
+                {(isForemanOrBrigadier || isOffice || isViewerOnly) && (
                     <button
                         onClick={() => setActiveTab('approved')}
                         className={`relative flex-1 min-w-[100px] py-3 px-3 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'approved' ? 'bg-white dark:bg-gray-700 text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
