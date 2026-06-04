@@ -745,79 +745,18 @@ async def api_submit_app_extra_works(app_id: int, request: Request, current_user
     items = data.get('items', [])
     role = current_user.get('role', 'worker')
 
-    # Pre-load kp_catalog rows referenced by this payload in one query.
-    kp_ids = []
-    for it in items:
-        kp_id_raw = it.get('kp_id')
-        if kp_id_raw:
-            try:
-                kp_ids.append(int(kp_id_raw))
-            except (TypeError, ValueError):
-                pass
-    catalog: dict = {}
-    if kp_ids:
-        pl = ",".join("?" * len(kp_ids))
-        async with db.conn.execute(
-            f"SELECT id, name, unit, salary, price FROM kp_catalog WHERE id IN ({pl})", kp_ids
-        ) as cur:
-            for r in await cur.fetchall():
-                catalog[int(r[0])] = {
-                    'name': r[1] or '',
-                    'unit': (r[2] or '').strip(),
-                    'salary': float(r[3]) if r[3] is not None else 0.0,
-                    'price': float(r[4]) if r[4] is not None else 0.0,
-                }
-
-    await db.conn.execute("DELETE FROM application_extra_works WHERE application_id = ?", (app_id,))
-    for item in items:
-        try:
-            volume = float(item.get('volume') or 0)
-        except (TypeError, ValueError):
-            volume = 0.0
-        if volume <= 0:
-            continue
-
-        kp_id = None
-        if item.get('kp_id'):
-            try:
-                kp_id = int(item['kp_id'])
-            except (TypeError, ValueError):
-                kp_id = None
-
-        if kp_id and kp_id in catalog:
-            meta = catalog[kp_id]
-            custom_name = meta['name']
-            unit = meta['unit']
-            salary = meta['salary']
-            price = meta['price']
-            # Office roles may override pricing when editing.
-            if role in ('moderator', 'boss', 'superadmin'):
-                if item.get('salary') is not None:
-                    try: salary = float(item['salary'])
-                    except (TypeError, ValueError): pass
-                if item.get('price') is not None:
-                    try: price = float(item['price'])
-                    except (TypeError, ValueError): pass
-            extra_work_id = 0
-        else:
-            # Legacy path: extra_works_catalog-based picker.
-            extra_work_id = int(item.get('extra_work_id') or 0)
-            custom_name = item.get('custom_name') or ''
-            unit = item.get('unit') or ''
-            try:
-                salary = float(item.get('salary') or 0)
-                price = float(item.get('price') or 0)
-            except (TypeError, ValueError):
-                salary = 0.0
-                price = 0.0
-
-        await db.conn.execute(
-            """INSERT INTO application_extra_works
-               (application_id, extra_work_id, custom_name, unit, volume, salary, price,
-                filled_by_user_id, filled_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (app_id, extra_work_id, custom_name, unit, volume, salary, price,
-             current_user['tg_id'], __import__('datetime').datetime.now().isoformat(timespec='seconds')),
-        )
-    await db.conn.commit()
+    # v2.10 (D2/D9): this legacy endpoint is effectively DEAD — the frontend
+    # `submitVolumes` only renders on the to_fill tab, which routes to the SMR
+    # wizard, not this modal. It is kept working but routed through the single
+    # scoped writer (_save_extra_works_inline) so it can no longer
+    # blanket-wipe other brigades' extras or drop team_id on insert. Do NOT
+    # expand its surface. Lazy import avoids any router import-order coupling.
+    from routers.kp import _save_extra_works_inline, _compute_write_scope
+    user_team_ids = None
+    if role in ('brigadier', 'worker'):
+        user_team_ids = set(await db.get_user_team_ids(current_user['tg_id']))
+        # D4: brigadier/worker may only touch their own teams' extras.
+        items = [it for it in items if int(it.get('team_id') or 0) in user_team_ids]
+    scope = _compute_write_scope(role, user_team_ids, items)
+    await _save_extra_works_inline(app_id, items, current_user['tg_id'], role, team_scope=scope)
     return {"status": "ok"}

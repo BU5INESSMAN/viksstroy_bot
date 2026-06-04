@@ -7,6 +7,26 @@ from datetime import datetime
 import logging
 
 
+def _team_scope_where(team_scope):
+    """NULL-aware SQL fragment + params for a (concrete_team_ids,
+    include_common) authoritative write scope, to be ANDed after
+    ``application_id = ?``. An empty scope returns ('0', []) so the DELETE
+    matches nothing (never a bare ``IN ()``). Mirror of
+    web.routers.kp._team_scope_where (kept local so the DB layer needs no
+    cross-package import)."""
+    concrete, include_common = team_scope
+    parts, params = [], []
+    ids = sorted({int(t) for t in (concrete or set())})
+    if ids:
+        parts.append(f"team_id IN ({','.join('?' * len(ids))})")
+        params.extend(ids)
+    if include_common:
+        parts.append("team_id IS NULL")
+    if not parts:
+        return "0", []
+    return "(" + " OR ".join(parts) + ")", params
+
+
 class KpRepoMixin:
 
     async def get_kp_dashboard_apps(self, tg_id: int, role: str, team_ids: list):
@@ -79,7 +99,7 @@ class KpRepoMixin:
         async with self.conn.execute(query, (app_id, obj_id)) as cur:
             return [dict(row) for row in await cur.fetchall()]
 
-    async def submit_kp_report(self, app_id: int, items: list, role: str, filled_by_user_id: int | None = None):
+    async def submit_kp_report(self, app_id: int, items: list, role: str, filled_by_user_id: int | None = None, team_scope=None):
         # v2.4.3: foreman sends only {kp_id, volume}. Unit, salary, and
         # price are looked up from kp_catalog server-side so the frontend
         # never needs pricing data and cannot spoof it.
@@ -101,7 +121,18 @@ class KpRepoMixin:
                         'price': float(r[3]) if r[3] is not None else 0.0,
                     }
 
-        await self.conn.execute("DELETE FROM application_kp WHERE application_id = ?", (app_id,))
+        # v2.10 (D2/D3): scope the DELETE to the caller's authoritative team
+        # buckets so a submit that does not carry every brigade's rows no
+        # longer wipes the others. team_scope=None preserves the legacy
+        # blanket behaviour for the dead /api/kp/apps/{id}/submit path.
+        if team_scope is None:
+            await self.conn.execute("DELETE FROM application_kp WHERE application_id = ?", (app_id,))
+        else:
+            _clause, _sparams = _team_scope_where(team_scope)
+            await self.conn.execute(
+                f"DELETE FROM application_kp WHERE application_id = ? AND {_clause}",
+                (app_id, *_sparams),
+            )
         for item in items:
             try:
                 volume = float(item.get('volume') or 0)

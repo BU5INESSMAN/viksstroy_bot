@@ -420,17 +420,25 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     if hours_items:
         await db.save_app_hours(app_id, hours_items, tg_id)
 
-    # 2. Plan works (only foreman+ finalises; brigadier may fill if they
-    # are the only author, otherwise foreman overwrites on review)
-    works = data.get('works') or []
-    if works:
-        await db.submit_kp_report(app_id, works, role, filled_by_user_id=tg_id)
+    # 2. Plan works — D4 team scope + D2/D3 scoped, non-destructive write.
+    # Use key-presence (not truthiness) so an explicit empty list clears the
+    # caller's owned buckets (D7); the wizard always sends all three keys.
+    if 'works' in data:
+        works = data.get('works') or []
+        if user_team_ids is not None:
+            # brigadier/worker: only their own teams (mirror of the hours
+            # filter above). A row with no/0 team_id (common) is dropped.
+            works = [w for w in works if int(w.get('team_id') or 0) in user_team_ids]
+        scope = _compute_write_scope(role, user_team_ids, works)
+        await db.submit_kp_report(app_id, works, role, filled_by_user_id=tg_id, team_scope=scope)
 
-    # 3. Extra works — reuse the existing /extra_works/submit logic via a
-    # direct insert (same rules as that endpoint).
-    extras = data.get('extra_works') or []
-    if extras:
-        await _save_extra_works_inline(app_id, extras, tg_id, role)
+    # 3. Extra works — same D4 scope + scoped, non-destructive delete.
+    if 'extra_works' in data:
+        extras = data.get('extra_works') or []
+        if user_team_ids is not None:
+            extras = [e for e in extras if int(e.get('team_id') or 0) in user_team_ids]
+        scope = _compute_write_scope(role, user_team_ids, extras)
+        await _save_extra_works_inline(app_id, extras, tg_id, role, team_scope=scope)
 
     # 4. Group + status — cascade to every app in the merge group so a
     # single wizard pass marks them all pending/approved together.
@@ -480,7 +488,57 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     return {"status": "ok", "smr_status": smr_status, "smr_group_id": group_id}
 
 
-async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: str):
+def _team_scope_where(team_scope):
+    """NULL-aware SQL fragment + params for a (concrete_team_ids,
+    include_common) authoritative write scope, to be ANDed after
+    ``application_id = ?``. An empty scope returns ('0', []) so the DELETE
+    matches nothing (never a bare ``IN ()``)."""
+    concrete, include_common = team_scope
+    parts, params = [], []
+    ids = sorted({int(t) for t in (concrete or set())})
+    if ids:
+        parts.append(f"team_id IN ({','.join('?' * len(ids))})")
+        params.extend(ids)
+    if include_common:
+        parts.append("team_id IS NULL")
+    if not parts:
+        return "0", []
+    return "(" + " OR ".join(parts) + ")", params
+
+
+def _compute_write_scope(role, user_team_ids, items):
+    """Authoritative team buckets a submit may delete+replace (D2/D3/D4).
+
+    Returns (concrete_team_ids: set[int], include_common: bool):
+      - brigadier/worker: exactly their own teams, never the common (NULL)
+        bucket. Independent of the payload, so clearing a section still
+        deletes their owned rows (D7).
+      - foreman/office: the concrete teams present in the payload PLUS the
+        common (NULL) bucket. Non-destructive — brigades absent from the
+        payload survive. This is the prerequisite for the additional-report
+        feature: an additional report writes into its own scope and must not
+        wipe the main report.
+
+    D12 (deferred, NOT done here): the writers still restamp
+    filled_by_user_id / filled_at on every re-inserted row. Brigadier/worker
+    now only touch their own buckets, but a foreman re-inserting a
+    brigadier's bucket on review still restamps it. Preserving per-row
+    authorship is a follow-up commit.
+    """
+    if role in ('brigadier', 'worker'):
+        return {int(t) for t in (user_team_ids or set())}, False
+    concrete = set()
+    for it in (items or []):
+        try:
+            tid = int(it.get('team_id') or 0)
+        except (TypeError, ValueError):
+            tid = 0
+        if tid:
+            concrete.add(tid)
+    return concrete, True
+
+
+async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: str, team_scope=None):
     """Minimal inline port of /api/kp/apps/{id}/extra_works/submit logic
     so the wizard's unified submit can batch everything in one call."""
     from datetime import datetime as _dt
@@ -509,9 +567,19 @@ async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: s
                     'price': float(r[4]) if r[4] is not None else 0.0,
                 }
 
-    await db.conn.execute(
-        "DELETE FROM application_extra_works WHERE application_id = ?", (app_id,)
-    )
+    # v2.10 (D2): scope the DELETE to the caller's authoritative team buckets
+    # (NULL-aware) instead of wiping every brigade's extras. team_scope=None
+    # falls back to the legacy blanket delete for any old caller.
+    if team_scope is None:
+        await db.conn.execute(
+            "DELETE FROM application_extra_works WHERE application_id = ?", (app_id,)
+        )
+    else:
+        _clause, _sparams = _team_scope_where(team_scope)
+        await db.conn.execute(
+            f"DELETE FROM application_extra_works WHERE application_id = ? AND {_clause}",
+            (app_id, *_sparams),
+        )
     now = _dt.now().isoformat(timespec='seconds')
     for it in items:
         try:
@@ -573,12 +641,19 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
     role = current_user.get('role')
 
     if action == 'edit':
+        # Reviewer is foreman+ (role-gated above), so the write scope is the
+        # payload's concrete teams plus the common bucket — non-destructive
+        # toward brigades not present in this review payload.
         if data.get('hours'):
             await db.save_app_hours(app_id, data['hours'], tg_id)
-        if data.get('works'):
-            await db.submit_kp_report(app_id, data['works'], role, filled_by_user_id=tg_id)
-        if data.get('extra_works'):
-            await _save_extra_works_inline(app_id, data['extra_works'], tg_id, role)
+        if 'works' in data:
+            works = data.get('works') or []
+            scope = _compute_write_scope(role, None, works)
+            await db.submit_kp_report(app_id, works, role, filled_by_user_id=tg_id, team_scope=scope)
+        if 'extra_works' in data:
+            extras = data.get('extra_works') or []
+            scope = _compute_write_scope(role, None, extras)
+            await _save_extra_works_inline(app_id, extras, tg_id, role, team_scope=scope)
 
     await db.conn.execute(
         "UPDATE applications SET smr_status = 'approved', kp_status = 'approved' WHERE id = ?",
