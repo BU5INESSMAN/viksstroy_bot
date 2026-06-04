@@ -247,7 +247,8 @@ class ObjectsRepoMixin:
                        t.name                  AS team_name,
                        akp.filled_at           AS filled_at,
                        uf.fio                  AS filled_by_fio,
-                       uf.role                 AS filled_by_role
+                       uf.role                 AS filled_by_role,
+                       COALESCE(akp.is_additional, 0) AS is_additional
                 FROM application_kp akp
                 JOIN applications a ON akp.application_id = a.id
                 JOIN kp_catalog k ON akp.kp_id = k.id
@@ -280,7 +281,8 @@ class ObjectsRepoMixin:
                        t.name                  AS team_name,
                        e.filled_at             AS filled_at,
                        uf.fio                  AS filled_by_fio,
-                       uf.role                 AS filled_by_role
+                       uf.role                 AS filled_by_role,
+                       COALESCE(e.is_additional, 0) AS is_additional
                 FROM application_extra_works e
                 JOIN applications a ON e.application_id = a.id
                 LEFT JOIN extra_works_catalog ewc ON ewc.id = e.extra_work_id
@@ -305,7 +307,8 @@ class ObjectsRepoMixin:
                        t.name                  AS team_name,
                        ah.filled_at            AS filled_at,
                        uf.fio                  AS filled_by_fio,
-                       uf.role                 AS filled_by_role
+                       uf.role                 AS filled_by_role,
+                       COALESCE(ah.is_additional, 0) AS is_additional
                 FROM application_hours ah
                 JOIN applications a ON ah.app_id = a.id
                 LEFT JOIN team_members tm ON tm.id = ah.user_id

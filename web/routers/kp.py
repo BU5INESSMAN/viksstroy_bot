@@ -82,7 +82,9 @@ async def _current_smr_member_ids(app_id: int) -> set[int]:
     group_ids = await _expand_merge_group(app_id)
     ids: set[int] = {mid for _tid, mid in await _roster_member_keys(group_ids)}
     for aid in group_ids:
-        for r in await db.get_app_hours(aid):
+        # include_additional=True: a member added via доп.отчёт is already in
+        # the SMR and must stay excluded from the "add worker" picker.
+        for r in await db.get_app_hours(aid, include_additional=True):
             ids.add(int(r['member_id']))
     return ids
 
@@ -570,14 +572,17 @@ async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: s
     # v2.10 (D2): scope the DELETE to the caller's authoritative team buckets
     # (NULL-aware) instead of wiping every brigade's extras. team_scope=None
     # falls back to the legacy blanket delete for any old caller.
+    # v2.10 доп.отчёт: AND is_additional = 0 so a MAIN re-submit NEVER deletes
+    # addendum extras (is_additional=1).
     if team_scope is None:
         await db.conn.execute(
-            "DELETE FROM application_extra_works WHERE application_id = ?", (app_id,)
+            "DELETE FROM application_extra_works WHERE application_id = ? AND is_additional = 0",
+            (app_id,),
         )
     else:
         _clause, _sparams = _team_scope_where(team_scope)
         await db.conn.execute(
-            f"DELETE FROM application_extra_works WHERE application_id = ? AND {_clause}",
+            f"DELETE FROM application_extra_works WHERE application_id = ? AND is_additional = 0 AND {_clause}",
             (app_id, *_sparams),
         )
     now = _dt.now().isoformat(timespec='seconds')
@@ -621,11 +626,225 @@ async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: s
         await db.conn.execute(
             """INSERT INTO application_extra_works
                (application_id, extra_work_id, custom_name, unit, volume,
-                salary, price, filled_by_user_id, filled_at, team_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                salary, price, filled_by_user_id, filled_at, team_id, is_additional)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
             (app_id, extra_work_id, custom_name, unit, volume, salary, price, tg_id, now, team_id),
         )
     await db.conn.commit()
+
+
+# ──────────────────────────────────────────────────────────────────────
+# v2.10 — ADDITIONAL REPORT (доп.отчёт): pure-INSERT addenda, no delete.
+# Each save appends is_additional=1 rows that accumulate across calls and
+# never touch the main report or earlier addenda.
+# ──────────────────────────────────────────────────────────────────────
+
+async def _insert_additional_kp(app_id: int, items: list, tg_id: int, now: str) -> int:
+    """Append plan-work addendum rows (is_additional=1). No DELETE, no status
+    change. Unit/salary/price looked up from kp_catalog server-side."""
+    kp_ids = [int(i['kp_id']) for i in items if int(i.get('kp_id') or 0) > 0]
+    lookup: dict[int, dict] = {}
+    if kp_ids:
+        pl = ",".join("?" * len(kp_ids))
+        async with db.conn.execute(
+            f"SELECT id, unit, salary, price FROM kp_catalog WHERE id IN ({pl})", kp_ids
+        ) as cur:
+            for r in await cur.fetchall():
+                lookup[int(r[0])] = {
+                    'unit': (r[1] or '').strip(),
+                    'salary': float(r[2]) if r[2] is not None else 0.0,
+                    'price': float(r[3]) if r[3] is not None else 0.0,
+                }
+    n = 0
+    for item in items:
+        try:
+            volume = float(item.get('volume') or 0)
+        except (TypeError, ValueError):
+            volume = 0.0
+        if volume <= 0:
+            continue
+        kp_id = int(item.get('kp_id') or 0)
+        if not kp_id:
+            continue
+        meta = lookup.get(kp_id, {'unit': '', 'salary': 0.0, 'price': 0.0})
+        try:
+            team_id_raw = item.get('team_id')
+            team_id = int(team_id_raw) if team_id_raw else None
+            if team_id == 0:
+                team_id = None
+        except (TypeError, ValueError):
+            team_id = None
+        await db.conn.execute(
+            """INSERT INTO application_kp
+               (application_id, kp_id, volume, unit, current_salary, current_price,
+                filled_by_user_id, filled_at, team_id, is_additional)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (app_id, kp_id, volume, meta['unit'], meta['salary'], meta['price'], tg_id, now, team_id),
+        )
+        n += 1
+    return n
+
+
+async def _insert_additional_extras(app_id: int, items: list, tg_id: int, role: str, now: str) -> int:
+    """Append extra-work addendum rows (is_additional=1). No DELETE."""
+    kp_ids = []
+    for it in items:
+        try:
+            kid = int(it.get('kp_id') or 0)
+            if kid > 0:
+                kp_ids.append(kid)
+        except (TypeError, ValueError):
+            pass
+    catalog: dict = {}
+    if kp_ids:
+        pl = ",".join("?" * len(kp_ids))
+        async with db.conn.execute(
+            f"SELECT id, name, unit, salary, price FROM kp_catalog WHERE id IN ({pl})", kp_ids
+        ) as cur:
+            for r in await cur.fetchall():
+                catalog[int(r[0])] = {
+                    'name': r[1] or '',
+                    'unit': (r[2] or '').strip(),
+                    'salary': float(r[3]) if r[3] is not None else 0.0,
+                    'price': float(r[4]) if r[4] is not None else 0.0,
+                }
+    n = 0
+    for it in items:
+        try:
+            volume = float(it.get('volume') or 0)
+        except (TypeError, ValueError):
+            volume = 0.0
+        if volume <= 0:
+            continue
+        try:
+            kp_id = int(it.get('kp_id') or 0) or None
+        except (TypeError, ValueError):
+            kp_id = None
+        if kp_id and kp_id in catalog:
+            meta = catalog[kp_id]
+            custom_name, unit = meta['name'], meta['unit']
+            salary, price = meta['salary'], meta['price']
+            extra_work_id = 0
+        else:
+            extra_work_id = int(it.get('extra_work_id') or 0)
+            custom_name = it.get('custom_name') or ''
+            unit = it.get('unit') or ''
+            try:
+                salary = float(it.get('salary') or 0)
+                price = float(it.get('price') or 0)
+            except (TypeError, ValueError):
+                salary = 0.0
+                price = 0.0
+        try:
+            team_id_raw = it.get('team_id')
+            team_id = int(team_id_raw) if team_id_raw else None
+            if team_id == 0:
+                team_id = None
+        except (TypeError, ValueError):
+            team_id = None
+        await db.conn.execute(
+            """INSERT INTO application_extra_works
+               (application_id, extra_work_id, custom_name, unit, volume,
+                salary, price, filled_by_user_id, filled_at, team_id, is_additional)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (app_id, extra_work_id, custom_name, unit, volume, salary, price, tg_id, now, team_id),
+        )
+        n += 1
+    return n
+
+
+async def _insert_additional_hours(app_id: int, items: list, tg_id: int, now: str) -> int:
+    """Append hours addendum rows (is_additional=1). PLAIN INSERT (no upsert):
+    the partial unique index permits duplicate (app,team,user) when
+    is_additional=1, so extra hours for an existing member accumulate."""
+    n = 0
+    for it in items:
+        try:
+            team_id = int(it['team_id'])
+            member_id = int(it['user_id'])
+            hours = float(it.get('hours') or 0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if hours <= 0:
+            continue
+        await db.conn.execute(
+            """INSERT INTO application_hours
+               (app_id, team_id, user_id, hours, filled_by_user_id, filled_at, is_additional)
+               VALUES (?, ?, ?, ?, ?, ?, 1)""",
+            (app_id, team_id, member_id, hours, tg_id, now),
+        )
+        n += 1
+    return n
+
+
+@router.post("/api/kp/apps/{app_id}/smr/additional")
+async def submit_additional_report(app_id: int, request: Request, current_user=Depends(get_current_user)):
+    """Доп.отчёт — add forgotten works/extras/hours to an EXISTING report.
+
+    Body: {hours?, works?, extra_works?} (same shape as /smr/submit). Every
+    row is a PURE INSERT with is_additional=1 — NO delete of any kind — so
+    multiple addenda accumulate and the main report is never touched.
+    Roles: foreman + brigadier (own brigade only) + office.
+    """
+    from datetime import datetime as _dt
+
+    role = current_user.get('role', 'worker')
+    if role not in ('brigadier', 'foreman', 'moderator', 'boss', 'superadmin'):
+        raise HTTPException(403, "Нет прав для создания доп. отчёта")
+
+    data = await request.json()
+    tg_id = current_user['tg_id']
+
+    if db.conn is None:
+        await db.init_db()
+    async with db.conn.execute(
+        "SELECT id FROM applications WHERE id = ?", (app_id,)
+    ) as cur:
+        if not await cur.fetchone():
+            raise HTTPException(404, "Заявка не найдена")
+
+    # Brigadier/worker: own teams only (INPUT filter; there is NO scoped
+    # delete on this path — addenda are pure inserts).
+    user_team_ids = None
+    if role in ('brigadier', 'worker'):
+        user_team_ids = set(await db.get_user_team_ids(tg_id))
+        if not user_team_ids:
+            raise HTTPException(403, "Вы не привязаны ни к одной бригаде. Обратитесь к администратору.")
+
+    now = _dt.now().isoformat(timespec='seconds')
+    n_works = n_extras = n_hours = 0
+
+    works = data.get('works') or []
+    if user_team_ids is not None:
+        works = [w for w in works if int(w.get('team_id') or 0) in user_team_ids]
+    if works:
+        n_works = await _insert_additional_kp(app_id, works, tg_id, now)
+
+    extras = data.get('extra_works') or []
+    if user_team_ids is not None:
+        extras = [e for e in extras if int(e.get('team_id') or 0) in user_team_ids]
+    if extras:
+        n_extras = await _insert_additional_extras(app_id, extras, tg_id, role, now)
+
+    hours_items = data.get('hours') or []
+    # Same ad-hoc guard as the main submit: a brigadier cannot inject a
+    # worker outside the roster; a foreman's ad-hoc member is validated.
+    hours_items = await _guard_adhoc_hours(app_id, hours_items, role)
+    if user_team_ids is not None:
+        hours_items = [h for h in hours_items if int(h.get('team_id') or 0) in user_team_ids]
+    if hours_items:
+        n_hours = await _insert_additional_hours(app_id, hours_items, tg_id, now)
+
+    await db.conn.commit()
+
+    fio = current_user.get('fio', '')
+    await db.add_log(
+        tg_id, fio,
+        f"Доп. отчёт СМР по заявке №{app_id} "
+        f"(работ: {n_works}, доп: {n_extras}, часов: {n_hours})",
+        target_type='smr', target_id=app_id,
+    )
+    return {"status": "ok", "works": n_works, "extra_works": n_extras, "hours": n_hours}
 
 
 @router.post("/api/kp/apps/{app_id}/smr/review")

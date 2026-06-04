@@ -99,7 +99,9 @@ async def generate_smr_excel_bytes(db, app_id: int) -> tuple[bytes, str]:
     ws_hours.title = "Часы"
     _write_header(ws_hours, ["Бригада", "ФИО", "Специальность", "Часы", "Заполнил"])
 
-    hours_rows = await db.get_app_hours(app_id)
+    # v2.10: include addendum hours (доп.отчёт) so they count in the report,
+    # matching the works/extras sheets which read the tables directly.
+    hours_rows = await db.get_app_hours(app_id, include_additional=True)
     r = 2
     for h in hours_rows:
         if float(h.get('hours') or 0) <= 0:

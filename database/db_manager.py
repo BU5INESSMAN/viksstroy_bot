@@ -566,12 +566,34 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             # mode was used. NULL = common mode (all teams together).
             "ALTER TABLE application_kp ADD COLUMN team_id INTEGER",
             "ALTER TABLE application_extra_works ADD COLUMN team_id INTEGER",
+            # v2.10 доп.отчёт: addendum rows carry is_additional=1. Declared in
+            # schema.sql for fresh installs; added here for existing DBs.
+            "ALTER TABLE application_kp ADD COLUMN is_additional INTEGER DEFAULT 0",
+            "ALTER TABLE application_extra_works ADD COLUMN is_additional INTEGER DEFAULT 0",
+            "ALTER TABLE application_hours ADD COLUMN is_additional INTEGER DEFAULT 0",
         ):
             try:
                 await self.conn.execute(stmt)
             except Exception:
                 pass
         await self.conn.commit()
+
+        # v2.10 доп.отчёт: make the hours unique index PARTIAL so addendum
+        # hours (is_additional=1) may duplicate (app,team,user) — needed for
+        # "extra hours for an existing member". Main rows (is_additional=0)
+        # stay unique. Idempotent: DROP then CREATE the partial form. Must run
+        # AFTER the is_additional column ALTER above (the index references it).
+        # All existing rows are is_additional=0 and already unique, so the
+        # partial index builds without conflict.
+        try:
+            await self.conn.execute("DROP INDEX IF EXISTS idx_app_hours_unique")
+            await self.conn.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_app_hours_unique "
+                "ON application_hours(app_id, team_id, user_id) WHERE is_additional = 0"
+            )
+            await self.conn.commit()
+        except Exception as e:
+            logging.error(f"hours partial-index swap failed: {e}")
 
     async def upgrade_application_extra_works_unit(self):
         """v2.4.3: extra works now pick from kp_catalog so each row needs a

@@ -28,10 +28,19 @@ def _parse_team_ids(team_id_field: str) -> list[int]:
 
 class HoursRepoMixin:
 
-    async def get_app_hours(self, app_id: int) -> list[dict]:
-        """Return every hours row for the application with FIO/specialty
-        joined from team_members and the author's FIO from users."""
-        query = """
+    async def get_app_hours(self, app_id: int, include_additional: bool = False) -> list[dict]:
+        """Return hours rows for the application with FIO/specialty joined from
+        team_members and the author's FIO from users.
+
+        v2.10: by default returns only MAIN rows (is_additional=0) — the
+        editable SMR wizard must seed only the main report, else addendum
+        hours would be re-absorbed/double-counted on a main re-submit. Pass
+        include_additional=True (e.g. the read-only view / roster checks) to
+        also get доп.отчёт rows. is_additional is selected so callers can
+        badge addendum rows.
+        """
+        add_filter = "" if include_additional else " AND COALESCE(ah.is_additional, 0) = 0"
+        query = f"""
             SELECT
                 ah.id,
                 ah.app_id,
@@ -40,6 +49,7 @@ class HoursRepoMixin:
                 ah.hours,
                 ah.filled_by_user_id,
                 ah.filled_at,
+                COALESCE(ah.is_additional, 0) AS is_additional,
                 tm.fio AS fio,
                 tm.position AS specialty,
                 tm.tg_user_id AS tg_user_id,
@@ -54,7 +64,7 @@ class HoursRepoMixin:
             LEFT JOIN team_members tm ON tm.id = ah.user_id
             LEFT JOIN teams t ON t.id = ah.team_id
             LEFT JOIN users filled_u ON filled_u.user_id = ah.filled_by_user_id
-            WHERE ah.app_id = ?
+            WHERE ah.app_id = ?{add_filter}
             ORDER BY t.name, tm.is_foreman DESC, tm.fio
         """
         async with self.conn.execute(query, (app_id,)) as cur:
@@ -72,12 +82,16 @@ class HoursRepoMixin:
                 hours = float(item.get('hours') or 0)
             except (KeyError, TypeError, ValueError):
                 continue
+            # v2.10: main hours write is_additional=0. ON CONFLICT target now
+            # carries the partial-index predicate (WHERE is_additional = 0) so
+            # it matches idx_app_hours_unique's partial form; addendum rows
+            # (is_additional=1) are outside the index and never conflict here.
             await self.conn.execute(
                 """
                 INSERT INTO application_hours
-                    (app_id, team_id, user_id, hours, filled_by_user_id, filled_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON CONFLICT(app_id, team_id, user_id) DO UPDATE SET
+                    (app_id, team_id, user_id, hours, filled_by_user_id, filled_at, is_additional)
+                VALUES (?, ?, ?, ?, ?, ?, 0)
+                ON CONFLICT(app_id, team_id, user_id) WHERE is_additional = 0 DO UPDATE SET
                     hours = excluded.hours,
                     filled_by_user_id = excluded.filled_by_user_id,
                     filled_at = excluded.filled_at

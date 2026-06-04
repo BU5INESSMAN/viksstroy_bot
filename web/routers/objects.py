@@ -709,17 +709,22 @@ async def api_create_extra_work(name: str = Form(...), unit: str = Form("шт"),
 
 
 @router.get("/api/kp/apps/{app_id}/extra_works")
-async def api_get_app_extra_works(app_id: int, current_user=Depends(get_current_user)):
+async def api_get_app_extra_works(app_id: int, include_additional: bool = False, current_user=Depends(get_current_user)):
     # v2.4.3: unit is denormalized onto application_extra_works. Legacy
     # rows without it fall back to extra_works_catalog.unit.
-    async with db.conn.execute("""
+    # v2.10 доп.отчёт: default to MAIN rows only (is_additional=0) so the
+    # editable extras-picker never re-absorbs/double-counts addenda. The
+    # read-only view (3b) passes include_additional=1 to also get addendum
+    # rows; aew.* already carries is_additional so the UI can badge them.
+    add_filter = "" if include_additional else " AND COALESCE(aew.is_additional, 0) = 0"
+    async with db.conn.execute(f"""
         SELECT aew.*,
                ewc.name as catalog_name,
                ewc.unit as catalog_unit,
                COALESCE(NULLIF(TRIM(aew.unit), ''), ewc.unit, '') as display_unit
         FROM application_extra_works aew
         LEFT JOIN extra_works_catalog ewc ON aew.extra_work_id = ewc.id
-        WHERE aew.application_id = ?
+        WHERE aew.application_id = ?{add_filter}
         ORDER BY aew.id
     """, (app_id,)) as cur:
         items = [dict(row) for row in await cur.fetchall()]

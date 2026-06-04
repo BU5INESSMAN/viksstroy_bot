@@ -277,6 +277,7 @@ CREATE TABLE IF NOT EXISTS application_extra_works (
     volume REAL DEFAULT 0,
     salary REAL DEFAULT 0,
     price REAL DEFAULT 0,
+    is_additional INTEGER DEFAULT 0,
     FOREIGN KEY (application_id) REFERENCES applications(id),
     FOREIGN KEY (extra_work_id) REFERENCES extra_works_catalog(id)
 );
@@ -322,6 +323,7 @@ CREATE TABLE IF NOT EXISTS application_kp (
     current_salary REAL,
     current_price REAL,
     status TEXT DEFAULT 'pending',
+    is_additional INTEGER DEFAULT 0,
     FOREIGN KEY (application_id) REFERENCES applications(id),
     FOREIGN KEY (kp_id) REFERENCES kp_catalog(id)
 );
@@ -335,12 +337,16 @@ CREATE TABLE IF NOT EXISTS application_hours (
     hours REAL DEFAULT 0,
     filled_by_user_id INTEGER,
     filled_at TEXT,
+    is_additional INTEGER DEFAULT 0,
     FOREIGN KEY (app_id) REFERENCES applications(id),
     FOREIGN KEY (team_id) REFERENCES teams(id),
     FOREIGN KEY (user_id) REFERENCES users(user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_app_hours_app ON application_hours(app_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_app_hours_unique ON application_hours(app_id, team_id, user_id);
+-- v2.10: PARTIAL unique index — main rows (is_additional=0) stay unique per
+-- (app,team,user); addendum rows (is_additional=1) may duplicate so доп.отчёт
+-- can add extra hours for an existing member.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_app_hours_unique ON application_hours(app_id, team_id, user_id) WHERE is_additional = 0;
 
 -- Биржа ресурсов (Stage 5A): обмен техникой между прорабами
 CREATE TABLE IF NOT EXISTS equipment_exchanges (

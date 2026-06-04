@@ -92,6 +92,7 @@ class KpRepoMixin:
                 FROM object_kp_plan okp
                          JOIN kp_catalog k ON okp.kp_id = k.id
                          LEFT JOIN application_kp akp ON k.id = akp.kp_id AND akp.application_id = ?
+                             AND COALESCE(akp.is_additional, 0) = 0
                          LEFT JOIN teams t ON t.id = akp.team_id
                 WHERE okp.object_id = ?
                 ORDER BY k.category, k.id, akp.team_id
@@ -125,12 +126,17 @@ class KpRepoMixin:
         # buckets so a submit that does not carry every brigade's rows no
         # longer wipes the others. team_scope=None preserves the legacy
         # blanket behaviour for the dead /api/kp/apps/{id}/submit path.
+        # v2.10 доп.отчёт: AND is_additional = 0 so a MAIN re-submit NEVER
+        # deletes addendum rows (they live alongside, is_additional=1).
         if team_scope is None:
-            await self.conn.execute("DELETE FROM application_kp WHERE application_id = ?", (app_id,))
+            await self.conn.execute(
+                "DELETE FROM application_kp WHERE application_id = ? AND is_additional = 0",
+                (app_id,),
+            )
         else:
             _clause, _sparams = _team_scope_where(team_scope)
             await self.conn.execute(
-                f"DELETE FROM application_kp WHERE application_id = ? AND {_clause}",
+                f"DELETE FROM application_kp WHERE application_id = ? AND is_additional = 0 AND {_clause}",
                 (app_id, *_sparams),
             )
         for item in items:
@@ -172,8 +178,8 @@ class KpRepoMixin:
             await self.conn.execute(
                 """INSERT INTO application_kp
                    (application_id, kp_id, volume, unit, current_salary, current_price,
-                    filled_by_user_id, filled_at, team_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    filled_by_user_id, filled_at, team_id, is_additional)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
                 (app_id, kp_id, volume, meta['unit'], salary, price, filled_by_user_id, _now, team_id),
             )
 
@@ -343,7 +349,7 @@ class KpRepoMixin:
         async with self.conn.execute("SELECT id, name FROM teams") as cur:
             teams_map = {row[0]: row[1] for row in await cur.fetchall()}
         async with self.conn.execute(
-                f"SELECT akp.application_id, k.category, k.name as job_name, k.unit, akp.volume, akp.current_salary as salary, akp.current_price as price FROM application_kp akp JOIN kp_catalog k ON akp.kp_id = k.id WHERE akp.application_id IN ({pl}) AND akp.volume > 0 ORDER BY akp.application_id, k.category, k.name",
+                f"SELECT akp.application_id, k.category, k.name as job_name, k.unit, akp.volume, akp.current_salary as salary, akp.current_price as price, COALESCE(akp.is_additional, 0) as is_additional FROM application_kp akp JOIN kp_catalog k ON akp.kp_id = k.id WHERE akp.application_id IN ({pl}) AND akp.volume > 0 ORDER BY akp.application_id, k.category, k.name",
                 app_ids) as cur:
             kp_data = [dict(row) for row in await cur.fetchall()]
 
