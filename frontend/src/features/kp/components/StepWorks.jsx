@@ -31,6 +31,12 @@ export default function StepWorks({
     setWorksByTeam,
     extraByTeam,
     setExtraByTeam,
+    // v2.10 (D6): common (team_id NULL) rows carried through state + payload
+    // (not rendered) so a foreman/office per-brigade submit round-trips them.
+    commonWorks = [],
+    setCommonWorks,
+    commonExtras = [],
+    setCommonExtras,
     onNext,
     onBack,
     readOnly = false,
@@ -143,6 +149,35 @@ export default function StepWorks({
                             });
                         }
                         if (Object.keys(seededExtra).length > 0) setExtraByTeam(seededExtra);
+                    }
+                    // v2.10 (D6): capture common (team_id NULL) rows — owned by
+                    // foreman/office (their delete scope includes team_id IS
+                    // NULL) — into preserved buckets so handleNext can round-trip
+                    // them. Seeded from the raw server rows under their OWN
+                    // length guard, independent of the per-team guards above, so
+                    // a restored draft that skipped per-team seeding still seeds
+                    // common (otherwise the wipe would re-appear). Brigadier/
+                    // worker never own common — skip them so their payload stays
+                    // common-free.
+                    const ownsCommon = userRole !== 'brigadier' && userRole !== 'worker';
+                    if (ownsCommon && commonWorks.length === 0) {
+                        const cw = raw
+                            .filter(i => (i.team_id === null || i.team_id === undefined) && Number(i.volume) > 0)
+                            .map(i => ({ kp_id: i.kp_id, volume: Number(i.volume) }));
+                        if (cw.length > 0) setCommonWorks?.(cw);
+                    }
+                    if (ownsCommon && commonExtras.length === 0) {
+                        const ce = (extraRes.data || [])
+                            .filter(e => (e.team_id === null || e.team_id === undefined) && Number(e.volume) > 0)
+                            .map(e => ({
+                                rid: genRowId(),
+                                kp_id: e.extra_work_id || 0,
+                                name: e.custom_name || e.catalog_name || '',
+                                unit: e.display_unit || e.catalog_unit || 'шт',
+                                volume: e.volume ?? '',
+                                team_id: null,
+                            }));
+                        if (ce.length > 0) setCommonExtras?.(ce);
                     }
                 } else if (!addendumMode && worksData.length === 0 && items.some(i => Number(i.volume) > 0)) {
                     // Common mode: seed flat worksData from server (unchanged).
@@ -275,6 +310,13 @@ export default function StepWorks({
                     }
                 }
             }
+            // v2.10 (D6): round-trip common (team_id NULL) plan rows so the
+            // foreman/office submit re-inserts them instead of wiping them.
+            for (const cw of (commonWorks || [])) {
+                if (Number(cw.volume) > 0) {
+                    flat.push({ kp_id: Number(cw.kp_id), volume: Number(cw.volume), team_id: null });
+                }
+            }
             setWorksData(flat);
 
             const flatExtras = [];
@@ -283,6 +325,13 @@ export default function StepWorks({
                     if (Number(it.volume) > 0) {
                         flatExtras.push({ ...it, team_id: Number(team_id) });
                     }
+                }
+            }
+            // v2.10 (D6): same round-trip for common extras — appended to the
+            // SAME array that overwrites extraWorksData so they are not discarded.
+            for (const ce of (commonExtras || [])) {
+                if (Number(ce.volume) > 0) {
+                    flatExtras.push({ ...ce, team_id: null });
                 }
             }
             setExtraWorksData(flatExtras);

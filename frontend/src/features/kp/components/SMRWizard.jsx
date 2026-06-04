@@ -53,6 +53,12 @@ export default function SMRWizard({
     const [perBrigade, setPerBrigade] = useState(false);
     const [worksByTeam, setWorksByTeam] = useState({});
     const [extraByTeam, setExtraByTeam] = useState({});
+    // v2.10 (D6): common (team_id NULL) rows captured in per-brigade mode so a
+    // foreman/office submit round-trips them instead of wiping them. Lifted
+    // here (like worksByTeam) so they survive step remounts + persist in the
+    // draft. Carried through state + payload, not rendered as an editable section.
+    const [commonWorks, setCommonWorks] = useState([]);
+    const [commonExtras, setCommonExtras] = useState([]);
     const [submitting, setSubmitting] = useState(false);
     const [draftSavedAt, setDraftSavedAt] = useState(null);
     const [draftTick, setDraftTick] = useState(0);
@@ -76,6 +82,8 @@ export default function SMRWizard({
         if (typeof d.perBrigade === 'boolean') setPerBrigade(d.perBrigade);
         if (d.worksByTeam && typeof d.worksByTeam === 'object') setWorksByTeam(d.worksByTeam);
         if (d.extraByTeam && typeof d.extraByTeam === 'object') setExtraByTeam(d.extraByTeam);
+        if (Array.isArray(d.commonWorks)) setCommonWorks(d.commonWorks);
+        if (Array.isArray(d.commonExtras)) setCommonExtras(d.commonExtras);
         if (d.step === 'hours' || d.step === 'works' || d.step === 'review') setStep(d.step);
         setDraftSavedAt(found.savedAt);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -85,6 +93,7 @@ export default function SMRWizard({
     useDraft(draftKey, {
         hoursData, worksData, extraWorksData,
         perBrigade, worksByTeam, extraByTeam,
+        commonWorks, commonExtras,
         step,
     }, {
         shouldSave: (d) =>
@@ -92,7 +101,9 @@ export default function SMRWizard({
             (Array.isArray(d.worksData) && d.worksData.length > 0) ||
             (Array.isArray(d.extraWorksData) && d.extraWorksData.length > 0) ||
             (d.worksByTeam && Object.keys(d.worksByTeam).length > 0) ||
-            (d.extraByTeam && Object.keys(d.extraByTeam).length > 0),
+            (d.extraByTeam && Object.keys(d.extraByTeam).length > 0) ||
+            (Array.isArray(d.commonWorks) && d.commonWorks.length > 0) ||
+            (Array.isArray(d.commonExtras) && d.commonExtras.length > 0),
     });
 
     // Re-render the saved-X-ago label every 30s.
@@ -240,6 +251,10 @@ export default function SMRWizard({
                                         setWorksByTeam={setWorksByTeam}
                                         extraByTeam={extraByTeam}
                                         setExtraByTeam={setExtraByTeam}
+                                        commonWorks={commonWorks}
+                                        setCommonWorks={setCommonWorks}
+                                        commonExtras={commonExtras}
+                                        setCommonExtras={setCommonExtras}
                                         addendumMode={addendumMode}
                                         onNext={() => goTo('review')}
                                         onBack={() => goTo('hours')}
