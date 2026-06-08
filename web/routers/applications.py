@@ -336,7 +336,7 @@ async def get_review_apps(current_user=Depends(get_current_user)):
 @router.post("/api/applications/{app_id}/review")
 async def review_app(app_id: int, new_status: str = Form(...), reason: str = Form(""),
                      current_user=Depends(_require_office)):
-    if new_status not in ['approved', 'rejected', 'completed']: raise HTTPException(400, "Неверный статус")
+    if new_status not in ['approved', 'rejected', 'completed', 'waiting']: raise HTTPException(400, "Неверный статус")
     tg_id = current_user["tg_id"]
     app_dict, mod_fio, real_tg_id, status, reas = await review_application(app_id, new_status, reason, tg_id)
     asyncio.create_task(send_review_notifications(app_id, app_dict, mod_fio, status, reas))

@@ -146,6 +146,9 @@ export default function Review() {
         } else if (status === 'completed') {
             const ok = await confirm('Завершить заявку досрочно и освободить всю технику?', { title: 'Досрочное завершение', variant: 'warning', confirmText: 'Завершить' });
             if (!ok) return;
+        } else if (status === 'waiting') {
+            const ok = await confirm('Отозвать наряд на доработку? Он вернётся на рассмотрение, а техника и бригады освободятся.', { title: 'Отзыв наряда', variant: 'warning', confirmText: 'Отозвать' });
+            if (!ok) return;
         } else {
             const ok = await confirm('Одобрить заявку?', { title: 'Одобрение заявки', variant: 'info', confirmText: 'Одобрить' });
             if (!ok) return;
@@ -499,7 +502,7 @@ export default function Review() {
                                                 </button>
                                             )}
                                             {canModerate && (
-                                                <button disabled={isProcessing} onClick={() => handleReviewAction('rejected')} className="flex-1 bg-red-50 text-red-600 disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 py-3.5 rounded-xl font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition-all active:scale-[0.98] border border-red-200 dark:border-red-800 flex items-center justify-center gap-2 shadow-sm">
+                                                <button disabled={isProcessing} onClick={() => handleReviewAction('waiting')} className="flex-1 bg-red-50 text-red-600 disabled:opacity-50 dark:bg-red-900/20 dark:text-red-400 py-3.5 rounded-xl font-bold hover:bg-red-100 dark:hover:bg-red-900/40 transition-all active:scale-[0.98] border border-red-200 dark:border-red-800 flex items-center justify-center gap-2 shadow-sm">
                                                     <Undo className="w-4 h-4" /> Отозвать заявку
                                                 </button>
                                             )}

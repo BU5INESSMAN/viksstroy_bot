@@ -54,10 +54,29 @@ async def review_application(app_id: int, new_status: str, reason: str, tg_id: i
         elif new_status == 'completed':
             now_ts = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d %H:%M:%S")
             await db.conn.execute("UPDATE applications SET status = ?, completed_at = ? WHERE id = ?", (new_status, now_ts, app_id))
+        elif new_status == 'waiting':
+            # Recall (Отозвать): revert an approved order back to review ("на рассмотрении").
+            # Clear the approval stamp and mark each equipment is_freed in the JSON
+            # (display parity with the driver free path). The actual slot release runs
+            # in the shared block below — is_team_freed=1 is the lever that makes
+            # check_resource_availability recompute the slots as available; a plain
+            # status revert does NOT free, because 'waiting' still occupies.
+            recall_eq_data = app_dict.get('equipment_data') or ''
+            if recall_eq_data:
+                try:
+                    _eq_list = json.loads(recall_eq_data)
+                    for _e in _eq_list:
+                        _e['is_freed'] = True
+                    recall_eq_data = json.dumps(_eq_list, ensure_ascii=False)
+                except:
+                    recall_eq_data = app_dict.get('equipment_data') or ''
+            await db.conn.execute(
+                "UPDATE applications SET status = 'waiting', approved_by = NULL, approved_by_id = NULL, equipment_data = ? WHERE id = ?",
+                (recall_eq_data, app_id))
         else:
             await db.conn.execute("UPDATE applications SET status = ? WHERE id = ?", (new_status, app_id))
 
-        if new_status in ['completed', 'rejected']:
+        if new_status in ['completed', 'rejected', 'waiting']:
             if app_dict.get('equipment_data'):
                 try:
                     eq_list = json.loads(app_dict['equipment_data'])
@@ -93,9 +112,12 @@ async def review_application(app_id: int, new_status: str, reason: str, tg_id: i
     except:
         await db.conn.rollback()
 
-    action_label = "Одобрил" if new_status == 'approved' else ("Отклонил" if new_status == 'rejected' else "Завершил")
     obj_addr = app_dict.get('object_address', '') or ''
-    log_msg = f"{action_label} заявку на {obj_addr}" if obj_addr else f"{action_label} заявку №{app_id}"
+    if new_status == 'waiting':
+        log_msg = f"Отозвал заявку на доработку ({obj_addr})" if obj_addr else f"Отозвал заявку на доработку №{app_id}"
+    else:
+        action_label = "Одобрил" if new_status == 'approved' else ("Отклонил" if new_status == 'rejected' else "Завершил")
+        log_msg = f"{action_label} заявку на {obj_addr}" if obj_addr else f"{action_label} заявку №{app_id}"
     if new_status == 'rejected' and reason:
         log_msg += f": {reason}"
     await db.add_log(real_tg_id, mod_fio, log_msg, target_type='application', target_id=app_id)
@@ -107,15 +129,21 @@ async def send_review_notifications(app_id, app_dict, mod_fio, new_status, reaso
     """Background notification task after review."""
     try:
         status_ru = "✅ Одобрена" if new_status == 'approved' else (
-            "❌ Отклонена / Отозвана" if new_status == 'rejected' else "🏁 Досрочно завершена")
+            "❌ Отклонена / Отозвана" if new_status == 'rejected' else (
+                "🔄 Отозвана на доработку" if new_status == 'waiting' else "🏁 Досрочно завершена"))
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
 
         msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Проверил: {mod_fio}\n📍 Объект: {app_dict['object_address']}\n🕒 Время: {now}"
         if reason: msg_group += f"\n💬 Причина: {reason}"
         await notify_users(["report_group", "boss", "superadmin"], msg_group, "review", category="orders")
 
-        if new_status in ['approved', 'rejected']:
-            msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
+        if new_status in ['approved', 'rejected', 'waiting']:
+            if new_status == 'waiting':
+                msg_foreman = (f"🔄 <b>Ваш наряд отозван на доработку</b>\n"
+                               f"Заявка возвращена на рассмотрение — отредактируйте и отправьте повторно.\n"
+                               f"📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}")
+            else:
+                msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
             if reason: msg_foreman += f"\n💬 Причина: {reason}"
             await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']], category="orders")
 
