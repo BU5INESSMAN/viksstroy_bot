@@ -7,11 +7,14 @@ import sys
 import os
 import asyncio
 import logging
+import secrets
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Request, Depends
-from auth_deps import get_current_user
+from fastapi import APIRouter, Request, Depends, HTTPException
+from auth_deps import get_current_user, get_current_user_optional
+from database_deps import db
+from utils import resolve_id
 from services.exchange_service import (
     create_exchange, send_create_notifications,
     respond_to_exchange, send_respond_notifications,
@@ -22,6 +25,45 @@ from services.exchange_service import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/exchange", tags=["exchange"])
+
+
+def _valid_bot_token(token: str) -> bool:
+    """Allow callbacks only from one of our bot containers."""
+    if not token:
+        return False
+    expected_tokens = (
+        os.getenv("BOT_TOKEN", "").strip(),
+        os.getenv("MAX_BOT_TOKEN", "").strip(),
+    )
+    return any(
+        expected and secrets.compare_digest(token, expected)
+        for expected in expected_tokens
+    )
+
+
+async def _get_exchange_actor(request: Request, data: dict, current_user):
+    """Use the web session, or a signed internal request from Telegram/MAX."""
+    if current_user:
+        return current_user
+
+    if not _valid_bot_token(request.headers.get("X-Viks-Bot-Token", "")):
+        raise HTTPException(status_code=401, detail="Не авторизован")
+
+    try:
+        raw_user_id = int(data.get("tg_id"))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Не указан пользователь")
+
+    user_id = await resolve_id(raw_user_id)
+    user = await db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="Пользователь не найден")
+
+    actor = dict(user)
+    if actor.get("is_blacklisted"):
+        raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
+    actor["tg_id"] = actor["user_id"]
+    return actor
 
 
 @router.post("/request")
@@ -49,9 +91,14 @@ async def create_exchange_request(request: Request, current_user=Depends(get_cur
 
 
 @router.post("/{exchange_id}/respond")
-async def respond_exchange(exchange_id: int, request: Request, current_user=Depends(get_current_user)):
+async def respond_exchange(
+    exchange_id: int,
+    request: Request,
+    current_user=Depends(get_current_user_optional),
+):
     data = await request.json()
-    tg_id = current_user["tg_id"]
+    actor = await _get_exchange_actor(request, data, current_user)
+    tg_id = actor["tg_id"]
     action = data.get("action")
 
     logger.info(f"Exchange {exchange_id} response: {action} by user {tg_id}")

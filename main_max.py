@@ -597,7 +597,8 @@ async def message_callback(event: MessageCallback):
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         f"{API_URL}/api/exchange/{ex_id}/respond",
-                        json={"tg_id": str(real_tg_id), "action": action}
+                        json={"tg_id": str(real_tg_id), "action": action},
+                        headers={"X-Viks-Bot-Token": MAX_TOKEN},
                     ) as resp:
                         result = await resp.json()
 
@@ -605,7 +606,10 @@ async def message_callback(event: MessageCallback):
                     msg = "✅ Вы согласились на обмен" if action == "accept" else "❌ Вы отказались от обмена"
                     await send_max_msg(event, msg)
                 else:
-                    await send_max_msg(event, result.get("error", "Ошибка"))
+                    await send_max_msg(
+                        event,
+                        result.get("error") or result.get("detail") or "Ошибка",
+                    )
             except Exception as e:
                 await send_max_msg(event, f"❌ Ошибка: {e}")
         return

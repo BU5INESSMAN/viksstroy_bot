@@ -553,7 +553,8 @@ async def handle_exchange_callback(callback: types.CallbackQuery):
         async with aiohttp.ClientSession() as session:
             async with session.post(
                 f"{API_URL}/api/exchange/{exchange_id}/respond",
-                json={"tg_id": str(callback.from_user.id), "action": action}
+                json={"tg_id": str(callback.from_user.id), "action": action},
+                headers={"X-Viks-Bot-Token": os.getenv("BOT_TOKEN", "")},
             ) as resp:
                 result = await resp.json()
 
@@ -563,7 +564,10 @@ async def handle_exchange_callback(callback: types.CallbackQuery):
                 reply_markup=None
             )
         else:
-            await callback.answer(result.get("error", "Ошибка"), show_alert=True)
+            await callback.answer(
+                result.get("error") or result.get("detail") or "Ошибка",
+                show_alert=True,
+            )
     except Exception as e:
         logger.error(f"Exchange callback error: {e}")
         await callback.answer("❌ Ошибка обработки", show_alert=True)

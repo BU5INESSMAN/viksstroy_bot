@@ -22,6 +22,23 @@ router = APIRouter(tags=["Teams"])
 _require_office = require_role("superadmin", "boss", "moderator")
 
 
+def _effective_member_status(
+    status: str,
+    status_from: str,
+    status_until: str,
+    target_date: str | None,
+) -> str:
+    """Return the status that is active on the requested placement date."""
+    status = status or "available"
+    if status not in ("vacation", "sick") or not target_date:
+        return status
+    if status_from and target_date < status_from:
+        return "available"
+    if status_until and target_date > status_until:
+        return "available"
+    return status
+
+
 @router.post("/api/teams/{team_id}/generate_invite")
 async def api_generate_invite(team_id: int, current_user=Depends(get_current_user)):
     invite_code, join_password = await db.generate_team_invite(team_id)
@@ -139,6 +156,18 @@ async def get_team_details(
         } for r in await cur.fetchall()]
 
     if date:
+        # A future vacation/sick leave must not affect an earlier placement.
+        # Keep the configured status for diagnostics, but expose the effective
+        # status to the application member picker.
+        for member in members:
+            member["configured_status"] = member["status"]
+            member["status"] = _effective_member_status(
+                member["status"],
+                member["status_from"],
+                member["status_until"],
+                date,
+            )
+
         # Pull every active app on that date that references this team.
         params: list = [date]
         q = (

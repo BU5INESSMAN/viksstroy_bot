@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { X, BarChart3, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 import ModalPortal from '../../../components/ui/ModalPortal';
 
@@ -16,6 +16,19 @@ function formatUnit(raw) {
 
 export default function ObjectStatsModal({ statsObj, statsData, statsLoading, onClose }) {
     const [expandedDates, setExpandedDates] = useState({});
+
+    // Show the latest report immediately. Previously every group was collapsed,
+    // so a loaded chronology looked as if it contained no actual work rows.
+    useEffect(() => {
+        const latest = statsData?.history?.[0];
+        if (!latest) {
+            setExpandedDates({});
+            return;
+        }
+        setExpandedDates({
+            [`${latest.date_target || '—'}__${latest.app_id}`]: true,
+        });
+    }, [statsData]);
 
     return (
         <ModalPortal>

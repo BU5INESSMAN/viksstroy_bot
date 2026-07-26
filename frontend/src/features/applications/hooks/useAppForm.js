@@ -95,7 +95,7 @@ export default function useAppForm({
                         // Pre-select only members that aren't already booked
                         // elsewhere on this date. Users can still untick them.
                         const freeIds = uniqueMembers
-                            .filter(m => !m.is_used)
+                            .filter(m => !m.is_used && !['vacation', 'sick'].includes(m.status))
                             .map(m => m.id);
                         setAppForm(prev => ({ ...prev, members: freeIds }));
                     }
@@ -159,6 +159,10 @@ export default function useAppForm({
             );
             return;
         }
+        if (['vacation', 'sick'].includes(target?.status)) {
+            toast.error(target.status === 'vacation' ? 'Сотрудник в отпуске' : 'Сотрудник на больничном');
+            return;
+        }
         setAppForm(prev => ({
             ...prev,
             members: prev.members?.includes(id)
@@ -173,7 +177,11 @@ export default function useAppForm({
     const selectAllFreeInTeam = (teamId) => {
         if (appForm.isViewOnly) return;
         const freeIds = teamMembers
-            .filter(m => m.team_id === teamId && !m.is_used)
+            .filter(m =>
+                m.team_id === teamId &&
+                !m.is_used &&
+                !['vacation', 'sick'].includes(m.status)
+            )
             .map(m => m.id);
         setAppForm(prev => {
             const keep = (prev.members || []).filter(mid => {

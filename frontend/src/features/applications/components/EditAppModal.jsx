@@ -334,6 +334,10 @@ export default function EditAppModal({
             );
             return;
         }
+        if (['vacation', 'sick'].includes(target?.status)) {
+            toast.error(target.status === 'vacation' ? 'Сотрудник в отпуске' : 'Сотрудник на больничном');
+            return;
+        }
         setForm(prev => ({
             ...prev,
             members: prev.members.includes(id) ? prev.members.filter(m => m !== id) : [...prev.members, id]
@@ -342,7 +346,11 @@ export default function EditAppModal({
 
     const selectAllFreeInTeam = (teamId) => {
         const freeIds = teamMembers
-            .filter(m => m.team_id === teamId && !m.is_used)
+            .filter(m =>
+                m.team_id === teamId &&
+                !m.is_used &&
+                !['vacation', 'sick'].includes(m.status)
+            )
             .map(m => m.id);
         setForm(prev => {
             const keep = (prev.members || []).filter(mid => {
