@@ -127,8 +127,8 @@ export default function KP() {
 
     const fileInputRef = useRef(null);
 
-    const fetchApps = async () => {
-        setLoading(true);
+    const fetchApps = async ({ showLoader = true } = {}) => {
+        if (showLoader) setLoading(true);
         try {
             // v2.4.5: /api/kp/smr/list returns {to_fill, pending, completed}
             // — same shape as before with `pending_review` → `pending` and
@@ -149,8 +149,11 @@ export default function KP() {
                 else if (mapped.pending_review.length > 0) setActiveTab('pending_review');
                 else if (mapped.approved.length > 0) setActiveTab('approved');
             }
-        } catch (e) { console.error(e); }
-        setLoading(false);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            if (showLoader) setLoading(false);
+        }
     };
 
     const fetchArchived = async () => {
@@ -315,6 +318,7 @@ export default function KP() {
 
     const setAccounted = async (appIds, accounted) => {
         if (!appIds.length || accountingBusy) return;
+        const scrollPosition = window.scrollY;
         setAccountingBusy(true);
         try {
             await axios.post('/api/kp/smr/accounted', { app_ids: appIds, accounted });
@@ -322,7 +326,12 @@ export default function KP() {
                 ? `Учтено заявок: ${appIds.length}`
                 : `Отметка снята: ${appIds.length}`);
             setSelectedForExport(prev => prev.filter(id => !appIds.includes(id)));
-            await fetchApps();
+            // Refresh in place: replacing the page with the loading skeleton
+            // collapses the list and sends the moderator back to its beginning.
+            await fetchApps({ showLoader: false });
+            requestAnimationFrame(() => {
+                window.scrollTo({ top: scrollPosition, behavior: 'auto' });
+            });
         } catch (e) {
             toast.error(e.response?.data?.detail || 'Не удалось изменить отметку');
         } finally {
@@ -539,7 +548,7 @@ export default function KP() {
             )}
 
             <GroupedSMRList
-                items={activeTab === 'approved' ? unaccountedReady : (data[activeTab] || [])}
+                items={activeTab === 'approved' ? visibleReady : (data[activeTab] || [])}
                 tab={activeTab}
                 groupMode={groupMode}
                 isOffice={isOffice}
@@ -582,55 +591,6 @@ export default function KP() {
                 }}
                 onAccounted={(app, accounted) => setAccounted([app.id], accounted)}
             />
-
-            {activeTab === 'approved' && isOffice && showAccounted && accountedReady.length > 0 && (
-                <section className="space-y-3">
-                    <div className="flex items-center gap-2 px-1">
-                        <CheckCheck className="w-5 h-5 text-violet-500" />
-                        <h3 className="font-bold text-gray-800 dark:text-gray-100">Обработанные</h3>
-                        <span className="text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 rounded-full">
-                            {accountedReady.length}
-                        </span>
-                    </div>
-                    <GroupedSMRList
-                        items={accountedReady}
-                        tab="approved"
-                        groupMode={groupMode}
-                        isOffice={isOffice}
-                        tgId={tgId}
-                        selectedForExport={selectedForExport}
-                        setSelectedForExport={setSelectedForExport}
-                        mergeSelected={[]}
-                        toggleMergeSelect={() => {}}
-                        onUnmerge={() => {}}
-                        onFill={() => {}}
-                        onReview={() => {}}
-                        onView={(app) => openModal(app)}
-                        onArchive={async (app) => {
-                            if (!window.confirm(`Архивировать СМР: ${app.object_name || app.obj_name || 'Объект'} (${app.date_target})?`)) return;
-                            try {
-                                await axios.post(`/api/kp/apps/${app.id}/archive`);
-                                toast.success('СМР перемещена в архив');
-                                fetchApps();
-                            } catch { toast.error('Ошибка архивации'); }
-                        }}
-                        onRemind={() => {}}
-                        onDownload={async (app) => {
-                            try {
-                                const res = await axios.get(`/api/kp/apps/${app.id}/smr/download`, { responseType: 'blob' });
-                                const name = parseFilenameFromCD(res.headers?.['content-disposition'], `smr_${app.id}.xlsx`);
-                                const url = window.URL.createObjectURL(new Blob([res.data]));
-                                const link = document.createElement('a');
-                                link.href = url;
-                                link.setAttribute('download', name);
-                                document.body.appendChild(link); link.click(); link.remove();
-                                window.URL.revokeObjectURL(url);
-                            } catch { toast.error('Не удалось скачать отчёт'); }
-                        }}
-                        onAccounted={(app, accounted) => setAccounted([app.id], accounted)}
-                    />
-                </section>
-            )}
 
             {modalApp && (
                 <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
@@ -1093,7 +1053,9 @@ function SMRGroupRow({
             <div className="flex items-center gap-2 flex-shrink-0">
                 {tab === 'approved' && isOffice && (
                     <button
+                        type="button"
                         onClick={(e) => {
+                            e.preventDefault();
                             e.stopPropagation();
                             onAccounted?.(app, !isAccounted);
                         }}
