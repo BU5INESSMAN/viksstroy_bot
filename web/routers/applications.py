@@ -117,11 +117,9 @@ async def update_app(app_id: int, team_id: str = Form("0"), date_target: str = F
                        f"⚠️ <b>Заявка #{app_id} (Объект: {object_address}) была отредактирована</b>\n👤 Прораб: {fio}\n🕒 Время: {now}",
                        "review", category="orders"))
 
-    # v2.6.1: moderator-edit summary notification. Fires only when the
-    # editor is office and the application is NOT theirs — foreman
-    # editing their own app does not get a self-notification. Drivers
-    # receive nothing here; they're notified only on publish (final
-    # roster) per the v2.6.1 decision.
+    # Office-edit notification with a complete "Было → Стало" diff. It
+    # fires only when moderator+ edits somebody else's application;
+    # foremen editing their own application do not get a self-notification.
     foreman_uid = diff.get("foreman_user_id")
     changed_fields = diff.get("changed_fields") or []
     is_office = current_user.get("role") in ("moderator", "boss", "superadmin")

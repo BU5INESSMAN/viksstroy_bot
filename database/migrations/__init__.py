@@ -45,6 +45,9 @@ MIGRATIONS_ORDER = [
     # this entry the migration file is never executed, the column is missing,
     # and the equipment schedule shows "—" for every assigned driver.
     "m_2026_05_driver_status",
+    # Completed SMR bookkeeping: who marked the report as transferred to
+    # the office's external program and when.
+    "m_2026_07_smr_accounted",
 ]
 
 

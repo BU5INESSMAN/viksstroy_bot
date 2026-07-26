@@ -9,6 +9,7 @@ PUSH_TEMPLATES = {
     "app_rejected":       {"title": "Заявка отклонена",           "icon": "/push-icons/app-rejected.png"},
     "app_approved":       {"title": "Заявка одобрена",            "icon": "/push-icons/app-approved.png"},
     "app_new":            {"title": "Новая заявка на проверку",   "icon": "/push-icons/app-new.png"},
+    "app_edited_by_moderator": {"title": "Заявка изменена",       "icon": "/push-icons/app-new.png"},
     "support_new":        {"title": "Новое обращение в поддержку","icon": "/push-icons/support-new.png"},
     "support_reply":      {"title": "Ответ от поддержки",         "icon": "/push-icons/support-reply.png"},
     "exchange_request":   {"title": "Запрос обмена техникой",     "icon": "/push-icons/exchange-request.png"},

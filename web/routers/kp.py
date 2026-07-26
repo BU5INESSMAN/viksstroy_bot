@@ -59,6 +59,23 @@ async def _expand_merge_group(app_id: int) -> list[int]:
     return ids or [app_id]
 
 
+async def _reset_smr_accounted(app_id: int) -> None:
+    """Reset bookkeeping whenever an approved SMR report is changed.
+
+    A merged SMR is one logical report, so touching its primary or any
+    secondary application invalidates the marker for the whole group.
+    The caller owns the transaction and commits after its data write.
+    """
+    group_ids = await _expand_merge_group(app_id)
+    placeholders = ",".join("?" * len(group_ids))
+    await db.conn.execute(
+        f"UPDATE applications "
+        f"SET smr_accounted_by = NULL, smr_accounted_at = NULL "
+        f"WHERE id IN ({placeholders})",
+        tuple(group_ids),
+    )
+
+
 # ──────────────────────────────────────────────────────────────────────
 # v2.7 — ad-hoc worker helpers (Commit 2)
 # ──────────────────────────────────────────────────────────────────────
@@ -366,6 +383,8 @@ async def save_app_hours_endpoint(app_id: int, request: Request, current_user=De
         items = filtered
 
     await db.save_app_hours(app_id, items, tg_id)
+    await _reset_smr_accounted(app_id)
+    await db.conn.commit()
     return {"status": "ok", "saved": len(items)}
 
 
@@ -461,7 +480,9 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     placeholders = ",".join("?" * len(group_ids))
     await db.conn.execute(
         f"UPDATE applications SET smr_group_id = ?, smr_status = ?, "
-        f"smr_filled_by_role = ?, kp_status = ? WHERE id IN ({placeholders})",
+        f"smr_filled_by_role = ?, kp_status = ?, "
+        f"smr_accounted_by = NULL, smr_accounted_at = NULL "
+        f"WHERE id IN ({placeholders})",
         (group_id, smr_status, smr_role, new_kp_status, *group_ids),
     )
     await db.conn.commit()
@@ -835,6 +856,9 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
     if hours_items:
         n_hours = await _insert_additional_hours(app_id, hours_items, tg_id, now)
 
+    # Any non-empty addendum means the external office program may be stale.
+    if n_works or n_extras or n_hours:
+        await _reset_smr_accounted(app_id)
     await db.conn.commit()
 
     fio = current_user.get('fio', '')
@@ -873,6 +897,7 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
             extras = data.get('extra_works') or []
             scope = _compute_write_scope(role, None, extras)
             await _save_extra_works_inline(app_id, extras, tg_id, role, team_scope=scope)
+        await _reset_smr_accounted(app_id)
 
     await db.conn.execute(
         "UPDATE applications SET smr_status = 'approved', kp_status = 'approved' WHERE id = ?",
@@ -1069,10 +1094,13 @@ async def get_smr_list(current_user=Depends(get_current_user)):
                a.object_id, a.object_address,
                a.status, a.kp_status,
                a.smr_status, a.smr_group_id, a.smr_filled_by_role,
+               a.smr_accounted_by, a.smr_accounted_at,
                a.created_at,
-               o.name AS object_name, o.address AS object_clean_address
+               o.name AS object_name, o.address AS object_clean_address,
+               accountant.fio AS smr_accounted_by_fio
         FROM applications a
         LEFT JOIN objects o ON o.id = a.object_id
+        LEFT JOIN users accountant ON accountant.user_id = a.smr_accounted_by
         WHERE a.status IN ('approved', 'published', 'in_progress', 'completed')
           AND (a.kp_archived = 0 OR a.kp_archived IS NULL)
         ORDER BY a.date_target DESC, a.id DESC
@@ -1175,6 +1203,71 @@ async def get_smr_list(current_user=Depends(get_current_user)):
     }
 
 
+@router.post("/api/kp/smr/accounted")
+async def set_smr_accounted(request: Request, current_user=Depends(_require_office)):
+    """Mark one or many completed SMR applications as accounted/unaccounted."""
+    data = await request.json()
+    raw_ids = data.get("app_ids") or []
+    accounted = bool(data.get("accounted", True))
+    try:
+        app_ids = sorted({int(value) for value in raw_ids if int(value) > 0})
+    except (TypeError, ValueError):
+        raise HTTPException(400, "app_ids должен быть списком чисел")
+    if not app_ids:
+        raise HTTPException(400, "Не выбраны заявки")
+    if len(app_ids) > 500:
+        raise HTTPException(400, "За один раз можно обработать не более 500 заявок")
+
+    if db.conn is None:
+        await db.init_db()
+    placeholders = ",".join("?" * len(app_ids))
+    async with db.conn.execute(
+        f"SELECT id, smr_status, kp_status FROM applications "
+        f"WHERE id IN ({placeholders})",
+        tuple(app_ids),
+    ) as cur:
+        rows = [dict(row) for row in await cur.fetchall()]
+    if len(rows) != len(app_ids):
+        raise HTTPException(404, "Одна или несколько заявок не найдены")
+    not_completed = [
+        int(row["id"]) for row in rows
+        if row.get("smr_status") != "approved" and row.get("kp_status") != "approved"
+    ]
+    if not_completed:
+        raise HTTPException(
+            400,
+            "Отметку можно ставить только готовым СМР: "
+            + ", ".join(f"№{app_id}" for app_id in not_completed),
+        )
+
+    if accounted:
+        await db.conn.execute(
+            f"UPDATE applications SET smr_accounted_by = ?, "
+            f"smr_accounted_at = datetime('now', 'localtime') "
+            f"WHERE id IN ({placeholders})",
+            (current_user["tg_id"], *app_ids),
+        )
+        action = "Учёл"
+    else:
+        await db.conn.execute(
+            f"UPDATE applications SET smr_accounted_by = NULL, "
+            f"smr_accounted_at = NULL WHERE id IN ({placeholders})",
+            tuple(app_ids),
+        )
+        action = "Снял отметку «Учтено» с"
+    await db.conn.commit()
+
+    fio = current_user.get("fio", "")
+    await db.add_log(
+        current_user["tg_id"],
+        fio,
+        f"{action} СМР: " + ", ".join(f"№{app_id}" for app_id in app_ids),
+        target_type="smr",
+        details=json.dumps({"app_ids": app_ids, "accounted": accounted}, ensure_ascii=False),
+    )
+    return {"status": "ok", "updated": len(app_ids), "accounted": accounted}
+
+
 @router.get("/api/kp/apps/{app_id}/smr/download")
 async def download_smr_report(app_id: int, current_user=Depends(get_current_user)):
     """Download the SMR report as an .xlsx — hours + works + extras, no pricing.
@@ -1228,6 +1321,8 @@ async def submit_app_kp(app_id: int, request: Request, current_user=Depends(get_
                 raise HTTPException(403, "Нет прав для заполнения КП")
 
     await db.submit_kp_report(app_id, data.get('items', []), user_role)
+    await _reset_smr_accounted(app_id)
+    await db.conn.commit()
 
     fio = current_user.get('fio', '')
     _obj = ''
@@ -1247,6 +1342,7 @@ async def review_app_kp(app_id: int, request: Request, current_user=Depends(_req
     items = data.get('items')
     if items and data.get('action') == 'approve':
         await db.update_kp_volumes_only(app_id, items)
+        await _reset_smr_accounted(app_id)
     action = data.get('action')
     await db.review_kp_report(app_id, action)
 
@@ -1267,6 +1363,8 @@ async def review_app_kp(app_id: int, request: Request, current_user=Depends(_req
 async def update_kp_volumes(app_id: int, request: Request, current_user=Depends(get_current_user)):
     data = await request.json()
     await db.update_kp_volumes_only(app_id, data.get('items', []))
+    await _reset_smr_accounted(app_id)
+    await db.conn.commit()
     return {"status": "ok"}
 
 

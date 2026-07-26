@@ -199,6 +199,9 @@ CREATE TABLE IF NOT EXISTS applications (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
     is_archived INTEGER DEFAULT 0,
+    -- Office bookkeeping marker for completed SMR reports.
+    smr_accounted_by INTEGER DEFAULT NULL,
+    smr_accounted_at TEXT DEFAULT NULL,
     FOREIGN KEY (foreman_id) REFERENCES users (user_id),
     FOREIGN KEY (team_id) REFERENCES teams (id),
     FOREIGN KEY (equipment_id) REFERENCES equipment (id)

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
     FileText, CheckCircle, Search, X, MapPin,
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive,
-    Calendar as CalendarIcon, Link2, Link2Off
+    Calendar as CalendarIcon, Link2, Link2Off, Eye, EyeOff, CheckCheck, Undo2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
@@ -31,32 +31,38 @@ function parseFilenameFromCD(header, fallback) {
     return fallback;
 }
 
-// v2.4.6 — group flat list of SMR apps by object → date for cleaner scanning.
-function groupByObjectAndDate(items) {
-    const objMap = new Map();
+// Group SMR applications by the selected operational view.
+function groupSMRItems(items, mode) {
+    const groupMap = new Map();
     for (const app of items || []) {
-        const name = app.object_name || app.obj_name || app.object_address || 'Без объекта';
-        const addr = app.object_clean_address || (app.object_name ? app.object_address : '') || '';
-        const key = `${app.object_id || 0}|${name}`;
-        if (!objMap.has(key)) {
-            objMap.set(key, {
-                object_name: name,
-                object_address: addr,
-                dates: new Map(),
-            });
+        let key;
+        let title;
+        let subtitle = '';
+        if (mode === 'foreman') {
+            key = `foreman:${app.foreman_id || 0}`;
+            title = app.foreman_name || 'Без прораба';
+        } else if (mode === 'date') {
+            key = `date:${app.date_target || '—'}`;
+            title = app.date_target || 'Без даты';
+        } else {
+            const name = app.object_name || app.obj_name || app.object_address || 'Без объекта';
+            key = `object:${app.object_id || 0}|${name}`;
+            title = name;
+            subtitle = app.object_clean_address || (app.object_name ? app.object_address : '') || '';
         }
-        const group = objMap.get(key);
-        const date = app.date_target || '—';
-        if (!group.dates.has(date)) group.dates.set(date, []);
-        group.dates.get(date).push(app);
+        if (!groupMap.has(key)) groupMap.set(key, { key, title, subtitle, apps: [] });
+        groupMap.get(key).apps.push(app);
     }
-    // Sort objects alphabetically (ru-aware), dates chronologically descending
-    const groups = [...objMap.values()]
-        .sort((a, b) => (a.object_name || '').localeCompare(b.object_name || '', 'ru'));
-    for (const g of groups) {
-        g.dates = [...g.dates.entries()]
-            .sort(([a], [b]) => b.localeCompare(a))
-            .map(([date, apps]) => ({ date, apps }));
+    const groups = [...groupMap.values()];
+    groups.sort((a, b) => {
+        if (mode === 'date') return b.title.localeCompare(a.title, 'ru');
+        return a.title.localeCompare(b.title, 'ru');
+    });
+    for (const group of groups) {
+        group.apps.sort((a, b) => {
+            const dateCompare = (b.date_target || '').localeCompare(a.date_target || '');
+            return dateCompare || Number(b.id || 0) - Number(a.id || 0);
+        });
     }
     return groups;
 }
@@ -112,6 +118,12 @@ export default function KP() {
     // v2.4.4 SMR merge — only applies to the "to_fill" tab.
     const [mergeSelected, setMergeSelected] = useState([]);
     const [mergeBusy, setMergeBusy] = useState(false);
+    const [groupMode, setGroupMode] = useState(() => {
+        const saved = localStorage.getItem('smr_group_mode');
+        return ['foreman', 'object', 'date'].includes(saved) ? saved : 'object';
+    });
+    const [showAccounted, setShowAccounted] = useState(false);
+    const [accountingBusy, setAccountingBusy] = useState(false);
 
     const fileInputRef = useRef(null);
 
@@ -155,6 +167,10 @@ export default function KP() {
     useEffect(() => {
         if (activeTab !== 'to_fill') setMergeSelected([]);
     }, [activeTab]);
+
+    useEffect(() => {
+        localStorage.setItem('smr_group_mode', groupMode);
+    }, [groupMode]);
 
     const toggleMergeSelect = (appId) => {
         setMergeSelected(prev => (
@@ -297,6 +313,23 @@ export default function KP() {
         setIsSubmitting(false);
     };
 
+    const setAccounted = async (appIds, accounted) => {
+        if (!appIds.length || accountingBusy) return;
+        setAccountingBusy(true);
+        try {
+            await axios.post('/api/kp/smr/accounted', { app_ids: appIds, accounted });
+            toast.success(accounted
+                ? `Учтено заявок: ${appIds.length}`
+                : `Отметка снята: ${appIds.length}`);
+            setSelectedForExport(prev => prev.filter(id => !appIds.includes(id)));
+            await fetchApps();
+        } catch (e) {
+            toast.error(e.response?.data?.detail || 'Не удалось изменить отметку');
+        } finally {
+            setAccountingBusy(false);
+        }
+    };
+
     const handleDownloadCatalog = async () => {
         try {
             const res = await axios.get('/api/kp/catalog/download', { responseType: 'blob' });
@@ -327,6 +360,21 @@ export default function KP() {
         + extraWorks.reduce((acc, ew) => acc + (parseFloat(ew.volume || 0) * parseFloat(ew.salary || 0)), 0);
     const totalPrice = kpItems.reduce((acc, curr) => acc + (parseFloat(curr.volume || 0) * parseFloat(curr.current_price || 0)), 0)
         + extraWorks.reduce((acc, ew) => acc + (parseFloat(ew.volume || 0) * parseFloat(ew.price || 0)), 0);
+    const unaccountedReady = isOffice
+        ? data.approved.filter(app => !app.smr_accounted_at)
+        : data.approved;
+    const accountedReady = isOffice
+        ? data.approved.filter(app => Boolean(app.smr_accounted_at))
+        : [];
+    const visibleReady = showAccounted
+        ? [...unaccountedReady, ...accountedReady]
+        : unaccountedReady;
+    const selectedUnaccounted = selectedForExport.filter(id =>
+        unaccountedReady.some(app => app.id === id)
+    );
+    const selectedAccounted = selectedForExport.filter(id =>
+        accountedReady.some(app => app.id === id)
+    );
 
     if (!['superadmin', 'boss', 'moderator', 'foreman', 'brigadier', 'worker'].includes(role)) {
         return (
@@ -389,15 +437,92 @@ export default function KP() {
                         className={`relative flex-1 min-w-[100px] py-3 px-3 rounded-xl text-sm font-bold whitespace-nowrap transition-colors ${activeTab === 'approved' ? 'bg-white dark:bg-gray-700 text-emerald-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
                     >
                         Готовые
-                        <TabBadge count={data.approved.length} active={activeTab === 'approved'} />
+                        <TabBadge count={isOffice ? unaccountedReady.length : data.approved.length} active={activeTab === 'approved'} />
+                    </button>
+                )}
+            </div>
+
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 rounded-xl p-1 overflow-x-auto">
+                    {[
+                        ['foreman', 'По прорабу'],
+                        ['object', 'По объекту'],
+                        ['date', 'По дате'],
+                    ].map(([value, label]) => (
+                        <button
+                            key={value}
+                            onClick={() => setGroupMode(value)}
+                            className={`px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
+                                groupMode === value
+                                    ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
+                                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+                            }`}
+                        >
+                            {label}
+                        </button>
+                    ))}
+                </div>
+
+                {activeTab === 'approved' && isOffice && accountedReady.length > 0 && (
+                    <button
+                        onClick={() => {
+                            if (showAccounted) {
+                                const accountedIds = new Set(accountedReady.map(app => app.id));
+                                setSelectedForExport(prev => prev.filter(id => !accountedIds.has(id)));
+                            }
+                            setShowAccounted(prev => !prev);
+                        }}
+                        className="self-start sm:self-auto inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50"
+                    >
+                        {showAccounted
+                            ? <EyeOff className="w-4 h-4" />
+                            : <Eye className="w-4 h-4" />}
+                        {showAccounted ? 'Скрыть учтённые' : `Показать учтённые (${accountedReady.length})`}
                     </button>
                 )}
             </div>
 
             {activeTab === 'approved' && isOffice && data.approved.length > 0 && (
-                <div className="flex justify-between items-center bg-emerald-50/50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
-                    <button onClick={() => setSelectedForExport(selectedForExport.length === data.approved.length ? [] : data.approved.map(a => a.id))} className="text-sm font-bold text-emerald-700 dark:text-emerald-400">Выделить все</button>
-                    <button disabled={selectedForExport.length === 0 || isSubmitting} onClick={() => handleExportReport(selectedForExport)} className="bg-emerald-600 text-white px-5 py-2 rounded-xl text-xs font-bold shadow-md flex items-center gap-2 disabled:opacity-50"><Download className="w-4 h-4" /> Скачать отчет ({selectedForExport.length})</button>
+                <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3 bg-emerald-50/50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
+                    <button
+                        onClick={() => {
+                            const ids = visibleReady.map(app => app.id);
+                            const allSelected = ids.length > 0 && ids.every(id => selectedForExport.includes(id));
+                            setSelectedForExport(allSelected ? [] : ids);
+                        }}
+                        className="self-start text-sm font-bold text-emerald-700 dark:text-emerald-400"
+                    >
+                        {visibleReady.length > 0 && visibleReady.every(app => selectedForExport.includes(app.id))
+                            ? 'Снять выделение'
+                            : 'Выделить видимые'}
+                    </button>
+                    <div className="flex flex-wrap gap-2">
+                        {selectedUnaccounted.length > 0 && (
+                            <button
+                                disabled={accountingBusy}
+                                onClick={() => setAccounted(selectedUnaccounted, true)}
+                                className="bg-violet-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm flex items-center gap-2 disabled:opacity-50"
+                            >
+                                <CheckCheck className="w-4 h-4" /> Учесть ({selectedUnaccounted.length})
+                            </button>
+                        )}
+                        {selectedAccounted.length > 0 && (
+                            <button
+                                disabled={accountingBusy}
+                                onClick={() => setAccounted(selectedAccounted, false)}
+                                className="bg-white dark:bg-gray-700 text-violet-700 dark:text-violet-300 px-4 py-2 rounded-xl text-xs font-bold border border-violet-200 dark:border-violet-700 flex items-center gap-2 disabled:opacity-50"
+                            >
+                                <Undo2 className="w-4 h-4" /> Снять ({selectedAccounted.length})
+                            </button>
+                        )}
+                        <button
+                            disabled={selectedForExport.length === 0 || isSubmitting}
+                            onClick={() => handleExportReport(selectedForExport)}
+                            className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md flex items-center gap-2 disabled:opacity-50"
+                        >
+                            <Download className="w-4 h-4" /> Скачать ({selectedForExport.length})
+                        </button>
+                    </div>
                 </div>
             )}
 
@@ -414,8 +539,9 @@ export default function KP() {
             )}
 
             <GroupedSMRList
-                items={data[activeTab] || []}
+                items={activeTab === 'approved' ? unaccountedReady : (data[activeTab] || [])}
                 tab={activeTab}
+                groupMode={groupMode}
                 isOffice={isOffice}
                 tgId={tgId}
                 selectedForExport={selectedForExport}
@@ -454,7 +580,57 @@ export default function KP() {
                         window.URL.revokeObjectURL(url);
                     } catch { toast.error('Не удалось скачать отчёт'); }
                 }}
+                onAccounted={(app, accounted) => setAccounted([app.id], accounted)}
             />
+
+            {activeTab === 'approved' && isOffice && showAccounted && accountedReady.length > 0 && (
+                <section className="space-y-3">
+                    <div className="flex items-center gap-2 px-1">
+                        <CheckCheck className="w-5 h-5 text-violet-500" />
+                        <h3 className="font-bold text-gray-800 dark:text-gray-100">Обработанные</h3>
+                        <span className="text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/30 px-2 py-0.5 rounded-full">
+                            {accountedReady.length}
+                        </span>
+                    </div>
+                    <GroupedSMRList
+                        items={accountedReady}
+                        tab="approved"
+                        groupMode={groupMode}
+                        isOffice={isOffice}
+                        tgId={tgId}
+                        selectedForExport={selectedForExport}
+                        setSelectedForExport={setSelectedForExport}
+                        mergeSelected={[]}
+                        toggleMergeSelect={() => {}}
+                        onUnmerge={() => {}}
+                        onFill={() => {}}
+                        onReview={() => {}}
+                        onView={(app) => openModal(app)}
+                        onArchive={async (app) => {
+                            if (!window.confirm(`Архивировать СМР: ${app.object_name || app.obj_name || 'Объект'} (${app.date_target})?`)) return;
+                            try {
+                                await axios.post(`/api/kp/apps/${app.id}/archive`);
+                                toast.success('СМР перемещена в архив');
+                                fetchApps();
+                            } catch { toast.error('Ошибка архивации'); }
+                        }}
+                        onRemind={() => {}}
+                        onDownload={async (app) => {
+                            try {
+                                const res = await axios.get(`/api/kp/apps/${app.id}/smr/download`, { responseType: 'blob' });
+                                const name = parseFilenameFromCD(res.headers?.['content-disposition'], `smr_${app.id}.xlsx`);
+                                const url = window.URL.createObjectURL(new Blob([res.data]));
+                                const link = document.createElement('a');
+                                link.href = url;
+                                link.setAttribute('download', name);
+                                document.body.appendChild(link); link.click(); link.remove();
+                                window.URL.revokeObjectURL(url);
+                            } catch { toast.error('Не удалось скачать отчёт'); }
+                        }}
+                        onAccounted={(app, accounted) => setAccounted([app.id], accounted)}
+                    />
+                </section>
+            )}
 
             {modalApp && (
                 <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
@@ -714,11 +890,12 @@ export default function KP() {
 }
 
 // ============================================================
-// v2.4.6 — Grouped SMR list (object → date → applications)
+// Grouped SMR list (foreman / object / date)
 // ============================================================
 function GroupedSMRList({
     items,
     tab,
+    groupMode,
     isOffice,
     tgId,
     selectedForExport,
@@ -732,8 +909,9 @@ function GroupedSMRList({
     onArchive,
     onRemind,
     onDownload,
+    onAccounted,
 }) {
-    const groups = useMemo(() => groupByObjectAndDate(items), [items]);
+    const groups = useMemo(() => groupSMRItems(items, groupMode), [items, groupMode]);
 
     if (groups.length === 0) {
         return (
@@ -746,54 +924,55 @@ function GroupedSMRList({
     return (
         <div className="space-y-4" data-tour="kp-grid">
             {groups.map((group, gi) => (
-                <div key={gi} className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
-                    {/* Object header */}
+                <div key={group.key || gi} className="bg-white dark:bg-gray-800 rounded-3xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
                     <div className="px-5 py-4 bg-gray-50/70 dark:bg-gray-900/30 border-b border-gray-100 dark:border-gray-700">
-                        <ObjectDisplay
-                            name={group.object_name}
-                            address={group.object_address}
-                            showIcon
-                            nameClassName="font-bold text-base text-gray-900 dark:text-white leading-tight"
-                            addressClassName="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
-                        />
+                        {groupMode === 'object' ? (
+                            <ObjectDisplay
+                                name={group.title}
+                                address={group.subtitle}
+                                showIcon
+                                nameClassName="font-bold text-base text-gray-900 dark:text-white leading-tight"
+                                addressClassName="text-xs text-gray-500 dark:text-gray-400 mt-0.5"
+                            />
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                {groupMode === 'foreman'
+                                    ? <HardHat className="w-4 h-4 text-emerald-500" />
+                                    : <CalendarIcon className="w-4 h-4 text-blue-500" />}
+                                <span className="font-bold text-base text-gray-900 dark:text-white">
+                                    {group.title}
+                                </span>
+                                <span className="text-xs text-gray-400">
+                                    {group.apps.length}
+                                </span>
+                            </div>
+                        )}
                     </div>
 
-                    {/* Date sections */}
-                    <div className="divide-y divide-gray-100 dark:divide-gray-700/60">
-                        {group.dates.map(({ date, apps }) => (
-                            <div key={date} className="px-5 py-3">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <CalendarIcon className="w-3.5 h-3.5 text-blue-500 dark:text-blue-400" />
-                                    <span className="text-[11px] font-bold text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30 px-2 py-0.5 rounded-md uppercase tracking-wider">
-                                        {date}
-                                    </span>
-                                    <span className="text-[10px] text-gray-400">{apps.length} заявка{apps.length === 1 ? '' : apps.length < 5 ? 'и' : ''}</span>
-                                </div>
-                                <ul className="space-y-1.5">
-                                    {apps.map(app => (
-                                        <SMRGroupRow
-                                            key={app.id}
-                                            app={app}
-                                            tab={tab}
-                                            isOffice={isOffice}
-                                            tgId={tgId}
-                                            selectedForExport={selectedForExport}
-                                            setSelectedForExport={setSelectedForExport}
-                                            mergeSelected={mergeSelected}
-                                            toggleMergeSelect={toggleMergeSelect}
-                                            onUnmerge={onUnmerge}
-                                            onFill={onFill}
-                                            onReview={onReview}
-                                            onView={onView}
-                                            onArchive={onArchive}
-                                            onRemind={onRemind}
-                                            onDownload={onDownload}
-                                        />
-                                    ))}
-                                </ul>
-                            </div>
+                    <ul className="space-y-1.5 p-3">
+                        {group.apps.map(app => (
+                            <SMRGroupRow
+                                key={app.id}
+                                app={app}
+                                tab={tab}
+                                groupMode={groupMode}
+                                isOffice={isOffice}
+                                tgId={tgId}
+                                selectedForExport={selectedForExport}
+                                setSelectedForExport={setSelectedForExport}
+                                mergeSelected={mergeSelected}
+                                toggleMergeSelect={toggleMergeSelect}
+                                onUnmerge={onUnmerge}
+                                onFill={onFill}
+                                onReview={onReview}
+                                onView={onView}
+                                onArchive={onArchive}
+                                onRemind={onRemind}
+                                onDownload={onDownload}
+                                onAccounted={onAccounted}
+                            />
                         ))}
-                    </div>
+                    </ul>
                 </div>
             ))}
         </div>
@@ -801,15 +980,17 @@ function GroupedSMRList({
 }
 
 function SMRGroupRow({
-    app, tab, isOffice, tgId,
+    app, tab, groupMode, isOffice, tgId,
     selectedForExport, setSelectedForExport,
     mergeSelected, toggleMergeSelect, onUnmerge,
-    onFill, onReview, onView, onArchive, onRemind, onDownload,
+    onFill, onReview, onView, onArchive, onRemind, onDownload, onAccounted,
 }) {
     const isBrigadierSubmission = app.smr_filled_by_role === 'brigadier';
     const mergedWith = Array.isArray(app.merged_with) ? app.merged_with : [];
     const isMerged = mergedWith.length > 0;
     const isMergeSelected = (mergeSelected || []).includes(app.id);
+    const isAccounted = Boolean(app.smr_accounted_at);
+    const objectLabel = app.object_name || app.obj_name || app.object_address || 'Без объекта';
 
     const isRemindMode = tab === 'to_fill' && isOffice && app.foreman_id !== Number(tgId);
     let rowAction = null;
@@ -854,16 +1035,45 @@ function SMRGroupRow({
                             <Link2 className="w-2.5 h-2.5" /> объединено
                         </span>
                     )}
+                    {isAccounted && (
+                        <span
+                            className="text-[10px] font-bold text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-500/20 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5"
+                            title={`Учтено: ${app.smr_accounted_by_fio || '—'} · ${app.smr_accounted_at || '—'}`}
+                        >
+                            <CheckCheck className="w-2.5 h-2.5" /> учтено
+                        </span>
+                    )}
                 </p>
-                <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate flex items-center gap-1.5">
-                    <HardHat className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                    {app.foreman_name || '—'}
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-x-2 gap-y-0.5 flex-wrap">
+                    {groupMode !== 'foreman' && (
+                        <span className="inline-flex items-center gap-1">
+                            <HardHat className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                            {app.foreman_name || '—'}
+                        </span>
+                    )}
+                    {groupMode !== 'object' && (
+                        <span className="inline-flex items-center gap-1">
+                            <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                            {objectLabel}
+                        </span>
+                    )}
+                    {groupMode !== 'date' && (
+                        <span className="inline-flex items-center gap-1">
+                            <CalendarIcon className="w-3 h-3 text-gray-400 flex-shrink-0" />
+                            {app.date_target || '—'}
+                        </span>
+                    )}
                     {isBrigadierSubmission && tab === 'pending_review' && (
                         <span className="text-[10px] font-bold text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 px-1.5 py-0.5 rounded">
                             бригадир
                         </span>
                     )}
                 </p>
+                {isAccounted && (
+                    <p className="text-[10px] text-violet-600 dark:text-violet-400 mt-1">
+                        {app.smr_accounted_by_fio || 'Пользователь'} · {String(app.smr_accounted_at || '').replace('T', ' ').slice(0, 16)}
+                    </p>
+                )}
                 {isMerged && tab === 'to_fill' && (
                     <p className="text-[11px] text-blue-600 dark:text-blue-400 mt-1 flex items-center gap-1.5 flex-wrap">
                         <span>+ объединено с {mergedWith.map(m => `№${m.id}`).join(', ')}</span>
@@ -879,6 +1089,24 @@ function SMRGroupRow({
             </div>
 
             <div className="flex items-center gap-2 flex-shrink-0">
+                {tab === 'approved' && isOffice && (
+                    <button
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onAccounted?.(app, !isAccounted);
+                        }}
+                        className={`transition-colors p-1.5 rounded-lg ${
+                            isAccounted
+                                ? 'text-violet-600 bg-violet-50 hover:bg-violet-100 dark:text-violet-300 dark:bg-violet-900/20'
+                                : 'text-gray-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20'
+                        }`}
+                        title={isAccounted ? 'Снять отметку «Учтено»' : 'Учесть'}
+                    >
+                        {isAccounted
+                            ? <Undo2 className="w-3.5 h-3.5" />
+                            : <CheckCheck className="w-3.5 h-3.5" />}
+                    </button>
+                )}
                 {isOffice && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onArchive(app); }}

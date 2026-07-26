@@ -400,7 +400,12 @@ async def _check_driver_overlap(
                 )
 
 
-async def _apply_driver_assignments(app_id: int, assignments: list[tuple[int, int]]):
+async def _apply_driver_assignments(
+    app_id: int,
+    assignments: list[tuple[int, int]],
+    *,
+    commit: bool = True,
+):
     """Replace all driver_assignments for the app in a single transaction.
     Returns (added, removed) tuples for diff-aware notifications."""
     async with db.conn.execute(
@@ -427,12 +432,206 @@ async def _apply_driver_assignments(app_id: int, assignments: list[tuple[int, in
                 "(application_id, equipment_id, driver_user_id) VALUES (?, ?, ?)",
                 (app_id, eq_id, drv_id),
             )
-        await db.conn.commit()
+        if commit:
+            await db.conn.commit()
     except Exception:
-        await db.conn.rollback()
+        if commit:
+            await db.conn.rollback()
         raise
 
     return list(new - prev), list(prev - new)
+
+
+def _csv_int_set(raw) -> set[int]:
+    result: set[int] = set()
+    for part in str(raw or "").split(","):
+        try:
+            value = int(part.strip())
+        except (TypeError, ValueError):
+            continue
+        if value:
+            result.add(value)
+    return result
+
+
+def _equipment_snapshot(raw) -> list[dict]:
+    try:
+        items = json.loads(raw) if isinstance(raw, str) else (raw or [])
+    except (TypeError, ValueError, json.JSONDecodeError):
+        items = []
+    result = []
+    for item in items if isinstance(items, list) else []:
+        try:
+            equipment_id = int(item.get("id") or 0)
+        except (TypeError, ValueError, AttributeError):
+            continue
+        if not equipment_id:
+            continue
+        result.append({
+            "id": equipment_id,
+            "time_start": str(item.get("time_start") or ""),
+            "time_end": str(item.get("time_end") or ""),
+            "is_freed": bool(item.get("is_freed")),
+        })
+    return sorted(result, key=lambda item: item["id"])
+
+
+async def _lookup_names(table: str, ids: set[int], value_sql: str) -> dict[int, str]:
+    """Resolve ids for human-readable application edit notifications.
+
+    ``table`` and ``value_sql`` are internal constants supplied below, never
+    request data, so interpolating them does not create a SQL injection path.
+    """
+    if not ids:
+        return {}
+    placeholders = ",".join("?" * len(ids))
+    async with db.conn.execute(
+        f"SELECT id, {value_sql} AS display_name FROM {table} "
+        f"WHERE id IN ({placeholders})",
+        tuple(sorted(ids)),
+    ) as cur:
+        return {int(row[0]): (row[1] or "").strip() for row in await cur.fetchall()}
+
+
+async def _lookup_user_names(ids: set[int]) -> dict[int, str]:
+    if not ids:
+        return {}
+    placeholders = ",".join("?" * len(ids))
+    async with db.conn.execute(
+        f"SELECT user_id, fio FROM users WHERE user_id IN ({placeholders})",
+        tuple(sorted(ids)),
+    ) as cur:
+        return {int(row[0]): (row[1] or "").strip() for row in await cur.fetchall()}
+
+
+def _join_names(ids: set[int], names: dict[int, str], fallback_prefix: str) -> str:
+    if not ids:
+        return "—"
+    return ", ".join(names.get(item_id) or f"{fallback_prefix} #{item_id}" for item_id in sorted(ids))
+
+
+async def _build_application_changes(
+    *,
+    prev_date,
+    date_target,
+    prev_object_id,
+    object_id,
+    prev_object_address,
+    object_address,
+    prev_comment,
+    comment,
+    prev_team_id,
+    team_id,
+    prev_members,
+    selected_members,
+    prev_equipment_data,
+    equipment_data,
+    prev_driver_pairs: set[tuple[int, int]],
+    new_driver_pairs: set[tuple[int, int]],
+) -> list[dict]:
+    """Build a complete, human-readable ``Было → Стало`` change list."""
+    changes: list[dict] = []
+
+    def add(label: str, before, after):
+        changes.append({
+            "label": label,
+            "before": str(before or "—"),
+            "after": str(after or "—"),
+        })
+
+    if str(prev_date or "") != str(date_target or ""):
+        add("Дата", prev_date, date_target)
+
+    old_object_id = int(prev_object_id or 0)
+    new_object_id = int(object_id or 0)
+    if (
+        old_object_id != new_object_id
+        or str(prev_object_address or "").strip() != str(object_address or "").strip()
+    ):
+        object_ids = {value for value in (old_object_id, new_object_id) if value}
+        object_names = await _lookup_names(
+            "objects", object_ids,
+            "TRIM(COALESCE(name, '') || CASE WHEN COALESCE(address, '') <> '' "
+            "THEN ' — ' || address ELSE '' END)",
+        )
+        add(
+            "Объект",
+            object_names.get(old_object_id) or prev_object_address,
+            object_names.get(new_object_id) or object_address,
+        )
+
+    if str(prev_comment or "").strip() != str(comment or "").strip():
+        add("Комментарий", str(prev_comment or "").strip(), str(comment or "").strip())
+
+    old_team_ids = _csv_int_set(prev_team_id)
+    new_team_ids = _csv_int_set(team_id)
+    if old_team_ids != new_team_ids:
+        team_names = await _lookup_names("teams", old_team_ids | new_team_ids, "name")
+        add(
+            "Бригады",
+            _join_names(old_team_ids, team_names, "Бригада"),
+            _join_names(new_team_ids, team_names, "Бригада"),
+        )
+
+    old_member_ids = _csv_int_set(prev_members)
+    new_member_ids = _csv_int_set(selected_members)
+    if old_member_ids != new_member_ids:
+        member_names = await _lookup_names(
+            "team_members", old_member_ids | new_member_ids,
+            "TRIM(COALESCE(fio, '') || CASE WHEN COALESCE(position, '') <> '' "
+            "THEN ' (' || position || ')' ELSE '' END)",
+        )
+        add(
+            "Сотрудники",
+            _join_names(old_member_ids, member_names, "Сотрудник"),
+            _join_names(new_member_ids, member_names, "Сотрудник"),
+        )
+
+    old_equipment = _equipment_snapshot(prev_equipment_data)
+    new_equipment = _equipment_snapshot(equipment_data)
+    all_equipment_ids = {
+        item["id"] for item in old_equipment + new_equipment
+    } | {pair[0] for pair in prev_driver_pairs | new_driver_pairs}
+    equipment_names = await _lookup_names(
+        "equipment", all_equipment_ids,
+        "TRIM(COALESCE(name, '') || CASE WHEN COALESCE(license_plate, '') <> '' "
+        "THEN ' [' || license_plate || ']' ELSE '' END)",
+    )
+
+    def format_equipment(items: list[dict]) -> str:
+        if not items:
+            return "—"
+        result = []
+        for item in items:
+            label = equipment_names.get(item["id"]) or f"Техника #{item['id']}"
+            time_start = item.get("time_start") or ""
+            time_end = item.get("time_end") or ""
+            if time_start or time_end:
+                label += f" ({time_start or '—'}–{time_end or '—'})"
+            if item.get("is_freed"):
+                label += " [освобождена]"
+            result.append(label)
+        return ", ".join(result)
+
+    if old_equipment != new_equipment:
+        add("Техника и время", format_equipment(old_equipment), format_equipment(new_equipment))
+
+    if prev_driver_pairs != new_driver_pairs:
+        driver_ids = {pair[1] for pair in prev_driver_pairs | new_driver_pairs}
+        driver_names = await _lookup_user_names(driver_ids)
+
+        def format_drivers(pairs: set[tuple[int, int]]) -> str:
+            if not pairs:
+                return "—"
+            return ", ".join(
+                f"{equipment_names.get(eq_id) or f'Техника #{eq_id}'} — "
+                f"{driver_names.get(driver_id) or f'Водитель #{driver_id}'}"
+                for eq_id, driver_id in sorted(pairs)
+            )
+
+        add("Водители", format_drivers(prev_driver_pairs), format_drivers(new_driver_pairs))
+
+    return changes
 
 
 async def create_application(tg_id, team_id, date_target, object_address, comment,
@@ -506,9 +705,8 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
     user = await db.get_user(real_tg_id)
     if not user: raise HTTPException(403)
 
-    # v2.6.1: snapshot the previous state BEFORE the update so we can
-    # diff the editable fields and emit a summary notification when a
-    # moderator edits someone else's application.
+    # Snapshot the previous state BEFORE the update so an office edit can
+    # produce a complete human-readable "Было → Стало" notification.
     async with db.conn.execute(
         "SELECT status, foreman_id, team_id, date_target, object_id, "
         "       object_address, comment, selected_members, equipment_data "
@@ -520,6 +718,14 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
         raise HTTPException(400, "Заявка уже в работе или проверена")
     (_prev_status, prev_foreman_id, prev_team_id, prev_date, prev_object_id,
      prev_object_address, prev_comment, prev_members, prev_equipment_data) = prev_row
+    async with db.conn.execute(
+        "SELECT equipment_id, driver_user_id FROM application_drivers "
+        "WHERE application_id = ?",
+        (app_id,),
+    ) as cur:
+        prev_driver_pairs = {
+            (int(row[0]), int(row[1])) for row in await cur.fetchall()
+        }
 
     occupied = await db.check_resource_availability(
         date_target, object_id, team_id, equipment_data,
@@ -545,45 +751,45 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
             application_id=app_id,
         )
 
+    new_driver_pairs = set(parsed_for_check)
+    changed_fields = await _build_application_changes(
+        prev_date=prev_date,
+        date_target=date_target,
+        prev_object_id=prev_object_id,
+        object_id=object_id,
+        prev_object_address=prev_object_address,
+        object_address=object_address,
+        prev_comment=prev_comment,
+        comment=comment,
+        prev_team_id=prev_team_id,
+        team_id=team_id,
+        prev_members=prev_members,
+        selected_members=selected_members,
+        prev_equipment_data=prev_equipment_data,
+        equipment_data=equipment_data,
+        prev_driver_pairs=prev_driver_pairs,
+        new_driver_pairs=new_driver_pairs,
+    )
+    diff = {
+        "added": [],
+        "removed": [],
+        "changed_fields": changed_fields,
+        "foreman_user_id": prev_foreman_id,
+    }
     try:
         await db.conn.execute(
             "UPDATE applications SET team_id=?, date_target=?, object_address=?, object_id=?, comment=?, selected_members=?, equipment_data=? WHERE id = ?",
             (team_id, date_target, object_address, object_id, comment, selected_members, equipment_data, app_id))
+        if driver_assignments is not None:
+            added, removed = await _apply_driver_assignments(
+                app_id, parsed_for_check, commit=False
+            )
+            diff["added"] = added
+            diff["removed"] = removed
         await db.conn.commit()
-    except:
+    except Exception:
         await db.conn.rollback()
-
-    diff = {"added": [], "removed": [], "changed_fields": [], "foreman_user_id": prev_foreman_id}
-    if driver_assignments is not None:
-        added, removed = await _apply_driver_assignments(app_id, parsed_for_check)
-        diff["added"] = added
-        diff["removed"] = removed
-
-    # v2.6.1: compute the list of changed top-level fields for the
-    # moderator-edit summary notification. Field names only — no
-    # before/after values, no PII (the foreman re-opens the application
-    # to see what specifically changed).
-    changed: list[str] = []
-    if str(prev_date or "") != str(date_target or ""):
-        changed.append("date_target")
-    if int(prev_object_id or 0) != int(object_id or 0):
-        changed.append("object_id")
-    if (prev_object_address or "") != (object_address or ""):
-        # Object address changes only count if object_id didn't already
-        # — otherwise we'd double-count the same edit.
-        if "object_id" not in changed:
-            changed.append("object_address")
-    if (prev_comment or "") != (comment or ""):
-        changed.append("comment")
-    if str(prev_team_id or "") != str(team_id or ""):
-        changed.append("team_id")
-    if (prev_members or "") != (selected_members or ""):
-        changed.append("selected_members")
-    if (prev_equipment_data or "") != (equipment_data or ""):
-        changed.append("equipment")
-    if diff["added"] or diff["removed"]:
-        changed.append("drivers")
-    diff["changed_fields"] = changed
+        raise
 
     fio = dict(user).get('fio', 'Пользователь')
     await db.add_log(real_tg_id, fio, f"Обновил заявку на {object_address} ({date_target})", target_type='application', target_id=app_id)

@@ -637,49 +637,40 @@ async def notify_foreman_of_moderator_edit(
     foreman_user_id: int,
     application_id: int,
     moderator_fio: str,
-    changed_fields: list[str],
+    changed_fields: list[dict],
 ):
-    """v2.6.1: single summary notification sent to the application owner
-    after a moderator+ edits their pending application via the review
-    screen.
-
-    Field names only — no before/after values, no PII (the foreman
-    re-opens the application to see specifics). Drivers receive nothing
-    at this stage; they're notified only on publish with the final roster.
-    """
+    """Send the owner a complete ``Было → Стало`` office-edit summary."""
     if not foreman_user_id or not changed_fields:
         return
 
-    field_label_map = {
-        "drivers": "водители",
-        "date_target": "дата",
-        "object_id": "объект",
-        "object_address": "объект",
-        "team_id": "бригады",
-        "selected_members": "состав бригад",
-        "equipment": "техника",
-        "comment": "комментарий",
-    }
-    # De-dupe label list while preserving order (object_id + object_address
-    # collapse to the same label, drivers + equipment stay distinct).
-    seen: set[str] = set()
-    pretty: list[str] = []
-    for f in changed_fields:
-        label = field_label_map.get(f, f)
-        if label in seen:
+    import html
+
+    details = []
+    labels = []
+    for change in changed_fields:
+        if not isinstance(change, dict):
             continue
-        seen.add(label)
-        pretty.append(label)
+        label = str(change.get("label") or "Поле")
+        before = str(change.get("before") or "—")
+        after = str(change.get("after") or "—")
+        labels.append(label.lower())
+        details.append(
+            f"• <b>{html.escape(label)}</b>\n"
+            f"  Было: {html.escape(before)}\n"
+            f"  Стало: {html.escape(after)}"
+        )
+    if not details:
+        return
 
     fio = (moderator_fio or "").strip() or "модератор"
     text = (
-        f"✏️ <b>Модератор {fio} отредактировал вашу заявку №{application_id}</b>\n"
-        f"Изменено: {', '.join(pretty)}.\n"
-        f"Откройте заявку, чтобы увидеть детали."
+        f"✏️ <b>{html.escape(fio)} отредактировал(а) вашу заявку "
+        f"№{application_id}</b>\n\n"
+        + "\n\n".join(details)
     )
     body = (
-        f"Модератор {fio} отредактировал заявку №{application_id}: "
-        f"{', '.join(pretty)}."
+        f"{fio} отредактировал(а) заявку №{application_id}: "
+        f"{', '.join(labels)}."
     )
     try:
         await notify_users(
