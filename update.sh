@@ -33,6 +33,12 @@ echo "==> Перезапуск контейнеров (backend)"
 docker compose down
 docker compose up -d --build
 
+# Keep repeated deployments from filling the server disk with obsolete image
+# layers and build cache. Active images and application data are not affected.
+echo "==> Cleaning obsolete Docker build data"
+docker image prune -f
+docker builder prune -f --filter "until=168h"
+
 echo "==> Статус контейнеров"
 docker compose ps
 
