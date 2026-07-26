@@ -23,6 +23,14 @@ dist/
 build/
 *.egg-info/
 
+# Runtime databases, uploads and server snapshots are bind-mounted separately.
+# They must never be copied into image layers or sent in the build context.
+data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+
 # Node / frontend dev (the built assets are produced separately)
 frontend/node_modules/
 
