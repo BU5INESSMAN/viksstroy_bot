@@ -1003,6 +1003,8 @@ function SMRGroupRow({
             className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
                 isMergeSelected
                     ? 'bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-300 dark:ring-blue-700'
+                    : isAccounted
+                        ? 'bg-violet-50 dark:bg-violet-900/20 ring-1 ring-violet-300 dark:ring-violet-700 border-l-4 border-violet-500'
                     : isMerged
                         ? 'bg-blue-50/40 dark:bg-blue-900/10'
                         : 'bg-gray-50/60 dark:bg-gray-900/20 hover:bg-gray-100 dark:hover:bg-gray-700/40'
@@ -1037,7 +1039,7 @@ function SMRGroupRow({
                     )}
                     {isAccounted && (
                         <span
-                            className="text-[10px] font-bold text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-500/20 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5"
+                            className="text-[10px] font-extrabold text-white bg-violet-600 dark:bg-violet-500 px-2 py-0.5 rounded-full inline-flex items-center gap-0.5 shadow-sm"
                             title={`Учтено: ${app.smr_accounted_by_fio || '—'} · ${app.smr_accounted_at || '—'}`}
                         >
                             <CheckCheck className="w-2.5 h-2.5" /> учтено
