@@ -25,6 +25,7 @@ sys.path.append(web_dir)
 from database_deps import db, TZ_BARNAUL
 from services.notifications import notify_users, notify_fio_match
 from services.bot_commands import format_commands_message, warn_missing_commands
+from role_config import AUTO_ROLE_PROTECTED
 
 load_dotenv()
 
@@ -666,7 +667,7 @@ async def message_callback(event: MessageCallback):
         user = await db.get_user(real_tg_id)
         if not user:
             await db.add_user(real_tg_id, fio, "worker")
-        elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
+        elif user['role'] not in AUTO_ROLE_PROTECTED:
             await db.update_user_role(real_tg_id, "worker")
 
         await db.conn.commit()
@@ -704,7 +705,7 @@ async def message_callback(event: MessageCallback):
 
         if not user:
             await db.add_user(real_tg_id, fio, "driver")
-        elif dict(user)['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
+        elif dict(user)['role'] not in AUTO_ROLE_PROTECTED:
             await db.update_user_role(real_tg_id, "driver")
 
         await db.conn.commit()

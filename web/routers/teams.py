@@ -14,6 +14,7 @@ from database_deps import db, TZ_BARNAUL
 from auth_deps import get_current_user, require_role
 from utils import normalize_invite_code
 from services.notifications import notify_users
+from role_config import AUTO_ROLE_PROTECTED
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
         fio = w_row[0] if w_row else f"Рабочий {real_tg_id}"
     if not user:
         await db.add_user(real_tg_id, fio, "worker")
-    elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin', 'hr']:
+    elif user['role'] not in AUTO_ROLE_PROTECTED:
         await db.update_user_role(real_tg_id, "worker")
     await db.conn.commit()
 
@@ -268,15 +269,18 @@ async def toggle_foreman(member_id: int, is_foreman: int = Form(...), current_us
         row = await cur.fetchone()
     if row and row[0]:
         member_tg_id = row[0]
+        member_user = await db.get_user(member_tg_id)
+        member_role = dict(member_user).get("role") if member_user else None
         if is_foreman:
-            await db.update_user_role(member_tg_id, "brigadier")
+            if member_role not in AUTO_ROLE_PROTECTED:
+                await db.update_user_role(member_tg_id, "brigadier")
         else:
             # Only downgrade to worker if not a foreman in any other team
             async with db.conn.execute(
                 "SELECT 1 FROM team_members WHERE tg_user_id = ? AND is_foreman = 1 AND id != ? LIMIT 1",
                 (member_tg_id, member_id)
             ) as cur2:
-                if not await cur2.fetchone():
+                if not await cur2.fetchone() and member_role == "brigadier":
                     await db.update_user_role(member_tg_id, "worker")
     await db.conn.commit()
     return {"status": "ok"}

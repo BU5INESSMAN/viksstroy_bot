@@ -16,19 +16,9 @@ from services.account_link_service import link_account, admin_link_accounts
 from services.notifications import notify_users
 from auth_deps import get_current_user, require_role
 from utils_fio import format_fio, merge_user_settings, get_user_settings
+from role_config import ASSIGNABLE_ROLES, ROLE_NAMES_RU
 
 logger = logging.getLogger("USERS")
-
-# Mirror of frontend roleConfig.js for log + notification messages
-ROLE_NAMES_RU = {
-    'superadmin': 'Супер-Админ',
-    'boss': 'Руководитель',
-    'moderator': 'Модератор',
-    'foreman': 'Прораб',
-    'brigadier': 'Бригадир',
-    'worker': 'Рабочий',
-    'driver': 'Водитель',
-}
 
 router = APIRouter(tags=["Users"])
 
@@ -218,8 +208,7 @@ async def update_profile(target_id: int, fio: str = Form(...), role: str = Form(
     existing_role = dict(target_user).get("role", "worker")
 
     if role and is_admin and not is_self:
-        allowed_roles = {"superadmin", "boss", "moderator", "hr", "foreman", "brigadier", "worker", "driver"}
-        if role not in allowed_roles:
+        if role not in ASSIGNABLE_ROLES:
             raise HTTPException(400, "Недопустимая роль")
         if role == "superadmin" and current_role != "superadmin":
             raise HTTPException(403, "Только superadmin может назначать superadmin")
@@ -549,29 +538,45 @@ def _user_public(user: dict) -> dict:
 @router.put("/api/users/{user_id}/role")
 async def set_user_role(user_id: int, role: str = Form(...),
                         current_user=Depends(get_current_user)):
-    """Установка роли пользователя. Только boss+ может менять роли."""
-    if current_user.get("role") not in ("superadmin", "boss"):
-        raise HTTPException(403, "Недостаточно прав")
+    """Backward-compatible role endpoint using the canonical guardrails."""
+    target_id = await resolve_id(user_id)
+    target_row = await db.get_user(target_id)
+    if not target_row:
+        raise HTTPException(404, "Пользователь не найден")
+    target = dict(target_row)
+    allowed, reason = await can_change_role(current_user, target, role, db)
+    if not allowed:
+        raise HTTPException(403, reason)
 
-    if role == "superadmin" and current_user["role"] != "superadmin":
-        raise HTTPException(403, "Только superadmin может назначать superadmin")
+    old_role = target.get("role", "")
+    if old_role == role:
+        return {"status": "ok", "user_id": target_id, "role": role}
 
-    valid_roles = ['superadmin', 'boss', 'moderator', 'hr', 'foreman', 'brigadier', 'worker', 'driver']
-    if role not in valid_roles:
-        raise HTTPException(400, f"Недопустимая роль: {role}")
-
-    await db.conn.execute("UPDATE users SET role = ? WHERE user_id = ?", (role, user_id))
+    await db.conn.execute("UPDATE users SET role = ? WHERE user_id = ?", (role, target_id))
     await db.conn.commit()
 
     admin_fio = current_user.get("fio", "Админ")
     _target_fio = ''
     try:
-        _tu = await db.get_user(user_id)
+        _tu = await db.get_user(target_id)
         if _tu: _target_fio = dict(_tu).get('fio', '')
     except Exception:
         pass
     await db.add_log(current_user["user_id"], admin_fio,
-                     f"Изменил роль {_target_fio or f'#{user_id}'}: {role}",
-                     target_type='user', target_id=user_id)
+                     f"Изменил роль {_target_fio or f'#{target_id}'}: "
+                     f"{ROLE_NAMES_RU.get(old_role, old_role)} → {ROLE_NAMES_RU.get(role, role)}",
+                     target_type='user', target_id=target_id)
 
-    return {"status": "ok", "user_id": user_id, "role": role}
+    try:
+        msg = (
+            f"Ваша роль изменена: <b>{ROLE_NAMES_RU.get(role, role)}</b>. "
+            f"Изменил: {admin_fio or 'Администратор'}"
+        )
+        asyncio.create_task(
+            notify_users([], msg, "dashboard", extra_tg_ids=[target_id],
+                         category=None, event_key="role_changed")
+        )
+    except Exception:
+        pass
+
+    return {"status": "ok", "user_id": target_id, "role": role}

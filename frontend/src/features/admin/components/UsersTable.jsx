@@ -11,6 +11,9 @@ import useConfirm from '../../../hooks/useConfirm';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const MotionRow = motion.tr;
+const MotionCard = motion.div;
+const MotionList = motion.ul;
 
 /**
  * Admin users table with inline role dropdown, search, and optimistic updates.
@@ -23,8 +26,13 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [localUsers, setLocalUsers] = useState(users);
     const { confirm, ConfirmUI } = useConfirm();
+    const canChangeRoles = currentRole === 'superadmin' || currentRole === 'boss';
 
-    useEffect(() => { setLocalUsers(users); }, [users]);
+    useEffect(() => {
+        // Server reloads are authoritative after an optimistic role update.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setLocalUsers(users);
+    }, [users]);
 
     // Debounce search input (200ms)
     useEffect(() => {
@@ -147,6 +155,7 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
                                             key={u.user_id}
                                             user={u}
                                             availableRoles={availableRoles}
+                                            canChangeRole={canChangeRoles}
                                             onRoleChange={(newRole) => handleRoleChange(u, newRole)}
                                             onRowClick={() => onProfileOpen?.(u.user_id)}
                                         />
@@ -162,6 +171,7 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
                                     key={u.user_id}
                                     user={u}
                                     availableRoles={availableRoles}
+                                    canChangeRole={canChangeRoles}
                                     onRoleChange={(newRole) => handleRoleChange(u, newRole)}
                                     onOpen={() => onProfileOpen?.(u.user_id)}
                                 />
@@ -176,11 +186,11 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
 }
 
 /* ───── Desktop row ───── */
-function UserRow({ user, availableRoles, onRoleChange, onRowClick }) {
+function UserRow({ user, availableRoles, canChangeRole, onRoleChange, onRowClick }) {
     const fio = displayFio(user);
 
     return (
-        <motion.tr
+        <MotionRow
             onClick={onRowClick}
             whileTap={prefersReducedMotion ? {} : { scale: 0.995 }}
             className="cursor-pointer hover:bg-gray-50/80 dark:hover:bg-gray-800/40 transition-colors"
@@ -195,7 +205,7 @@ function UserRow({ user, availableRoles, onRoleChange, onRowClick }) {
                 )}
             </td>
             <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                <RoleDropdown user={user} availableRoles={availableRoles} onChange={onRoleChange} />
+                <RoleDropdown user={user} availableRoles={availableRoles} canChange={canChangeRole} onChange={onRoleChange} />
             </td>
             <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400 truncate">
                 {user.specialty || <span className="text-gray-300 dark:text-gray-600">—</span>}
@@ -203,14 +213,14 @@ function UserRow({ user, availableRoles, onRoleChange, onRowClick }) {
             <td className="px-3 py-3">
                 <PlatformPills platforms={user.platforms} userId={user.user_id} />
             </td>
-        </motion.tr>
+        </MotionRow>
     );
 }
 
 /* ───── Mobile card ───── */
-function UserCard({ user, availableRoles, onRoleChange, onOpen }) {
+function UserCard({ user, availableRoles, canChangeRole, onRoleChange, onOpen }) {
     return (
-        <motion.div
+        <MotionCard
             whileTap={prefersReducedMotion ? {} : { scale: 0.99 }}
             className="rounded-xl border border-gray-100 dark:border-gray-800 bg-white/60 dark:bg-gray-800/40 p-3.5 flex items-start gap-3"
         >
@@ -228,17 +238,17 @@ function UserCard({ user, availableRoles, onRoleChange, onOpen }) {
                 </button>
                 <div className="flex items-center justify-between gap-2 mt-2">
                     <div onClick={(e) => e.stopPropagation()} className="min-w-0">
-                        <RoleDropdown user={user} availableRoles={availableRoles} onChange={onRoleChange} compact />
+                        <RoleDropdown user={user} availableRoles={availableRoles} canChange={canChangeRole} onChange={onRoleChange} compact />
                     </div>
                     <PlatformPills platforms={user.platforms} userId={user.user_id} />
                 </div>
             </div>
-        </motion.div>
+        </MotionCard>
     );
 }
 
 /* ───── Role dropdown ───── */
-function RoleDropdown({ user, availableRoles, onChange, compact }) {
+function RoleDropdown({ user, availableRoles, canChange = true, onChange, compact }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
@@ -253,6 +263,17 @@ function RoleDropdown({ user, availableRoles, onChange, compact }) {
 
     const colorClass = ROLE_COLORS[user.role] || 'bg-gray-50 text-gray-600 border-gray-200';
 
+    if (!canChange) {
+        return (
+            <span
+                title="Сменить роль может руководитель или супер-администратор"
+                className={`inline-flex items-center px-2.5 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wide ${colorClass}`}
+            >
+                <span className="truncate">{ROLE_NAMES[user.role] || user.role}</span>
+            </span>
+        );
+    }
+
     return (
         <div ref={ref} className="relative">
             <button
@@ -265,7 +286,7 @@ function RoleDropdown({ user, availableRoles, onChange, compact }) {
             </button>
             <AnimatePresence>
                 {open && (
-                    <motion.ul
+                    <MotionList
                         initial={prefersReducedMotion ? false : { opacity: 0, y: -4, scale: 0.98 }}
                         animate={{ opacity: 1, y: 0, scale: 1 }}
                         exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, y: -4, scale: 0.98 }}
@@ -285,7 +306,7 @@ function RoleDropdown({ user, availableRoles, onChange, compact }) {
                                 </button>
                             </li>
                         ))}
-                    </motion.ul>
+                    </MotionList>
                 )}
             </AnimatePresence>
         </div>

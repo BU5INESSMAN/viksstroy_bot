@@ -30,7 +30,7 @@ BOT_COMMANDS = [
 
 ROLE_RANK = {
     "driver": 1, "worker": 2, "brigadier": 3,
-    "foreman": 4, "moderator": 5, "boss": 6, "superadmin": 7,
+    "hr": 1, "foreman": 4, "moderator": 5, "boss": 6, "superadmin": 7,
 }
 
 
@@ -78,6 +78,7 @@ _ROLE_NAMES_RU = {
     'superadmin': 'Супер-Админ',
     'boss': 'Руководитель',
     'moderator': 'Модератор',
+    'hr': 'Отдел кадров',
     'foreman': 'Прораб',
     'brigadier': 'Бригадир',
     'worker': 'Рабочий',

@@ -26,6 +26,7 @@ sys.path.append(web_dir)
 from database_deps import db, TZ_BARNAUL
 from services.notifications import notify_users, notify_fio_match
 from services.bot_commands import format_commands_message, warn_missing_commands
+from role_config import AUTO_ROLE_PROTECTED
 load_dotenv()
 
 API_URL = os.getenv("API_URL", "http://api:8000")
@@ -305,7 +306,7 @@ async def handle_team_yes(callback: types.CallbackQuery):
     user = await db.get_user(tg_id)
     if not user:
         await db.add_user(tg_id, fio, "worker")
-    elif dict(user).get('role') not in ('foreman', 'moderator', 'boss', 'superadmin'):
+    elif dict(user).get('role') not in AUTO_ROLE_PROTECTED:
         await db.update_user_role(tg_id, "worker")
 
     await db.conn.commit()
@@ -351,7 +352,7 @@ async def handle_equip_yes(callback: types.CallbackQuery):
 
     if not user:
         await db.add_user(tg_id, fio, "driver")
-    elif dict(user).get('role') not in ('foreman', 'moderator', 'boss', 'superadmin'):
+    elif dict(user).get('role') not in AUTO_ROLE_PROTECTED:
         await db.update_user_role(tg_id, "driver")
 
     await db.conn.commit()

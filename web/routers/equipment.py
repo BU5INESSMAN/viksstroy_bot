@@ -16,6 +16,7 @@ from auth_deps import get_current_user, require_role
 from utils import normalize_invite_code
 from services.notifications import notify_users, notify_group_chat
 from services.image_service import process_base64_image
+from role_config import AUTO_ROLE_PROTECTED
 
 logger = logging.getLogger(__name__)
 
@@ -700,7 +701,7 @@ async def join_equipment(invite_code: str = Form(...), current_user=Depends(get_
                 await db.add_user(real_tg_id, fio or f"Пользователь {real_tg_id}", "driver")
             else:
                 role = dict(user).get("role")
-                if role not in ("foreman", "moderator", "boss", "superadmin"):
+                if role not in AUTO_ROLE_PROTECTED:
                     await db.update_user_role(real_tg_id, "driver")
             if eq_category:
                 await db.conn.execute(

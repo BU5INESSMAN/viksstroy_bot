@@ -17,6 +17,8 @@ import string
 from datetime import datetime
 from typing import Optional
 
+from role_config import AUTO_ROLE_PROTECTED
+
 logger = logging.getLogger(__name__)
 
 _ALPHABET = string.digits + "ABCDEFGHJKMNPQRSTVWXYZ"  # Crockford base32
@@ -517,9 +519,11 @@ async def redeem_synthetic_driver(
             # Promote / merge into the existing real user, COALESCEing
             # synth values only where the real row has nothing yet so
             # higher roles (foreman/moderator) are preserved.
+            protected_roles = sorted(AUTO_ROLE_PROTECTED)
+            role_placeholders = ",".join("?" for _ in protected_roles)
             await db.conn.execute(
-                """UPDATE users
-                   SET role = CASE WHEN role IN ('foreman','moderator','boss','superadmin')
+                f"""UPDATE users
+                   SET role = CASE WHEN role IN ({role_placeholders})
                                    THEN role ELSE 'driver' END,
                        is_active = 1,
                        invite_code = COALESCE(invite_code, ?),
@@ -530,6 +534,7 @@ async def redeem_synthetic_driver(
                        middle_name = COALESCE(NULLIF(middle_name, ''), ?)
                    WHERE user_id = ?""",
                 (
+                    *protected_roles,
                     synth.get("invite_code"),
                     synth.get("default_equipment_id"),
                     synth.get("fio"),
