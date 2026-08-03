@@ -464,7 +464,7 @@ async def message_handler(event: MessageCreated):
                 try:
                     await notify_users(["report_group", "superadmin"],
                                        f"👤 Новая регистрация (MAX)\n📝 ФИО: {fio}\n💼 Роль: {role}\n🆔 ID: {pseudo_tg_id}",
-                                       "system")
+                                       "system", event_key="user_registered")
                 except Exception as e:
                     logger.error(f"New user notification error: {e}")
 
@@ -679,7 +679,7 @@ async def message_callback(event: MessageCallback):
             try:
                 await notify_users(["report_group", "boss", "superadmin"],
                                    f"🔗 Привязка аккаунта (Бригада) MAX\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team_name}»\n🕒 Время: {now}",
-                                   "teams")
+                                   "teams", event_key="staff_changed")
             except Exception as e:
                 logger.error(f"MAX team link notification error: {e}")
 
@@ -717,7 +717,7 @@ async def message_callback(event: MessageCallback):
             try:
                 await notify_users(["report_group", "boss", "superadmin"],
                                    f"🔗 Привязка аккаунта (Техника) MAX\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{equip_name}»\n🕒 Время: {now}",
-                                   "equipment")
+                                   "equipment", event_key="staff_changed")
             except Exception as e:
                 logger.error(f"MAX equip link notification error: {e}")
 

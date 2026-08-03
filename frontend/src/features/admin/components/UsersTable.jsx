@@ -49,8 +49,8 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
         }
         // v2.4 FIX 8: sort by role rank first, then alphabetically within role
         const ROLE_SORT_ORDER = {
-            superadmin: 0, boss: 1, moderator: 2, foreman: 3,
-            brigadier: 4, worker: 5, driver: 6,
+            superadmin: 0, boss: 1, moderator: 2, hr: 3, foreman: 4,
+            brigadier: 5, worker: 6, driver: 7,
         };
         list.sort((a, b) => {
             const roleA = ROLE_SORT_ORDER[a.role] ?? 99;

@@ -35,6 +35,7 @@ DEFAULT_USER_SETTINGS = {
     "notify_smr_debtors": True,
     "notify_object_requests": True,
     "notify_exchanges": True,
+    "notification_events": {},
 }
 
 

@@ -28,7 +28,7 @@ export default function Resources() {
             <div className="flex bg-gray-100 dark:bg-gray-800 rounded-2xl p-1.5 overflow-x-auto">
                 <button
                     onClick={() => setActiveTab('teams')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-colors duration-200 ${
+                    className={`flex-1 min-w-[108px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-colors duration-200 ${
                         activeTab === 'teams'
                         ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
                         : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -38,7 +38,7 @@ export default function Resources() {
                 </button>
                 <button
                     onClick={() => setActiveTab('equipment')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-colors duration-200 ${
+                    className={`flex-1 min-w-[108px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-colors duration-200 ${
                         activeTab === 'equipment'
                         ? 'bg-white dark:bg-gray-700 text-indigo-600 dark:text-indigo-400 shadow-sm'
                         : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -48,7 +48,7 @@ export default function Resources() {
                 </button>
                 <button
                     onClick={() => setActiveTab('drivers')}
-                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm transition-colors duration-200 ${
+                    className={`flex-1 min-w-[108px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-colors duration-200 ${
                         activeTab === 'drivers'
                         ? 'bg-white dark:bg-gray-700 text-cyan-600 dark:text-cyan-400 shadow-sm'
                         : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'

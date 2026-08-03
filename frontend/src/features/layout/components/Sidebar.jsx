@@ -83,9 +83,10 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
     }, [fetchCounts]);
 
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
+    const isHr = role === 'hr';
     const canCreateApp = ['foreman', 'boss', 'superadmin'].includes(role);
-    const canSeeObjects = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
-    const canSeeKP = ['brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canSeeObjects = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canSeeKP = ['hr', 'brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
 
     const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Monitor;
@@ -93,7 +94,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
     const toggleMenu = (id) => setOpenMenus(p => ({ ...p, [id]: !p[id] }));
 
     const navItems = [
-        { id: 'home', icon: Home, label: 'Главная', path: '/dashboard', visible: true },
+        { id: 'home', icon: Home, label: 'Главная', path: '/dashboard', visible: !isHr },
         {
             id: 'objects', icon: MapPin, label: 'Объекты', path: '/objects', visible: canSeeObjects,
             subItems: [
@@ -110,7 +111,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
             ],
         },
         {
-            id: 'review', icon: ClipboardList, label: 'Заявки', path: isWorkerOrDriver ? '/my-apps' : '/review', visible: true,
+            id: 'review', icon: ClipboardList, label: 'Заявки', path: isWorkerOrDriver ? '/my-apps' : '/review', visible: !isHr,
             subItems: isWorkerOrDriver ? [] : [
                 { label: 'Одобренные', nav: '/review?filter=approved', countKey: 'approved_apps' },
             ],

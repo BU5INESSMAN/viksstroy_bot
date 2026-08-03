@@ -14,6 +14,7 @@ from services.max_api import get_max_group_id, send_max_text, get_max_dm_chat_id
 from services.tg_session import get_tg_session
 from services.push_templates import build_push_payload
 from utils_fio import get_user_settings
+from notification_events import event_enabled
 
 
 # Maps channel name → settings key used by Settings page toggles
@@ -54,6 +55,21 @@ from database_deps import TZ_BARNAUL
 logger = logging.getLogger("NOTIFICATIONS")
 
 BASE_URL = os.getenv("WEB_APP_URL", "https://miniapp.viks22.ru")
+
+
+async def _telegram_post(session, bot_token: str, method: str, payload: dict) -> dict:
+    """Send a Telegram request and treat API-level failures as failures."""
+    response = await session.post(
+        f"https://api.telegram.org/bot{bot_token}/{method}", json=payload
+    )
+    try:
+        data = await response.json(content_type=None)
+    except Exception:
+        data = {}
+    if response.status >= 400 or not data.get('ok'):
+        description = data.get('description') or f'HTTP {response.status}'
+        raise RuntimeError(f"Telegram {method}: {description}")
+    return data
 
 # url_path → frontend route mapping
 _URL_PATH_MAP = {
@@ -110,16 +126,14 @@ async def notify_group_chat(text: str, url_path: str = "dashboard", target_platf
     if target_platform in ["all", "tg"] and bot_token and group_id:
         try:
             async with await get_tg_session() as session:
-                await session.post(
-                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                    json={"chat_id": str(group_id), "text": text, "parse_mode": "HTML", "reply_markup": markup}
-                )
+                await _telegram_post(session, bot_token, 'sendMessage',
+                    {"chat_id": str(group_id), "text": text, "parse_mode": "HTML", "reply_markup": markup})
             try:
                 await db.add_log(0, 'Система', f"📨 TG групповое: {strip_html(text)[:100]}", target_type='notification')
             except Exception:
                 pass
-        except:
-            pass
+        except Exception as exc:
+            logger.error("Telegram group notification failed: %s", exc)
 
     if target_platform in ["all", "max"] and max_bot_token and max_group_id:
         max_plain_text = strip_html(text)
@@ -135,7 +149,8 @@ async def notify_group_chat(text: str, url_path: str = "dashboard", target_platf
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
                        target_platform: str = "all", category: str = None,
                        tg_reply_markup: dict = None, max_attachments: list = None,
-                       push_type: str = None, push_body: str = None):
+                       push_type: str = None, push_body: str = None,
+                       event_key: str = None):
     """Универсальная рассылка уведомлений в личные DM (Telegram и MAX) с учетом настроек пользователя.
     category: 'new_users' | 'orders' | 'reports' | 'errors' | None (None = всегда отправлять)
     push_type: typed push notification key (e.g. 'app_approved'); forwarded to build_push_payload.
@@ -167,6 +182,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     # --- ПРОВЕРЯЕМ НАСТРОЙКИ УВЕДОМЛЕНИЙ (Тумблеры) ---
     final_tg_ids = set()
     final_max_ids = set()
+    eligible_user_ids = set()
 
     cat_col = NOTIFY_CATEGORY_COLUMNS.get(category) if category else None
 
@@ -176,26 +192,32 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         pl_ids = ','.join(['?'] * len(raw_user_ids))
         try:
             cat_select = f", {cat_col}" if cat_col else ""
-            async with db.conn.execute(f"SELECT user_id, notify_tg, notify_max{cat_select}, settings FROM users WHERE user_id IN ({pl_ids})",
+            async with db.conn.execute(f"SELECT user_id, notify_tg, notify_max{cat_select}, settings, role FROM users WHERE user_id IN ({pl_ids})",
                                        list(raw_user_ids)) as cur:
                 for row in await cur.fetchall():
                     cat_enabled = row[3] != 0 if cat_col else True
-                    settings_json = row[-1]  # last column
-                    user_prefs[row[0]] = {"tg": row[1] != 0, "max": row[2] != 0, "cat": cat_enabled}
+                    settings_json = row[-2]
+                    user_prefs[row[0]] = {"tg": row[1] != 0, "max": row[2] != 0, "cat": cat_enabled, "role": row[-1] or ''}
                     user_settings_by_id[row[0]] = get_user_settings(settings_json)
         except Exception:
             pass
 
     for uid in raw_user_ids:
         prefs = user_prefs.get(uid, {"tg": True, "max": True, "cat": True})
-        if not prefs["cat"]:
-            continue  # Пользователь отключил эту категорию — пропускаем
-        # New settings-page toggles layered on top (Stage 2)
         user_settings = user_settings_by_id.get(uid, get_user_settings('{}'))
+        resolved_event_key = event_key or push_type
+        overrides = user_settings.get("notification_events") or {}
+        explicit_event_choice = isinstance(overrides, dict) and resolved_event_key in overrides
+        if not prefs["cat"] and not explicit_event_choice:
+            continue
+        if not event_enabled(prefs.get('role', ''), user_settings, resolved_event_key):
+            logger.debug(f"notify: user {uid} opted out of event {resolved_event_key}")
+            continue
         type_key = TYPE_KEY.get(push_type)
-        if type_key and not user_settings.get(type_key, True):
+        if type_key and not explicit_event_choice and not user_settings.get(type_key, True):
             logger.debug(f"notify: user {uid} opted out of type {push_type}")
             continue
+        eligible_user_ids.add(uid)
         linked_ids = await get_all_linked_ids(uid)
 
         tg_allowed = prefs["tg"] and user_settings.get("notify_telegram", True)
@@ -212,10 +234,18 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     _notif_plain = strip_html(text)
     _notif_title = _notif_plain[:100]
     _notif_body = _notif_plain[:500]
-    _notif_type = category or 'info'
+    _notif_type = event_key or push_type or category or 'info'
     for uid in raw_user_ids:
         prefs = user_prefs.get(uid, {"cat": True})
-        if not prefs["cat"]:
+        settings_for_user = user_settings_by_id.get(uid, get_user_settings('{}'))
+        overrides = settings_for_user.get("notification_events") or {}
+        resolved_event_key = event_key or push_type
+        explicit_event_choice = isinstance(overrides, dict) and resolved_event_key in overrides
+        if not prefs["cat"] and not explicit_event_choice:
+            continue
+        if not event_enabled(
+            prefs.get('role', ''), settings_for_user, resolved_event_key,
+        ):
             continue
         try:
             await db.conn.execute(
@@ -252,12 +282,10 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         if group_id and target_platform in ["all", "tg"] and bot_token:
             try:
                 async with await get_tg_session() as session:
-                    await session.post(
-                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                        json={"chat_id": str(group_id), "text": text, "parse_mode": "HTML", "reply_markup": markup}
-                    )
-            except:
-                pass
+                    await _telegram_post(session, bot_token, 'sendMessage',
+                        {"chat_id": str(group_id), "text": text, "parse_mode": "HTML", "reply_markup": markup})
+            except Exception as exc:
+                logger.error("Telegram report-group notification failed: %s", exc)
 
     # v2.4.1 FIX 2: collect per-recipient lines into one grouped log entry
     # rather than writing a row per channel.
@@ -275,7 +303,9 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
                 att = [ButtonsPayload(buttons=max_btn).pack()]
             ok = True
             try:
-                await send_max_text(max_bot_token, dm_chat_id, max_plain_text, attachments=att)
+                ok = bool(await send_max_text(
+                    max_bot_token, dm_chat_id, max_plain_text, attachments=att
+                ))
             except Exception:
                 ok = False
             fio = _fio_cache.get(-int(mid), f'MAX#{mid}')
@@ -287,12 +317,11 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
                 for tid in final_tg_ids:
                     ok = True
                     try:
-                        await session.post(
-                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                            json={"chat_id": tid, "text": text, "parse_mode": "HTML", "reply_markup": markup}
-                        )
-                    except Exception:
+                        await _telegram_post(session, bot_token, 'sendMessage',
+                            {"chat_id": tid, "text": text, "parse_mode": "HTML", "reply_markup": markup})
+                    except Exception as exc:
                         ok = False
+                        logger.warning("Telegram DM failed for %s: %s", tid, exc)
                     fio = _fio_cache.get(tid, f'TG#{tid}')
                     _event_lines.append(f"TG → {fio}" + ("" if ok else " · ОШИБКА"))
         except Exception:
@@ -300,7 +329,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
     # ── Web Push (fire-and-forget, never blocks TG/MAX flow) ──
     try:
-        push_user_ids = list(raw_user_ids)
+        push_user_ids = list(eligible_user_ids)
         if push_user_ids:
             final_push_body = push_body or _notif_body
             # For the grouped log, mark every enrolled user — actual delivery
@@ -331,6 +360,19 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             )
         except Exception:
             pass
+        failed_lines = [line for line in unique_lines if "ОШИБКА" in line]
+        if failed_lines and event_key != "delivery_failed":
+            try:
+                from system_monitoring import notify_system_incident
+                asyncio.create_task(notify_system_incident(
+                    db,
+                    event_key="delivery_failed",
+                    title="Часть уведомлений не доставлена",
+                    component="notification_delivery",
+                    details="; ".join(failed_lines[:10]),
+                ))
+            except Exception:
+                logger.exception("Failed to schedule delivery incident")
 
 
 def validate_vapid_keys() -> None:
@@ -528,7 +570,10 @@ async def send_schedule_notifications(target_date: str):
             msg = (f"📢 <b>Наряд на {target_date}:</b>\n"
                    f"Вы назначены на объект <b>{app.get('object_address', '—')}</b>\n"
                    f"📅 Дата: {target_date}")
-            await notify_users([], msg, "my-apps", extra_tg_ids=all_involved, category="orders")
+            await notify_users(
+                [], msg, "my-apps", extra_tg_ids=all_involved,
+                category="orders", event_key="app_assignment",
+            )
             count += 1
 
     return count
@@ -539,7 +584,10 @@ ROLE_LABELS = {
     'boss': 'Руководитель',
     'moderator': 'Модератор',
     'foreman': 'Прораб',
+    'brigadier': 'Бригадир',
     'worker': 'Рабочий',
+    'driver': 'Водитель',
+    'hr': 'Отдел кадров',
     'viewer': 'Наблюдатель',
 }
 
@@ -582,6 +630,7 @@ async def notify_role_conflict(primary_id: int, secondary_id: int, primary_role:
         tg_reply_markup=tg_markup,
         max_attachments=[max_payload],
         category=None,
+        event_key="account_link_alert",
     )
 
 
@@ -676,7 +725,7 @@ async def notify_foreman_of_moderator_edit(
         await notify_users(
             [],  # role-less — only the explicit foreman
             text,
-            url_path="review",
+            url_path="my-apps",
             extra_tg_ids=[int(foreman_user_id)],
             category="orders",
             push_type="app_edited_by_moderator",
@@ -706,4 +755,5 @@ async def notify_fio_match(new_user_id: int, new_fio: str, existing_user_id: int
         text,
         url_path="system",
         category=None,
+        event_key="account_link_alert",
     )

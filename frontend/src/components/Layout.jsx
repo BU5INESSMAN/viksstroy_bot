@@ -203,7 +203,7 @@ export default function Layout() {
 
     const canCreateApp = ['foreman', 'boss', 'superadmin'].includes(role);
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
-    const canEditUsers = ['boss', 'superadmin', 'moderator'].includes(role);
+    const canEditUsers = ['boss', 'superadmin', 'moderator', 'hr'].includes(role);
     const isMyProfile = profileData && profileData.user_id === Number(tgId);
 
     if (apiDown) return <MaintenanceScreen />;

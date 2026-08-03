@@ -34,19 +34,20 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
         <ModalPortal>
         <div className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm" style={{ top: 0, left: 0, right: 0, bottom: 0 }}>
             <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-2xl shadow-2xl relative overflow-hidden">
-                <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
-                    <h3 className="text-xl font-bold dark:text-white flex items-center gap-2">
-                        <BarChart3 className="w-5 h-5 text-amber-500" /> Статистика: {statsObj.name}
+                <div className="flex justify-between items-center gap-3 p-4 sm:p-6 border-b border-gray-100 dark:border-gray-700 bg-amber-50/50 dark:bg-amber-900/10">
+                    <h3 className="min-w-0 text-lg sm:text-xl font-bold dark:text-white flex items-center gap-2">
+                        <BarChart3 className="w-5 h-5 text-amber-500 flex-shrink-0" /> <span className="truncate">Статистика: {statsObj.name}</span>
                     </h3>
                     <button
                         onClick={onClose}
-                        className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-1.5 border border-gray-100 dark:border-gray-700"
+                        className="w-10 h-10 flex-shrink-0 flex items-center justify-center text-gray-400 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700"
+                        aria-label="Закрыть"
                     >
                         <X className="w-5 h-5" />
                     </button>
                 </div>
 
-                <div className="p-6 space-y-6">
+                <div className="p-4 sm:p-6 space-y-6">
                     {statsLoading ? (
                         <div className="text-center py-12 text-gray-400 animate-pulse font-bold">
                             Загрузка...

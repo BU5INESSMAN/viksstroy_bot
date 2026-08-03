@@ -121,9 +121,11 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.migrate_icon_keys_to_tabler()
         await self.upgrade_db_for_smr_units()
         await self.upgrade_application_extra_works_unit()
+        await self.upgrade_application_extra_works_source()
         await self.upgrade_db_for_smr_wizard()
         await self.repair_catalog_units_if_numeric()
         await self.sync_worker_specialties()
+        await self.upgrade_system_monitoring()
 
         # Employee status columns on team_members
         for col_stmt in [
@@ -606,6 +608,48 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             await self.conn.commit()
         except Exception:
             pass
+
+    async def upgrade_application_extra_works_source(self):
+        """Keep the source KP id for catalog-selected additional work.
+
+        Older code stored such rows with ``extra_work_id=0`` and only a text
+        snapshot, so reopening the report lost the price-list relationship.
+        The new nullable column is unambiguous and does not reinterpret legacy
+        ``extra_work_id`` values that belong to a different catalog.
+        """
+        try:
+            await self.conn.execute(
+                "ALTER TABLE application_extra_works ADD COLUMN kp_id INTEGER"
+            )
+        except Exception:
+            pass
+        try:
+            await self.conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_app_extra_kp_id "
+                "ON application_extra_works(kp_id)"
+            )
+        except Exception:
+            pass
+        await self.conn.commit()
+
+    async def upgrade_system_monitoring(self):
+        await self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS system_heartbeats (
+                component TEXT PRIMARY KEY,
+                last_success_at TEXT,
+                last_error_at TEXT,
+                last_error TEXT DEFAULT '',
+                updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
+            CREATE TABLE IF NOT EXISTS system_alert_state (
+                alert_key TEXT PRIMARY KEY,
+                status TEXT NOT NULL,
+                last_sent_at TEXT,
+                occurrences INTEGER DEFAULT 1,
+                details TEXT DEFAULT ''
+            );
+        """)
+        await self.conn.commit()
 
     async def repair_catalog_units_if_numeric(self):
         """v2.4.3: older parser read unit from col F (old_salary) instead of

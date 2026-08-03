@@ -207,7 +207,7 @@ async def update_profile(target_id: int, fio: str = Form(...), role: str = Form(
     current_role = current_user.get("role")
     is_self = current_user["user_id"] == target_id
     is_admin = current_role in ("superadmin", "boss")
-    is_moderator = current_role in ("superadmin", "boss", "moderator")
+    is_moderator = current_role in ("superadmin", "boss", "moderator", "hr")
 
     if not is_self and not is_moderator:
         raise HTTPException(403, "Нет прав для изменения этого профиля")
@@ -218,7 +218,7 @@ async def update_profile(target_id: int, fio: str = Form(...), role: str = Form(
     existing_role = dict(target_user).get("role", "worker")
 
     if role and is_admin and not is_self:
-        allowed_roles = {"superadmin", "boss", "moderator", "foreman", "brigadier", "worker", "driver"}
+        allowed_roles = {"superadmin", "boss", "moderator", "hr", "foreman", "brigadier", "worker", "driver"}
         if role not in allowed_roles:
             raise HTTPException(400, "Недопустимая роль")
         if role == "superadmin" and current_role != "superadmin":
@@ -252,7 +252,7 @@ async def update_avatar(target_id: int, avatar_base64: str = Form(...),
                         current_user=Depends(get_current_user)):
     """Update user avatar. Self or office."""
     is_self = current_user["tg_id"] == target_id
-    is_office = current_user.get("role") in ("superadmin", "boss", "moderator")
+    is_office = current_user.get("role") in ("superadmin", "boss", "moderator", "hr")
     if not is_self and not is_office:
         raise HTTPException(403, "Нет прав")
 
@@ -389,7 +389,7 @@ async def update_user(user_id: int, body: UpdateUserRequest, current_user=Depend
     actor_id = current_user["user_id"]
     is_self = actor_id == target_id
     actor_role = current_user.get("role")
-    is_office = actor_role in ("superadmin", "boss", "moderator")
+    is_office = actor_role in ("superadmin", "boss", "moderator", "hr")
 
     requested = body.model_dump(exclude_none=True)
     if not requested:
@@ -487,7 +487,7 @@ async def update_user(user_id: int, body: UpdateUserRequest, current_user=Depend
         try:
             msg = f"Ваша роль изменена: <b>{new_ru}</b>. Изменил: {actor_fio or 'Администратор'}"
             asyncio.create_task(
-                notify_users([], msg, "dashboard", extra_tg_ids=[target_id], category=None)
+                notify_users([], msg, "dashboard", extra_tg_ids=[target_id], category=None, event_key="role_changed")
             )
         except Exception:
             pass
@@ -517,6 +517,13 @@ async def update_my_settings(patch: dict, current_user=Depends(get_current_user)
     await db.update_user_settings(current_user["user_id"], new_json)
     logger.info(f"User {current_user['user_id']} settings updated: keys={list((patch or {}).keys())}")
     return {"settings": json.loads(new_json)}
+
+
+@router.get("/api/users/me/notification-events")
+async def get_my_notification_events(current_user=Depends(get_current_user)):
+    from notification_events import catalog_for_role
+    settings = get_user_settings(current_user.get('settings') or '{}')
+    return {"events": catalog_for_role(current_user.get('role', ''), settings)}
 
 
 def _user_public(user: dict) -> dict:
@@ -549,7 +556,7 @@ async def set_user_role(user_id: int, role: str = Form(...),
     if role == "superadmin" and current_user["role"] != "superadmin":
         raise HTTPException(403, "Только superadmin может назначать superadmin")
 
-    valid_roles = ['superadmin', 'boss', 'moderator', 'foreman', 'brigadier', 'worker', 'driver']
+    valid_roles = ['superadmin', 'boss', 'moderator', 'hr', 'foreman', 'brigadier', 'worker', 'driver']
     if role not in valid_roles:
         raise HTTPException(400, f"Недопустимая роль: {role}")
 

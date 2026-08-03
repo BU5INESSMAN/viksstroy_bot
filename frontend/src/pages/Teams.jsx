@@ -112,7 +112,7 @@ export default function Teams() {
         } catch (e) { toast.error("Ошибка генерации ссылки"); }
     };
 
-    const canManage = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canManage = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canDeleteTeam = ['moderator', 'boss', 'superadmin'].includes(role);
 
     if (loading) return <TeamsSkeleton />;

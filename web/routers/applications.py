@@ -90,7 +90,7 @@ async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"📝 <b>Новая заявка на выезд</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}\n🕒 Время: {now}",
-                       "review", category="orders"))
+                       "review", category="orders", event_key="app_new"))
     return {"status": "ok", "id": new_app_id}
 
 
@@ -115,7 +115,7 @@ async def update_app(app_id: int, team_id: str = Form("0"), date_target: str = F
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
                        f"⚠️ <b>Заявка #{app_id} (Объект: {object_address}) была отредактирована</b>\n👤 Прораб: {fio}\n🕒 Время: {now}",
-                       "review", category="orders"))
+                       "review", category="orders", event_key="app_edited"))
 
     # Office-edit notification with a complete "Было → Стало" diff. It
     # fires only when moderator+ edits somebody else's application;
@@ -286,7 +286,7 @@ async def delete_app(app_id: int, current_user=Depends(get_current_user)):
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "boss", "superadmin"],
                        f"🗑 <b>Заявка №{app_id} удалена</b>\n👤 Кто: {fio}\n📍 Объект: {app_dict.get('object_address')}\n🕒 Время: {now}",
-                       "review", category="orders"))
+                       "review", category="orders", event_key="app_status_changed"))
     return {"status": "ok"}
 
 
@@ -358,7 +358,7 @@ async def publish_apps(app_ids: str = Form(...), current_user=Depends(_require_o
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["boss", "superadmin"],
                        f"📤 <b>Публикация нарядов</b>\n👤 Кто: {fio}\n✅ Опубликовано: {count} шт.\n🕒 Время: {now}",
-                       "dashboard", category="orders"))
+                       "dashboard", category="orders", event_key="schedule_published"))
     return {"status": "ok", "published": count}
 
 

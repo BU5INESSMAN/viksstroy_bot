@@ -6,6 +6,8 @@ import glob
 from datetime import datetime
 import logging
 
+from smr_calculations import decimal_value, money_value
+
 
 def _team_scope_where(team_scope):
     """NULL-aware SQL fragment + params for a (concrete_team_ids,
@@ -52,7 +54,7 @@ class KpRepoMixin:
 
             is_my_team = any(t in app_teams for t in team_ids)
             is_my_foreman = app['foreman_id'] == tg_id
-            is_office = role in ['moderator', 'boss', 'superadmin']
+            is_office = role in ['moderator', 'boss', 'superadmin', 'hr']
 
             if kp_status in ['none', 'rejected'] and (is_my_team or is_my_foreman or is_office):
                 result["to_fill"].append(app)
@@ -122,6 +124,14 @@ class KpRepoMixin:
                         'price': float(r[3]) if r[3] is not None else 0.0,
                     }
 
+        unknown_kp_ids = sorted(set(kp_ids) - set(lookup))
+        if unknown_kp_ids:
+            from smr_calculations import SmrNumberError
+            raise SmrNumberError(
+                "Работы отсутствуют в текущем справочнике: "
+                + ", ".join(map(str, unknown_kp_ids))
+            )
+
         # v2.10 (D2/D3): scope the DELETE to the caller's authoritative team
         # buckets so a submit that does not carry every brigade's rows no
         # longer wipes the others. team_scope=None preserves the legacy
@@ -140,10 +150,7 @@ class KpRepoMixin:
                 (app_id, *_sparams),
             )
         for item in items:
-            try:
-                volume = float(item.get('volume') or 0)
-            except (TypeError, ValueError):
-                volume = 0.0
+            volume = float(decimal_value(item.get('volume'), field='Объём работы'))
             if volume <= 0:
                 continue
             kp_id = int(item.get('kp_id') or 0)
@@ -155,10 +162,10 @@ class KpRepoMixin:
             # the catalog values.
             salary = item.get('salary')
             price = item.get('price')
-            if role in ('moderator', 'boss', 'superadmin') and salary is not None and price is not None:
+            if role in ('moderator', 'boss', 'superadmin', 'hr') and salary is not None and price is not None:
                 try:
-                    salary = float(salary)
-                    price = float(price)
+                    salary = float(money_value(salary, field='Расценка ЗП'))
+                    price = float(money_value(price, field='Цена'))
                 except (TypeError, ValueError):
                     salary = meta['salary']
                     price = meta['price']
@@ -183,7 +190,7 @@ class KpRepoMixin:
                 (app_id, kp_id, volume, meta['unit'], salary, price, filled_by_user_id, _now, team_id),
             )
 
-        new_status = 'approved' if role in ['foreman', 'moderator', 'boss', 'superadmin'] else 'submitted'
+        new_status = 'approved' if role in ['foreman', 'moderator', 'boss', 'superadmin', 'hr'] else 'submitted'
         await self.conn.execute("UPDATE applications SET kp_status = ? WHERE id = ?", (new_status, app_id))
         await self.conn.commit()
 
@@ -248,7 +255,9 @@ class KpRepoMixin:
             if file_path.endswith('.csv'):
                 df = pd.read_csv(file_path, header=None, dtype=str).fillna("")
             else:
-                df = pd.read_excel(file_path, header=None, dtype=str).fillna("")
+                book = pd.ExcelFile(file_path)
+                sheet = "СМР" if "СМР" in book.sheet_names else book.sheet_names[0]
+                df = pd.read_excel(book, sheet_name=sheet, header=None, dtype=str).fillna("")
 
             # Build lookup of existing entries: (category, name) -> id
             existing = {}
@@ -280,11 +289,18 @@ class KpRepoMixin:
                 if not s:
                     return None
                 try:
-                    return float(s.replace(',', '.'))
-                except ValueError:
+                    from decimal import Decimal
+                    value = Decimal(s.replace('\xa0', '').replace(' ', '').replace(',', '.'))
+                    if not value.is_finite() or value < 0:
+                        return None
+                    return float(value)
+                except Exception:
                     return None
 
             current_category = "Без категории"
+            parsed_rows = []
+            validation_errors = []
+            seen_keys = set()
             for index, row in df.iterrows():
                 if index < 2: continue
 
@@ -306,20 +322,45 @@ class KpRepoMixin:
                     current_category = col_name
                     continue
 
-                # Work row: must have name, unit, and a numeric salary.
+                # A work-looking row must be complete. C is the customer
+                # price, H is the salary rate; prices are never synthesized.
                 salary = _num(col_salary)
-                if not col_name or not col_unit or salary is None:
+                if not col_name or not col_unit:
                     continue
 
                 price = _num(col_price)
-                if price is None:
-                    price = salary * 4  # fallback for rows missing base price
+                if salary is None or price is None:
+                    validation_errors.append(
+                        f"строка {index + 1} «{col_name}»: цена (C) и расценка ЗП (H) должны быть числами не меньше нуля"
+                    )
+                    continue
                 coef = _num(col_coef) or 0.0
                 old_salary = _num(col_old_salary)
                 if old_salary is None:
                     old_salary = salary
 
                 key = (current_category, col_name)
+                if key in seen_keys:
+                    validation_errors.append(
+                        f"строка {index + 1}: работа «{col_name}» повторяется в категории «{current_category}»"
+                    )
+                    continue
+                seen_keys.add(key)
+                parsed_rows.append((key, col_unit, coef, salary, price, old_salary))
+
+            if not parsed_rows:
+                validation_errors.append("в файле не найдено ни одной корректной работы")
+            if validation_errors:
+                self.last_kp_import_report = {
+                    "ok": False, "rows": 0, "errors": validation_errors[:20],
+                    "price_source": "лист СМР, колонка C",
+                    "salary_source": "лист СМР, колонка H",
+                }
+                logging.error("Ошибка проверки каталога: %s", "; ".join(validation_errors[:5]))
+                return False
+
+            await self.conn.execute("SAVEPOINT kp_catalog_import")
+            for key, col_unit, coef, salary, price, old_salary in parsed_rows:
                 if key in existing:
                     await self.conn.execute("""
                         UPDATE kp_catalog SET unit=?, coefficient=?, salary=?, price=?, old_salary=?
@@ -329,52 +370,90 @@ class KpRepoMixin:
                     await self.conn.execute("""
                         INSERT INTO kp_catalog (category, name, unit, coefficient, salary, price, old_salary)
                         VALUES (?, ?, ?, ?, ?, ?, ?)
-                        """, (current_category, col_name, col_unit, coef, salary, price, old_salary))
+                        """, (key[0], key[1], col_unit, coef, salary, price, old_salary))
 
+            await self.conn.execute("RELEASE SAVEPOINT kp_catalog_import")
             await self.conn.commit()
+            self.last_kp_import_report = {
+                "ok": True, "rows": len(parsed_rows), "errors": [],
+                "price_source": "лист СМР, колонка C",
+                "salary_source": "лист СМР, колонка H",
+            }
             logging.info(f"Справочник КП обновлен из файла: {file_path}")
             return True
         except Exception as e:
+            try:
+                await self.conn.execute("ROLLBACK TO SAVEPOINT kp_catalog_import")
+                await self.conn.execute("RELEASE SAVEPOINT kp_catalog_import")
+            except Exception:
+                pass
+            self.last_kp_import_report = {"ok": False, "rows": 0, "errors": [str(e)]}
             logging.error(f"Ошибка парсинга каталога: {e}")
             return False
 
     async def generate_mass_excel(self, app_ids: list):
-        """Генерирует сводный Excel отчет по заявкам"""
-        if not app_ids: return None
-        pl = ','.join(['?'] * len(app_ids))
-        async with self.conn.execute(
-                f"SELECT a.id, a.date_target, o.name as obj_name, a.team_id FROM applications a LEFT JOIN objects o ON a.object_id = o.id WHERE a.id IN ({pl}) ORDER BY a.date_target ASC",
-                app_ids) as cur:
-            apps_data = [dict(row) for row in await cur.fetchall()]
-        async with self.conn.execute("SELECT id, name FROM teams") as cur:
-            teams_map = {row[0]: row[1] for row in await cur.fetchall()}
-        async with self.conn.execute(
-                f"SELECT akp.application_id, k.category, k.name as job_name, k.unit, akp.volume, akp.current_salary as salary, akp.current_price as price, COALESCE(akp.is_additional, 0) as is_additional FROM application_kp akp JOIN kp_catalog k ON akp.kp_id = k.id WHERE akp.application_id IN ({pl}) AND akp.volume > 0 ORDER BY akp.application_id, k.category, k.name",
-                app_ids) as cur:
-            kp_data = [dict(row) for row in await cur.fetchall()]
+        """Canonical mass export including merged reports, addenda, extras and hours."""
+        if not app_ids:
+            return None
+        from smr_data import get_smr_read_model
 
-        rows = []
-        for app in apps_data:
-            t_ids = [int(x) for x in str(app['team_id']).split(',')] if app['team_id'] and str(
-                app['team_id']) != '0' else []
-            t_names = ", ".join([teams_map.get(tid, f"Бригада {tid}") for tid in t_ids])
-            rows.append(["", "", "", "", "", "", ""])
-            rows.append([f"ЗАЯВКА №{app['id']}", f"Дата: {app['date_target']}", f"Объект: {app['obj_name']}",
-                         f"Бригады: {t_names}", "", "", ""])
-            rows.append(["Категория", "Работа", "Ед. изм.", "Объем", "ЗП (ед)", "Сумма ЗП", "Сумма Цена"])
-            app_total_salary = 0
-            app_total_price = 0
-            for kp in [k for k in kp_data if k['application_id'] == app['id']]:
-                sum_sal = float(kp['volume']) * float(kp['salary'])
-                sum_pr = float(kp['volume']) * float(kp['price'])
-                app_total_salary += sum_sal
-                app_total_price += sum_pr
-                rows.append([kp['category'], kp['job_name'], kp['unit'], kp['volume'], kp['salary'], sum_sal, sum_pr])
-            rows.append(["", "", "", "", "ИТОГО ПО ЗАЯВКЕ:", app_total_salary, app_total_price])
+        headers = [
+            "Заявка", "Дата", "Объект", "Тип", "Бригада", "Работа / сотрудник",
+            "Ед. / специальность", "Объём / часы", "ЗП за ед.", "Сумма ЗП",
+            "Цена за ед.", "Сумма цены", "Доп. отчёт",
+        ]
+        rows = [headers]
+        seen_groups = set()
+        for requested_id in sorted({int(x) for x in app_ids if int(x) > 0}):
+            report = await get_smr_read_model(self, requested_id)
+            logical_ids = tuple(report.get("application_ids") or [])
+            if not logical_ids or logical_ids in seen_groups:
+                continue
+            seen_groups.add(logical_ids)
+            primary_id = report["primary_application_id"]
+            async with self.conn.execute(
+                "SELECT a.date_target,COALESCE(o.name,a.object_address,'') "
+                "FROM applications a LEFT JOIN objects o ON o.id=a.object_id WHERE a.id=?",
+                (primary_id,),
+            ) as cur:
+                meta = await cur.fetchone()
+            date_target = meta[0] if meta else ""
+            object_name = meta[1] if meta else ""
+            app_label = ", ".join(f"№{x}" for x in logical_ids)
 
-        df = pd.DataFrame(rows)
+            for item in report.get("plan_works", []):
+                volume = float(item.get("volume") or 0)
+                salary = float(item.get("current_salary") or 0)
+                price = float(item.get("current_price") or 0)
+                rows.append([app_label, date_target, object_name, "Работа", item.get("team_name") or "",
+                             item.get("name") or "", item.get("unit") or "", volume, salary,
+                             round(volume * salary, 2), price, round(volume * price, 2),
+                             "Да" if item.get("is_additional") else "Нет"])
+            for item in report.get("extra_works", []):
+                volume = float(item.get("volume") or 0)
+                salary = float(item.get("salary") or 0)
+                price = float(item.get("price") or 0)
+                rows.append([app_label, date_target, object_name, "Доп. работа", item.get("team_name") or "",
+                             item.get("name") or "", item.get("unit") or "", volume, salary,
+                             round(volume * salary, 2), price, round(volume * price, 2),
+                             "Да" if item.get("is_additional") else "Нет"])
+            for item in report.get("hours", []):
+                rows.append([app_label, date_target, object_name, "Часы", item.get("team_name") or "",
+                             item.get("fio") or "", item.get("specialty") or "", float(item.get("hours") or 0),
+                             "", "", "", "", "Да" if item.get("is_additional") else "Нет"])
+            totals = report.get("totals", {})
+            rows.append([app_label, date_target, object_name, "ИТОГО", "", "", "",
+                         totals.get("hours", 0), "", totals.get("salary", 0), "",
+                         totals.get("price", 0), ""])
+
+        if len(rows) == 1:
+            return None
+        df = pd.DataFrame(rows[1:], columns=rows[0])
         output = BytesIO()
         with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, index=False, header=False, sheet_name='Отчет КП')
+            df.to_excel(writer, index=False, sheet_name='Свод СМР')
+            ws = writer.book['Свод СМР']
+            ws.freeze_panes = 'A2'
+            ws.auto_filter.ref = ws.dimensions
         output.seek(0)
         return output

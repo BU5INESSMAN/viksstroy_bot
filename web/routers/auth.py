@@ -459,7 +459,7 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
 
     async def _send_register_max_notifications():
         try:
-            await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация (MAX)</b>\n👤 {fio}\n💼 {role}", "system", category="new_users")
+            await notify_users(["report_group", "moderator", "boss", "superadmin", "hr"], f"🆕 <b>Новая регистрация (MAX)</b>\n👤 {fio}\n💼 {role}", "system", category="new_users", event_key="user_registered")
         except Exception as e:
             logger.error(f"Registration notification error: {e}")
 
@@ -627,7 +627,7 @@ async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), 
 
     async def _send_register_tg_notifications():
         try:
-            await notify_users(["report_group", "moderator"], f"🆕 <b>Новая регистрация</b>\n👤 {fio}\n💼 {role}", "system", category="new_users")
+            await notify_users(["report_group", "moderator", "boss", "superadmin", "hr"], f"🆕 <b>Новая регистрация</b>\n👤 {fio}\n💼 {role}", "system", category="new_users", event_key="user_registered")
         except Exception as e:
             logger.error(f"Registration notification error: {e}")
 

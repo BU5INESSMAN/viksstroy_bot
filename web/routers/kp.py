@@ -4,16 +4,24 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json
+import asyncio
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse, FileResponse
 from database_deps import db
 from auth_deps import get_current_user, require_role
 from urllib.parse import quote
+from services.notifications import notify_users
+from smr_calculations import (
+    MAX_HOURS_PER_ROW,
+    SmrNumberError,
+    decimal_value,
+    money_value,
+)
 
 router = APIRouter(tags=["KP"])
 
-_require_office = require_role("superadmin", "boss", "moderator")
+_require_office = require_role("superadmin", "boss", "moderator", "hr")
 _require_superadmin = require_role("superadmin")
 
 
@@ -128,7 +136,7 @@ async def _guard_adhoc_hours(app_id: int, hours_items: list, role: str) -> list:
             out.append(it)
             continue
         # Out-of-roster → ad-hoc.
-        if role in ('foreman', 'moderator', 'boss', 'superadmin'):
+        if role in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'):
             if not await db.member_belongs_to_team(mid, tid):
                 raise HTTPException(400, "Некорректный сотрудник для бригады")
             out.append(it)
@@ -173,13 +181,32 @@ async def get_app_kp_items(app_id: int, current_user=Depends(get_current_user)):
             items.append(it)
     role = current_user.get('role', 'worker')
     # Strip financial data for non-office roles (privacy)
-    if role not in ('moderator', 'boss', 'superadmin'):
+    if role not in ('moderator', 'boss', 'superadmin', 'hr'):
         for item in items:
             item.pop('salary', None)
             item.pop('price', None)
             item.pop('saved_salary', None)
             item.pop('saved_price', None)
     return items
+
+
+@router.get("/api/kp/apps/{app_id}/smr/summary")
+async def get_smr_summary(app_id: int, current_user=Depends(get_current_user)):
+    """Authoritative merged SMR details and totals for the UI and exports."""
+    from smr_data import get_smr_read_model
+
+    result = await get_smr_read_model(db, app_id)
+    if not result:
+        raise HTTPException(404, "Заявка не найдена")
+    if current_user.get('role') not in ('moderator', 'boss', 'superadmin', 'hr'):
+        result.pop('totals', None)
+        for row in result.get('plan_works', []):
+            row.pop('current_salary', None)
+            row.pop('current_price', None)
+        for row in result.get('extra_works', []):
+            row.pop('salary', None)
+            row.pop('price', None)
+    return result
 
 
 # ==========================================
@@ -199,10 +226,23 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
     if db.conn is None:
         await db.init_db()
     async with db.conn.execute(
-        "SELECT id FROM applications WHERE id = ?", (app_id,)
+        "SELECT id, date_target FROM applications WHERE id = ?", (app_id,)
     ) as cur:
-        if not await cur.fetchone():
+        app_row = await cur.fetchone()
+        if not app_row:
             raise HTTPException(404, "Заявка не найдена")
+        report_date = app_row[1] or ''
+
+    def effective_status(member: dict) -> str:
+        status = member.get('status') or member.get('member_status') or 'available'
+        date_from = member.get('status_from') or ''
+        date_until = member.get('status_until') or ''
+        if status in ('vacation', 'sick') and report_date:
+            if date_from and report_date < date_from:
+                return 'available'
+            if date_until and report_date > date_until:
+                return 'available'
+        return status
 
     group_ids = await _expand_merge_group(app_id)
 
@@ -250,7 +290,7 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
                 'specialty': m.get('position', ''),
                 'is_foreman': bool(m.get('is_foreman', 0)),
                 'is_ad_hoc': False,
-                'status': m.get('status') or 'available',
+                'status': effective_status(m),
                 'status_from': m.get('status_from') or '',
                 'status_until': m.get('status_until') or '',
                 'tg_user_id': m.get('tg_user_id'),
@@ -285,7 +325,7 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
             'specialty': row.get('specialty', ''),
             'is_foreman': False,
             'is_ad_hoc': True,
-            'status': row.get('member_status') or 'available',
+            'status': effective_status(row),
             'status_from': row.get('status_from') or '',
             'status_until': row.get('status_until') or '',
             'tg_user_id': row.get('tg_user_id'),
@@ -331,7 +371,7 @@ async def get_available_workers(app_id: int, current_user=Depends(get_current_us
     that brigade isn't on the application, create a virtual brigade entry.
     """
     role = current_user.get('role', 'worker')
-    if role not in ('foreman', 'moderator', 'boss', 'superadmin'):
+    if role not in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'):
         raise HTTPException(403, "Только прораб может добавлять дополнительных сотрудников")
     if db.conn is None:
         await db.init_db()
@@ -422,6 +462,12 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     if not app_row:
         raise HTTPException(404, "Заявка не найдена")
 
+    group_ids = await _expand_merge_group(app_id)
+    if app_id not in group_ids:
+        group_ids.append(app_id)
+    group_ids = sorted(set(group_ids))
+    write_app_id = group_ids[0]
+
     # Brigadier scope: filter hours to their own teams (v2.7 hard block —
     # an unattached brigadier cannot submit SMR at all).
     user_team_ids = None
@@ -439,7 +485,9 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     if user_team_ids is not None:
         hours_items = [h for h in hours_items if int(h.get('team_id') or 0) in user_team_ids]
     if hours_items:
-        await db.save_app_hours(app_id, hours_items, tg_id)
+        hours_scope = _compute_write_scope(role, user_team_ids, hours_items)
+        await _clear_group_main_rows('application_hours', 'app_id', group_ids, hours_scope)
+        await db.save_app_hours(write_app_id, hours_items, tg_id)
 
     # 2. Plan works — D4 team scope + D2/D3 scoped, non-destructive write.
     # Use key-presence (not truthiness) so an explicit empty list clears the
@@ -451,7 +499,8 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
             # filter above). A row with no/0 team_id (common) is dropped.
             works = [w for w in works if int(w.get('team_id') or 0) in user_team_ids]
         scope = _compute_write_scope(role, user_team_ids, works)
-        await db.submit_kp_report(app_id, works, role, filled_by_user_id=tg_id, team_scope=scope)
+        await _clear_group_main_rows('application_kp', 'application_id', group_ids, scope)
+        await db.submit_kp_report(write_app_id, works, role, filled_by_user_id=tg_id, team_scope=scope)
 
     # 3. Extra works — same D4 scope + scoped, non-destructive delete.
     if 'extra_works' in data:
@@ -459,16 +508,13 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
         if user_team_ids is not None:
             extras = [e for e in extras if int(e.get('team_id') or 0) in user_team_ids]
         scope = _compute_write_scope(role, user_team_ids, extras)
-        await _save_extra_works_inline(app_id, extras, tg_id, role, team_scope=scope)
+        await _clear_group_main_rows('application_extra_works', 'application_id', group_ids, scope)
+        await _save_extra_works_inline(write_app_id, extras, tg_id, role, team_scope=scope)
 
     # 4. Group + status — cascade to every app in the merge group so a
     # single wizard pass marks them all pending/approved together.
     group_id = dict(app_row).get('smr_group_id') or _uuid.uuid4().hex[:12]
-    group_ids = await _expand_merge_group(app_id)
-    if app_id not in group_ids:
-        group_ids.append(app_id)
-
-    if role in ('foreman', 'moderator', 'boss', 'superadmin'):
+    if role in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'):
         smr_status = 'approved'
         smr_role = 'foreman'
         new_kp_status = 'approved'
@@ -501,9 +547,10 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
             try:
                 from services.notifications import notify_users
                 asyncio.create_task(notify_users(
-                    [foreman_id],
+                    [],
                     f"🔧 Бригадир {fio or ''} заполнил СМР по заявке №{app_id}. Требуется проверка.",
-                    'smr', category='reports',
+                    'kp', extra_tg_ids=[foreman_id], category='reports',
+                    event_key='smr_submitted',
                 ))
             except Exception:
                 pass
@@ -561,6 +608,31 @@ def _compute_write_scope(role, user_team_ids, items):
     return concrete, True
 
 
+async def _clear_group_main_rows(table: str, app_column: str, group_ids: list[int], team_scope) -> None:
+    """Clear an authoritative main-report scope across a merge group.
+
+    Replacements are written to the primary application. Clearing all group
+    members first prevents old secondary rows from being added a second time
+    on the next merged read.
+    """
+    if not group_ids:
+        return
+    allowed = {
+        ('application_hours', 'app_id'),
+        ('application_kp', 'application_id'),
+        ('application_extra_works', 'application_id'),
+    }
+    if (table, app_column) not in allowed:
+        raise ValueError('Unsupported SMR table')
+    app_marks = ','.join('?' * len(group_ids))
+    team_clause, team_params = _team_scope_where(team_scope)
+    await db.conn.execute(
+        f"DELETE FROM {table} WHERE {app_column} IN ({app_marks}) "
+        f"AND COALESCE(is_additional, 0) = 0 AND {team_clause}",
+        (*group_ids, *team_params),
+    )
+
+
 async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: str, team_scope=None):
     """Minimal inline port of /api/kp/apps/{id}/extra_works/submit logic
     so the wizard's unified submit can batch everything in one call."""
@@ -590,6 +662,44 @@ async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: s
                     'price': float(r[4]) if r[4] is not None else 0.0,
                 }
 
+    legacy_ids = []
+    for it in items:
+        try:
+            legacy_id = int(it.get('extra_work_id') or 0)
+            if legacy_id > 0:
+                legacy_ids.append(legacy_id)
+        except (TypeError, ValueError):
+            pass
+    legacy_catalog = {}
+    if legacy_ids:
+        pl = ",".join("?" * len(legacy_ids))
+        async with db.conn.execute(
+            f"SELECT id, name, unit, salary, price FROM extra_works_catalog WHERE id IN ({pl})",
+            legacy_ids,
+        ) as cur:
+            for r in await cur.fetchall():
+                legacy_catalog[int(r[0])] = {
+                    'name': r[1] or '',
+                    'unit': (r[2] or '').strip(),
+                    'salary': float(r[3]) if r[3] is not None else 0.0,
+                    'price': float(r[4]) if r[4] is not None else 0.0,
+                }
+
+    unknown_kp_ids = sorted(set(kp_ids) - set(catalog))
+    unknown_legacy_ids = sorted(set(legacy_ids) - set(legacy_catalog))
+    if unknown_kp_ids or unknown_legacy_ids:
+        raise SmrNumberError(
+            "Дополнительная работа отсутствует в текущем справочнике"
+        )
+    for it in items:
+        if not int(it.get('kp_id') or 0) and not int(it.get('extra_work_id') or 0):
+            if role not in ('moderator', 'boss', 'superadmin', 'hr'):
+                raise SmrNumberError("Произвольную доп. работу должен добавить сотрудник офиса")
+            if not (it.get('custom_name') or '').strip():
+                raise SmrNumberError("Укажите название произвольной доп. работы")
+            money_value(it.get('salary'), field='Расценка ЗП')
+            money_value(it.get('price'), field='Цена')
+
     # v2.10 (D2): scope the DELETE to the caller's authoritative team buckets
     # (NULL-aware) instead of wiping every brigade's extras. team_scope=None
     # falls back to the legacy blanket delete for any old caller.
@@ -608,10 +718,7 @@ async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: s
         )
     now = _dt.now().isoformat(timespec='seconds')
     for it in items:
-        try:
-            volume = float(it.get('volume') or 0)
-        except (TypeError, ValueError):
-            volume = 0.0
+        volume = float(decimal_value(it.get('volume'), field='Объём доп. работы'))
         if volume <= 0:
             continue
         kp_id = None
@@ -627,14 +734,22 @@ async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: s
             extra_work_id = 0
         else:
             extra_work_id = int(it.get('extra_work_id') or 0)
-            custom_name = it.get('custom_name') or ''
-            unit = it.get('unit') or ''
-            try:
-                salary = float(it.get('salary') or 0)
-                price = float(it.get('price') or 0)
-            except (TypeError, ValueError):
-                salary = 0.0
-                price = 0.0
+            legacy_meta = legacy_catalog.get(extra_work_id)
+            if legacy_meta:
+                custom_name = legacy_meta['name']
+                unit = legacy_meta['unit']
+                salary = legacy_meta['salary']
+                price = legacy_meta['price']
+            else:
+                custom_name = (it.get('custom_name') or '').strip()
+                unit = (it.get('unit') or '').strip()
+                # A truly custom row has no trusted catalog source. Only
+                # finance-capable roles may define its snapshots.
+                if role in ('moderator', 'boss', 'superadmin', 'hr'):
+                    salary = float(money_value(it.get('salary'), field='Расценка ЗП'))
+                    price = float(money_value(it.get('price'), field='Цена'))
+                else:
+                    salary = price = 0.0
 
         # v2.4.3: optional per-team tag for per-brigade mode
         try:
@@ -646,10 +761,10 @@ async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: s
             team_id = None
         await db.conn.execute(
             """INSERT INTO application_extra_works
-               (application_id, extra_work_id, custom_name, unit, volume,
+               (application_id, extra_work_id, kp_id, custom_name, unit, volume,
                 salary, price, filled_by_user_id, filled_at, team_id, is_additional)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
-            (app_id, extra_work_id, custom_name, unit, volume, salary, price, tg_id, now, team_id),
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0)""",
+            (app_id, extra_work_id, kp_id, custom_name, unit, volume, salary, price, tg_id, now, team_id),
         )
     await db.conn.commit()
 
@@ -676,12 +791,15 @@ async def _insert_additional_kp(app_id: int, items: list, tg_id: int, now: str) 
                     'salary': float(r[2]) if r[2] is not None else 0.0,
                     'price': float(r[3]) if r[3] is not None else 0.0,
                 }
+    unknown_kp_ids = sorted(set(kp_ids) - set(lookup))
+    if unknown_kp_ids:
+        raise SmrNumberError("Работа отсутствует в текущем справочнике")
     n = 0
     for item in items:
         try:
-            volume = float(item.get('volume') or 0)
+            volume = float(decimal_value(item.get('volume'), field='Объём работы'))
         except (TypeError, ValueError):
-            volume = 0.0
+            raise
         if volume <= 0:
             continue
         kp_id = int(item.get('kp_id') or 0)
@@ -729,12 +847,34 @@ async def _insert_additional_extras(app_id: int, items: list, tg_id: int, role: 
                     'salary': float(r[3]) if r[3] is not None else 0.0,
                     'price': float(r[4]) if r[4] is not None else 0.0,
                 }
+    legacy_ids = []
+    for it in items:
+        try:
+            legacy_id = int(it.get('extra_work_id') or 0)
+            if legacy_id > 0:
+                legacy_ids.append(legacy_id)
+        except (TypeError, ValueError):
+            pass
+    legacy_catalog = {}
+    if legacy_ids:
+        pl = ",".join("?" * len(legacy_ids))
+        async with db.conn.execute(
+            f"SELECT id,name,unit,salary,price FROM extra_works_catalog WHERE id IN ({pl})",
+            legacy_ids,
+        ) as cur:
+            for r in await cur.fetchall():
+                legacy_catalog[int(r[0])] = {
+                    'name': r[1] or '', 'unit': (r[2] or '').strip(),
+                    'salary': float(r[3] or 0), 'price': float(r[4] or 0),
+                }
+    if set(kp_ids) - set(catalog) or set(legacy_ids) - set(legacy_catalog):
+        raise SmrNumberError("Дополнительная работа отсутствует в текущем справочнике")
     n = 0
     for it in items:
         try:
-            volume = float(it.get('volume') or 0)
+            volume = float(decimal_value(it.get('volume'), field='Объём доп. работы'))
         except (TypeError, ValueError):
-            volume = 0.0
+            raise
         if volume <= 0:
             continue
         try:
@@ -748,14 +888,19 @@ async def _insert_additional_extras(app_id: int, items: list, tg_id: int, role: 
             extra_work_id = 0
         else:
             extra_work_id = int(it.get('extra_work_id') or 0)
-            custom_name = it.get('custom_name') or ''
-            unit = it.get('unit') or ''
-            try:
-                salary = float(it.get('salary') or 0)
-                price = float(it.get('price') or 0)
-            except (TypeError, ValueError):
-                salary = 0.0
-                price = 0.0
+            legacy_meta = legacy_catalog.get(extra_work_id)
+            if legacy_meta:
+                custom_name, unit = legacy_meta['name'], legacy_meta['unit']
+                salary, price = legacy_meta['salary'], legacy_meta['price']
+            elif role in ('moderator', 'boss', 'superadmin', 'hr'):
+                custom_name = (it.get('custom_name') or '').strip()
+                unit = (it.get('unit') or '').strip()
+                if not custom_name:
+                    raise SmrNumberError("Укажите название произвольной доп. работы")
+                salary = float(money_value(it.get('salary'), field='Расценка ЗП'))
+                price = float(money_value(it.get('price'), field='Цена'))
+            else:
+                raise SmrNumberError("Произвольную доп. работу должен добавить сотрудник офиса")
         try:
             team_id_raw = it.get('team_id')
             team_id = int(team_id_raw) if team_id_raw else None
@@ -765,10 +910,10 @@ async def _insert_additional_extras(app_id: int, items: list, tg_id: int, role: 
             team_id = None
         await db.conn.execute(
             """INSERT INTO application_extra_works
-               (application_id, extra_work_id, custom_name, unit, volume,
+               (application_id, extra_work_id, kp_id, custom_name, unit, volume,
                 salary, price, filled_by_user_id, filled_at, team_id, is_additional)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
-            (app_id, extra_work_id, custom_name, unit, volume, salary, price, tg_id, now, team_id),
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+            (app_id, extra_work_id, kp_id, custom_name, unit, volume, salary, price, tg_id, now, team_id),
         )
         n += 1
     return n
@@ -783,9 +928,12 @@ async def _insert_additional_hours(app_id: int, items: list, tg_id: int, now: st
         try:
             team_id = int(it['team_id'])
             member_id = int(it['user_id'])
-            hours = float(it.get('hours') or 0)
-        except (KeyError, TypeError, ValueError):
-            continue
+            hours = float(decimal_value(
+                it.get('hours'), field='Часы', maximum=MAX_HOURS_PER_ROW
+            ))
+        except (KeyError, TypeError, ValueError) as exc:
+            from smr_calculations import SmrNumberError
+            raise SmrNumberError('Часы: передано некорректное значение') from exc
         if hours <= 0:
             continue
         await db.conn.execute(
@@ -810,7 +958,7 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
     from datetime import datetime as _dt
 
     role = current_user.get('role', 'worker')
-    if role not in ('brigadier', 'foreman', 'moderator', 'boss', 'superadmin'):
+    if role not in ('brigadier', 'foreman', 'moderator', 'boss', 'superadmin', 'hr'):
         raise HTTPException(403, "Нет прав для создания доп. отчёта")
 
     data = await request.json()
@@ -834,18 +982,20 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
 
     now = _dt.now().isoformat(timespec='seconds')
     n_works = n_extras = n_hours = 0
+    group_ids = await _expand_merge_group(app_id)
+    write_app_id = group_ids[0] if group_ids else app_id
 
     works = data.get('works') or []
     if user_team_ids is not None:
         works = [w for w in works if int(w.get('team_id') or 0) in user_team_ids]
     if works:
-        n_works = await _insert_additional_kp(app_id, works, tg_id, now)
+        n_works = await _insert_additional_kp(write_app_id, works, tg_id, now)
 
     extras = data.get('extra_works') or []
     if user_team_ids is not None:
         extras = [e for e in extras if int(e.get('team_id') or 0) in user_team_ids]
     if extras:
-        n_extras = await _insert_additional_extras(app_id, extras, tg_id, role, now)
+        n_extras = await _insert_additional_extras(write_app_id, extras, tg_id, role, now)
 
     hours_items = data.get('hours') or []
     # Same ad-hoc guard as the main submit: a brigadier cannot inject a
@@ -854,7 +1004,7 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
     if user_team_ids is not None:
         hours_items = [h for h in hours_items if int(h.get('team_id') or 0) in user_team_ids]
     if hours_items:
-        n_hours = await _insert_additional_hours(app_id, hours_items, tg_id, now)
+        n_hours = await _insert_additional_hours(write_app_id, hours_items, tg_id, now)
 
     # Any non-empty addendum means the external office program may be stale.
     if n_works or n_extras or n_hours:
@@ -868,6 +1018,19 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
         f"(работ: {n_works}, доп: {n_extras}, часов: {n_hours})",
         target_type='smr', target_id=app_id,
     )
+    if n_works or n_extras or n_hours:
+        marks = ','.join('?' * len(group_ids))
+        async with db.conn.execute(
+            f"SELECT DISTINCT foreman_id FROM applications WHERE id IN ({marks})",
+            tuple(group_ids),
+        ) as cur:
+            foreman_ids = [int(r[0]) for r in await cur.fetchall() if r[0] and int(r[0]) != int(tg_id)]
+        asyncio.create_task(notify_users(
+            ["moderator", "boss", "superadmin", "hr"],
+            f"➕ <b>Добавлен доп. отчёт СМР №{app_id}</b>\n👤 {fio or 'Пользователь'}\n"
+            f"Работ: {n_works} · Доп. работ: {n_extras} · Записей часов: {n_hours}",
+            "kp", extra_tg_ids=foreman_ids, category="reports", event_key="smr_addendum",
+        ))
     return {"status": "ok", "works": n_works, "extra_works": n_extras, "hours": n_hours}
 
 
@@ -875,33 +1038,40 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
 async def review_smr(app_id: int, request: Request, current_user=Depends(get_current_user)):
     """Foreman reviews a brigadier's SMR submission.
     Body: {action: 'approve' | 'edit', hours?, works?, extra_works?}"""
-    if current_user.get('role') not in ('foreman', 'moderator', 'boss', 'superadmin'):
+    if current_user.get('role') not in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'):
         raise HTTPException(403, "Только прораб может проверять СМР")
 
     data = await request.json()
     action = data.get('action', 'approve')
     tg_id = current_user['tg_id']
     role = current_user.get('role')
+    group_ids = await _expand_merge_group(app_id)
+    write_app_id = group_ids[0] if group_ids else app_id
 
     if action == 'edit':
         # Reviewer is foreman+ (role-gated above), so the write scope is the
         # payload's concrete teams plus the common bucket — non-destructive
         # toward brigades not present in this review payload.
         if data.get('hours'):
-            await db.save_app_hours(app_id, data['hours'], tg_id)
+            hours_scope = _compute_write_scope(role, None, data['hours'])
+            await _clear_group_main_rows('application_hours', 'app_id', group_ids, hours_scope)
+            await db.save_app_hours(write_app_id, data['hours'], tg_id)
         if 'works' in data:
             works = data.get('works') or []
             scope = _compute_write_scope(role, None, works)
-            await db.submit_kp_report(app_id, works, role, filled_by_user_id=tg_id, team_scope=scope)
+            await _clear_group_main_rows('application_kp', 'application_id', group_ids, scope)
+            await db.submit_kp_report(write_app_id, works, role, filled_by_user_id=tg_id, team_scope=scope)
         if 'extra_works' in data:
             extras = data.get('extra_works') or []
             scope = _compute_write_scope(role, None, extras)
-            await _save_extra_works_inline(app_id, extras, tg_id, role, team_scope=scope)
+            await _clear_group_main_rows('application_extra_works', 'application_id', group_ids, scope)
+            await _save_extra_works_inline(write_app_id, extras, tg_id, role, team_scope=scope)
         await _reset_smr_accounted(app_id)
 
+    marks = ','.join('?' * len(group_ids))
     await db.conn.execute(
-        "UPDATE applications SET smr_status = 'approved', kp_status = 'approved' WHERE id = ?",
-        (app_id,),
+        f"UPDATE applications SET smr_status = 'approved', kp_status = 'approved' WHERE id IN ({marks})",
+        tuple(group_ids),
     )
     await db.conn.commit()
 
@@ -960,7 +1130,7 @@ async def merge_smr_apps(request: Request, current_user=Depends(get_current_user
         kp = (r.get('kp_status') or '').strip()
         if smr in ('pending_review', 'approved') or kp == 'approved':
             raise HTTPException(400, f"Заявка №{r['id']} уже заполнена и не может быть объединена")
-        if role in ('moderator', 'boss', 'superadmin'):
+        if role in ('moderator', 'boss', 'superadmin', 'hr'):
             continue
         if role == 'foreman':
             if int(r.get('foreman_id') or 0) != int(tg_id):
@@ -1035,7 +1205,7 @@ async def unmerge_smr_app(request: Request, current_user=Depends(get_current_use
     kp = (r.get('kp_status') or '').strip()
     if smr in ('pending_review', 'approved') or kp == 'approved':
         raise HTTPException(400, "Заявка уже заполнена — нельзя отменить объединение")
-    if role not in ('moderator', 'boss', 'superadmin'):
+    if role not in ('moderator', 'boss', 'superadmin', 'hr'):
         if role == 'foreman':
             if int(r.get('foreman_id') or 0) != int(tg_id):
                 raise HTTPException(403, "Нет доступа к этой заявке")
@@ -1110,7 +1280,7 @@ async def get_smr_list(current_user=Depends(get_current_user)):
 
     # Filter by role scope
     def _is_accessible(app: dict) -> bool:
-        if role in ('moderator', 'boss', 'superadmin'):
+        if role in ('moderator', 'boss', 'superadmin', 'hr'):
             return True
         if role == 'foreman':
             return int(app.get('foreman_id') or 0) == int(tg_id)
@@ -1196,10 +1366,38 @@ async def get_smr_list(current_user=Depends(get_current_user)):
         reverse=True,
     )
 
+    def _collapse_completed_group(bucket: list[dict]) -> list[dict]:
+        """One card per logical report in every SMR tab, not only to-fill."""
+        by_group: dict[str, list[dict]] = {}
+        plain: list[dict] = []
+        for item in bucket:
+            gid = (item.get('smr_group_id') or '').strip()
+            (by_group.setdefault(gid, []).append(item) if gid else plain.append(item))
+        result = list(plain)
+        for members in by_group.values():
+            members.sort(key=lambda x: int(x.get('id') or 0))
+            primary = dict(members[0])
+            if len(members) > 1:
+                primary['merged_with'] = [
+                    {'id': m['id'], 'date_target': m.get('date_target'),
+                     'object_id': m.get('object_id'), 'object_name': m.get('object_name'),
+                     'object_address': m.get('object_address') or m.get('object_clean_address')}
+                    for m in members[1:]
+                ]
+                # Accounting is a group-level state. It is true only when all
+                # applications have the marker (migration-safe behaviour).
+                if not all(m.get('smr_accounted_at') for m in members):
+                    primary['smr_accounted_at'] = None
+                    primary['smr_accounted_by'] = None
+                    primary['smr_accounted_by_fio'] = None
+            result.append(primary)
+        result.sort(key=lambda x: (x.get('date_target') or '', int(x.get('id') or 0)), reverse=True)
+        return result
+
     return {
         'to_fill': collapsed,
-        'pending': pending,
-        'completed': completed,
+        'pending': _collapse_completed_group(pending),
+        'completed': _collapse_completed_group(completed),
     }
 
 
@@ -1220,6 +1418,10 @@ async def set_smr_accounted(request: Request, current_user=Depends(_require_offi
 
     if db.conn is None:
         await db.init_db()
+    expanded_ids: set[int] = set()
+    for selected_id in app_ids:
+        expanded_ids.update(await _expand_merge_group(selected_id))
+    app_ids = sorted(expanded_ids or set(app_ids))
     placeholders = ",".join("?" * len(app_ids))
     async with db.conn.execute(
         f"SELECT id, smr_status, kp_status FROM applications "
@@ -1265,6 +1467,17 @@ async def set_smr_accounted(request: Request, current_user=Depends(_require_offi
         target_type="smr",
         details=json.dumps({"app_ids": app_ids, "accounted": accounted}, ensure_ascii=False),
     )
+    async with db.conn.execute(
+        f"SELECT DISTINCT foreman_id FROM applications WHERE id IN ({placeholders})",
+        tuple(app_ids),
+    ) as cur:
+        recipients = [int(r[0]) for r in await cur.fetchall() if r[0] and int(r[0]) != int(current_user['tg_id'])]
+    if recipients:
+        verb = "учтено" if accounted else "возвращено из учтённых"
+        asyncio.create_task(notify_users(
+            [], f"🧾 <b>СМР {verb}</b>\n" + ", ".join(f"№{value}" for value in app_ids),
+            "kp", extra_tg_ids=recipients, category="reports", event_key="smr_accounted",
+        ))
     return {"status": "ok", "updated": len(app_ids), "accounted": accounted}
 
 
@@ -1292,7 +1505,10 @@ async def download_smr_report(app_id: int, current_user=Depends(get_current_user
     group_ids = await _expand_merge_group(app_id)
     report_app_id = group_ids[0] if group_ids else app_id
 
-    blob, filename = await generate_smr_excel_bytes(db, report_app_id)
+    include_financial = current_user.get('role') in ('moderator', 'boss', 'superadmin', 'hr')
+    blob, filename = await generate_smr_excel_bytes(
+        db, report_app_id, include_financial=include_financial
+    )
     headers = {
         "Content-Disposition": (
             f"attachment; filename*=UTF-8''{quote(filename)}"
@@ -1356,6 +1572,28 @@ async def review_app_kp(app_id: int, request: Request, current_user=Depends(_req
             if r: _obj = r[0]
     except Exception: pass
     await db.add_log(real_tg_id, fio, f"{action_label} СМР ({_obj})" if _obj else f"{action_label} СМР по заявке №{app_id}", target_type='smr', target_id=app_id)
+
+    group_ids = await _expand_merge_group(app_id)
+    marks = ",".join("?" * len(group_ids))
+    async with db.conn.execute(
+        f"SELECT DISTINCT foreman_id FROM applications WHERE id IN ({marks})",
+        tuple(group_ids),
+    ) as cur:
+        recipients = [
+            int(row[0]) for row in await cur.fetchall()
+            if row[0] and int(row[0]) != int(real_tg_id)
+        ]
+    if action in ("approve", "reject"):
+        approved = action == "approve"
+        title = "✅ СМР одобрено" if approved else "↩️ СМР возвращено"
+        asyncio.create_task(notify_users(
+            [],
+            f"{title}: №{app_id}\n👤 Проверил: {fio or 'Пользователь'}",
+            "kp",
+            extra_tg_ids=recipients,
+            category="reports",
+            event_key="smr_approved" if approved else "smr_rejected",
+        ))
     return {"status": "ok"}
 
 
@@ -1371,7 +1609,18 @@ async def update_kp_volumes(app_id: int, request: Request, current_user=Depends(
 @router.post("/api/kp/export")
 async def export_kp_mass(request: Request, current_user=Depends(_require_office)):
     data = await request.json()
-    excel_io = await db.generate_mass_excel(data.get('app_ids', []))
+    raw_ids = data.get("app_ids") or []
+    if not isinstance(raw_ids, list):
+        raise HTTPException(400, "app_ids должен быть списком чисел")
+    try:
+        app_ids = sorted({int(value) for value in raw_ids if int(value) > 0})
+    except (TypeError, ValueError):
+        raise HTTPException(400, "app_ids должен быть списком чисел")
+    if not app_ids:
+        raise HTTPException(400, "Выберите хотя бы одну заявку")
+    if len(app_ids) > 500:
+        raise HTTPException(400, "За один раз можно выгрузить не более 500 заявок")
+    excel_io = await db.generate_mass_excel(app_ids)
     if not excel_io: raise HTTPException(404, "Данные не найдены")
     return StreamingResponse(excel_io, media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                              headers={
@@ -1494,7 +1743,13 @@ async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_
 
     success = await db.import_kp_from_excel(new_path)
     if not success:
-        raise HTTPException(500, "Ошибка при разборе файла. Проверьте структуру колонок.")
+        report = getattr(db, "last_kp_import_report", {}) or {}
+        errors = report.get("errors") or ["Проверьте структуру колонок"]
+        try:
+            os.remove(new_path)
+        except OSError:
+            pass
+        raise HTTPException(422, "Справочник не загружен: " + "; ".join(errors[:5]))
 
     rows_count = 0
     try:
@@ -1517,4 +1772,7 @@ async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_
             "rows_count": rows_count,
         }, ensure_ascii=False),
     )
-    return {"status": "ok", "file": file_name, "rows": rows_count}
+    return {
+        "status": "ok", "file": file_name, "rows": rows_count,
+        "import": getattr(db, "last_kp_import_report", {}),
+    }

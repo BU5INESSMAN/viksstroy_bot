@@ -276,13 +276,16 @@ CREATE TABLE IF NOT EXISTS application_extra_works (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     application_id INTEGER,
     extra_work_id INTEGER,
+    kp_id INTEGER,
     custom_name TEXT DEFAULT '',
+    unit TEXT DEFAULT '',
     volume REAL DEFAULT 0,
     salary REAL DEFAULT 0,
     price REAL DEFAULT 0,
     is_additional INTEGER DEFAULT 0,
     FOREIGN KEY (application_id) REFERENCES applications(id),
-    FOREIGN KEY (extra_work_id) REFERENCES extra_works_catalog(id)
+    FOREIGN KEY (extra_work_id) REFERENCES extra_works_catalog(id),
+    FOREIGN KEY (kp_id) REFERENCES kp_catalog(id)
 );
 
 -- Глобальный справочник КП (Прайс-лист)
@@ -370,3 +373,8 @@ CREATE TABLE IF NOT EXISTS equipment_exchanges (
     FOREIGN KEY (requested_equip_id) REFERENCES equipment(id),
     FOREIGN KEY (offered_equip_id) REFERENCES equipment(id)
 );
+
+-- Дополнительные работы. `kp_id` is the authoritative source when the row
+-- was selected from the main KP catalog; `extra_work_id` is retained only
+-- for the legacy extra-work catalog. Prices remain snapshots on this row.
+CREATE INDEX IF NOT EXISTS idx_application_kp_app ON application_kp(application_id);

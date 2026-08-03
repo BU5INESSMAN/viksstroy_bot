@@ -6,7 +6,7 @@ import ModalPortal from '../../../components/ui/ModalPortal';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const ROLE_NAMES = { superadmin: 'Супер-Админ', boss: 'Директор', moderator: 'Модератор', foreman: 'Прораб', brigadier: 'Бригадир', worker: 'Рабочий', driver: 'Водитель' };
+const ROLE_NAMES = { superadmin: 'Супер-Админ', boss: 'Директор', moderator: 'Модератор', hr: 'Отдел кадров', foreman: 'Прораб', brigadier: 'Бригадир', worker: 'Рабочий', driver: 'Водитель' };
 const ROLE_COLORS = { superadmin: 'text-red-500', boss: 'text-orange-500', moderator: 'text-yellow-600 dark:text-yellow-400', foreman: 'text-blue-500', brigadier: 'text-cyan-500', worker: 'text-emerald-500', driver: 'text-emerald-600 dark:text-emerald-400' };
 
 export default function OnlineUsersModal({ isOpen, onClose }) {

@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
-    Users, Link, UserPlus, User, UserMinus, Star, Trash2, X, Palette
+    Users, Link, UserPlus, User, UserMinus, Star, Trash2, X, Palette, Pencil
 } from 'lucide-react';
 import MemberStatusModal from './MemberStatusModal';
+import MemberEditModal from './MemberEditModal';
 import IconPicker from '../../../components/ui/IconPicker';
 import { TEAM_ICONS, getIconComponent, DEFAULT_TEAM_ICON } from '../../../utils/iconConfig';
 import ModalPortal from '../../../components/ui/ModalPortal';
@@ -23,6 +24,7 @@ const formatShortDate = (dateStr) => {
 
 export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen, manageTeamData, canManage, generateInvite, newMember, setNewMember, handleAddMember, toggleForeman, handleUnlinkMember, deleteMember, openProfile, tgId, onRefresh }) {
     const [statusMember, setStatusMember] = useState(null);
+    const [editMember, setEditMember] = useState(null);
     const [iconKey, setIconKey] = useState(manageTeamData?.icon || null);
     const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
@@ -124,6 +126,9 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
 
                                             {canManage && (
                                                 <div className="flex flex-wrap gap-2 sm:ml-auto sm:flex-shrink-0">
+                                                    <button type="button" onClick={() => setEditMember(m)} className="bg-indigo-50 text-indigo-700 dark:bg-indigo-900/20 dark:text-indigo-400 px-3.5 py-2 rounded-xl text-xs font-bold hover:bg-indigo-100 dark:hover:bg-indigo-900/40 transition-colors flex items-center gap-1.5 shadow-sm active:scale-95">
+                                                        <Pencil className="w-3.5 h-3.5" /> Изменить
+                                                    </button>
                                                     <button type="button" onClick={() => { setManageModalOpen(false); openProfile(m.tg_user_id, 'member', m.id); }} className="bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-400 px-3.5 py-2 rounded-xl text-xs font-bold hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors flex items-center gap-1.5 shadow-sm active:scale-95">
                                                         <User className="w-3.5 h-3.5" /> Профиль
                                                     </button>
@@ -185,6 +190,13 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
                     onClose={() => setStatusMember(null)}
                     member={statusMember}
                     tgId={tgId}
+                    onSaved={onRefresh}
+                />
+            )}
+            {canManage && (
+                <MemberEditModal
+                    member={editMember}
+                    onClose={() => setEditMember(null)}
                     onSaved={onRefresh}
                 />
             )}

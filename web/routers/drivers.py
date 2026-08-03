@@ -29,7 +29,7 @@ from fastapi import APIRouter, Depends, HTTPException, Form, Query
 from pydantic import BaseModel
 
 from database_deps import db, TZ_BARNAUL
-from auth_deps import get_current_user, require_office
+from auth_deps import get_current_user, require_office, require_role
 from utils import normalize_invite_code
 from services.notifications import notify_users
 from services import driver_service
@@ -278,7 +278,7 @@ async def api_get_driver(user_id: int, current_user=Depends(get_current_user)):
 
 @router.post("/api/drivers")
 async def api_create_driver(
-    payload: DriverIn, current_user=Depends(require_office),
+    payload: DriverIn, current_user=Depends(require_role("superadmin", "boss", "moderator", "hr")),
 ):
     if not payload.last_name.strip() or not payload.first_name.strip():
         raise HTTPException(status_code=400, detail="Фамилия и имя обязательны")
@@ -287,13 +287,16 @@ async def api_create_driver(
             status_code=400, detail="Укажите хотя бы одну категорию",
         )
     try:
+        default_equipment_id = (
+            None if current_user.get('role') == 'hr' else payload.default_equipment_id
+        )
         driver = await driver_service.create_driver(
             db,
             last_name=payload.last_name,
             first_name=payload.first_name,
             middle_name=payload.middle_name or "",
             categories=payload.categories,
-            default_equipment_id=payload.default_equipment_id,
+            default_equipment_id=default_equipment_id,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -308,7 +311,7 @@ async def api_create_driver(
 
 @router.patch("/api/drivers/{user_id}")
 async def api_update_driver(
-    user_id: int, payload: DriverPatch, current_user=Depends(require_office),
+    user_id: int, payload: DriverPatch, current_user=Depends(require_role("superadmin", "boss", "moderator", "hr")),
 ):
     # v2.6: `default_equipment_id` is still accepted in the PATCH body
     # for legacy clients (the field hasn't been dropped from the schema
@@ -335,6 +338,8 @@ async def api_update_driver(
         if k in body:
             kwargs[k] = body[k]
     if "default_equipment_id" in body:
+        if current_user.get('role') == 'hr':
+            raise HTTPException(403, "Отдел кадров не управляет назначением техники")
         kwargs["default_equipment_id"] = body["default_equipment_id"]
 
     updated = await driver_service.update_driver(db, user_id, **kwargs)
@@ -360,7 +365,7 @@ async def update_driver_status(
     included), so the check is inline rather than via the office dependency.
     Status enum matches brigade members exactly: available / vacation / sick.
     """
-    if current_user.get("role") not in ("foreman", "moderator", "boss", "superadmin"):
+    if current_user.get("role") not in ("foreman", "moderator", "boss", "superadmin", "hr"):
         raise HTTPException(403, "Только прораб и выше может менять статус водителя")
 
     if payload.status not in ("available", "vacation", "sick"):
@@ -403,12 +408,18 @@ async def update_driver_status(
             ensure_ascii=False,
         ),
     )
+    asyncio.create_task(notify_users(
+        ["hr"],
+        f"🏥 <b>Статус водителя изменён</b>\n👤 {drv_fio}\nСтатус: {label}{period}",
+        "equipment", extra_tg_ids=[user_id] if int(user_id) != int(current_user['tg_id']) else [],
+        category="reports", event_key="staff_status_changed",
+    ))
     return {"status": "ok"}
 
 
 @router.delete("/api/drivers/{user_id}")
 async def api_delete_driver(
-    user_id: int, current_user=Depends(require_office),
+    user_id: int, current_user=Depends(require_role("superadmin", "boss", "moderator", "hr")),
 ):
     existing = await driver_service.get_driver(db, user_id)
     if not existing:
@@ -424,7 +435,7 @@ async def api_delete_driver(
 
 @router.post("/api/drivers/{user_id}/regenerate-invite")
 async def api_regenerate_invite(
-    user_id: int, current_user=Depends(require_office),
+    user_id: int, current_user=Depends(require_role("superadmin", "boss", "moderator", "hr")),
 ):
     code = await driver_service.regenerate_invite(db, user_id)
     if not code:
@@ -484,7 +495,7 @@ async def api_redeem_driver_invite(
             await notify_users(
                 ["report_group", "boss", "superadmin"],
                 f"🔗 <b>Привязка водителя</b>\n👤 {fio}\n🕒 {now}",
-                "equipment", category="new_users",
+                "equipment", category="new_users", event_key="staff_changed",
             )
         except Exception as e:
             logger.error(f"driver redeem notification: {e}")

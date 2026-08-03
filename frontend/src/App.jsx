@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import axios from 'axios';
@@ -26,6 +26,7 @@ const AuthRedirect = lazy(() => import('./pages/AuthRedirect'));
 const Support = lazy(() => import('./pages/Support'));
 
 function ProtectedRoute({ children }) {
+  const location = useLocation();
   const [authState, setAuthState] = useState(() => {
     // Optimistic render: if localStorage already has auth markers, mount
     // the protected tree immediately to avoid a flash of the checking
@@ -114,6 +115,11 @@ function ProtectedRoute({ children }) {
       return <Navigate to={`/tma?return_to=${window.location.pathname}${window.location.hash}`} replace />;
     }
     return <Navigate to="/" replace />;
+  }
+
+  const role = localStorage.getItem('user_role');
+  if (role === 'hr' && ['/dashboard', '/review', '/my-apps', '/admin', '/system'].includes(location.pathname)) {
+    return <Navigate to="/objects" replace />;
   }
 
   return children;

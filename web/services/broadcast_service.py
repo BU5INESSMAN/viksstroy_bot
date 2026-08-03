@@ -21,7 +21,7 @@ async def broadcast_dm_roles(real_id: int, fio: str, message: str, roles: list):
     """Send a broadcast DM to users by roles."""
     text = f"📢 <b>Рассылка от {fio}:</b>\n\n{message}"
     try:
-        await notify_users(roles, text, "dashboard")
+        await notify_users(roles, text, "dashboard", event_key="broadcast")
         await db.add_log(real_id, fio, f"Отправил рассылку в ЛС (роли: {', '.join(roles)})", target_type='system')
     except Exception as e:
         logger.error(f"Broadcast DM roles error: {e}")
@@ -31,7 +31,7 @@ async def broadcast_dm_users(real_id: int, fio: str, message: str, user_ids: lis
     """Send a broadcast DM to specific users."""
     text = f"📢 <b>Рассылка от {fio}:</b>\n\n{message}"
     try:
-        await notify_users([], text, "dashboard", extra_tg_ids=user_ids)
+        await notify_users([], text, "dashboard", extra_tg_ids=user_ids, event_key="broadcast")
         await db.add_log(real_id, fio, f"Отправил рассылку в ЛС ({len(user_ids)} пользователей)", target_type='system')
     except Exception as e:
         logger.error(f"Broadcast DM users error: {e}")
@@ -47,7 +47,8 @@ async def run_test_notification(real_tg_id: int, fio: str, test_type: str, platf
             f"🧪 <b>Тест (Бригадир):</b> Вы назначены на смену завтра.\n📍 Объект: Тестовый объект\n⏰ Начало: 08:00 ({platform_name})",
             "my-apps",
             [real_tg_id],
-            target_platform=platform
+            target_platform=platform,
+            event_key="notification_test",
         )
 
     elif test_type == "resource_freed":
@@ -57,7 +58,8 @@ async def run_test_notification(real_tg_id: int, fio: str, test_type: str, platf
             "dashboard",
             [real_tg_id],
             target_platform=platform,
-            category="orders"
+            category="orders",
+            event_key="notification_test",
         )
 
     elif test_type == "schedule_published":
@@ -67,7 +69,8 @@ async def run_test_notification(real_tg_id: int, fio: str, test_type: str, platf
             "dashboard",
             [real_tg_id],
             target_platform=platform,
-            category="orders"
+            category="orders",
+            event_key="notification_test",
         )
 
     elif test_type == "kp_review":
@@ -77,7 +80,8 @@ async def run_test_notification(real_tg_id: int, fio: str, test_type: str, platf
             "kp",
             [real_tg_id],
             target_platform=platform,
-            category="reports"
+            category="reports",
+            event_key="notification_test",
         )
 
     elif test_type == "system_error":
@@ -93,7 +97,8 @@ async def run_test_notification(real_tg_id: int, fio: str, test_type: str, platf
             "system",
             extra_tg_ids=[real_tg_id],
             target_platform=platform,
-            category="errors"
+            category="errors",
+            event_key="notification_test",
         )
 
     else:

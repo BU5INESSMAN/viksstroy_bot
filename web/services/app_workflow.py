@@ -104,7 +104,7 @@ async def review_application(app_id: int, new_status: str, reason: str, tg_id: i
                     await db.resolve_exchange(ex['id'], 'expired')
                     asyncio.create_task(notify_users(
                         [], f"⚠️ Обмен отменён: заявка была одобрена модератором.",
-                        "dashboard", extra_tg_ids=[ex['requester_id'], ex['donor_id']]
+                        "dashboard", extra_tg_ids=[ex['requester_id'], ex['donor_id']], event_key="exchange_result"
                     ))
             except Exception as exc_err:
                 logger.error(f"Error cancelling exchanges on approve: {exc_err}")
@@ -135,7 +135,7 @@ async def send_review_notifications(app_id, app_dict, mod_fio, new_status, reaso
 
         msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Проверил: {mod_fio}\n📍 Объект: {app_dict['object_address']}\n🕒 Время: {now}"
         if reason: msg_group += f"\n💬 Причина: {reason}"
-        await notify_users(["report_group", "boss", "superadmin"], msg_group, "review", category="orders")
+        await notify_users(["report_group", "boss", "superadmin"], msg_group, "review", category="orders", event_key="app_status_changed")
 
         if new_status in ['approved', 'rejected', 'waiting']:
             if new_status == 'waiting':
@@ -145,7 +145,8 @@ async def send_review_notifications(app_id, app_dict, mod_fio, new_status, reaso
             else:
                 msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
             if reason: msg_foreman += f"\n💬 Причина: {reason}"
-            await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']], category="orders")
+            status_event = "app_approved" if new_status == "approved" else "app_rejected" if new_status == "rejected" else "app_status_changed"
+            await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']], category="orders", event_key=status_event)
 
             if new_status == 'approved':
                 workers_ids = []
@@ -173,7 +174,7 @@ async def send_review_notifications(app_id, app_dict, mod_fio, new_status, reaso
                 all_involved = list(set(workers_ids + drivers_ids))
                 if all_involved:
                     msg_inv = f"👷‍♂️ <b>Вас добавили в наряд! (Предварительная бронь)</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}\n\nОжидайте публикации наряда."
-                    await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved, category="orders")
+                    await notify_users([], msg_inv, "my-apps", extra_tg_ids=all_involved, category="orders", event_key="app_assignment")
     except Exception as e:
         logger.error(f"Background notification error for app #{app_id}: {e}")
 
@@ -232,7 +233,7 @@ async def send_status_change_notification(app_id, app_dict, new_status):
     try:
         label = STATUS_LABELS.get(new_status, new_status)
         msg = f"📋 Статус заявки «{app_dict.get('object_address', '—')}» изменён на «{label}»"
-        await notify_users([], msg, "my-apps", extra_tg_ids=[app_dict['foreman_id']], category="orders")
+        await notify_users([], msg, "my-apps", extra_tg_ids=[app_dict['foreman_id']], category="orders", event_key="app_status_changed")
     except Exception as e:
         logger.error(f"Background notification error for status change app #{app_id}: {e}")
 
@@ -464,7 +465,7 @@ async def send_remind_notification(app_dict):
         date_target = app_dict.get('date_target', '')
         foreman_id = app_dict.get('foreman_id')
         msg = f"⚠️ <b>Напоминание:</b> Необходимо заполнить СМР по объекту <b>{object_name}</b> на дату <b>{date_target}</b>"
-        await notify_users([], msg, "kp", extra_tg_ids=[foreman_id], category="reports")
+        await notify_users([], msg, "kp", extra_tg_ids=[foreman_id], category="reports", event_key="smr_debt")
     except Exception as e:
         logger.error(f"Error sending SMR reminder for app #{app_dict.get('id')}: {e}")
     # v2.5: brigadiers of the involved teams get the same reminder, scoped

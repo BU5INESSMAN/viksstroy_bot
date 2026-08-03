@@ -13,9 +13,9 @@ const STATUS_ROLES = ['foreman', 'moderator', 'boss', 'superadmin'];
 
 export default function Drivers() {
     const role = localStorage.getItem('user_role') || 'Гость';
-    const canManage = isOffice(role);
+    const canManage = isOffice(role) || role === 'hr';
     // v2.8: driver status change is foreman+ (broader than office).
-    const canStatus = STATUS_ROLES.includes((role || '').toLowerCase());
+    const canStatus = STATUS_ROLES.includes((role || '').toLowerCase()) || role === 'hr';
 
     const [drivers, setDrivers] = useState([]);
     const [categories, setCategories] = useState([]);

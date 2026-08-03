@@ -28,12 +28,20 @@ def build_push_payload(notification_type: str, body: str, url: str = "/") -> dic
 
     Falls back to a generic ВиКС template if the type is unknown.
     """
-    template = PUSH_TEMPLATES.get(notification_type, {"title": "ВиКС Расписание", "icon": "/main.png"})
+    template = PUSH_TEMPLATES.get(notification_type)
+    if template is None:
+        try:
+            from notification_events import EVENTS
+            event = EVENTS.get(notification_type)
+            template = {"title": event[1], "icon": "/main.png"} if event else None
+        except Exception:
+            template = None
+    template = template or {"title": "ВиКС Расписание", "icon": "/main.png"}
     return {
         "title": template["title"],
         "body": body,
         "icon": template["icon"],
         "badge": "/push-icons/badge.png",
         "url": url,
-        "tag": notification_type,
+        "tag": notification_type or "viks-generic",
     }

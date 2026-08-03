@@ -10,10 +10,11 @@ from fastapi.responses import JSONResponse
 import asyncio
 
 from database_deps import db, TZ_BARNAUL
-from services.notifications import notify_users
 from services.publish_service import execute_app_publish
 from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system, exchange, support, push, drivers
 from scheduler import start_scheduler
+from smr_calculations import SmrNumberError
+from system_monitoring import notify_system_incident
 
 # --- File-based logging for server-logs endpoint ---
 os.makedirs("data", exist_ok=True)
@@ -126,23 +127,67 @@ app.include_router(push.router)
 app.include_router(drivers.router)
 
 
+@app.get("/api/health", include_in_schema=False)
+async def healthcheck():
+    """Lightweight public liveness plus DB/scheduler readiness."""
+    import time
+    db_ok = False
+    scheduler_last_success = None
+    try:
+        async with db.conn.execute("SELECT 1") as cur:
+            db_ok = bool(await cur.fetchone())
+        async with db.conn.execute(
+            "SELECT last_success_at FROM system_heartbeats WHERE component='scheduler'"
+        ) as cur:
+            row = await cur.fetchone()
+            scheduler_last_success = row[0] if row else None
+    except Exception:
+        db_ok = False
+    status = "ok" if db_ok else "degraded"
+    return JSONResponse(
+        status_code=200 if db_ok else 503,
+        content={
+            "status": status,
+            "database": "ok" if db_ok else "error",
+            "scheduler_last_success": scheduler_last_success,
+            "version": os.getenv("APP_VERSION", "dev"),
+            "commit": os.getenv("GIT_COMMIT", "unknown")[:12],
+            "timestamp": int(time.time()),
+        },
+    )
+
+
+@app.exception_handler(SmrNumberError)
+async def smr_number_exception_handler(_request: Request, exc: SmrNumberError):
+    """Business-input errors are client errors, never system incidents."""
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     try:
-        import asyncio
-        last_action = str(request.url)
-        last_user = "Неизвестно"
-        err_msg = f"🚨 <b>ОШИБКА СИСТЕМЫ (500)</b>\n\n👤 <b>Юзер:</b> {last_user}\n👣 <b>Действие:</b> {last_action}\n❌ <b>Ошибка:</b> {str(exc)}"
+        user_id = None
+        token = request.cookies.get("session_token")
+        if token:
+            user_id = await _resolve_user_from_session(token)
+        fingerprint = f"{request.method}:{request.url.path}:{type(exc).__name__}"
 
         async def _send_error_notification():
             try:
-                await notify_users(["report_group", "superadmin"], err_msg, "system", category="errors")
+                await notify_system_incident(
+                    db,
+                    event_key="system_error",
+                    title="Ошибка приложения (500)",
+                    component=fingerprint,
+                    details=f"Пользователь: {user_id or 'не определён'}; {str(exc)[:500]}",
+                )
             except Exception:
-                pass
+                logging.exception("Failed to dispatch system incident")
 
         asyncio.create_task(_send_error_notification())
-    except: pass
-    return JSONResponse(status_code=500, content={"detail": f"Внутренняя ошибка сервера"})
+    except Exception:
+        logging.exception("Failed to prepare system incident")
+    return JSONResponse(status_code=500, content={"detail": "Внутренняя ошибка сервера"})
 
 @app.on_event("startup")
 async def startup():

@@ -76,7 +76,7 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
         fio = w_row[0] if w_row else f"Рабочий {real_tg_id}"
     if not user:
         await db.add_user(real_tg_id, fio, "worker")
-    elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin']:
+    elif user['role'] not in ['foreman', 'moderator', 'boss', 'superadmin', 'hr']:
         await db.update_user_role(real_tg_id, "worker")
     await db.conn.commit()
 
@@ -92,7 +92,7 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
         try:
             await notify_users(["report_group", "boss", "superadmin"],
                                f"🔗 <b>Привязка аккаунта (Бригада)</b>\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team['name']}»\n🕒 Время: {now}",
-                               "teams", category="new_users")
+                               "teams", category="new_users", event_key="staff_changed")
         except Exception as e:
             logger.error(f"Team join notification error: {e}")
 
@@ -101,7 +101,10 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
 
 
 @router.post("/api/teams/create")
-async def create_team(name: str = Form(...), current_user=Depends(_require_office)):
+async def create_team(
+    name: str = Form(...),
+    current_user=Depends(require_role("superadmin", "boss", "moderator", "hr")),
+):
     fio = current_user.get("fio", "Пользователь")
     tg_id = current_user["tg_id"]
 
@@ -114,7 +117,7 @@ async def create_team(name: str = Form(...), current_user=Depends(_require_offic
     async def _send_create_team_notification():
         try:
             await notify_users(["report_group", "boss", "superadmin"],
-                               f"🏗 <b>Новая бригада</b>\n👤 Создал: {fio}\n📍 Название: «{name}»\n🕒 Время: {now}", "teams", category="orders")
+                               f"🏗 <b>Новая бригада</b>\n👤 Создал: {fio}\n📍 Название: «{name}»\n🕒 Время: {now}", "teams", category="orders", event_key="team_changed")
         except Exception as e:
             logger.error(f"Team create notification error: {e}")
 
@@ -233,7 +236,7 @@ async def get_team_details(
 async def add_team_member(team_id: int, fio: str = Form(...), position: str = Form(...), is_foreman: int = Form(0),
                           current_user=Depends(get_current_user)):
     role = current_user.get("role")
-    is_office = role in ("superadmin", "boss", "moderator")
+    is_office = role in ("superadmin", "boss", "moderator", "hr")
     if not is_office and role != "foreman":
         raise HTTPException(403, "Недостаточно прав")
 
@@ -255,7 +258,7 @@ async def add_team_member(team_id: int, fio: str = Form(...), position: str = Fo
 @router.post("/api/teams/members/{member_id}/toggle_foreman")
 async def toggle_foreman(member_id: int, is_foreman: int = Form(...), current_user=Depends(get_current_user)):
     role = current_user.get("role")
-    is_office = role in ("superadmin", "boss", "moderator")
+    is_office = role in ("superadmin", "boss", "moderator", "hr")
     if not is_office and role != "foreman":
         raise HTTPException(403, "Недостаточно прав")
 
@@ -282,7 +285,7 @@ async def toggle_foreman(member_id: int, is_foreman: int = Form(...), current_us
 @router.post("/api/teams/members/{member_id}/unlink")
 async def unlink_team_member(member_id: int, current_user=Depends(get_current_user)):
     role = current_user.get("role")
-    if role not in ('superadmin', 'boss', 'moderator', 'foreman'):
+    if role not in ('superadmin', 'boss', 'moderator', 'hr', 'foreman'):
         raise HTTPException(status_code=403, detail="Нет прав")
     try:
         await db.conn.execute("UPDATE team_members SET tg_user_id = NULL WHERE id = ?", (member_id,))
@@ -296,7 +299,7 @@ async def unlink_team_member(member_id: int, current_user=Depends(get_current_us
 @router.post("/api/teams/members/{member_id}/delete")
 async def delete_team_member(member_id: int, current_user=Depends(get_current_user)):
     role = current_user.get("role")
-    is_office = role in ("superadmin", "boss", "moderator")
+    is_office = role in ("superadmin", "boss", "moderator", "hr")
     if not is_office and role != "foreman":
         raise HTTPException(403, "Недостаточно прав")
 
@@ -346,7 +349,7 @@ async def update_member_status(
 ):
     """Update team member availability status (available / vacation / sick)."""
     role = current_user.get("role")
-    if role not in ('foreman', 'moderator', 'boss', 'superadmin'):
+    if role not in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'):
         raise HTTPException(403, "Недостаточно прав")
 
     if status not in ('available', 'vacation', 'sick'):
@@ -359,10 +362,11 @@ async def update_member_status(
     await db.conn.commit()
 
     # Fetch member info for log message
-    async with db.conn.execute("SELECT fio, team_id FROM team_members WHERE id = ?", (member_id,)) as cur:
+    async with db.conn.execute("SELECT fio, team_id, tg_user_id FROM team_members WHERE id = ?", (member_id,)) as cur:
         m_row = await cur.fetchone()
     member_fio = m_row[0] if m_row else f"#{member_id}"
     team_id = m_row[1] if m_row else 0
+    linked_user_id = m_row[2] if m_row else None
 
     team_name = ""
     if team_id:
@@ -380,7 +384,61 @@ async def update_member_status(
         f"Изменил статус {member_fio} ({team_name}): {status_label}{period}",
         target_type='team', target_id=team_id,
     )
+    recipient_ids = [linked_user_id] if linked_user_id and int(linked_user_id) != int(current_user['tg_id']) else []
+    asyncio.create_task(notify_users(
+        ["hr"],
+        f"🏥 <b>Статус сотрудника изменён</b>\n👤 {member_fio}\n"
+        f"Статус: {status_label}{period}" + (f"\n💬 {status_reason}" if status_reason else ""),
+        "teams", extra_tg_ids=recipient_ids, category="reports", event_key="staff_status_changed",
+    ))
     return {"status": "ok"}
+
+
+class MemberPatch(BaseModel):
+    fio: str
+    position: str
+
+
+@router.patch("/api/teams/members/{member_id}")
+async def update_team_member(
+    member_id: int, body: MemberPatch, current_user=Depends(get_current_user),
+):
+    """Edit employee identity/position; HR owns this workflow."""
+    role = current_user.get("role")
+    if role not in ("foreman", "moderator", "boss", "superadmin", "hr"):
+        raise HTTPException(403, "Недостаточно прав")
+    fio = body.fio.strip()
+    position = body.position.strip()
+    if not fio or not position:
+        raise HTTPException(422, "Укажите ФИО и должность")
+    async with db.conn.execute(
+        "SELECT team_id,tg_user_id,fio,position FROM team_members WHERE id=?", (member_id,)
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Сотрудник не найден")
+    team_id, linked_user_id, old_fio, old_position = row
+    await db.conn.execute(
+        "UPDATE team_members SET fio=?,position=? WHERE id=?", (fio, position, member_id)
+    )
+    if linked_user_id:
+        await db.conn.execute(
+            "UPDATE users SET fio=?,specialty=? WHERE user_id=?",
+            (fio, position, linked_user_id),
+        )
+    await db.conn.commit()
+    await db.add_log(
+        current_user["tg_id"], current_user.get("fio", "Система"),
+        f"Изменил сотрудника: {old_fio} ({old_position}) → {fio} ({position})",
+        target_type="team", target_id=team_id,
+    )
+    await notify_users(
+        ["hr"],
+        f"👤 <b>Карточка сотрудника изменена</b>\n{old_fio} → {fio}\nДолжность: {old_position or '—'} → {position}",
+        "teams", extra_tg_ids=[linked_user_id] if linked_user_id else None,
+        event_key="staff_changed",
+    )
+    return {"status": "ok", "member": {"id": member_id, "fio": fio, "position": position}}
 
 
 # =============================================
@@ -393,7 +451,10 @@ class TeamPatch(BaseModel):
 
 
 @router.patch("/api/teams/{team_id}")
-async def api_update_team(team_id: int, body: TeamPatch, current_user=Depends(_require_office)):
+async def api_update_team(
+    team_id: int, body: TeamPatch,
+    current_user=Depends(require_role("superadmin", "boss", "moderator", "hr")),
+):
     """Update team name and/or icon. Moderator+ only."""
     updates: dict = {}
     if body.name is not None:

@@ -6,3 +6,9 @@
 # Graphify output
 codebase_graph.md
 graphify-out/
+
+# Local runtimes and generated caches
+__pycache__/
+*.py[cod]
+frontend/pnpm-lock.yaml
+frontend/pnpm-workspace.yaml

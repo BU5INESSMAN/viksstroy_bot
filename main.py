@@ -320,7 +320,7 @@ async def handle_team_yes(callback: types.CallbackQuery):
         try:
             await notify_users(["report_group", "boss", "superadmin"],
                                f"🔗 Привязка аккаунта (Бригада) TG\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team_name}»\n🕒 Время: {now}",
-                               "teams")
+                               "teams", event_key="staff_changed")
         except Exception as e:
             logger.error(f"TG team link notification error: {e}")
 
@@ -366,7 +366,7 @@ async def handle_equip_yes(callback: types.CallbackQuery):
         try:
             await notify_users(["report_group", "boss", "superadmin"],
                                f"🔗 Привязка аккаунта (Техника) TG\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{equip_name}»\n🕒 Время: {now}",
-                               "equipment")
+                               "equipment", event_key="staff_changed")
         except Exception as e:
             logger.error(f"TG equip link notification error: {e}")
 
@@ -438,7 +438,7 @@ async def process_fio(message: types.Message, state: FSMContext):
         try:
             await notify_users(["report_group", "superadmin"],
                                f"👤 Новая регистрация (TG)\n📝 ФИО: {fio}\n💼 Роль: {role}\n🆔 ID: {raw_id}",
-                               "system")
+                               "system", event_key="user_registered")
         except Exception as e:
             logger.error(f"New user notification error: {e}")
 
@@ -1281,6 +1281,14 @@ async def backup_database():
         logger.info("Бэкап БД создан.")
     except Exception as e:
         logger.error(f"Ошибка бэкапа: {e}")
+        try:
+            await notify_users(
+                ["superadmin"],
+                f"🚨 <b>Не создана резервная копия базы</b>\nОшибка: {str(e)[:500]}",
+                "system", category="errors", event_key="backup_failed",
+            )
+        except Exception:
+            logger.exception("Не удалось отправить уведомление об ошибке бэкапа")
 
 
 # ─────────────────────────────────────────────────────────────

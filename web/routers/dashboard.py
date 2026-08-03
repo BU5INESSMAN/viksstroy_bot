@@ -410,10 +410,10 @@ async def test_notification(platform: str = Form("all"), current_user=Depends(ge
     async def _send_test_notifications():
         try:
             await notify_users([], f"🧪 <b>Тестовое уведомление:</b> Вас добавили в наряд! ({platform_name})", "my-apps",
-                               [real_tg_id], target_platform=platform)
+                               [real_tg_id], target_platform=platform, event_key="notification_test")
             await notify_users(["moderator"],
                                f"📝 <b>Тестовая заявка ({platform_name}):</b>\n👷‍♂️ Прораб: {fio}\n📍 Объект: Проверка уведомлений",
-                               "review", [real_tg_id], target_platform=platform)
+                               "review", [real_tg_id], target_platform=platform, event_key="notification_test")
             await execute_app_publish(fake_app, target_platform=platform)
         except Exception as e:
             logger.error(f"Test notification error: {e}")

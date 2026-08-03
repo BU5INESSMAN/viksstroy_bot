@@ -74,7 +74,7 @@ def _write_header(ws, headers: list[str]):
     ws.freeze_panes = 'A2'
 
 
-async def generate_smr_excel_bytes(db, app_id: int) -> tuple[bytes, str]:
+async def generate_smr_excel_bytes(db, app_id: int, *, include_financial: bool = False) -> tuple[bytes, str]:
     """Generate the SMR report .xlsx in memory.
     Returns (file_bytes, suggested_filename).
     """
@@ -92,6 +92,9 @@ async def generate_smr_excel_bytes(db, app_id: int) -> tuple[bytes, str]:
         row = await cur.fetchone()
     app_meta = dict(row) if row else {}
 
+    from smr_data import get_smr_read_model
+
+    report = await get_smr_read_model(db, app_id)
     wb = Workbook()
 
     # ─────────────────────── Sheet 1: Часы ───────────────────────
@@ -101,7 +104,7 @@ async def generate_smr_excel_bytes(db, app_id: int) -> tuple[bytes, str]:
 
     # v2.10: include addendum hours (доп.отчёт) so they count in the report,
     # matching the works/extras sheets which read the tables directly.
-    hours_rows = await db.get_app_hours(app_id, include_additional=True)
+    hours_rows = report.get('hours', [])
     r = 2
     for h in hours_rows:
         if float(h.get('hours') or 0) <= 0:
@@ -122,32 +125,18 @@ async def generate_smr_excel_bytes(db, app_id: int) -> tuple[bytes, str]:
     # ─────────────────────── Sheet 2: Работы ───────────────────────
     # v2.4.3 per-brigade: when any row carries team_id, prepend a "Бригада"
     # column so the distribution across teams is visible in the report.
-    async with db.conn.execute(
-        """
-        SELECT akp.volume,
-               COALESCE(NULLIF(akp.unit, ''), kc.unit, '') AS unit,
-               kc.name AS work_name,
-               akp.team_id AS team_id,
-               t.name AS team_name,
-               u.fio AS filled_by_fio,
-               u.role AS filled_by_role
-        FROM application_kp akp
-        LEFT JOIN kp_catalog kc ON kc.id = akp.kp_id
-        LEFT JOIN teams t ON t.id = akp.team_id
-        LEFT JOIN users u ON u.user_id = akp.filled_by_user_id
-        WHERE akp.application_id = ? AND akp.volume > 0
-        ORDER BY COALESCE(t.name, ''), kc.category, kc.name
-        """,
-        (app_id,),
-    ) as cur:
-        works = [dict(x) for x in await cur.fetchall()]
+    works = report.get('plan_works', [])
 
     has_teams = any(w.get('team_id') for w in works)
     ws_works = wb.create_sheet("Работы")
     if has_teams:
-        _write_header(ws_works, ["Бригада", "Наименование", "Ед.изм", "Объём", "Заполнил"])
+        headers = ["Бригада", "Наименование", "Ед.изм", "Объём"]
     else:
-        _write_header(ws_works, ["Наименование", "Ед.изм", "Объём", "Заполнил"])
+        headers = ["Наименование", "Ед.изм", "Объём"]
+    if include_financial:
+        headers.extend(["ЗП за ед.", "Сумма ЗП", "Цена за ед.", "Сумма цены"])
+    headers.append("Заполнил")
+    _write_header(ws_works, headers)
 
     r = 2
     for w in works:
@@ -155,12 +144,19 @@ async def generate_smr_excel_bytes(db, app_id: int) -> tuple[bytes, str]:
         if has_teams:
             ws_works.cell(row=r, column=col, value=w.get('team_name') or '—').alignment = _LEFT
             col += 1
-        ws_works.cell(row=r, column=col, value=w.get('work_name') or '').alignment = _LEFT
+        ws_works.cell(row=r, column=col, value=w.get('name') or '').alignment = _LEFT
         col += 1
         ws_works.cell(row=r, column=col, value=w.get('unit') or '').alignment = _CENTER
         col += 1
         ws_works.cell(row=r, column=col, value=float(w.get('volume') or 0)).alignment = _CENTER
         col += 1
+        if include_financial:
+            volume = float(w.get('volume') or 0)
+            salary = float(w.get('current_salary') or 0)
+            price = float(w.get('current_price') or 0)
+            for value in (salary, volume * salary, price, volume * price):
+                ws_works.cell(row=r, column=col, value=round(value, 2)).alignment = _CENTER
+                col += 1
         ws_works.cell(
             row=r, column=col,
             value=_author_label(w.get('filled_by_fio'), w.get('filled_by_role')),
@@ -171,52 +167,58 @@ async def generate_smr_excel_bytes(db, app_id: int) -> tuple[bytes, str]:
     _autosize(ws_works)
 
     # ─────────────────────── Sheet 3: Доп. работы (если есть) ───────────────────────
-    async with db.conn.execute(
-        """
-        SELECT aew.volume,
-               COALESCE(NULLIF(aew.unit, ''), kc.unit, ewc.unit, '') AS unit,
-               COALESCE(NULLIF(aew.custom_name, ''), kc.name, ewc.name, '') AS work_name,
-               aew.team_id AS team_id,
-               t.name AS team_name,
-               u.fio AS filled_by_fio,
-               u.role AS filled_by_role
-        FROM application_extra_works aew
-        LEFT JOIN kp_catalog kc ON kc.id = aew.extra_work_id
-        LEFT JOIN extra_works_catalog ewc ON ewc.id = aew.extra_work_id
-        LEFT JOIN teams t ON t.id = aew.team_id
-        LEFT JOIN users u ON u.user_id = aew.filled_by_user_id
-        WHERE aew.application_id = ? AND aew.volume > 0
-        ORDER BY COALESCE(t.name, ''), work_name
-        """,
-        (app_id,),
-    ) as cur:
-        extras = [dict(x) for x in await cur.fetchall()]
+    extras = report.get('extra_works', [])
 
     if extras:
         extras_has_teams = any(e.get('team_id') for e in extras)
         ws_extra = wb.create_sheet("Доп. работы")
         if extras_has_teams:
-            _write_header(ws_extra, ["Бригада", "Наименование", "Ед.изм", "Объём", "Заполнил"])
+            headers = ["Бригада", "Наименование", "Ед.изм", "Объём"]
         else:
-            _write_header(ws_extra, ["Наименование", "Ед.изм", "Объём", "Заполнил"])
+            headers = ["Наименование", "Ед.изм", "Объём"]
+        if include_financial:
+            headers.extend(["ЗП за ед.", "Сумма ЗП", "Цена за ед.", "Сумма цены"])
+        headers.append("Заполнил")
+        _write_header(ws_extra, headers)
         r = 2
         for e in extras:
             col = 1
             if extras_has_teams:
                 ws_extra.cell(row=r, column=col, value=e.get('team_name') or '—').alignment = _LEFT
                 col += 1
-            ws_extra.cell(row=r, column=col, value=e.get('work_name') or '').alignment = _LEFT
+            ws_extra.cell(row=r, column=col, value=e.get('name') or '').alignment = _LEFT
             col += 1
             ws_extra.cell(row=r, column=col, value=e.get('unit') or '').alignment = _CENTER
             col += 1
             ws_extra.cell(row=r, column=col, value=float(e.get('volume') or 0)).alignment = _CENTER
             col += 1
+            if include_financial:
+                volume = float(e.get('volume') or 0)
+                salary = float(e.get('salary') or 0)
+                price = float(e.get('price') or 0)
+                for value in (salary, volume * salary, price, volume * price):
+                    ws_extra.cell(row=r, column=col, value=round(value, 2)).alignment = _CENTER
+                    col += 1
             ws_extra.cell(
                 row=r, column=col,
                 value=_author_label(e.get('filled_by_fio'), e.get('filled_by_role')),
             ).alignment = _LEFT
             r += 1
         _autosize(ws_extra)
+
+    if include_financial:
+        ws_summary = wb.create_sheet("Итоги", 0)
+        _write_header(ws_summary, ["Показатель", "Значение"])
+        totals = report.get('totals', {})
+        summary_rows = [
+            ("Всего часов", totals.get('hours', 0)),
+            ("Сумма ЗП", totals.get('salary', 0)),
+            ("Сумма цены", totals.get('price', 0)),
+        ]
+        for row_no, (label, value) in enumerate(summary_rows, start=2):
+            ws_summary.cell(row=row_no, column=1, value=label).alignment = _LEFT
+            ws_summary.cell(row=row_no, column=2, value=value).alignment = _CENTER
+        _autosize(ws_summary)
 
     # ─────────────────────── Persist ───────────────────────
     buf = BytesIO()

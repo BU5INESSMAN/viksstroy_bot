@@ -107,8 +107,8 @@ export default function StepWorks({
                         is_additional: i.is_additional,
                     })));
                     setRefExtras((extraRes.data || []).filter(e => Number(e.volume) > 0).map(e => ({
-                        name: e.custom_name || e.catalog_name || '',
-                        unit: e.display_unit || e.catalog_unit || 'шт',
+                        name: e.custom_name || e.kp_catalog_name || e.catalog_name || '',
+                        unit: e.display_unit || e.kp_catalog_unit || e.catalog_unit || 'шт',
                         volume: e.volume,
                         is_additional: e.is_additional,
                         filled_at: e.filled_at,
@@ -142,9 +142,10 @@ export default function StepWorks({
                             if (!seededExtra[tid]) seededExtra[tid] = [];
                             seededExtra[tid].push({
                                 rid: genRowId(),
-                                kp_id: ew.extra_work_id || 0,
-                                name: ew.custom_name || ew.catalog_name || '',
-                                unit: ew.display_unit || ew.catalog_unit || 'шт',
+                                kp_id: ew.kp_id || 0,
+                                extra_work_id: ew.extra_work_id || 0,
+                                name: ew.custom_name || ew.kp_catalog_name || ew.catalog_name || '',
+                                unit: ew.display_unit || ew.kp_catalog_unit || ew.catalog_unit || 'шт',
                                 volume: ew.volume ?? '',
                             });
                         }
@@ -171,9 +172,10 @@ export default function StepWorks({
                             .filter(e => (e.team_id === null || e.team_id === undefined) && Number(e.volume) > 0)
                             .map(e => ({
                                 rid: genRowId(),
-                                kp_id: e.extra_work_id || 0,
-                                name: e.custom_name || e.catalog_name || '',
-                                unit: e.display_unit || e.catalog_unit || 'шт',
+                                kp_id: e.kp_id || 0,
+                                extra_work_id: e.extra_work_id || 0,
+                                name: e.custom_name || e.kp_catalog_name || e.catalog_name || '',
+                                unit: e.display_unit || e.kp_catalog_unit || e.catalog_unit || 'шт',
                                 volume: e.volume ?? '',
                                 team_id: null,
                             }));
@@ -194,9 +196,10 @@ export default function StepWorks({
                 if (!addendumMode && extraWorksData.length === 0) {
                     setExtraWorksData((extraRes.data || []).map(ew => ({
                         rid: genRowId(),
-                        kp_id: ew.extra_work_id || 0,
-                        name: ew.custom_name || ew.catalog_name || '',
-                        unit: ew.display_unit || ew.catalog_unit || 'шт',
+                        kp_id: ew.kp_id || 0,
+                        extra_work_id: ew.extra_work_id || 0,
+                        name: ew.custom_name || ew.kp_catalog_name || ew.catalog_name || '',
+                        unit: ew.display_unit || ew.kp_catalog_unit || ew.catalog_unit || 'шт',
                         volume: ew.volume ?? '',
                     })));
                 }

@@ -1,0 +1,10 @@
+[Unit]
+Description=VIKS system health watchdog
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/viksstroy_bot
+EnvironmentFile=-/root/viksstroy_bot/.env
+ExecStart=/root/viksstroy_bot/.venv/bin/python /root/viksstroy_bot/scripts/watchdog.py
+User=root

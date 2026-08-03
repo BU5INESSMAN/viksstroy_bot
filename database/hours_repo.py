@@ -14,6 +14,8 @@ Rationale: mirrors the existing pattern used by
 
 from datetime import datetime
 
+from smr_calculations import MAX_HOURS_PER_ROW, SmrNumberError, decimal_value
+
 
 def _parse_team_ids(team_id_field: str) -> list[int]:
     if not team_id_field:
@@ -79,9 +81,11 @@ class HoursRepoMixin:
             try:
                 team_id = int(item['team_id'])
                 member_id = int(item['user_id'])
-                hours = float(item.get('hours') or 0)
+                hours = float(decimal_value(
+                    item.get('hours'), field='Часы', maximum=MAX_HOURS_PER_ROW
+                ))
             except (KeyError, TypeError, ValueError):
-                continue
+                raise SmrNumberError('Часы: передано некорректное значение')
             # v2.10: main hours write is_additional=0. ON CONFLICT target now
             # carries the partial-index predicate (WHERE is_additional = 0) so
             # it matches idx_app_hours_unique's partial form; addendum rows

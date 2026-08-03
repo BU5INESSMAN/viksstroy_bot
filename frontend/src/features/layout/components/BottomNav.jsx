@@ -16,8 +16,9 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
-    const canSeeObjectsKP = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
-    const canSeeKP = ['brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const isHr = role === 'hr';
+    const canSeeObjectsKP = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canSeeKP = ['hr', 'brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeAdmin = ['boss', 'superadmin'].includes(role);
 
     const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Monitor;
@@ -31,7 +32,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
             >
             <div className="max-w-5xl mx-auto flex justify-around items-stretch h-full px-1 sm:px-4">
 
-                <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} dataTour="bottomnav-home" />
+                {!isHr && <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} dataTour="bottomnav-home" />}
 
                 {canSeeObjectsKP && (
                     <NavBtn icon={MapPin} label="Объекты" path="/objects" current={location.pathname} onClick={() => navigate('/objects')} />
@@ -56,13 +57,13 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                     </div>
                 )}
 
-                <NavBtn
+                {!isHr && <NavBtn
                     icon={ClipboardList} label="Заявки"
                     path={isWorkerOrDriver ? "/my-apps" : "/review"}
                     current={location.pathname}
                     onClick={() => navigate(isWorkerOrDriver ? "/my-apps" : "/review")}
                     dataTour="bottomnav-orders"
-                />
+                />}
 
                 {canSeeKP && (
                     <NavBtn icon={FileText} label="СМР" path="/kp" current={location.pathname} onClick={() => navigate('/kp')} />

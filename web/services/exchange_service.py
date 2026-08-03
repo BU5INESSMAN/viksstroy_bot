@@ -50,11 +50,12 @@ async def _send_exchange_notification_with_buttons(donor_id: int, text: str, exc
         tg_reply_markup=tg_markup,
         max_attachments=[max_payload],
         category="exchange",
+        event_key="exchange_request",
     )
     logger.info(f"Exchange notification with buttons sent to donor {donor_id} (exchange #{exchange_id})")
 
 
-async def _notify_moderators_exchange(text: str):
+async def _notify_moderators_exchange(text: str, event_key: str = "exchange_request"):
     """Notify moderators about exchange events, respecting notify_exchange flag."""
     if db.conn is None:
         await db.init_db()
@@ -78,7 +79,10 @@ async def _notify_moderators_exchange(text: str):
             mod_ids.append(uid)
 
         if mod_ids:
-            await notify_users([], text, "review", extra_tg_ids=mod_ids, category=None)
+            await notify_users(
+                [], text, "review", extra_tg_ids=mod_ids,
+                category="exchange", event_key=event_key,
+            )
     except Exception as e:
         logger.error(f"Error notifying moderators about exchange: {e}")
 
@@ -349,19 +353,20 @@ async def send_respond_notifications(notify_data: dict):
         if notify_data['type'] == 'reject':
             await notify_users(
                 [], f"❌ Обмен отклонён. {notify_data['donor_name']} отказался обменять {notify_data['requested_equip_name']}.",
-                "dashboard", extra_tg_ids=[notify_data['requester_id']], category="exchange")
+                "dashboard", extra_tg_ids=[notify_data['requester_id']], category="exchange", event_key="exchange_result")
             await _notify_moderators_exchange(
                 f"❌ Обмен отклонён: {notify_data['requester_name']} ↔ {notify_data['donor_name']}")
         elif notify_data['type'] == 'accept':
             await notify_users(
                 [], f"✅ Обмен завершён! Вы получили {notify_data['requested_equip_name']}.",
-                "dashboard", extra_tg_ids=[notify_data['requester_id']], category="exchange")
+                "dashboard", extra_tg_ids=[notify_data['requester_id']], category="exchange", event_key="exchange_result")
             await notify_users(
                 [], f"✅ Обмен завершён! Вы получили {notify_data['offered_equip_name']}.",
-                "dashboard", extra_tg_ids=[notify_data['donor_id']], category="exchange")
+                "dashboard", extra_tg_ids=[notify_data['donor_id']], category="exchange", event_key="exchange_result")
             await _notify_moderators_exchange(
                 f"✅ Обмен завершён: {notify_data['requester_name']} получил {notify_data['requested_equip_name']}, "
-                f"{notify_data['donor_name']} получил {notify_data['offered_equip_name']}")
+                f"{notify_data['donor_name']} получил {notify_data['offered_equip_name']}",
+                event_key="exchange_result")
     except Exception as e:
         logger.error(f"Exchange respond notification error: {e}")
 
@@ -404,7 +409,7 @@ async def send_cancel_notifications(notify_data: dict):
     try:
         await notify_users(
             [], f"↩️ Обмен отменён. {notify_data['requester_name']} отменил запрос на {notify_data['requested_equip_name']}.",
-            "dashboard", extra_tg_ids=[notify_data['donor_id']], category="exchange")
+            "dashboard", extra_tg_ids=[notify_data['donor_id']], category="exchange", event_key="exchange_result")
     except Exception as e:
         logger.error(f"Exchange cancel notification error: {e}")
 

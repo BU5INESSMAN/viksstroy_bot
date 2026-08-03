@@ -20,7 +20,7 @@ export default function Objects() {
     const [searchParams, setSearchParams] = useSearchParams();
     const role = localStorage.getItem('user_role') || 'Гость';
     // Stage 5: brigadier/worker/driver have no business on this page
-    const canSeePage = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canSeePage = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     // Only office roles can mutate objects (edit/archive/create/settings)
     const canManage = ['moderator', 'boss', 'superadmin'].includes(role);
     const canCreate = ['moderator', 'boss', 'superadmin'].includes(role);

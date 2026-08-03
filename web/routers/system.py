@@ -362,21 +362,14 @@ async def remind_smr(req: RemindSMRRequest, current_user=Depends(_require_office
     lines = [f"• {a[1] or '—'} ({a[2]})" for a in apps]
     message = "⏰ <b>Напоминание: заполните СМР отчёт</b>\n\n" + "\n".join(lines)
 
-    foreman_ids = await get_all_linked_ids(req.foreman_id)
-    tg_ids = [lid for lid in foreman_ids if lid > 0]
-    max_ids = [abs(lid) for lid in foreman_ids if lid < 0]
-
     async def _do_remind():
         try:
-            if tg_ids:
-                await notify_users([], message, "kp", extra_tg_ids=tg_ids, category="reports")
-            if max_ids:
-                max_bot_token = os.getenv("MAX_BOT_TOKEN")
-                if max_bot_token:
-                    for mid in max_ids:
-                        dm_chat_id = await get_max_dm_chat_id(str(mid))
-                        if dm_chat_id:
-                            await send_max_message(max_bot_token, dm_chat_id, strip_html(message))
+            # One canonical dispatch resolves linked Telegram/MAX accounts and
+            # applies the foreman's channel + event switches to both sources.
+            await notify_users(
+                [], message, "kp", extra_tg_ids=[req.foreman_id],
+                category="reports", event_key="smr_debt",
+            )
             await db.add_log(real_id, fio,
                              f"Напомнил о СМР прорабу (ID: {req.foreman_id}, {len(req.app_ids)} заявок)",
                              target_type='smr')
@@ -583,10 +576,10 @@ async def api_notify_debtors_and_defer(current_user=Depends(_require_office)):
     if debtors:
         recipient_ids = [d['user_id'] for d in debtors]
         _asyncio.create_task(notify_users(
-            recipient_ids,
-            f"📝 Напоминание: подайте заявку на {tomorrow}",
-            "dashboard", category="orders",
-            push_type="smr_debt",
+            [],
+            f"📝 <b>Нужно подать заявку</b>\n📅 Дата работ: {tomorrow}\n\nОткройте приложение и заполните состав бригады и технику.",
+            "dashboard", extra_tg_ids=recipient_ids, category="orders",
+            event_key="app_reminder",
         ))
         notified = len(recipient_ids)
 

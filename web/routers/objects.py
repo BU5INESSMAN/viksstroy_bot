@@ -615,7 +615,7 @@ async def api_create_object_request(name: str = Form(...), address: str = Form("
     asyncio.create_task(notify_users(
         ["moderator", "boss", "superadmin"],
         f"📍 <b>Запрос на новый объект</b>\n👤 От: {fio}\n🏗 Название: {name}\n📍 Адрес: {address or 'Не указан'}",
-        "objects", category="orders"
+        "objects", category="orders", event_key="object_request"
     ))
     await db.add_log(real_tg_id, fio, f"Отправил запрос на создание объекта: {name}", target_type='object')
     return {"status": "ok"}
@@ -668,7 +668,7 @@ async def api_review_object_request(req_id: int, request: Request, current_user=
         await db.conn.commit()
         asyncio.create_task(notify_users(
             [], f"✅ <b>Ваш запрос на объект одобрен!</b>\n🏗 {name}",
-            "objects", extra_tg_ids=[req_dict['requested_by']], category="orders"
+            "objects", extra_tg_ids=[req_dict['requested_by']], category="orders", event_key="object_request_result"
         ))
     elif action == 'reject':
         await db.conn.execute(
@@ -678,7 +678,7 @@ async def api_review_object_request(req_id: int, request: Request, current_user=
         await db.conn.commit()
         asyncio.create_task(notify_users(
             [], f"❌ <b>Ваш запрос на объект отклонён</b>\n🏗 {req_dict['name']}",
-            "objects", extra_tg_ids=[req_dict['requested_by']], category="orders"
+            "objects", extra_tg_ids=[req_dict['requested_by']], category="orders", event_key="object_request_result"
         ))
     else:
         raise HTTPException(400, "Неверное действие")
@@ -699,9 +699,15 @@ async def api_get_extra_works_catalog(current_user=Depends(get_current_user)):
 async def api_create_extra_work(name: str = Form(...), unit: str = Form("шт"),
                                 salary: float = Form(0), price: float = Form(0),
                                 current_user=Depends(_require_office)):
+    from smr_calculations import money_value
+    clean_name = name.strip()
+    if not clean_name:
+        raise HTTPException(422, "Укажите название работы")
+    salary = float(money_value(salary, field="Расценка ЗП"))
+    price = float(money_value(price, field="Цена"))
     await db.conn.execute(
         "INSERT INTO extra_works_catalog (name, unit, salary, price) VALUES (?, ?, ?, ?)",
-        (name, unit, salary, price)
+        (clean_name, unit.strip(), salary, price)
     )
     await db.conn.commit()
     await db.add_log(current_user["tg_id"], current_user.get('fio', ''), f"Добавил доп. работу: {name}", target_type='object')
@@ -717,20 +723,28 @@ async def api_get_app_extra_works(app_id: int, include_additional: bool = False,
     # read-only view (3b) passes include_additional=1 to also get addendum
     # rows; aew.* already carries is_additional so the UI can badge them.
     add_filter = "" if include_additional else " AND COALESCE(aew.is_additional, 0) = 0"
+    from routers.kp import _expand_merge_group
+    app_ids = await _expand_merge_group(app_id)
+    if not app_ids:
+        app_ids = [app_id]
+    marks = ','.join('?' * len(app_ids))
     async with db.conn.execute(f"""
         SELECT aew.*,
                ewc.name as catalog_name,
                ewc.unit as catalog_unit,
-               COALESCE(NULLIF(TRIM(aew.unit), ''), ewc.unit, '') as display_unit
+               kc.name as kp_catalog_name,
+               kc.unit as kp_catalog_unit,
+               COALESCE(NULLIF(TRIM(aew.unit), ''), kc.unit, ewc.unit, '') as display_unit
         FROM application_extra_works aew
         LEFT JOIN extra_works_catalog ewc ON aew.extra_work_id = ewc.id
-        WHERE aew.application_id = ?{add_filter}
-        ORDER BY aew.id
-    """, (app_id,)) as cur:
+        LEFT JOIN kp_catalog kc ON aew.kp_id = kc.id
+        WHERE aew.application_id IN ({marks}){add_filter}
+        ORDER BY aew.application_id, aew.id
+    """, tuple(app_ids)) as cur:
         items = [dict(row) for row in await cur.fetchall()]
 
     role = current_user.get('role', 'worker')
-    if role not in ('moderator', 'boss', 'superadmin'):
+    if role not in ('moderator', 'boss', 'superadmin', 'hr'):
         for item in items:
             item.pop('salary', None)
             item.pop('price', None)

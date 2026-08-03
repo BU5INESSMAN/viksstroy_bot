@@ -12,6 +12,7 @@ from services.notifications import notify_users
 from services.app_workflow import notify_brigadiers_smr_fill
 from services.publish_service import execute_app_publish
 from schedule_generator import check_all_foremen_approved, publish_schedule_to_group
+from system_monitoring import record_heartbeat, notify_system_incident
 
 # Настраиваем логгер для планировщика
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(name)s - %(message)s")
@@ -106,7 +107,7 @@ async def check_and_run_tasks():
 
                 if all_involved:
                     msg = f"🚀 <b>Наряд начался!</b>\n📍 Объект: {app_dict['object_address']}\nУдачной смены и безопасной работы!"
-                    await notify_users([], msg, "my-apps", extra_tg_ids=all_involved, category="orders")
+                    await notify_users([], msg, "my-apps", extra_tg_ids=all_involved, category="orders", event_key="app_status_changed")
 
             await db.conn.commit()
             if started_count > 0:
@@ -129,7 +130,7 @@ async def check_and_run_tasks():
                 app_id, address, foreman_id, team_id_field, date_target = app
                 if foreman_id:
                     msg = f"📋 <b>Пора заполнить отчёт!</b>\n📍 Объект: {address}\n\nПожалуйста, заполните табель/отчет по этому наряду."
-                    await notify_users([], msg, "dashboard", extra_tg_ids=[foreman_id], category="orders")
+                    await notify_users([], msg, "dashboard", extra_tg_ids=[foreman_id], category="reports", event_key="smr_debt")
                 # v2.5: brigadiers of the involved teams get the same prompt,
                 # scoped to their brigade. notify_brigadiers_smr_fill handles
                 # the dispatch and audit log.
@@ -175,7 +176,7 @@ async def check_and_run_tasks():
 
                 if foreman_id:
                     msg = f"📋 <b>Смена окончена!</b>\n📍 Объект: {address}\n\nПожалуйста, заполните табель/отчет по этому наряду."
-                    await notify_users([], msg, "dashboard", extra_tg_ids=[foreman_id], category="orders")
+                    await notify_users([], msg, "dashboard", extra_tg_ids=[foreman_id], category="reports", event_key="smr_debt")
                 # v2.5: brigadier mirror — see TRIGGER 3 above.
                 try:
                     await notify_brigadiers_smr_fill(
@@ -197,7 +198,7 @@ async def check_and_run_tasks():
             if not is_weekend or remind_on_weekends:
                 logger.info(f"🔔 {current_time_str} - Отправка напоминаний прорабам...")
                 msg = "🔔 <b>Напоминание!</b>\nПожалуйста, не забудьте заполнить и отправить заявки на следующий день!"
-                await notify_users(["foreman"], msg, "dashboard", category="orders")
+                await notify_users(["foreman"], msg, "dashboard", category="orders", event_key="app_reminder")
 
         # =========================================================================
         # ТРИГГЕР 6: АВТО-ПУБЛИКАЦИЯ РАССТАНОВКИ (когда все прорабы утвердили)
@@ -309,7 +310,7 @@ async def check_and_run_tasks():
                             ["moderator", "boss", "superadmin"],
                             f"✅ <b>Расстановка на завтра опубликована автоматически</b>\n"
                             f"📋 Опубликовано нарядов: {count}",
-                            "dashboard", category="orders")
+                            "dashboard", category="orders", event_key="schedule_published")
                         await db.add_log(0, "Система",
                                          f"Авто-публикация расстановки на завтра: {count} нарядов", target_type='system')
         except Exception as e:
@@ -331,7 +332,7 @@ async def check_and_run_tasks():
                 await db.conn.execute("UPDATE applications SET status = 'in_progress' WHERE id = ?", (app_id,))
                 if foreman_id:
                     msg = f"🚀 <b>Наряд начался!</b>\n📍 Объект: {address}\nЗаявка одобрена и автоматически переведена в работу."
-                    await notify_users([], msg, "my-apps", extra_tg_ids=[foreman_id], category="orders")
+                    await notify_users([], msg, "my-apps", extra_tg_ids=[foreman_id], category="orders", event_key="app_status_changed")
             if same_day_apps:
                 await db.conn.commit()
                 await db.add_log(0, "Система", f"Авто-старт: {len(same_day_apps)} одобренных нарядов переведены в работу")
@@ -352,7 +353,7 @@ async def check_and_run_tasks():
                         equip_name = eq_row[0] if eq_row else f"Техника #{ex['requested_equip_id']}"
                     await notify_users(
                         [], f"⏰ Время обмена истекло. Запрос на {equip_name} отменён.",
-                        "dashboard", extra_tg_ids=[ex['requester_id']]
+                        "dashboard", extra_tg_ids=[ex['requester_id']], event_key="exchange_result"
                     )
                 except Exception as ne:
                     logger.error(f"Ошибка уведомления об истечении обмена: {ne}")
@@ -361,8 +362,20 @@ async def check_and_run_tasks():
         except Exception as e:
             logger.error(f"Ошибка авто-истечения обменов: {e}")
 
+        changed = await record_heartbeat(db, "scheduler", ok=True)
+        if changed:
+            await notify_system_incident(
+                db, event_key="system_recovered", title="Планировщик восстановлен",
+                component="scheduler", details="Минутный цикл снова выполняется",
+            )
     except Exception as e:
-        logger.error(f"Ошибка в планировщике: {e}")
+        logger.exception("Ошибка в планировщике")
+        changed = await record_heartbeat(db, "scheduler", ok=False, error=str(e))
+        if changed:
+            await notify_system_incident(
+                db, event_key="scheduler_failed", title="Ошибка фонового задания",
+                component="scheduler", details=str(e),
+            )
 
 
 async def cleanup_old_logs_job():

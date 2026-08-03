@@ -257,7 +257,7 @@ async def _do_support_chat(request: Request, current_user: dict, resolved_user_i
                     ["superadmin", "boss"],
                     f"\U0001f3a7 <b>Новое обращение в поддержку</b>\n\U0001f464 {fio}\n\U0001f4ac {user_message[:200]}",
                     "system",
-                    category="new_users"
+                    category="new_users", event_key="support_new"
                 )
             except Exception:
                 pass

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
     FileText, CheckCircle, Search, X, MapPin,
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive,
-    Calendar as CalendarIcon, Link2, Link2Off, Eye, EyeOff, CheckCheck, Undo2
+    Calendar as CalendarIcon, Link2, Link2Off, Eye, EyeOff, CheckCheck, Undo2, Clock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
@@ -72,10 +72,11 @@ export default function KP() {
     const role = localStorage.getItem('user_role') || 'worker';
     const tgId = localStorage.getItem('tg_id') || '0';
 
-    const isOffice = ['moderator', 'boss', 'superadmin'].includes(role);
+    const isOffice = ['moderator', 'boss', 'superadmin', 'hr'].includes(role);
+    const canViewFinance = ['moderator', 'boss', 'superadmin', 'hr'].includes(role);
     const isForemanOrBrigadier = ['foreman', 'brigadier'].includes(role);
     // v2.10 доп.отчёт: who may create an addendum (backend re-enforces scope).
-    const canCreateAddendum = ['foreman', 'brigadier', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canCreateAddendum = ['foreman', 'brigadier', 'moderator', 'boss', 'superadmin', 'hr'].includes(role);
     // v2.10: workers get READ-ONLY access to the Готовые tab only — no
     // to_fill/pending tabs, no fill/review/addendum affordances.
     const isViewerOnly = role === 'worker';
@@ -107,6 +108,8 @@ export default function KP() {
     const [isEditing, setIsEditing] = useState(false);
     const [extraWorksCatalog, setExtraWorksCatalog] = useState([]);
     const [extraWorks, setExtraWorks] = useState([]);
+    const [smrHours, setSmrHours] = useState([]);
+    const [smrTotals, setSmrTotals] = useState(null);
     const [showArchive, setShowArchive] = useState(false);
     const [archivedApps, setArchivedApps] = useState([]);
     // v2.4.5 SMR wizard integration
@@ -210,30 +213,32 @@ export default function KP() {
         setModalApp(app);
         setIsEditing(false);
         setExtraWorks([]);
+        setSmrHours([]);
+        setSmrTotals(null);
         try {
-            const [res, ewRes, catRes] = await Promise.all([
-                axios.get(`/api/kp/apps/${app.id}/items`),
-                // v2.10: read-only VIEW context — include addendum extras so the
-                // "добавлено позже" badge can show them (the editable wizard
-                // uses the default main-only read instead).
-                axios.get(`/api/kp/apps/${app.id}/extra_works?include_additional=1`),
+            const [summaryRes, catRes] = await Promise.all([
+                axios.get(`/api/kp/apps/${app.id}/smr/summary`),
                 axios.get('/api/kp/catalog'),
             ]);
-            setKpItems(res.data.map(i => ({
+            const summary = summaryRes.data || {};
+            setKpItems((summary.plan_works || []).map(i => ({
                 ...i,
                 volume: i.volume || '',
-                current_salary: i.saved_salary !== null ? i.saved_salary : i.salary,
-                current_price: i.saved_price !== null ? i.saved_price : i.price,
+                current_salary: i.current_salary || 0,
+                current_price: i.current_price || 0,
             })));
+            setSmrHours(summary.hours || []);
+            setSmrTotals(summary.totals || null);
             // v2.4.3: catalog for extra works is the global KP catalog.
             setExtraWorksCatalog(catRes.data || []);
             // Restore existing extra works. Legacy rows may lack kp_id —
             // in that case we keep them in view-only form via custom_name.
-            setExtraWorks((ewRes.data || []).map(ew => ({
+            setExtraWorks((summary.extra_works || []).map(ew => ({
                 rid: genRowId(),
-                kp_id: ew.extra_work_id || null,
-                name: ew.custom_name || ew.catalog_name || '',
-                unit: ew.display_unit || ew.catalog_unit || 'шт',
+                kp_id: ew.kp_id || null,
+                extra_work_id: ew.extra_work_id || null,
+                name: ew.name || ew.custom_name || '',
+                unit: ew.unit || 'шт',
                 volume: ew.volume ?? '',
                 salary: ew.salary || 0,
                 price: ew.price || 0,
@@ -273,6 +278,7 @@ export default function KP() {
                         .filter(ew => parseFloat(ew.volume || 0) > 0)
                         .map(ew => ({
                             kp_id: ew.kp_id || 0,
+                            extra_work_id: ew.extra_work_id || 0,
                             // Backend looks up name/unit/price from kp_catalog
                             // when kp_id is set. Keep name + unit in the
                             // payload as a fallback for legacy rows.
@@ -365,10 +371,8 @@ export default function KP() {
         e.target.value = null;
     };
 
-    const totalSalary = kpItems.reduce((acc, curr) => acc + (parseFloat(curr.volume || 0) * parseFloat(curr.current_salary || 0)), 0)
-        + extraWorks.reduce((acc, ew) => acc + (parseFloat(ew.volume || 0) * parseFloat(ew.salary || 0)), 0);
-    const totalPrice = kpItems.reduce((acc, curr) => acc + (parseFloat(curr.volume || 0) * parseFloat(curr.current_price || 0)), 0)
-        + extraWorks.reduce((acc, ew) => acc + (parseFloat(ew.volume || 0) * parseFloat(ew.price || 0)), 0);
+    const totalSalary = smrTotals?.salary ?? 0;
+    const totalPrice = smrTotals?.price ?? 0;
     const unaccountedReady = isOffice
         ? data.approved.filter(app => !app.smr_accounted_at)
         : data.approved;
@@ -385,7 +389,7 @@ export default function KP() {
         accountedReady.some(app => app.id === id)
     );
 
-    if (!['superadmin', 'boss', 'moderator', 'foreman', 'brigadier', 'worker'].includes(role)) {
+    if (!['superadmin', 'boss', 'moderator', 'hr', 'foreman', 'brigadier', 'worker'].includes(role)) {
         return (
             <main className="px-4 sm:px-6 lg:px-8 space-y-6 pb-24 flex flex-col items-center justify-center min-h-[60vh] text-gray-400 dark:text-gray-500">
                 <div className="bg-gray-100 dark:bg-gray-800 p-6 rounded-full mb-6 shadow-inner">
@@ -595,14 +599,14 @@ export default function KP() {
             {modalApp && (
                 <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
                     <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-3xl shadow-2xl relative overflow-hidden">
-                        <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
-                            <div>
-                                <h3 className="text-xl font-bold dark:text-white flex items-center gap-2"><FileText className="w-6 h-6 text-blue-500" /> Отчет о работах</h3>
-                                <p className="text-sm text-gray-500 mt-1">{modalApp.obj_name} ({modalApp.date_target})</p>
+                        <div className="flex justify-between items-center gap-3 p-4 sm:p-6 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
+                            <div className="min-w-0">
+                                <h3 className="text-lg sm:text-xl font-bold dark:text-white flex items-center gap-2"><FileText className="w-6 h-6 text-blue-500 flex-shrink-0" /> Отчет о работах</h3>
+                                <p className="text-sm text-gray-500 mt-1 truncate">{modalApp.obj_name} ({modalApp.date_target})</p>
                             </div>
-                            <button onClick={() => setModalApp(null)} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-2 border border-gray-100 dark:border-gray-700"><X className="w-5 h-5" /></button>
+                            <button onClick={() => setModalApp(null)} className="w-10 h-10 flex-shrink-0 flex items-center justify-center text-gray-400 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700" aria-label="Закрыть"><X className="w-5 h-5" /></button>
                         </div>
-                        <div className="p-6 max-h-[50vh] overflow-y-auto custom-scrollbar">
+                        <div className="p-4 sm:p-6 max-h-[55vh] overflow-y-auto custom-scrollbar">
                             {kpItems.length > 0 ? (
                                 <div className="space-y-6">
                                     {Object.entries(kpItems.reduce((acc, curr) => { acc[curr.category] = acc[curr.category] || []; acc[curr.category].push(curr); return acc; }, {})).map(([cat, items]) => (
@@ -614,13 +618,18 @@ export default function KP() {
                                                         <div className="flex-1">
                                                             <p className="font-bold text-sm text-gray-800 dark:text-gray-100 flex items-center gap-2 flex-wrap">
                                                                 {item.name}
+                                                                {item.is_additional ? (
+                                                                    <span className="text-[10px] font-bold text-amber-700 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
+                                                                        добавлено позже
+                                                                    </span>
+                                                                ) : null}
                                                                 {item.team_name && (
                                                                     <span className="text-[10px] font-bold text-indigo-600 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/20 px-1.5 py-0.5 rounded">
                                                                         {item.team_name}
                                                                     </span>
                                                                 )}
                                                             </p>
-                                                            {isOffice && (
+                                                            {canViewFinance && (
                                                                 <p className="text-[10px] text-gray-400 mt-1">ЗП: {item.current_salary}₽ · Цена: {item.current_price}₽</p>
                                                             )}
                                                         </div>
@@ -635,6 +644,26 @@ export default function KP() {
                                     ))}
                                 </div>
                             ) : <p className="text-center text-gray-400 py-8">Работы не назначены.</p>}
+
+                            {smrHours.length > 0 && (
+                                <div className="mt-6 border border-gray-100 dark:border-gray-700 rounded-2xl overflow-hidden">
+                                    <div className="bg-gray-50 dark:bg-gray-900/50 px-4 py-2 text-xs font-bold text-gray-500 uppercase flex items-center justify-between">
+                                        <span className="inline-flex items-center gap-2"><Clock className="w-4 h-4" /> Часы сотрудников</span>
+                                        <span>{smrTotals?.hours ?? 0} ч</span>
+                                    </div>
+                                    <div className="divide-y divide-gray-50 dark:divide-gray-700">
+                                        {smrHours.map(row => (
+                                            <div key={`hours-${row.id}`} className="px-4 py-2.5 flex items-center gap-3 text-sm">
+                                                <div className="flex-1 min-w-0">
+                                                    <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{row.fio || 'Сотрудник'}</p>
+                                                    <p className="text-[11px] text-gray-400 truncate">{row.team_name || '—'}{row.is_additional ? ' · добавлено позже' : ''}</p>
+                                                </div>
+                                                <span className="font-bold text-gray-900 dark:text-white whitespace-nowrap">{row.hours} ч</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
 
                             {/* Доп. работы — v2.4.3 collapsible category picker */}
                             {(extraWorks.length > 0 || activeTab === 'to_fill') && (
@@ -651,7 +680,7 @@ export default function KP() {
                         </div>
                         {kpItems.length > 0 && (
                             <div className="p-6 border-t bg-gray-50/50 dark:bg-gray-900/50">
-                                {isOffice && (
+                                {canViewFinance && (
                                     <div className="space-y-2 mb-6">
                                         <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
                                             <span className="text-xs font-bold text-gray-400 uppercase">Сумма ЗП:</span>
@@ -960,7 +989,7 @@ function SMRGroupRow({
 
     return (
         <li
-            className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-colors ${
+            className={`flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3 px-3 py-2.5 rounded-xl transition-colors ${
                 isMergeSelected
                     ? 'bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-300 dark:ring-blue-700'
                     : isAccounted
@@ -1050,7 +1079,7 @@ function SMRGroupRow({
                 )}
             </div>
 
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center justify-end gap-1.5 flex-shrink-0">
                 {tab === 'approved' && isOffice && (
                     <button
                         type="button"
@@ -1059,7 +1088,7 @@ function SMRGroupRow({
                             e.stopPropagation();
                             onAccounted?.(app, !isAccounted);
                         }}
-                        className={`transition-colors p-1.5 rounded-lg ${
+                        className={`transition-colors w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-lg ${
                             isAccounted
                                 ? 'text-violet-600 bg-violet-50 hover:bg-violet-100 dark:text-violet-300 dark:bg-violet-900/20'
                                 : 'text-gray-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20'
@@ -1074,7 +1103,7 @@ function SMRGroupRow({
                 {isOffice && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onArchive(app); }}
-                        className="text-gray-400 hover:text-red-500 transition-colors p-1.5 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
+                        className="text-gray-400 hover:text-red-500 transition-colors w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20"
                         title="В архив"
                     >
                         <Archive className="w-3.5 h-3.5" />
@@ -1124,7 +1153,7 @@ function SMRGroupRow({
                         <button
                             onClick={() => onDownload(app)}
                             title="Скачать отчёт"
-                            className="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 p-1.5 rounded-lg border border-blue-200 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors active:scale-95"
+                            className="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-lg border border-blue-200 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors active:scale-95"
                         >
                             <Download className="w-3.5 h-3.5" />
                         </button>

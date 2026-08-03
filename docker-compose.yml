@@ -6,6 +6,10 @@ services:
     volumes:
       - ./data:/app/data
     command: python main.py
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   bot_max:
     build: .
@@ -14,6 +18,10 @@ services:
     volumes:
       - ./data:/app/data
     command: python main_max.py
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
 
   api:
     build: .
@@ -24,3 +32,13 @@ services:
     volumes:
       - ./data:/app/data
     command: uvicorn web.api_main:app --host 0.0.0.0 --port 8000
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=5)"]
+      interval: 30s
+      timeout: 8s
+      retries: 3
+      start_period: 30s
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "5"
