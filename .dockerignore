@@ -17,6 +17,8 @@ skill-reports/
 
 # Python caches / build
 __pycache__/
+.venv/
+venv/
 *.pyc
 *.pyo
 dist/
