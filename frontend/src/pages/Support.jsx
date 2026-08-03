@@ -288,13 +288,13 @@ export default function Support() {
                     <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
                         {hasTg && (
                             <a href={supportLinks.support_tg_link} target="_blank" rel="noopener noreferrer"
-                               className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" title="Telegram">
+                               className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" title="Telegram">
                                 <Send className="w-3.5 h-3.5 text-blue-500" />
                             </a>
                         )}
                         {hasMax && (
                             <a href={supportLinks.support_max_link} target="_blank" rel="noopener noreferrer"
-                               className="w-8 h-8 rounded-lg bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors" title="MAX">
+                               className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors" title="MAX">
                                 <MessageCircle className="w-3.5 h-3.5 text-purple-500" />
                             </a>
                         )}
@@ -364,7 +364,7 @@ export default function Support() {
     /* ───── Regular user: simple chat ───── */
     if (!isBoss) {
         return (
-            <div className="flex flex-col h-[calc(100dvh-80px)] lg:h-[calc(100dvh-16px)]">
+            <div className="flex flex-col h-[calc(100dvh-10rem)] min-h-[28rem] lg:h-[calc(100dvh-1rem)]">
                 {chatPanel}
             </div>
         );
@@ -372,7 +372,7 @@ export default function Support() {
 
     /* ───── Boss/Superadmin: split layout ───── */
     return (
-        <div className="flex h-[calc(100dvh-80px)] lg:h-[calc(100dvh-16px)]">
+        <div className="flex h-[calc(100dvh-10rem)] min-h-[28rem] lg:h-[calc(100dvh-1rem)]">
             {/* Sidebar — always visible on desktop, toggleable on mobile */}
             <div className={`${showSidebar ? 'flex' : 'hidden'} lg:flex flex-col w-full lg:w-80 flex-shrink-0 border-r border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900`}>
                 <div className="flex items-center gap-3 px-4 pt-4 lg:pt-6 pb-3 border-b border-gray-100 dark:border-gray-800">

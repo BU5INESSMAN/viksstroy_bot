@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import {
     FileText, CheckCircle, Search, X, MapPin,
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive,
-    Calendar as CalendarIcon, Link2, Link2Off, Eye, EyeOff, CheckCheck, Undo2, Clock
+    Calendar as CalendarIcon, Link2, Link2Off, Eye, EyeOff, CheckCheck, Undo2, Clock, Scale
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
@@ -13,6 +13,7 @@ import TabBadge from '../components/ui/TabBadge';
 import ExtraWorksPicker, { genRowId } from '../features/kp/components/ExtraWorksPicker';
 import SMRWizard from '../features/kp/components/SMRWizard';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
+import SMRReconciliationModal from '../features/kp/components/SMRReconciliationModal';
 
 // Pull the server-supplied filename out of a Content-Disposition header.
 // Honours both `filename*=UTF-8''<pct-encoded>` and plain `filename="…"`.
@@ -127,6 +128,7 @@ export default function KP() {
     });
     const [showAccounted, setShowAccounted] = useState(false);
     const [accountingBusy, setAccountingBusy] = useState(false);
+    const [showReconciliation, setShowReconciliation] = useState(false);
 
     const fileInputRef = useRef(null);
 
@@ -411,15 +413,18 @@ export default function KP() {
                 </h2>
 
                 {isOffice && (
-                    <div className="flex items-center gap-2">
+                    <div className="grid grid-cols-[44px_minmax(0,1fr)] md:flex md:items-center gap-2 w-full md:w-auto">
                         <input type="file" className="hidden" ref={fileInputRef} onChange={handleUploadCatalog} accept=".xlsx,.csv" />
                         <button onClick={() => { setShowArchive(true); fetchArchived(); }}
-                            className="bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 transition-all flex items-center gap-2 hover:bg-gray-100"
+                            className="min-h-11 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-3 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 transition-all flex items-center justify-center gap-2 hover:bg-gray-100"
                             title="Архив СМР">
                             <Archive className="w-4 h-4" />
                         </button>
-                        <button onClick={() => setShowSettings(true)} className="bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 transition-all flex items-center gap-2 hover:bg-gray-100">
+                        <button onClick={() => setShowSettings(true)} className="min-h-11 min-w-0 bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-200 px-4 py-2.5 rounded-xl text-sm font-bold border border-gray-200 dark:border-gray-600 transition-all flex items-center justify-center gap-2 hover:bg-gray-100">
                             <Settings className="w-4 h-4" /> Настройка СМР
+                        </button>
+                        <button onClick={() => setShowReconciliation(true)} className="col-span-2 md:col-span-1 min-h-11 min-w-0 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 px-4 py-2.5 rounded-xl text-sm font-bold border border-indigo-200 dark:border-indigo-800/60 transition-all flex items-center justify-center gap-2 hover:bg-indigo-100">
+                            <Scale className="w-4 h-4" /> Сверка цен
                         </button>
                     </div>
                 )}
@@ -465,7 +470,7 @@ export default function KP() {
                         <button
                             key={value}
                             onClick={() => setGroupMode(value)}
-                            className={`px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
+                            className={`min-h-10 px-3 py-2 rounded-lg text-xs font-bold whitespace-nowrap transition-colors ${
                                 groupMode === value
                                     ? 'bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-400 shadow-sm'
                                     : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
@@ -485,7 +490,7 @@ export default function KP() {
                             }
                             setShowAccounted(prev => !prev);
                         }}
-                        className="self-start sm:self-auto inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50"
+                        className="self-start sm:self-auto min-h-10 inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50"
                     >
                         {showAccounted
                             ? <EyeOff className="w-4 h-4" />
@@ -514,7 +519,7 @@ export default function KP() {
                             <button
                                 disabled={accountingBusy}
                                 onClick={() => setAccounted(selectedUnaccounted, true)}
-                                className="bg-violet-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm flex items-center gap-2 disabled:opacity-50"
+                            className="min-h-10 bg-violet-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-sm flex items-center gap-2 disabled:opacity-50"
                             >
                                 <CheckCheck className="w-4 h-4" /> Учесть ({selectedUnaccounted.length})
                             </button>
@@ -523,7 +528,7 @@ export default function KP() {
                             <button
                                 disabled={accountingBusy}
                                 onClick={() => setAccounted(selectedAccounted, false)}
-                                className="bg-white dark:bg-gray-700 text-violet-700 dark:text-violet-300 px-4 py-2 rounded-xl text-xs font-bold border border-violet-200 dark:border-violet-700 flex items-center gap-2 disabled:opacity-50"
+                                className="min-h-10 bg-white dark:bg-gray-700 text-violet-700 dark:text-violet-300 px-4 py-2 rounded-xl text-xs font-bold border border-violet-200 dark:border-violet-700 flex items-center gap-2 disabled:opacity-50"
                             >
                                 <Undo2 className="w-4 h-4" /> Снять ({selectedAccounted.length})
                             </button>
@@ -531,7 +536,7 @@ export default function KP() {
                         <button
                             disabled={selectedForExport.length === 0 || isSubmitting}
                             onClick={() => handleExportReport(selectedForExport)}
-                            className="bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md flex items-center gap-2 disabled:opacity-50"
+                            className="min-h-10 bg-emerald-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-md flex items-center gap-2 disabled:opacity-50"
                         >
                             <Download className="w-4 h-4" /> Скачать ({selectedForExport.length})
                         </button>
@@ -596,6 +601,18 @@ export default function KP() {
                 onAccounted={(app, accounted) => setAccounted([app.id], accounted)}
             />
 
+            {showReconciliation && (
+                <SMRReconciliationModal
+                    apps={data.approved}
+                    onClose={() => setShowReconciliation(false)}
+                    onOpenApp={(appId) => {
+                        const app = data.approved.find((item) => Number(item.id) === Number(appId));
+                        setShowReconciliation(false);
+                        if (app) openModal(app);
+                    }}
+                />
+            )}
+
             {modalApp && (
                 <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-start justify-center p-4 pt-10 pb-24 overflow-y-auto backdrop-blur-sm">
                     <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-3xl shadow-2xl relative overflow-hidden">
@@ -606,7 +623,7 @@ export default function KP() {
                             </div>
                             <button onClick={() => setModalApp(null)} className="w-10 h-10 flex-shrink-0 flex items-center justify-center text-gray-400 bg-white dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700" aria-label="Закрыть"><X className="w-5 h-5" /></button>
                         </div>
-                        <div className="p-4 sm:p-6 max-h-[55vh] overflow-y-auto custom-scrollbar">
+                        <div className="p-4 sm:p-6 max-h-[calc(100dvh-10rem)] sm:max-h-[70vh] overflow-y-auto custom-scrollbar">
                             {kpItems.length > 0 ? (
                                 <div className="space-y-6">
                                     {Object.entries(kpItems.reduce((acc, curr) => { acc[curr.category] = acc[curr.category] || []; acc[curr.category].push(curr); return acc; }, {})).map(([cat, items]) => (
@@ -1008,7 +1025,7 @@ function SMRGroupRow({
                     onChange={() => toggleMergeSelect?.(app.id)}
                     onClick={(e) => e.stopPropagation()}
                     title="Выбрать для объединения"
-                    className="w-4 h-4 text-blue-600 rounded flex-shrink-0"
+                    className="w-5 h-5 text-blue-600 rounded flex-shrink-0 self-start sm:self-auto mt-0.5 sm:mt-0"
                 />
             )}
 
@@ -1016,8 +1033,8 @@ function SMRGroupRow({
                 className={`flex-1 min-w-0 ${rowAction ? 'cursor-pointer' : ''}`}
                 onClick={rowAction || undefined}
             >
-                <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate flex items-center gap-1.5">
-                    Заявка №{app.id}
+                <p className="text-sm font-medium text-gray-800 dark:text-gray-100 flex items-center gap-1.5 flex-wrap min-w-0">
+                    <span className="whitespace-nowrap">Заявка №{app.id}</span>
                     {isMerged && (
                         <span
                             className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-500/20 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5"
@@ -1037,7 +1054,7 @@ function SMRGroupRow({
                 </p>
                 <p className="text-[11px] text-gray-500 dark:text-gray-400 flex items-center gap-x-2 gap-y-0.5 flex-wrap">
                     {groupMode !== 'foreman' && (
-                        <span className="inline-flex items-center gap-1">
+                        <span className="inline-flex items-center gap-1 min-w-0 max-w-full">
                             <HardHat className="w-3 h-3 text-gray-400 flex-shrink-0" />
                             {app.foreman_name || '—'}
                         </span>
@@ -1045,7 +1062,7 @@ function SMRGroupRow({
                     {groupMode !== 'object' && (
                         <span className="inline-flex items-center gap-1">
                             <MapPin className="w-3 h-3 text-gray-400 flex-shrink-0" />
-                            {objectLabel}
+                            <span className="break-words">{objectLabel}</span>
                         </span>
                     )}
                     {groupMode !== 'date' && (
@@ -1079,7 +1096,7 @@ function SMRGroupRow({
                 )}
             </div>
 
-            <div className="flex items-center justify-end gap-1.5 flex-shrink-0">
+            <div className="flex items-center justify-end gap-1.5 flex-wrap flex-shrink-0">
                 {tab === 'approved' && isOffice && (
                     <button
                         type="button"
@@ -1140,7 +1157,7 @@ function SMRGroupRow({
                                 onChange={() => setSelectedForExport(prev =>
                                     prev.includes(app.id) ? prev.filter(x => x !== app.id) : [...prev, app.id]
                                 )}
-                                className="w-4 h-4 text-emerald-600 rounded"
+                                className="w-5 h-5 text-emerald-600 rounded mx-1"
                                 title="Выбрать для пакетной выгрузки"
                             />
                         )}

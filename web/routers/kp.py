@@ -5,6 +5,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import json
 import asyncio
+import logging
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse, FileResponse
@@ -18,11 +19,59 @@ from smr_calculations import (
     decimal_value,
     money_value,
 )
+from smr_audit import (
+    build_smr_catalog_reconciliation,
+    capture_smr_financial_snapshot,
+    record_smr_change,
+)
 
 router = APIRouter(tags=["KP"])
 
 _require_office = require_role("superadmin", "boss", "moderator", "hr")
 _require_superadmin = require_role("superadmin")
+
+
+async def _audit_smr_change(
+    app_id: int,
+    current_user: dict,
+    event_type: str,
+    before_snapshot: dict,
+    *,
+    metadata: dict | None = None,
+    force: bool = False,
+) -> None:
+    """Append an immutable financial audit entry without inviting retries.
+
+    The business write may already have committed in legacy repository
+    methods. If the audit write fails, alert monitoring and keep the original
+    request successful so a user retry cannot duplicate an addendum.
+    """
+    try:
+        await record_smr_change(
+            db,
+            app_id,
+            event_type=event_type,
+            actor_user_id=current_user.get("tg_id"),
+            actor_role=current_user.get("role", ""),
+            actor_name=current_user.get("fio", ""),
+            source="api",
+            before_snapshot=before_snapshot,
+            metadata=metadata or {},
+            force=force,
+        )
+    except Exception as exc:
+        logging.exception("Не удалось записать финансовый аудит СМР №%s", app_id)
+        try:
+            from system_monitoring import notify_system_incident
+            asyncio.create_task(notify_system_incident(
+                db,
+                event_key="smr_audit_failed",
+                title="Не записан финансовый аудит СМР",
+                component="kp",
+                details=f"СМР №{app_id}: {exc}",
+            ))
+        except Exception:
+            pass
 
 
 @router.get("/api/kp/dashboard")
@@ -400,6 +449,7 @@ async def save_app_hours_endpoint(app_id: int, request: Request, current_user=De
     ) as cur:
         if not await cur.fetchone():
             raise HTTPException(404, "Заявка не найдена")
+    before_snapshot = await capture_smr_financial_snapshot(db, app_id)
 
     role = current_user.get('role', 'worker')
     tg_id = current_user['tg_id']
@@ -425,6 +475,7 @@ async def save_app_hours_endpoint(app_id: int, request: Request, current_user=De
     await db.save_app_hours(app_id, items, tg_id)
     await _reset_smr_accounted(app_id)
     await db.conn.commit()
+    await _audit_smr_change(app_id, current_user, "hours_updated", before_snapshot)
     return {"status": "ok", "saved": len(items)}
 
 
@@ -461,6 +512,7 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
         app_row = await cur.fetchone()
     if not app_row:
         raise HTTPException(404, "Заявка не найдена")
+    before_snapshot = await capture_smr_financial_snapshot(db, app_id)
 
     group_ids = await _expand_merge_group(app_id)
     if app_id not in group_ids:
@@ -532,6 +584,14 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
         (group_id, smr_status, smr_role, new_kp_status, *group_ids),
     )
     await db.conn.commit()
+
+    await _audit_smr_change(
+        app_id,
+        current_user,
+        "smr_submitted",
+        before_snapshot,
+        metadata={"result_status": smr_status},
+    )
 
     fio = current_user.get('fio', '')
     await db.add_log(
@@ -971,6 +1031,7 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
     ) as cur:
         if not await cur.fetchone():
             raise HTTPException(404, "Заявка не найдена")
+    before_snapshot = await capture_smr_financial_snapshot(db, app_id)
 
     # Brigadier/worker: own teams only (INPUT filter; there is NO scoped
     # delete on this path — addenda are pure inserts).
@@ -1010,6 +1071,13 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
     if n_works or n_extras or n_hours:
         await _reset_smr_accounted(app_id)
     await db.conn.commit()
+    await _audit_smr_change(
+        app_id,
+        current_user,
+        "smr_addendum_created",
+        before_snapshot,
+        metadata={"works": n_works, "extra_works": n_extras, "hours": n_hours},
+    )
 
     fio = current_user.get('fio', '')
     await db.add_log(
@@ -1047,6 +1115,10 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
     role = current_user.get('role')
     group_ids = await _expand_merge_group(app_id)
     write_app_id = group_ids[0] if group_ids else app_id
+    before_snapshot = (
+        await capture_smr_financial_snapshot(db, app_id)
+        if action == 'edit' else {}
+    )
 
     if action == 'edit':
         # Reviewer is foreman+ (role-gated above), so the write scope is the
@@ -1074,6 +1146,10 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
         tuple(group_ids),
     )
     await db.conn.commit()
+    if action == 'edit':
+        await _audit_smr_change(
+            app_id, current_user, "smr_review_edited", before_snapshot
+        )
 
     fio = current_user.get('fio', '')
     await db.add_log(
@@ -1401,6 +1477,48 @@ async def get_smr_list(current_user=Depends(get_current_user)):
     }
 
 
+@router.get("/api/kp/apps/{app_id}/smr/reconciliation")
+async def get_smr_reconciliation(app_id: int, current_user=Depends(_require_office)):
+    """Compare saved SMR rates against the currently active price list."""
+    result = await build_smr_catalog_reconciliation(db, app_id)
+    if not result:
+        raise HTTPException(404, "Данные СМР не найдены")
+    async with db.conn.execute(
+        "SELECT date_target, COALESCE(o.name, a.object_address, '') AS object_name "
+        "FROM applications a LEFT JOIN objects o ON o.id=a.object_id WHERE a.id=?",
+        (result.get("primary_application_id") or app_id,),
+    ) as cur:
+        row = await cur.fetchone()
+    result["date_target"] = row[0] if row else ""
+    result["object_name"] = row[1] if row else ""
+    return result
+
+
+@router.get("/api/kp/apps/{app_id}/smr/audit")
+async def get_smr_financial_history(
+    app_id: int, limit: int = 100, before_id: int | None = None,
+    current_user=Depends(_require_office),
+):
+    return {
+        "items": await db.list_smr_financial_history(
+            app_id, limit=limit, before_id=before_id
+        )
+    }
+
+
+@router.get("/api/kp/catalog/versions")
+async def get_kp_catalog_versions(limit: int = 50, current_user=Depends(_require_office)):
+    return {"items": await db.list_kp_catalog_versions(limit=limit)}
+
+
+@router.get("/api/kp/catalog/versions/{version_id}")
+async def get_kp_catalog_version(version_id: int, current_user=Depends(_require_office)):
+    version = await db.get_kp_catalog_version(version_id, include_items=True)
+    if not version:
+        raise HTTPException(404, "Версия справочника не найдена")
+    return version
+
+
 @router.post("/api/kp/smr/accounted")
 async def set_smr_accounted(request: Request, current_user=Depends(_require_office)):
     """Mark one or many completed SMR applications as accounted/unaccounted."""
@@ -1423,6 +1541,17 @@ async def set_smr_accounted(request: Request, current_user=Depends(_require_offi
         expanded_ids.update(await _expand_merge_group(selected_id))
     app_ids = sorted(expanded_ids or set(app_ids))
     placeholders = ",".join("?" * len(app_ids))
+    async with db.conn.execute(
+        f"SELECT MIN(id) FROM applications WHERE id IN ({placeholders}) "
+        "GROUP BY CASE WHEN smr_group_id IS NULL OR smr_group_id='' "
+        "THEN 'app:' || id ELSE 'group:' || smr_group_id END",
+        tuple(app_ids),
+    ) as cur:
+        checkpoint_ids = [int(row[0]) for row in await cur.fetchall()]
+    checkpoint_snapshots = {
+        checkpoint_id: await capture_smr_financial_snapshot(db, checkpoint_id)
+        for checkpoint_id in checkpoint_ids
+    }
     async with db.conn.execute(
         f"SELECT id, smr_status, kp_status FROM applications "
         f"WHERE id IN ({placeholders})",
@@ -1458,6 +1587,16 @@ async def set_smr_accounted(request: Request, current_user=Depends(_require_offi
         )
         action = "Снял отметку «Учтено» с"
     await db.conn.commit()
+
+    for checkpoint_id, snapshot in checkpoint_snapshots.items():
+        await _audit_smr_change(
+            checkpoint_id,
+            current_user,
+            "smr_accounted" if accounted else "smr_unaccounted",
+            snapshot,
+            metadata={"accounted": accounted, "application_ids": app_ids},
+            force=True,
+        )
 
     fio = current_user.get("fio", "")
     await db.add_log(
@@ -1525,6 +1664,7 @@ async def download_smr_report(app_id: int, current_user=Depends(get_current_user
 @router.post("/api/kp/apps/{app_id}/submit")
 async def submit_app_kp(app_id: int, request: Request, current_user=Depends(get_current_user)):
     data = await request.json()
+    before_snapshot = await capture_smr_financial_snapshot(db, app_id)
 
     real_tg_id = current_user["tg_id"]
     user_role = current_user.get('role', 'worker')
@@ -1539,6 +1679,7 @@ async def submit_app_kp(app_id: int, request: Request, current_user=Depends(get_
     await db.submit_kp_report(app_id, data.get('items', []), user_role)
     await _reset_smr_accounted(app_id)
     await db.conn.commit()
+    await _audit_smr_change(app_id, current_user, "legacy_smr_submitted", before_snapshot)
 
     fio = current_user.get('fio', '')
     _obj = ''
@@ -1554,6 +1695,7 @@ async def submit_app_kp(app_id: int, request: Request, current_user=Depends(get_
 @router.post("/api/kp/apps/{app_id}/review")
 async def review_app_kp(app_id: int, request: Request, current_user=Depends(_require_office)):
     data = await request.json()
+    before_snapshot = await capture_smr_financial_snapshot(db, app_id)
     # If foreman edited volumes before approving, save them first
     items = data.get('items')
     if items and data.get('action') == 'approve':
@@ -1561,6 +1703,8 @@ async def review_app_kp(app_id: int, request: Request, current_user=Depends(_req
         await _reset_smr_accounted(app_id)
     action = data.get('action')
     await db.review_kp_report(app_id, action)
+    if items and action == 'approve':
+        await _audit_smr_change(app_id, current_user, "legacy_smr_review_edited", before_snapshot)
 
     real_tg_id = current_user["tg_id"]
     fio = current_user.get('fio', '')
@@ -1600,9 +1744,11 @@ async def review_app_kp(app_id: int, request: Request, current_user=Depends(_req
 @router.post("/api/kp/apps/{app_id}/update_volumes")
 async def update_kp_volumes(app_id: int, request: Request, current_user=Depends(get_current_user)):
     data = await request.json()
+    before_snapshot = await capture_smr_financial_snapshot(db, app_id)
     await db.update_kp_volumes_only(app_id, data.get('items', []))
     await _reset_smr_accounted(app_id)
     await db.conn.commit()
+    await _audit_smr_change(app_id, current_user, "volumes_updated", before_snapshot)
     return {"status": "ok"}
 
 
@@ -1751,6 +1897,14 @@ async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_
             pass
         raise HTTPException(422, "Справочник не загружен: " + "; ".join(errors[:5]))
 
+    catalog_version = await db.create_kp_catalog_version(
+        source_file=new_path,
+        source_content=content,
+        imported_by_user_id=current_user["tg_id"],
+        imported_by_name=current_user.get("fio", "Система"),
+        notes="Загрузка через настройки СМР",
+    )
+
     rows_count = 0
     try:
         async with db.conn.execute("SELECT COUNT(*) FROM kp_catalog") as cur:
@@ -1770,9 +1924,12 @@ async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_
             "filename": file_name,
             "size_bytes": size_bytes,
             "rows_count": rows_count,
+            "catalog_version_id": catalog_version.get("id"),
+            "catalog_version": catalog_version.get("version_number"),
         }, ensure_ascii=False),
     )
     return {
         "status": "ok", "file": file_name, "rows": rows_count,
         "import": getattr(db, "last_kp_import_report", {}),
+        "catalog_version": catalog_version,
     }

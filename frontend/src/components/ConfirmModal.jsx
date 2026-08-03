@@ -48,7 +48,7 @@ export default function ConfirmModal({
         <AnimatePresence>
             {isOpen && (
                 <motion.div
-                    className="!fixed !inset-0 !top-0 !left-0 !w-full !h-[100dvh] z-[99990] bg-black/50 m-0 p-0 flex items-center justify-center"
+                    className="!fixed !inset-0 !top-0 !left-0 !w-full !h-[100dvh] z-[99990] bg-black/50 m-0 p-4 flex items-start sm:items-center justify-center overflow-y-auto"
                     initial={prefersReducedMotion ? false : { opacity: 0 }}
                     animate={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
@@ -56,7 +56,7 @@ export default function ConfirmModal({
                     onClick={handleCancel}
                 >
                     <motion.div
-                        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden"
+                        className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl overflow-y-auto max-h-[calc(100dvh-2rem)]"
                         initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95, y: 10 }}
                         animate={{ opacity: 1, scale: 1, y: 0 }}
                         exit={{ opacity: 0, scale: 0.95, y: 10 }}
@@ -71,7 +71,7 @@ export default function ConfirmModal({
                                 <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1">{title}</h3>
                                 <p className="text-sm text-gray-600 dark:text-gray-400 whitespace-pre-wrap">{message}</p>
                             </div>
-                            <button onClick={handleCancel} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors flex-shrink-0">
+                            <button onClick={handleCancel} className="w-11 h-11 -mr-2 -mt-2 flex items-center justify-center rounded-xl text-gray-400 hover:text-gray-600 hover:bg-gray-100 dark:hover:text-gray-200 dark:hover:bg-gray-700 transition-colors flex-shrink-0" aria-label="Закрыть">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
@@ -90,7 +90,7 @@ export default function ConfirmModal({
                             </div>
                         )}
 
-                        <div className="flex gap-3 p-6 pt-4">
+                        <div className="flex flex-col-reverse sm:flex-row gap-3 p-6 pt-4">
                             <button onClick={handleCancel} className="flex-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 py-3 px-4 rounded-xl font-bold hover:bg-gray-200 dark:hover:bg-gray-600 transition-all active:scale-[0.98]">
                                 {cancelText}
                             </button>

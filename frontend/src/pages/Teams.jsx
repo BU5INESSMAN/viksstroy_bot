@@ -118,7 +118,7 @@ export default function Teams() {
     if (loading) return <TeamsSkeleton />;
 
     return (
-        <div className="px-4 sm:px-6 lg:px-8 space-y-6">
+        <div className="space-y-6">
 
             {/* Кнопка создания теперь выровнена по правому краю */}
             {canManage && (

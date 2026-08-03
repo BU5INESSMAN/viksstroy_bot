@@ -242,23 +242,23 @@ export default function CreateAppModal({
                         </div>
                     )}
 
-                    <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
-                        <div className="flex items-baseline gap-3 min-w-0">
-                            <h3 className="text-xl font-bold flex items-center gap-2 dark:text-white">
-                                <ClipboardList className="text-blue-500 w-6 h-6" />
-                                {appForm.id ? `Наряд №${appForm.id}` : 'Создание заявки'}
+                    <div className="flex justify-between items-start gap-3 px-4 sm:px-6 py-4 sm:py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
+                        <div className="min-w-0 flex-1">
+                            <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2 dark:text-white min-w-0">
+                                <ClipboardList className="text-blue-500 w-6 h-6 flex-shrink-0" />
+                                <span className="truncate">{appForm.id ? `Наряд №${appForm.id}` : 'Создание заявки'}</span>
                             </h3>
                             {draftSavedAt && !appForm.isViewOnly && (
                                 <span
                                     key={draftTick}
-                                    className="text-xs opacity-50 dark:text-gray-300 truncate"
+                                    className="block mt-1 text-xs opacity-50 dark:text-gray-300 truncate"
                                     title="Черновик автоматически сохраняется в браузере"
                                 >
                                     ✓ Черновик · {formatDraftAge(draftSavedAt)}
                                 </span>
                             )}
                         </div>
-                        <button type="button" disabled={isSubmitting} onClick={() => setGlobalCreateAppOpen(false)} className="text-gray-400 hover:text-red-500 disabled:opacity-50 transition-colors bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-sm border border-gray-100 dark:border-gray-700">
+                        <button type="button" disabled={isSubmitting} onClick={() => setGlobalCreateAppOpen(false)} className="w-11 h-11 flex items-center justify-center flex-shrink-0 text-gray-400 hover:text-red-500 disabled:opacity-50 transition-colors bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700" aria-label="Закрыть">
                             <X className="w-6 h-6" />
                         </button>
                     </div>

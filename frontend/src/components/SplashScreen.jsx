@@ -19,7 +19,7 @@ export default function SplashScreen({ onFinish }) {
             <div className="fixed inset-0 z-[9999] bg-gray-950 flex flex-col items-center justify-center">
                 <img src="/logo-white.png" alt="ВиКС" className="w-48 h-auto object-contain" />
                 <div className="mt-8 w-8 h-8 border-2 border-blue-500/30 border-t-blue-500 rounded-full animate-spin" />
-                <p className="absolute bottom-8 text-xs text-white/30">v2.12</p>
+                <p className="absolute bottom-8 text-xs text-white/30">v2.13</p>
             </div>
         ) : null;
     }
@@ -57,7 +57,7 @@ export default function SplashScreen({ onFinish }) {
                         transition={{ delay: 0.8 }}
                         className="absolute bottom-8 text-xs text-white/30"
                     >
-                        v2.12
+                        v2.13
                     </motion.p>
                 </motion.div>
             )}

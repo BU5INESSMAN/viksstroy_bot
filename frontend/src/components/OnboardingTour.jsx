@@ -226,13 +226,13 @@ export default function OnboardingTour({ steps, tourId, onComplete }) {
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-white/10">
                 <span className="text-[11px] text-white/25 tabular-nums">{cur + 1}/{steps.length}</span>
                 <div className="flex items-center gap-1.5">
-                  <button onClick={finish} className="text-[11px] text-white/30 hover:text-white/50 transition-colors px-1">Пропустить</button>
+                  <button onClick={finish} className="min-h-10 text-[11px] text-white/50 hover:text-white/70 transition-colors px-2">Пропустить</button>
                   {cur > 0 && (
-                    <button onClick={prev} className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors">
+                    <button onClick={prev} className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors" aria-label="Назад">
                       <ChevronLeft className="w-3.5 h-3.5 text-white/50" />
                     </button>
                   )}
-                  <button onClick={next} className="h-7 px-3 rounded-lg bg-blue-600 text-white text-xs font-medium flex items-center gap-0.5 hover:bg-blue-500 transition-colors">
+                  <button onClick={next} className="min-h-10 px-3 rounded-xl bg-blue-600 text-white text-xs font-medium flex items-center gap-0.5 hover:bg-blue-500 transition-colors">
                     {cur === steps.length - 1 ? 'Готово' : step.navigate ? 'Перейти' : 'Далее'}
                     {cur < steps.length - 1 && <ChevronRight className="w-3 h-3" />}
                   </button>

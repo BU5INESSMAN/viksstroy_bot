@@ -33,11 +33,11 @@ export default function MemberEditModal({ member, onClose, onSaved }) {
 
     return (
         <ModalPortal>
-            <div className="fixed inset-0 z-[220] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-800 shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="fixed inset-0 z-[220] bg-black/60 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
+                <form onSubmit={submit} className="w-full max-w-sm rounded-2xl bg-white dark:bg-gray-800 shadow-2xl border border-gray-200 dark:border-gray-700 overflow-y-auto max-h-[calc(100dvh-2rem)]">
                     <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-100 dark:border-gray-700">
                         <h3 className="font-bold text-gray-900 dark:text-white">Редактировать сотрудника</h3>
-                        <button type="button" onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Закрыть">
+                        <button type="button" onClick={onClose} className="w-11 h-11 flex items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-gray-700 flex-shrink-0" aria-label="Закрыть">
                             <X className="w-5 h-5 text-gray-400" />
                         </button>
                     </div>

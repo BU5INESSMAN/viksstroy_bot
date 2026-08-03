@@ -51,6 +51,7 @@ EVENTS = {
     "scheduler_failed": ("Система", "Ошибка фонового задания", {"superadmin"}),
     "backup_failed": ("Система", "Ошибка резервной копии", {"superadmin"}),
     "delivery_failed": ("Система", "Проблема доставки уведомлений", {"superadmin"}),
+    "smr_audit_failed": ("Система", "Ошибка финансового журнала СМР", {"superadmin"}),
 }
 
 LEGACY_EVENT_KEYS = {

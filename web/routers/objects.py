@@ -770,7 +770,12 @@ async def api_submit_app_extra_works(app_id: int, request: Request, current_user
     # scoped writer (_save_extra_works_inline) so it can no longer
     # blanket-wipe other brigades' extras or drop team_id on insert. Do NOT
     # expand its surface. Lazy import avoids any router import-order coupling.
-    from routers.kp import _save_extra_works_inline, _compute_write_scope, _reset_smr_accounted
+    from routers.kp import (
+        _audit_smr_change, _compute_write_scope, _reset_smr_accounted,
+        _save_extra_works_inline,
+    )
+    from smr_audit import capture_smr_financial_snapshot
+    before_snapshot = await capture_smr_financial_snapshot(db, app_id)
     user_team_ids = None
     if role in ('brigadier', 'worker'):
         user_team_ids = set(await db.get_user_team_ids(current_user['tg_id']))
@@ -780,4 +785,7 @@ async def api_submit_app_extra_works(app_id: int, request: Request, current_user
     await _save_extra_works_inline(app_id, items, current_user['tg_id'], role, team_scope=scope)
     await _reset_smr_accounted(app_id)
     await db.conn.commit()
+    await _audit_smr_change(
+        app_id, current_user, "legacy_extra_works_updated", before_snapshot
+    )
     return {"status": "ok"}

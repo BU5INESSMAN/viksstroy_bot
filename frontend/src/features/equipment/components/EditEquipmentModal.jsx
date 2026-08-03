@@ -51,11 +51,11 @@ export default function EditEquipmentModal({ equipment, categories, onClose, onU
     };
 
     return (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4" style={{ zIndex: 99990 }} onClick={onClose}>
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+        <div className="fixed inset-0 bg-black/50 flex items-start justify-center p-4 overflow-y-auto" style={{ zIndex: 99990 }} onClick={onClose}>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl w-full max-w-md max-h-[calc(100dvh-2rem)] overflow-y-auto" onClick={e => e.stopPropagation()}>
                 <div className="flex items-center justify-between p-5 border-b border-gray-100 dark:border-gray-700">
                     <h3 className="text-lg font-bold dark:text-white">Редактирование техники</h3>
-                    <button onClick={onClose} className="p-1.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
+                    <button onClick={onClose} className="w-11 h-11 flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700 rounded-xl transition-colors flex-shrink-0" aria-label="Закрыть">
                         <X className="w-5 h-5 text-gray-500" />
                     </button>
                 </div>
@@ -84,13 +84,13 @@ export default function EditEquipmentModal({ equipment, categories, onClose, onU
                     </div>
                 </div>
 
-                <div className="p-5 border-t border-gray-100 dark:border-gray-700 flex items-center justify-between">
+                <div className="p-5 border-t border-gray-100 dark:border-gray-700 flex flex-col sm:flex-row gap-3 sm:items-center sm:justify-between">
                     {!confirmDelete ? (
                         <button onClick={() => setConfirmDelete(true)} disabled={saving} className="flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400 dark:hover:bg-red-900/40 transition-colors disabled:opacity-50">
                             <Trash2 className="w-4 h-4" /> Удалить
                         </button>
                     ) : (
-                        <div className="flex items-center gap-2">
+                        <div className="grid grid-cols-2 gap-2 w-full sm:w-auto">
                             <button onClick={handleDelete} disabled={saving} className="px-4 py-2.5 rounded-xl text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-colors disabled:opacity-50">
                                 Да, удалить
                             </button>
@@ -100,9 +100,9 @@ export default function EditEquipmentModal({ equipment, categories, onClose, onU
                         </div>
                     )}
 
-                    <button onClick={handleSave} disabled={saving} className="flex items-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-md disabled:opacity-50">
+                    {!confirmDelete && <button onClick={handleSave} disabled={saving} className="min-h-11 flex items-center justify-center gap-1.5 px-5 py-2.5 rounded-xl text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-md disabled:opacity-50 w-full sm:w-auto">
                         <Save className="w-4 h-4" /> Сохранить
-                    </button>
+                    </button>}
                 </div>
             </div>
         </div>

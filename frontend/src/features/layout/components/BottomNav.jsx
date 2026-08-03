@@ -34,11 +34,11 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
                 {!isHr && <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} dataTour="bottomnav-home" />}
 
-                {canSeeObjectsKP && (
+                {isHr && (
                     <NavBtn icon={MapPin} label="Объекты" path="/objects" current={location.pathname} onClick={() => navigate('/objects')} />
                 )}
 
-                {canSeeObjectsKP && (
+                {isHr && (
                     <NavBtn icon={Briefcase} label="Ресурсы" path="/resources" current={location.pathname} onClick={() => navigate('/resources')} />
                 )}
 
@@ -106,13 +106,15 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                     >
                         <div className="flex justify-between items-center mb-4">
                             <h3 className="text-lg font-bold dark:text-white">Дополнительно</h3>
-                            <button onClick={() => setIsMenuOpen(false)} className="p-1.5 bg-gray-100 dark:bg-gray-700 rounded-full text-gray-500 hover:text-red-500 transition-colors">
+                            <button onClick={() => setIsMenuOpen(false)} className="w-11 h-11 flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-xl text-gray-500 hover:text-red-500 transition-colors" aria-label="Закрыть меню">
                                 <X className="w-4 h-4" />
                             </button>
                         </div>
 
                         {/* Main items — full width */}
                         <div className="space-y-2 mb-4">
+                            {canSeeObjectsKP && !isHr && <MenuRow icon={MapPin} color="emerald" label="Объекты" onClick={() => { setIsMenuOpen(false); navigate('/objects'); }} />}
+                            {canSeeObjectsKP && !isHr && <MenuRow icon={Briefcase} color="blue" label="Ресурсы" onClick={() => { setIsMenuOpen(false); navigate('/resources'); }} />}
                             <MenuRow icon={SettingsIcon} color="blue" label="Настройки" onClick={() => { setIsMenuOpen(false); navigate('/settings'); }} />
                             {canSeeAdmin && (
                                 <MenuRow icon={ShieldAlert} color="red" label="Админка" onClick={() => { setIsMenuOpen(false); navigate('/admin'); }} />

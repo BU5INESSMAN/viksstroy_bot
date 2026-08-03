@@ -13,9 +13,10 @@ from database.objects_repo import ObjectsRepoMixin
 from database.kp_repo import KpRepoMixin
 from database.exchange_repo import ExchangeRepoMixin
 from database.hours_repo import HoursRepoMixin
+from database.smr_audit_repo import SmrAuditRepoMixin
 
 
-class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin, ObjectsRepoMixin, KpRepoMixin, ExchangeRepoMixin, HoursRepoMixin):
+class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin, ObjectsRepoMixin, KpRepoMixin, ExchangeRepoMixin, HoursRepoMixin, SmrAuditRepoMixin):
     def __init__(self, db_path: str):
         self.db_path = db_path
         self.conn = None
@@ -126,6 +127,7 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
         await self.repair_catalog_units_if_numeric()
         await self.sync_worker_specialties()
         await self.upgrade_system_monitoring()
+        await self.upgrade_smr_financial_audit()
 
         # Employee status columns on team_members
         for col_stmt in [
@@ -165,6 +167,19 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
             latest_file = self.get_latest_catalog_path()
             if latest_file:
                 await self.import_kp_from_excel(latest_file)
+
+        # Existing installations start their version history with the catalog
+        # that was active at migration time. Later uploads append a version in
+        # the upload workflow after a successful import.
+        async with self.conn.execute("SELECT COUNT(*) FROM kp_catalog_versions") as cur:
+            version_count = int((await cur.fetchone())[0])
+        async with self.conn.execute("SELECT COUNT(*) FROM kp_catalog") as cur:
+            current_catalog_count = int((await cur.fetchone())[0])
+        if version_count == 0 and current_catalog_count > 0:
+            await self.create_kp_catalog_version(
+                source_file=self.get_latest_catalog_path() or "",
+                notes="Initial snapshot created during financial audit migration",
+            )
 
         # Repair orphaned object_kp_plan rows whose kp_id no longer
         # exists in kp_catalog (caused by previous DELETE+INSERT imports
@@ -648,6 +663,98 @@ class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRe
                 occurrences INTEGER DEFAULT 1,
                 details TEXT DEFAULT ''
             );
+        """)
+        await self.conn.commit()
+
+    async def upgrade_smr_financial_audit(self):
+        """Create append-only SMR audit and KP catalog version storage.
+
+        Kept as an explicit migration because existing installations execute
+        schema.sql only from a deployment-dependent working directory.
+        """
+        await self.conn.executescript("""
+            CREATE TABLE IF NOT EXISTS kp_catalog_versions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version_number INTEGER NOT NULL UNIQUE,
+                source_file TEXT DEFAULT '',
+                source_hash TEXT DEFAULT '',
+                catalog_hash TEXT NOT NULL,
+                imported_by_user_id INTEGER,
+                imported_by_name TEXT DEFAULT '',
+                row_count INTEGER NOT NULL DEFAULT 0,
+                status TEXT NOT NULL DEFAULT 'active',
+                notes TEXT DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                activated_at TEXT,
+                FOREIGN KEY (imported_by_user_id) REFERENCES users(user_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_kp_catalog_versions_created
+                ON kp_catalog_versions(created_at DESC, id DESC);
+            CREATE TABLE IF NOT EXISTS kp_catalog_version_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                version_id INTEGER NOT NULL,
+                kp_id INTEGER,
+                category TEXT DEFAULT '',
+                name TEXT NOT NULL,
+                unit TEXT DEFAULT '',
+                coefficient REAL DEFAULT 0,
+                salary REAL DEFAULT 0,
+                price REAL DEFAULT 0,
+                old_salary REAL DEFAULT 0,
+                FOREIGN KEY (version_id) REFERENCES kp_catalog_versions(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_kp_catalog_version_items_version
+                ON kp_catalog_version_items(version_id, category, name, id);
+            CREATE TABLE IF NOT EXISTS smr_financial_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id INTEGER NOT NULL,
+                primary_application_id INTEGER NOT NULL,
+                application_ids_json TEXT NOT NULL DEFAULT '[]',
+                event_type TEXT NOT NULL,
+                actor_user_id INTEGER,
+                actor_role TEXT DEFAULT '',
+                actor_name TEXT DEFAULT '',
+                source TEXT DEFAULT '',
+                reason TEXT DEFAULT '',
+                before_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                after_snapshot_json TEXT NOT NULL DEFAULT '{}',
+                diff_json TEXT NOT NULL DEFAULT '[]',
+                before_hash TEXT DEFAULT '',
+                after_hash TEXT DEFAULT '',
+                kp_catalog_version_id INTEGER,
+                metadata_json TEXT NOT NULL DEFAULT '{}',
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (application_id) REFERENCES applications(id),
+                FOREIGN KEY (primary_application_id) REFERENCES applications(id),
+                FOREIGN KEY (actor_user_id) REFERENCES users(user_id),
+                FOREIGN KEY (kp_catalog_version_id) REFERENCES kp_catalog_versions(id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_smr_fin_audit_app_created
+                ON smr_financial_audit(primary_application_id, created_at DESC, id DESC);
+            CREATE TRIGGER IF NOT EXISTS trg_smr_financial_audit_no_update
+            BEFORE UPDATE ON smr_financial_audit BEGIN
+                SELECT RAISE(ABORT, 'smr_financial_audit is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS trg_smr_financial_audit_no_delete
+            BEFORE DELETE ON smr_financial_audit BEGIN
+                SELECT RAISE(ABORT, 'smr_financial_audit is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS trg_kp_catalog_versions_no_update
+            BEFORE UPDATE ON kp_catalog_versions BEGIN
+                SELECT RAISE(ABORT, 'kp_catalog_versions is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS trg_kp_catalog_versions_no_delete
+            BEFORE DELETE ON kp_catalog_versions BEGIN
+                SELECT RAISE(ABORT, 'kp_catalog_versions is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS trg_kp_catalog_version_items_no_update
+            BEFORE UPDATE ON kp_catalog_version_items BEGIN
+                SELECT RAISE(ABORT, 'kp_catalog_version_items is append-only');
+            END;
+            CREATE TRIGGER IF NOT EXISTS trg_kp_catalog_version_items_no_delete
+            BEFORE DELETE ON kp_catalog_version_items BEGIN
+                SELECT RAISE(ABORT, 'kp_catalog_version_items is append-only');
+            END;
         """)
         await self.conn.commit()
 

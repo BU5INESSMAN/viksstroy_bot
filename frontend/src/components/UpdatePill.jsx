@@ -20,7 +20,7 @@ export default function UpdatePill({ worker }) {
       transition={{ duration: 0.25, ease: [0.23, 1, 0.32, 1] }}
       style={{
         position: 'fixed',
-        top: 'calc(env(safe-area-inset-top) + 12px)',
+        bottom: 'calc(88px + env(safe-area-inset-bottom))',
         left: '50%',
         transform: 'translateX(-50%)',
         zIndex: 45,
@@ -35,7 +35,7 @@ export default function UpdatePill({ worker }) {
         <button
           type="button"
           onClick={handleApply}
-          className="px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-bold transition-colors active:scale-[0.97]"
+          className="min-h-10 px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-xs font-bold transition-colors active:scale-[0.97]"
         >
           Применить
         </button>

@@ -455,12 +455,12 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                                     <div className="max-h-48 overflow-y-auto space-y-1">
                                                         {linkCandidates.map((c) => (
                                                             <button key={c.user_id} onClick={() => handleAdminLink(c.user_id)} disabled={linkingInProgress}
-                                                                className="w-full flex items-center justify-between p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-amber-400 dark:hover:border-amber-600 transition-all text-left disabled:opacity-50">
-                                                                <div>
-                                                                    <span className="text-sm font-bold text-gray-800 dark:text-gray-200">{displayFio(c)}</span>
+                                                                className="w-full flex items-center justify-between gap-3 p-3 rounded-xl bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 hover:border-amber-400 dark:hover:border-amber-600 transition-all text-left disabled:opacity-50">
+                                                                <div className="min-w-0 flex-1">
+                                                                    <span className="text-sm font-bold text-gray-800 dark:text-gray-200 break-words">{displayFio(c)}</span>
                                                                     <span className="text-[10px] text-gray-400 ml-2 font-mono">ID: {c.user_id}</span>
                                                                 </div>
-                                                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${c.user_id > 0 ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' : 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-400'}`}>
+                                                                <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded ${c.user_id > 0 ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' : 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-400'}`}>
                                                                     {c.user_id > 0 ? 'Telegram' : 'MAX'}
                                                                 </span>
                                                             </button>

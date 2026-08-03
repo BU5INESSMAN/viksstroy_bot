@@ -22,11 +22,12 @@ export default function ObjectRequestModal({ onClose, onSubmitted, tgId }) {
     };
 
     return (
-        <div className="fixed inset-0 w-full h-[100dvh] z-[99990] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
-            <div className="bg-white dark:bg-gray-800 p-8 rounded-3xl w-full max-w-lg shadow-2xl relative">
+        <div className="fixed inset-0 w-full h-[100dvh] z-[99990] bg-black/60 flex items-start justify-center p-4 overflow-y-auto backdrop-blur-sm">
+            <div className="bg-white dark:bg-gray-800 p-5 sm:p-8 rounded-3xl w-full max-w-lg shadow-2xl relative max-h-[calc(100dvh-2rem)] overflow-y-auto">
                 <button
                     onClick={onClose}
-                    className="absolute top-5 right-5 text-gray-400 hover:text-red-500 bg-gray-50 dark:bg-gray-700 rounded-full p-1.5"
+                    className="absolute top-3 right-3 sm:top-5 sm:right-5 w-11 h-11 flex items-center justify-center text-gray-400 hover:text-red-500 bg-gray-50 dark:bg-gray-700 rounded-xl"
+                    aria-label="Закрыть"
                 >
                     <X className="w-5 h-5" />
                 </button>

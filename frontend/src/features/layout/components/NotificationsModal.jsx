@@ -64,13 +64,13 @@ export default function NotificationsModal({ isOpen, onClose }) {
                 initial={prefersReducedMotion ? false : { opacity: 0 }}
                 animate={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
-                className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-16 sm:pt-24 px-4"
+                className="fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 backdrop-blur-sm flex items-start justify-center pt-4 sm:pt-24 px-4 pb-[max(1rem,env(safe-area-inset-bottom))]"
                 style={{ top: 0, left: 0, right: 0, bottom: 0 }}
                 onClick={onClose}
             >
                 <motion.div
                     {...anim}
-                    className="w-full max-w-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[70vh] flex flex-col"
+                    className="w-full max-w-md bg-white dark:bg-gray-900 border border-gray-200 dark:border-white/10 rounded-2xl shadow-2xl overflow-hidden max-h-[calc(100dvh-2rem)] sm:max-h-[70vh] flex flex-col"
                     onClick={e => e.stopPropagation()}
                 >
                     {/* Header */}
@@ -84,11 +84,11 @@ export default function NotificationsModal({ isOpen, onClose }) {
                         </div>
                         <div className="flex items-center gap-1.5">
                             {unreadCount > 0 && (
-                                <button onClick={markAllRead} title="Прочитать все" className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+                                <button onClick={markAllRead} title="Прочитать все" className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
                                     <CheckCheck className="w-4 h-4 text-blue-500" />
                                 </button>
                             )}
-                            <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+                            <button onClick={onClose} className="w-10 h-10 flex items-center justify-center rounded-lg hover:bg-gray-100 dark:hover:bg-white/10 transition-colors" aria-label="Закрыть уведомления">
                                 <X className="w-4 h-4 text-gray-400 dark:text-white/50" />
                             </button>
                         </div>

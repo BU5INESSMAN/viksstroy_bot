@@ -151,7 +151,7 @@ export default function ActiveApplicationsCard({ todayApps, upcomingApps, role, 
                 <AnimatePresence>
                 {!collapsed && (
                     <motion.div
-                        className="flex gap-2"
+                        className="grid grid-cols-2 gap-2"
                         initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
                         animate={{ height: 'auto', opacity: 1 }}
                         exit={{ height: 0, opacity: 0 }}
@@ -160,7 +160,7 @@ export default function ActiveApplicationsCard({ todayApps, upcomingApps, role, 
                     >
                         <button
                             onClick={() => setTab('today')}
-                            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                            className={`min-w-0 flex items-center justify-center gap-1 px-2 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
                                 tab === 'today'
                                     ? 'bg-blue-500 text-white shadow-sm'
                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
@@ -176,7 +176,7 @@ export default function ActiveApplicationsCard({ todayApps, upcomingApps, role, 
                         </button>
                         <button
                             onClick={() => setTab('upcoming')}
-                            className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-bold transition-all ${
+                            className={`min-w-0 flex items-center justify-center gap-1 px-2 sm:px-4 py-2 rounded-xl text-xs sm:text-sm font-bold transition-all ${
                                 tab === 'upcoming'
                                     ? 'bg-blue-500 text-white shadow-sm'
                                     : 'bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'

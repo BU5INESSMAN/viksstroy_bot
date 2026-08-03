@@ -271,8 +271,8 @@ export default function Layout() {
 
             {/* Main content area */}
             <div
-                className="flex-1 flex flex-col min-h-screen w-full max-w-full pb-24 lg:pb-0 transition-[margin] duration-200"
-                style={{ marginLeft: typeof window !== 'undefined' && window.innerWidth >= 1024 ? sidebarWidth : 0 }}
+                className="flex-1 flex flex-col min-h-screen w-full max-w-full pb-24 lg:pb-0 transition-[margin] duration-200 lg:ml-[var(--sidebar-width)]"
+                style={{ '--sidebar-width': `${sidebarWidth}px` }}
             >
                 {/* Header — mobile only */}
                 <div className="lg:hidden">

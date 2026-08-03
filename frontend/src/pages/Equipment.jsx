@@ -159,7 +159,7 @@ export default function Equipment() {
     if (loading) return <EquipmentSkeleton />;
 
     return (
-        <div className="px-4 sm:px-6 lg:px-8 space-y-6">
+        <div className="space-y-6">
 
             {/* Кнопки управления — flex-wrap gap-2.5, чтобы ничего не обрезалось на узких экранах */}
             {canManageEquipment && (

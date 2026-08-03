@@ -354,6 +354,103 @@ CREATE INDEX IF NOT EXISTS idx_app_hours_app ON application_hours(app_id);
 -- can add extra hours for an existing member.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_hours_unique ON application_hours(app_id, team_id, user_id) WHERE is_additional = 0;
 
+-- Immutable financial history for SMR reports. The complete before/after
+-- snapshots make an audit entry independent from later catalog edits.
+CREATE TABLE IF NOT EXISTS smr_financial_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL,
+    primary_application_id INTEGER NOT NULL,
+    application_ids_json TEXT NOT NULL DEFAULT '[]',
+    event_type TEXT NOT NULL,
+    actor_user_id INTEGER,
+    actor_role TEXT DEFAULT '',
+    actor_name TEXT DEFAULT '',
+    source TEXT DEFAULT '',
+    reason TEXT DEFAULT '',
+    before_snapshot_json TEXT NOT NULL DEFAULT '{}',
+    after_snapshot_json TEXT NOT NULL DEFAULT '{}',
+    diff_json TEXT NOT NULL DEFAULT '[]',
+    before_hash TEXT DEFAULT '',
+    after_hash TEXT DEFAULT '',
+    kp_catalog_version_id INTEGER,
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (application_id) REFERENCES applications(id),
+    FOREIGN KEY (primary_application_id) REFERENCES applications(id),
+    FOREIGN KEY (actor_user_id) REFERENCES users(user_id),
+    FOREIGN KEY (kp_catalog_version_id) REFERENCES kp_catalog_versions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_smr_fin_audit_app_created
+    ON smr_financial_audit(primary_application_id, created_at DESC, id DESC);
+
+-- Every successful price-list import creates one immutable version and a
+-- normalized copy of all its rows. KP ids are retained for traceability.
+CREATE TABLE IF NOT EXISTS kp_catalog_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version_number INTEGER NOT NULL UNIQUE,
+    source_file TEXT DEFAULT '',
+    source_hash TEXT DEFAULT '',
+    catalog_hash TEXT NOT NULL,
+    imported_by_user_id INTEGER,
+    imported_by_name TEXT DEFAULT '',
+    row_count INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'active',
+    notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    activated_at TEXT,
+    FOREIGN KEY (imported_by_user_id) REFERENCES users(user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_kp_catalog_versions_created
+    ON kp_catalog_versions(created_at DESC, id DESC);
+
+CREATE TABLE IF NOT EXISTS kp_catalog_version_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    version_id INTEGER NOT NULL,
+    kp_id INTEGER,
+    category TEXT DEFAULT '',
+    name TEXT NOT NULL,
+    unit TEXT DEFAULT '',
+    coefficient REAL DEFAULT 0,
+    salary REAL DEFAULT 0,
+    price REAL DEFAULT 0,
+    old_salary REAL DEFAULT 0,
+    FOREIGN KEY (version_id) REFERENCES kp_catalog_versions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_kp_catalog_version_items_version
+    ON kp_catalog_version_items(version_id, category, name, id);
+
+-- Audit/version rows are append-only even when application data is edited.
+CREATE TRIGGER IF NOT EXISTS trg_smr_financial_audit_no_update
+BEFORE UPDATE ON smr_financial_audit
+BEGIN
+    SELECT RAISE(ABORT, 'smr_financial_audit is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_smr_financial_audit_no_delete
+BEFORE DELETE ON smr_financial_audit
+BEGIN
+    SELECT RAISE(ABORT, 'smr_financial_audit is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_kp_catalog_versions_no_update
+BEFORE UPDATE ON kp_catalog_versions
+BEGIN
+    SELECT RAISE(ABORT, 'kp_catalog_versions is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_kp_catalog_versions_no_delete
+BEFORE DELETE ON kp_catalog_versions
+BEGIN
+    SELECT RAISE(ABORT, 'kp_catalog_versions is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_kp_catalog_version_items_no_update
+BEFORE UPDATE ON kp_catalog_version_items
+BEGIN
+    SELECT RAISE(ABORT, 'kp_catalog_version_items is append-only');
+END;
+CREATE TRIGGER IF NOT EXISTS trg_kp_catalog_version_items_no_delete
+BEFORE DELETE ON kp_catalog_version_items
+BEGIN
+    SELECT RAISE(ABORT, 'kp_catalog_version_items is append-only');
+END;
+
 -- Биржа ресурсов (Stage 5A): обмен техникой между прорабами
 CREATE TABLE IF NOT EXISTS equipment_exchanges (
     id INTEGER PRIMARY KEY AUTOINCREMENT,

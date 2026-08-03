@@ -97,7 +97,7 @@ export default function PWAInstallBanner() {
               type="button"
               aria-label="Скрыть"
               onClick={handleClose}
-              className="absolute top-2 right-2 w-7 h-7 inline-flex items-center justify-center rounded-lg text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors active:scale-[0.94]"
+              className="absolute top-2 right-2 w-10 h-10 inline-flex items-center justify-center rounded-xl text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors active:scale-[0.94]"
             >
               <X className="w-4 h-4" />
             </button>

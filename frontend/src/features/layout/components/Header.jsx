@@ -1,21 +1,8 @@
-import { ShieldCheck, Bell } from 'lucide-react';
-import { ROLE_NAMES as roleNames } from '../../../utils/roleConfig';
+import { Bell } from 'lucide-react';
 
-export default function Header({ isTMA, realRole, role, unreadCount = 0, onlineCount = 0, onNotificationsClick, onOnlineClick }) {
-    const endRoleTest = () => {
-        localStorage.setItem('user_role', realRole);
-        localStorage.removeItem('real_role');
-        window.location.reload();
-    };
-
+export default function Header({ isTMA, unreadCount = 0, onlineCount = 0, onNotificationsClick, onOnlineClick }) {
     return (
         <header className="w-full max-w-full bg-white dark:bg-gray-800 shadow-sm border-b border-gray-100 dark:border-gray-700/80 mb-4" style={{ paddingTop: isTMA ? 64 : 'env(safe-area-inset-top, 16px)' }}>
-            {realRole && (
-                <div className="bg-purple-600 text-white text-center py-2.5 font-bold flex justify-center items-center space-x-4 relative z-50 shadow-sm text-sm">
-                    <span className="flex items-center gap-2"><ShieldCheck className="w-4 h-4" /> Тест роли: {roleNames[role]}</span>
-                    <button onClick={endRoleTest} className="bg-white/20 px-4 py-1.5 rounded-lg text-xs transition-colors active:scale-95">Вернуться</button>
-                </div>
-            )}
             <nav className="px-4 sm:px-6 py-2.5 flex items-center justify-between max-w-7xl mx-auto gap-3">
                 {/* Left: notification bell */}
                 <button

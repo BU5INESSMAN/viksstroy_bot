@@ -9,7 +9,8 @@
 const OFFICE = ['superadmin', 'boss', 'moderator'];
 const FIELD = ['foreman', 'brigadier', 'worker', 'driver'];
 const FOREMAN_PLUS = ['superadmin', 'boss', 'moderator', 'foreman'];
-const KP_ROLES = [...FOREMAN_PLUS, 'brigadier'];
+const KP_ROLES = [...FOREMAN_PLUS, 'brigadier', 'worker', 'hr'];
+const NON_HR = ['superadmin', 'boss', 'moderator', 'foreman', 'brigadier', 'worker', 'driver'];
 
 export function getFullTourSteps(role) {
   const isMobile = typeof window !== 'undefined' && window.innerWidth < 1024;
@@ -26,7 +27,7 @@ const ALL_STEPS = [
   { target: 'sidebar-create-btn', title: 'Создание заявки', description: 'Нажмите, чтобы создать новую заявку на работу.', position: 'right', roles: FOREMAN_PLUS, desktopOnly: true },
 
   // === BOTTOMNAV INTRO (mobile only) ===
-  { target: 'bottomnav-home', title: 'Главная', description: 'Канбан-доска со всеми заявками.', position: 'top', mobileOnly: true },
+  { target: 'bottomnav-home', title: 'Главная', description: 'Канбан-доска со всеми заявками.', position: 'top', roles: NON_HR, mobileOnly: true },
   { target: 'bottomnav-orders', title: 'Заявки', description: 'Модерация или ваша история заявок.', position: 'top', mobileOnly: true },
   { target: 'bottomnav-create', title: 'Создать', description: 'Создание новой заявки на работу.', position: 'top', roles: FOREMAN_PLUS, mobileOnly: true },
   { target: 'bottomnav-menu', title: 'Меню', description: 'Все остальные разделы приложения.', position: 'top', mobileOnly: true },
@@ -70,9 +71,7 @@ const ALL_STEPS = [
   { target: 'kp-grid', title: 'Наряды', description: 'Карточки нарядов для заполнения объёмов.', position: 'top', page: '/kp', roles: KP_ROLES },
 
   // === НАСТРОЙКИ ===
-  { target: 'sidebar-nav-settings', title: 'Настройки', description: 'Администрирование системы. Перейдём.', position: 'right', navigate: '/system', roles: OFFICE, desktopOnly: true },
-  { target: 'system-users', title: 'Пользователи', description: 'Управление ролями и блокировка.', position: 'top', page: '/system', roles: OFFICE },
-  { target: 'system-broadcast', title: 'Рассылки', description: 'Отправка сообщений в группу или ЛС.', position: 'top', page: '/system', roles: OFFICE },
+  { target: 'sidebar-nav-settings', title: 'Настройки', description: 'Тема, профиль и ваши уведомления.', position: 'right', navigate: '/settings', desktopOnly: true },
 
   // === ПОДДЕРЖКА ===
   { target: 'sidebar-support', title: 'Поддержка', description: 'ИИ-ассистент. Перейдём.', position: 'right', navigate: '/support', desktopOnly: true },

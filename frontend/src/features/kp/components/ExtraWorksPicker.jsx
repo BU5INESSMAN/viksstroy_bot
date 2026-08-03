@@ -181,7 +181,7 @@ export default function ExtraWorksPicker({
                                     {selected.map((s, idx) => (
                                         <div
                                             key={s.rid ?? idx}
-                                            className="flex items-center gap-2 px-2.5 py-2 rounded-xl bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800/40"
+                                            className="grid grid-cols-[minmax(0,1fr)_auto_auto] sm:flex sm:items-center gap-2 px-2.5 py-2 rounded-xl bg-white dark:bg-gray-800 border border-amber-200 dark:border-amber-800/40"
                                         >
                                             <div className="flex-1 min-w-0">
                                                 <p className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate leading-tight">
@@ -203,7 +203,7 @@ export default function ExtraWorksPicker({
                                                 value={s.volume}
                                                 onChange={e => updateVolume(s.rid, e.target.value)}
                                                 placeholder="0"
-                                                className="w-20 p-1.5 text-center text-sm font-bold border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                                                className="col-start-1 w-full sm:w-20 min-h-10 p-1.5 text-center text-sm font-bold border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-amber-400"
                                             />
                                             <span className="min-w-[2.5rem] text-xs font-semibold text-gray-500 dark:text-gray-400">
                                                 {s.unit || ''}
@@ -212,7 +212,7 @@ export default function ExtraWorksPicker({
                                                 <button
                                                     type="button"
                                                     onClick={() => remove(s.rid)}
-                                                    className="text-gray-300 hover:text-red-500 transition-colors p-1 active:scale-90"
+                                                    className="w-10 h-10 text-gray-400 hover:text-red-500 transition-colors flex items-center justify-center rounded-lg active:scale-90"
                                                     title="Удалить"
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
