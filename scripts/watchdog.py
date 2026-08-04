@@ -152,7 +152,11 @@ async def send_max(chat_id: int, message: str) -> None:
     if not token:
         return
     from maxapi import Bot
-    await Bot(token=token).send_message(chat_id=chat_id, text=message)
+    bot = Bot(token=token)
+    try:
+        await bot.send_message(chat_id=chat_id, text=message)
+    finally:
+        await bot.close_session()
 
 
 def dispatch(title: str, issues: list[str], event_key: str = "system_unavailable") -> None:
