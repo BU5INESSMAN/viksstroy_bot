@@ -16,8 +16,6 @@ import logging
 from PIL import Image, ImageDraw, ImageFont
 from database_deps import db, TZ_BARNAUL
 from services.max_api import send_max_message, get_max_group_id
-import aiohttp
-from services.tg_session import get_tg_session
 
 logger = logging.getLogger("SCHEDULE_GEN")
 
@@ -596,10 +594,10 @@ async def generate_schedule_images(target_date: str = None) -> tuple[io.BytesIO,
 
 
 async def publish_schedule_to_group(target_date: str = None) -> bool:
-    """Генерирует и отправляет расстановку в групповой чат (TG + MAX).
+    """Генерирует и отправляет расстановку в групповой чат MAX.
 
     v2.7: two images posted sequentially — A (бригады) first, B (техника)
-    second — to the same TG and MAX groups. Atomic: BOTH images are
+    second — to the same MAX group. Atomic: BOTH images are
     generated up-front; if generation raises, neither is posted.
     """
     if target_date is None:
@@ -623,8 +621,6 @@ async def publish_schedule_to_group(target_date: str = None) -> bool:
     filepath_a = _save(buf_a, "a_brigades")
     filepath_b = _save(buf_b, "b_equipment")
 
-    bot_token = os.getenv("BOT_TOKEN")
-    group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
     max_group_id = await get_max_group_id()
 
@@ -632,25 +628,6 @@ async def publish_schedule_to_group(target_date: str = None) -> bool:
     cap_b = f"📋 Расстановка на {target_date} — Техника"
 
     published = False
-
-    # TG — отправляем два фото в группу: сначала A, затем B
-    if bot_token and group_id:
-        for buf, cap in ((buf_a, cap_a), (buf_b, cap_b)):
-            buf.seek(0)
-            data = aiohttp.FormData()
-            data.add_field("chat_id", str(group_id))
-            data.add_field("photo", buf.getvalue(), filename="schedule.png", content_type="image/png")
-            data.add_field("caption", cap)
-            data.add_field("parse_mode", "HTML")
-            try:
-                async with await get_tg_session() as session:
-                    async with session.post(
-                        f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=data
-                    ) as resp:
-                        if resp.status == 200:
-                            published = True
-            except Exception:
-                pass
 
     # MAX — отправляем два фото в группу: сначала A, затем B
     if max_bot_token and max_group_id:

@@ -39,7 +39,8 @@ async def broadcast_dm_users(real_id: int, fio: str, message: str, user_ids: lis
 
 async def run_test_notification(real_tg_id: int, fio: str, test_type: str, platform: str):
     """Execute an extended test notification scenario. Returns (success, error_msg)."""
-    platform_name = "MAX" if platform == "max" else "Telegram" if platform == "tg" else "MAX + Telegram"
+    platform_name = "MAX"
+    platform = "max"
 
     if test_type == "brigadier":
         await notify_users(

@@ -91,6 +91,12 @@ export default function RoleDashboard({ role, summary, onCreateApplication }) {
             metrics: [[HardHat, 'Назначений сегодня', personal.today, 'blue'], [CalendarDays, 'В ближайшие 7 дней', personal.upcoming, 'violet'], [UserCheck, 'Статус', STATUS_LABELS[summary.personal_status?.status] || 'Доступен', 'emerald']],
             actions: [['Мои заявки', '/my-apps'], ['Открыть профиль', '/settings']],
         },
+        employee: {
+            eyebrow: 'Добро пожаловать', title: 'Главная сотрудника',
+            subtitle: 'Базовый доступ к профилю, настройкам, уведомлениям и поддержке.',
+            metrics: [],
+            actions: [['Открыть профиль', '/settings'], ['Гайд', '/guide'], ['Поддержка', '/support']],
+        },
         driver: {
             eyebrow: 'Рабочий день', title: 'Главная водителя', subtitle: 'Текущие и ближайшие назначения на технику.',
             metrics: [[HardHat, 'Назначений сегодня', personal.today, 'blue'], [CalendarDays, 'В ближайшие 7 дней', personal.upcoming, 'violet'], [UserCheck, 'Статус', STATUS_LABELS[summary.personal_status?.status] || 'Доступен', 'emerald']],

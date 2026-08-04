@@ -1,5 +1,4 @@
 import os
-import aiohttp
 
 from maxapi.types import ButtonsPayload, CallbackButton
 
@@ -8,7 +7,6 @@ from database_deps import db, TZ_BARNAUL
 from utils import get_all_linked_ids
 from services.image_service import strip_html
 from services.max_api import get_max_dm_chat_id, send_max_text
-from services.tg_session import get_tg_session
 
 
 async def get_smr_debtors():
@@ -102,7 +100,7 @@ async def get_schedule_dates():
 
 
 async def send_smart_schedule_prompt():
-    """Отправить модераторам запрос на публикацию расстановки с inline-кнопками (TG + MAX)."""
+    """Отправить модераторам запрос на публикацию расстановки с кнопками MAX."""
     if db.conn is None: await db.init_db()
 
     tomorrow_str = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -142,40 +140,23 @@ async def send_smart_schedule_prompt():
         (publish_at.strftime("%Y-%m-%d %H:%M:%S"),))
     await db.conn.commit()
 
-    bot_token = os.getenv("BOT_TOKEN")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
 
     # Получаем модераторов+
     async with db.conn.execute(
-        "SELECT user_id, notify_tg, notify_max FROM users "
+        "SELECT user_id, notify_max FROM users "
         "WHERE role IN ('moderator', 'boss', 'superadmin') AND is_blacklisted = 0"
     ) as cur:
         mod_users = await cur.fetchall()
 
-    tg_markup = {"inline_keyboard": [
-        [{"text": "✅ Опубликовать", "callback_data": "smart_publish_now"}],
-        [{"text": "⏳ Отложить на 10 мин", "callback_data": "smart_publish_delay"}],
-        [{"text": "📢 Уведомить должников и перенести", "callback_data": "smart_publish_notify_defer"}],
-    ]}
-
     max_plain_text = strip_html(text)
 
     for user_row in mod_users:
-        uid, notify_tg, notify_max = user_row
+        uid, notify_max = user_row
         linked_ids = await get_all_linked_ids(uid)
 
         for lid in linked_ids:
-            if lid > 0 and notify_tg and bot_token:
-                try:
-                    async with await get_tg_session() as session:
-                        await session.post(
-                            f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                            json={"chat_id": lid, "text": text,
-                                  "parse_mode": "HTML", "reply_markup": tg_markup}
-                        )
-                except:
-                    pass
-            elif lid < 0 and notify_max and max_bot_token:
+            if lid < 0 and notify_max and max_bot_token:
                 max_buttons = [
                     [CallbackButton(text="✅ Опубликовать", payload="smart_publish_now")],
                     [CallbackButton(text="⏳ Отложить на 10 мин", payload="smart_publish_delay")],

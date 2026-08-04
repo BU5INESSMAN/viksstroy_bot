@@ -9,7 +9,7 @@ import { saveAuthData } from '../utils/tokenStorage';
  * Legacy equipment-invite landing page.
  *
  * v2.6 commit 7 rewrite: this page used to bind the redeemer's
- * Telegram/MAX account to a specific piece of equipment. v2.6 inverted
+ * messenger account to a specific piece of equipment. v2.6 inverted
  * that model — drivers are now independent ``users`` rows with their own
  * personal ``invite_code``. The legacy URL pattern
  * ``/equip-invite/{code}`` is kept alive for users with saved/bookmarked

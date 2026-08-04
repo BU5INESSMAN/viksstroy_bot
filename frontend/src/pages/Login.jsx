@@ -105,7 +105,7 @@ export default function Login() {
                     <p className="font-bold text-sm text-red-300">Ошибка</p>
                     <p className="text-sm text-red-300/80 mt-0.5">{error}</p>
                     <p className="text-xs mt-2">
-                        <a href="https://t.me/BU5INESSMAN" target="_blank" rel="noopener noreferrer" className="text-red-400/70 underline hover:text-red-300 transition-colors">Техподдержка</a>
+                        <a href="https://max.ru/id222264297116_bot" target="_blank" rel="noopener noreferrer" className="text-red-400/70 underline hover:text-red-300 transition-colors">Техподдержка</a>
                     </p>
                 </div>
               </motion.div>
@@ -123,7 +123,7 @@ export default function Login() {
               <ul className="space-y-2.5 text-sm text-white/50">
                   <li className="flex items-start gap-2.5">
                       <MessageCircle className="w-4 h-4 text-white/30 mt-0.5 flex-shrink-0" />
-                      <span>Откройте бота <a href="https://max.ru/id222264297116_bot" className="text-blue-400 font-semibold hover:text-blue-300 transition-colors">MAX</a> или <a href="https://t.me/viksstroy_bot" className="text-blue-400 font-semibold hover:text-blue-300 transition-colors">Telegram</a></span>
+                      <span>Откройте бота <a href="https://max.ru/id222264297116_bot" className="text-blue-400 font-semibold hover:text-blue-300 transition-colors">MAX</a></span>
                   </li>
                   <li className="flex items-center gap-2.5">
                       <Send className="w-4 h-4 text-white/30 flex-shrink-0" />

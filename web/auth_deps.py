@@ -59,6 +59,8 @@ async def get_current_user(request: Request):
     user_dict = dict(user)
     if user_dict.get("is_blacklisted"):
         raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
+    if user_dict.get("is_deleted"):
+        raise HTTPException(status_code=403, detail="Аккаунт удалён. Обратитесь к руководителю")
 
     # Alias so callers can use either user["user_id"] or user["tg_id"]
     user_dict["tg_id"] = user_dict["user_id"]

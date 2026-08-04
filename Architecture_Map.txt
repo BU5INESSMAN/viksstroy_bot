@@ -1,3 +1,8 @@
+CURRENT RUNTIME NOTE (v2.15.0, 2026-08-04): Telegram has been completely
+removed from the running application. MAX is the only messenger integration.
+main.py, tg_session.py, TMAAuth.jsx and the Telegram Docker service no longer
+exist. Older Telegram references below describe historical architecture only.
+
 ================================================================================
                     VIKSSTROY BOT -- ARCHITECTURE MAP
           (updated 2026-05-18 for v2.6 — graphify last run 1080 nodes / 1236 edges)
@@ -8,7 +13,7 @@
 A construction workforce management platform built around a Kanban-style order
 (zayavka) system. Foremen create work orders assigning teams, equipment, and
 schedules to construction sites. Admins review/approve orders, which are then
-auto-published as visual schedule images to Telegram and MAX group chats.
+auto-published as visual schedule images to MAX group chats.
 
 Key capabilities:
   - Kanban order workflow (pending -> approved -> published -> in_progress -> completed)

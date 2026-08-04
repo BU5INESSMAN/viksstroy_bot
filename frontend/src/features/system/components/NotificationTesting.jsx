@@ -34,7 +34,6 @@ export default function NotificationTesting({
     const [users, setUsers] = useState([]);
     const [targetId, setTargetId] = useState('');     // '' = self
     const [userSearch, setUserSearch] = useState('');
-    const [chTelegram, setChTelegram] = useState(true);
     const [chMax, setChMax] = useState(true);
     const [chPwa, setChPwa] = useState(true);
     const [notifType, setNotifType] = useState('app_approved');
@@ -63,11 +62,10 @@ export default function NotificationTesting({
 
     const channels = useMemo(() => {
         const out = [];
-        if (chTelegram) out.push('telegram');
         if (chMax) out.push('max');
         if (chPwa) out.push('pwa');
         return out;
-    }, [chTelegram, chMax, chPwa]);
+    }, [chMax, chPwa]);
 
     const handleTestSend = async () => {
         if (channels.length === 0) {
@@ -98,7 +96,7 @@ export default function NotificationTesting({
         try {
             const res = await axios.post('/api/system/test_schedule');
             if (res.data?.status === 'ok') {
-                setScheduleResult(`Расстановка на ${res.data.date} отправлена вам в Telegram`);
+                setScheduleResult(`Расстановка на ${res.data.date} отправлена вам в MAX`);
                 toast.success('Расстановка отправлена');
             } else {
                 setScheduleResult(res.data?.message || 'Не удалось отправить');
@@ -157,7 +155,6 @@ export default function NotificationTesting({
                             Каналы
                         </label>
                         <div className="flex flex-wrap gap-2">
-                            <ChannelToggle label="Telegram" active={chTelegram} onClick={() => setChTelegram(v => !v)} />
                             <ChannelToggle label="MAX" active={chMax} onClick={() => setChMax(v => !v)} />
                             <ChannelToggle label="Push" active={chPwa} onClick={() => setChPwa(v => !v)} />
                         </div>
@@ -217,7 +214,7 @@ export default function NotificationTesting({
             <GlassCard className="p-6">
                 <SectionHeader icon={ImageIcon} iconColor="text-emerald-500 bg-emerald-500"
                     title="Тестовая расстановка"
-                    subtitle="Сгенерирует актуальную расстановку на завтра и отправит её вам в Telegram." />
+                    subtitle="Сгенерирует актуальную расстановку на завтра и отправит её вам в MAX." />
                 <button
                     onClick={handleTestSchedule}
                     disabled={testingSchedule}
@@ -239,9 +236,7 @@ export default function NotificationTesting({
                             <label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1.5 uppercase tracking-widest">Платформа</label>
                             <select value={testPlatform} onChange={(e) => setTestPlatform(e.target.value)}
                                 className="w-full bg-gray-50 border border-gray-200 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-indigo-500 p-3 dark:bg-gray-700/50 dark:border-gray-600 dark:text-white outline-none">
-                                <option value="all">Все (MAX + Telegram)</option>
                                 <option value="max">Только MAX</option>
-                                <option value="tg">Только Telegram</option>
                             </select>
                         </div>
                         <button onClick={testNotification}

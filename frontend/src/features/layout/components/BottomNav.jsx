@@ -9,7 +9,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile, setGlobalCreateAppOpen, theme, toggleTheme }) {
+export default function BottomNav({ role, canCreateApp, openProfile, setGlobalCreateAppOpen, theme, toggleTheme }) {
     const navigate = useNavigate();
     const location = useLocation();
     const tgId = localStorage.getItem('tg_id');
@@ -17,6 +17,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
 
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
     const isHr = role === 'hr';
+    const canSeeApplications = !['hr', 'employee'].includes(role);
     const canSeeObjectsKP = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeKP = ['hr', 'brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeAdmin = ['boss', 'superadmin'].includes(role);
@@ -57,7 +58,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
                     </div>
                 )}
 
-                {!isHr && <NavBtn
+                {canSeeApplications && <NavBtn
                     icon={ClipboardList} label="Заявки"
                     path={isWorkerOrDriver ? "/my-apps" : "/review"}
                     current={location.pathname}

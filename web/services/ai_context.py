@@ -12,7 +12,7 @@ logger = logging.getLogger("AI_CONTEXT")
 ROLE_NAMES = {
     "superadmin": "Супер-Админ", "boss": "Руководитель",
     "moderator": "Модератор", "foreman": "Прораб",
-    "brigadier": "Бригадир", "worker": "Рабочий", "driver": "Водитель",
+    "brigadier": "Бригадир", "worker": "Рабочий", "employee": "Сотрудник", "driver": "Водитель",
 }
 _OFFICE = ("moderator", "boss", "superadmin")
 _FOREMAN_PLUS = ("foreman", "moderator", "boss", "superadmin")

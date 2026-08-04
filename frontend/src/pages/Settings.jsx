@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
-import { Settings as SettingsIcon, Send, Smartphone, Bell, EyeOff } from 'lucide-react';
+import { Settings as SettingsIcon, Smartphone, Bell, EyeOff } from 'lucide-react';
 import GlassCard from '../components/ui/GlassCard';
 import ToggleRow from '../features/settings/components/ToggleRow';
 
@@ -10,7 +10,6 @@ const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 const DEFAULTS = {
-    notify_telegram: true,
     notify_max: true,
     notify_pwa: true,
     hide_smr_debtors: false,
@@ -119,13 +118,6 @@ export default function Settings() {
             <GlassCard className="p-5">
                 <SectionTitle>Уведомления</SectionTitle>
                 <div className="space-y-1 mt-2">
-                    <ToggleRow
-                        icon={Send}
-                        label="Telegram"
-                        description="Получать уведомления в Telegram"
-                        value={settings.notify_telegram}
-                        onChange={(v) => setKey('notify_telegram', v)}
-                    />
                     <ToggleRow
                         icon={Smartphone}
                         label="MAX"

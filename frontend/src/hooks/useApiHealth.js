@@ -15,7 +15,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
  *   - On recovery (transition apiDown → false), hard-reloads the page
  *     so all data refetches cleanly with a valid session cookie.
  */
-const HEALTH_CHECK_URL = '/api/online';
+const HEALTH_CHECK_URL = '/api/health';
 const RETRY_INTERVAL = 5000;
 const FAST_RETRY = 2000;
 const TIMEOUT_MS = 8000;
@@ -29,7 +29,7 @@ export default function useApiHealth() {
     const mountedRef = useRef(true);
     const wasDownRef = useRef(false);
 
-    const checkHealth = useCallback(async () => {
+    const checkHealth = useCallback(async function pollHealth() {
         if (!mountedRef.current) return;
         let alive = false;
         try {
@@ -63,23 +63,23 @@ export default function useApiHealth() {
 
         if (alive) {
             failCountRef.current = 0;
-            if (apiDown) setApiDown(false);
+            setApiDown(false);
             return;
         }
 
         failCountRef.current += 1;
         if (failCountRef.current >= FAILURE_THRESHOLD) {
-            if (!apiDown) setApiDown(true);
+            setApiDown(true);
         } else if (failCountRef.current === 1) {
             // First failure — schedule a fast re-check so the banner
             // appears in ~4s instead of waiting a full interval.
             if (fastRetryTimerRef.current) clearTimeout(fastRetryTimerRef.current);
             fastRetryTimerRef.current = setTimeout(() => {
                 fastRetryTimerRef.current = null;
-                checkHealth();
+                pollHealth();
             }, FAST_RETRY);
         }
-    }, [apiDown]);
+    }, []);
 
     useEffect(() => {
         mountedRef.current = true;

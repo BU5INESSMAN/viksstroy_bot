@@ -27,7 +27,6 @@ def parse_fio(fio: str) -> tuple[str, str, str]:
 # Default notification + UI preferences. Kept in one place so frontend
 # and backend agree on the shape.
 DEFAULT_USER_SETTINGS = {
-    "notify_telegram": True,
     "notify_max": True,
     "notify_pwa": True,
     "hide_smr_debtors": False,

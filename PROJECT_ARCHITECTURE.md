@@ -54,7 +54,7 @@
 
 ### Роутеры
 
-`web/routers/auth.py` — Эндпоинты аутентификации. `POST /api/auth/code` — авторизация по 6-значному коду (для веб). `POST /api/users/link_account` — привязка вторичного аккаунта (MAX→TG). `POST /api/users/unlink_platform` — отвязка платформы. `POST /api/max/web_auth` — веб-аутентификация для MAX. `POST /api/max/auth`, `POST /api/max/register` — аутентификация и регистрация MAX с паролем. `POST /api/telegram_auth` — Telegram Web App аутентификация (HMAC-SHA256). `POST /api/tma/auth` — аутентификация из Telegram Mini App. `POST /api/register_telegram` — регистрация в Telegram с паролем.
+`web/routers/auth.py` — Эндпоинты аутентификации. `POST /api/auth/code` — авторизация по 6-значному коду (для веб). `POST /api/users/link_account` — привязка старой записи к основному MAX-профилю. `POST /api/users/unlink_platform` — отвязка старой записи. `POST /api/max/web_auth` — веб-аутентификация для MAX. `POST /api/max/auth`, `POST /api/max/register` — аутентификация и регистрация MAX с паролем. Telegram-аутентификация и её маршруты удалены в v2.15.0.
 
 `web/routers/dashboard.py` — Главная панель управления. `GET /api/dashboard` — полные данные для дашборда (статистика, бригады, техника, заявки за 14 дней, адреса). `GET /api/logs` — последние 50 логов. `GET /api/settings` — системные настройки. `POST /api/settings/update` — обновление настроек (moderator+). `POST /api/cron/start_day` — ручная публикация нарядов. `POST /api/cron/end_day` — завершение дневных нарядов. `POST /api/cron/check_timeouts` — проверка просроченных ресурсов. `POST /api/system/test_notification` — тестовое уведомление с фото наряда.
 
@@ -104,7 +104,7 @@
 
 `frontend/src/main.jsx` — Точка входа приложения (ReactDOM.createRoot, Vite).
 
-`frontend/src/App.jsx` — Корневой компонент маршрутизации (React Router v6). Публичные маршруты: `/` (Login), `/tma` (TMAAuth), `/max` (MAXAuth), `/invite/:code` (JoinTeam), `/equip-invite/:code` (JoinEquipment). Защищённые маршруты (в Layout): `/dashboard` (Home), `/guide` (Guide), `/updates` (Updates), `/system` (System), `/my-apps` (MyApps), `/review` (Review), `/resources` (Resources), `/objects` (Objects), `/kp` (KP). Компонент `ProtectedRoute` проверяет наличие `user_role` в localStorage.
+`frontend/src/App.jsx` — Корневой компонент маршрутизации (React Router v6). Публичные маршруты: `/` (Login), `/max` (MAXAuth), `/invite/:code` (JoinTeam), `/equip-invite/:code` (JoinEquipment). Защищённые маршруты (в Layout): `/dashboard` (Home), `/guide` (Guide), `/updates` (Updates), `/system` (System), `/my-apps` (MyApps), `/review` (Review), `/resources` (Resources), `/objects` (Objects), `/kp` (KP). Компонент `ProtectedRoute` проверяет наличие `user_role` в localStorage и сверяет сессию с сервером.
 
 ### Утилиты
 
@@ -166,7 +166,7 @@
 
 `frontend/src/pages/Login.jsx` — Страница входа. Инструкция по получению кода (команда `/web` в боте), ввод 6-значного кода, POST на `/api/auth/code`, сохранение `role` и `tg_id` в localStorage, редирект на `/dashboard`.
 
-`frontend/src/pages/TMAAuth.jsx` — Аутентификация через Telegram Mini App. Извлечение данных из `window.Telegram.WebApp.initDataUnsafe`. Если пользователь существует — автовход; если новый — запрос пароля, регистрация, редирект.
+Аутентификация выполняется через `frontend/src/pages/MAXAuth.jsx`; прежняя страница Mini App удалена в v2.15.0.
 
 `frontend/src/pages/MAXAuth.jsx` — Аутентификация через MAX Web App. Парсинг WebAppData из URL/hash. Если существует — автовход; если новый — запрос пароля, регистрация, редирект.
 

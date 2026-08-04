@@ -1,8 +1,6 @@
 # Top-level dependencies — pinned to production versions (L-02)
 # Transitive deps resolved by pip automatically.
-aiogram==3.27.0
 aiosqlite==0.22.1
-aiohttp-socks==0.11.0
 apscheduler==3.11.2
 cryptography==46.0.7
 fastapi==0.135.3

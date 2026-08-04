@@ -87,7 +87,7 @@ export default function Teams() {
     };
 
     const handleUnlinkMember = async (memberId) => {
-        const ok = await confirm("Отвязать Telegram/MAX аккаунт от этого рабочего?", { title: "Отвязка аккаунта", variant: "warning", confirmText: "Отвязать" });
+        const ok = await confirm("Отвязать аккаунт MAX от этого рабочего?", { title: "Отвязка аккаунта", variant: "warning", confirmText: "Отвязать" });
         if (!ok) return;
         try {
             await axios.post(`/api/teams/members/${memberId}/unlink`);

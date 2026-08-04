@@ -83,11 +83,11 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
     }, [fetchCounts]);
 
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
-    const isHr = role === 'hr';
     const canCreateApp = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeObjects = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeKP = ['hr', 'brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
+    const canSeeApplications = !['hr', 'employee'].includes(role);
 
     const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Monitor;
 
@@ -111,7 +111,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
             ],
         },
         {
-            id: 'review', icon: ClipboardList, label: 'Заявки', path: isWorkerOrDriver ? '/my-apps' : '/review', visible: !isHr,
+            id: 'review', icon: ClipboardList, label: 'Заявки', path: isWorkerOrDriver ? '/my-apps' : '/review', visible: canSeeApplications,
             subItems: isWorkerOrDriver ? [] : [
                 { label: 'Одобренные', nav: '/review?filter=approved', countKey: 'approved_apps' },
             ],

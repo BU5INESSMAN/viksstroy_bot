@@ -1,4 +1,4 @@
-import { Link, Send, MessageCircle, Copy, X } from 'lucide-react';
+import { Link, MessageCircle, Copy, X } from 'lucide-react';
 import { copyToClipboard } from '../../../utils/clipboard.js';
 import toast from 'react-hot-toast';
 
@@ -7,7 +7,7 @@ export default function TeamInviteModal({ inviteInfo, setInviteInfo, copiedLink,
 
     const copyInviteMessage = () => {
         const code = inviteInfo.invite_code || inviteInfo.join_password;
-        const message = `👋 Привет! Присоединяйся к нашей бригаде в системе «ВиКС».\n\n✈️ Ссылка для Telegram бота:\n${inviteInfo.tg_bot_link}\n\n💬 Для мессенджера MAX:\nОтправьте боту Расписания команду:\n/join ${code}`;
+        const message = `👋 Привет! Присоединяйся к нашей бригаде в системе «ВиКС».\n\nОткрой бота MAX и отправь команду:\n/join ${code}`;
         copyToClipboard(message, 'all', setCopiedLink);
         toast.success('Полное сообщение скопировано в буфер обмена!');
     };
@@ -21,17 +21,9 @@ export default function TeamInviteModal({ inviteInfo, setInviteInfo, copiedLink,
                 <h3 className="text-2xl font-bold mb-2 dark:text-white flex items-center gap-2">
                     <Link className="w-6 h-6 text-indigo-500" /> Приглашение
                 </h3>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-6 font-medium leading-relaxed">Скопируйте и отправьте ссылки рабочим, чтобы они смогли присоединиться к бригаде.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-6 font-medium leading-relaxed">Скопируйте и отправьте команду рабочим, чтобы они смогли присоединиться через MAX.</p>
 
                 <div className="space-y-4 mb-6">
-                    <div>
-                        <label className="flex items-center gap-1.5 text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
-                            <Send className="w-4 h-4" /> Для Telegram:
-                        </label>
-                        <button onClick={() => copyToClipboard(inviteInfo.tg_bot_link, 'tg', setCopiedLink)} className="w-full text-left px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-gray-50 dark:bg-gray-700/50 font-bold hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-sm text-blue-600 dark:text-blue-400 active:scale-[0.98]">
-                            {copiedLink === 'tg' ? '✅ Успешно скопировано!' : '🔗 Нажмите, чтобы скопировать'}
-                        </button>
-                    </div>
                     <div>
                         <label className="flex items-center gap-1.5 text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
                             <MessageCircle className="w-4 h-4" /> Для мессенджера MAX:

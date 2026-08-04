@@ -86,18 +86,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(
 // Register service worker for PWA
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').then(reg => {
-      // Check for updates every 5 minutes
-      setInterval(() => reg.update(), 5 * 60 * 1000);
-
-      reg.addEventListener('updatefound', () => {
-        const newWorker = reg.installing;
-        newWorker.addEventListener('statechange', () => {
-          if (newWorker.state === 'activated') {
-            window.location.reload();
-          }
-        });
-      });
-    }).catch(() => {});
+    // Update detection and the single controlled reload live in pwaUpdate.js.
+    // Keeping registration here avoids two competing reload listeners.
+    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
   });
 }

@@ -1,7 +1,7 @@
 // Bump this integer whenever sw.js or cache strategy changes.
 // v2.9.1: bumped 2 -> 3 to purge the pre-v2.9 cache-first /assets/* bundle so
 // clients fetch the new object-chronology render instead of the stale one.
-const CACHE_VERSION = 8;
+const CACHE_VERSION = 9;
 const CACHE_NAME = 'viks-cache-v' + CACHE_VERSION;
 
 const MAINTENANCE_HTML = `
@@ -39,21 +39,26 @@ const MAINTENANCE_HTML = `
         <div class="spinner" id="spinner"></div>
         <h1>Обновление платформы</h1>
         <p>Приложение обновляется. Это займёт несколько секунд.</p>
-        <button class="btn" onclick="location.reload()">Перезагрузить страницу</button>
+        <button class="btn" onclick="reloadFresh()">Открыть приложение</button>
         <div class="status" id="status">Проверка соединения...</div>
         <div class="updated" id="updated">✅ Приложение обновлено! Перезагрузите страницу.</div>
     </div>
     <script>
         let checkInterval;
+        function reloadFresh() {
+            const url = new URL('/', location.origin);
+            url.searchParams.set('recovered', Date.now());
+            location.replace(url.toString());
+        }
         function checkServer() {
-            fetch('/api/settings', { method: 'GET', cache: 'no-store' })
+            fetch('/api/health', { method: 'GET', cache: 'no-store', credentials: 'omit' })
                 .then(r => {
                     if (r.ok) {
                         document.getElementById('spinner').style.display = 'none';
                         document.getElementById('status').style.display = 'none';
                         document.getElementById('updated').style.display = 'block';
                         clearInterval(checkInterval);
-                        setTimeout(() => location.reload(), 2000);
+                        setTimeout(reloadFresh, 1200);
                     }
                 })
                 .catch(() => {
@@ -67,7 +72,8 @@ const MAINTENANCE_HTML = `
 </html>
 `;
 
-// Install: cache maintenance page, skip waiting immediately
+// Install: cache maintenance page. An existing client activates this worker
+// through the explicit SKIP_WAITING message, preventing competing reload loops.
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) =>
@@ -79,7 +85,6 @@ self.addEventListener('install', (event) => {
       )
     ).catch(() => {}) // never block install on cache failure
   );
-  self.skipWaiting();
 });
 
 // Activate: delete old caches, but PRESERVE auth token cache

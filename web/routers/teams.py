@@ -45,7 +45,6 @@ async def api_generate_invite(team_id: int, current_user=Depends(get_current_use
     invite_code, join_password = await db.generate_team_invite(team_id)
     return {
         "invite_link": f"https://miniapp.viks22.ru/invite/{invite_code}",
-        "tg_bot_link": f"https://t.me/viksstroy_bot?start=invite_{invite_code}",
         "invite_code": invite_code,
         "join_password": join_password
     }

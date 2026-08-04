@@ -32,7 +32,6 @@ def _valid_bot_token(token: str) -> bool:
     if not token:
         return False
     expected_tokens = (
-        os.getenv("BOT_TOKEN", "").strip(),
         os.getenv("MAX_BOT_TOKEN", "").strip(),
     )
     return any(
@@ -42,7 +41,7 @@ def _valid_bot_token(token: str) -> bool:
 
 
 async def _get_exchange_actor(request: Request, data: dict, current_user):
-    """Use the web session, or a signed internal request from Telegram/MAX."""
+    """Use the web session, or a signed internal request from MAX."""
     if current_user:
         return current_user
 

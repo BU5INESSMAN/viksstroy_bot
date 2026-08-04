@@ -16,36 +16,13 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
     <title>ВиКС</title>
-    <script>
-      // Load the Telegram SDK ONLY inside a Telegram Mini App. telegram.org is
-      // throttled/blocked by some RU ISPs, so browser/PWA users (who never need
-      // the SDK) must never request it -- an unconditional load white-screens them.
-      // The "inside Telegram" signal exists BEFORE the SDK loads: the native client
-      // sets window.TelegramWebviewProxy, and web/desktop Telegram passes tgWebApp*
-      // params in the URL hash or query string.
-      (function () {
-        try {
-          var inTelegram = window.TelegramWebviewProxy || window.Telegram ||
-            (location.hash + location.search).indexOf('tgWebApp') !== -1;
-          if (!inTelegram) return;
-          var s = document.createElement('script');
-          s.src = 'https://telegram.org/js/telegram-web-app.js';
-          s.async = true;
-          // A blocked/failed load must be swallowed -- never an uncaught error,
-          // never a hang. TMAAuth.jsx polls for window.Telegram.WebApp after this
-          // and shows a friendly "open inside Telegram" message if it never appears.
-          s.onerror = function () { /* telegram.org unreachable -- app stays usable */ };
-          document.head.appendChild(s);
-        } catch (e) { /* never let the loader break render */ }
-      })();
-    </script>
-    <script type="module" crossorigin src="/assets/index-BlJTXeJ7.js"></script>
+    <script type="module" crossorigin src="/assets/index-DuUPvxtu.js"></script>
     <link rel="modulepreload" crossorigin href="/assets/vendor-react-CGaqSVn8.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-motion-DnDhYO-l.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-axios-DhXgJQ-f.js">
     <link rel="modulepreload" crossorigin href="/assets/vendor-toast-C--ACnw5.js">
-    <link rel="modulepreload" crossorigin href="/assets/vendor-icons-DiF4_sye.js">
-    <link rel="stylesheet" crossorigin href="/assets/index-BYnjhFxF.css">
+    <link rel="modulepreload" crossorigin href="/assets/vendor-icons-BWOI8vMr.js">
+    <link rel="stylesheet" crossorigin href="/assets/index-B6KWyuZS.css">
   </head>
   <body>
     <div id="root"></div>

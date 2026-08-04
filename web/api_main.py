@@ -242,7 +242,6 @@ async def startup():
         ('office_reminder_time', ''),
         ('auto_start_orders_time', ''),
         ('report_request_time', ''),
-        ('support_tg_link', ''),
         ('support_max_link', ''),
         ('gemini_api_key', ''),
     ]:

@@ -17,6 +17,7 @@ from services.notifications import notify_users
 from auth_deps import get_current_user, require_role
 from utils_fio import format_fio, merge_user_settings, get_user_settings
 from role_config import ASSIGNABLE_ROLES, ROLE_NAMES_RU
+from services.role_passwords import ROLE_PASSWORDS, get_role_passwords, set_role_password
 
 logger = logging.getLogger("USERS")
 
@@ -24,6 +25,125 @@ router = APIRouter(tags=["Users"])
 
 _require_office = require_role("superadmin", "boss", "moderator")
 _require_boss_plus = require_role("superadmin", "boss")
+_require_superadmin = require_role("superadmin")
+
+
+class RolePasswordRequest(BaseModel):
+    password: str
+
+
+class BanUserRequest(BaseModel):
+    reason: str = ""
+
+
+@router.get("/api/admin/role-passwords")
+async def api_role_passwords(current_user=Depends(_require_superadmin)):
+    values = await get_role_passwords(db)
+    return [
+        {"role": role, "label": ROLE_NAMES_RU.get(role, role), "password": values.get(role, "")}
+        for role in ROLE_PASSWORDS
+    ]
+
+
+@router.put("/api/admin/role-passwords/{role}")
+async def api_set_role_password(role: str, body: RolePasswordRequest,
+                                current_user=Depends(_require_superadmin)):
+    password = body.password.strip()
+    if role not in ROLE_PASSWORDS:
+        raise HTTPException(404, "Роль не поддерживает вход по паролю")
+    if len(password) < 6:
+        raise HTTPException(400, "Пароль должен содержать не менее 6 символов")
+    await set_role_password(db, role, password)
+    await db.add_log(
+        current_user["tg_id"], current_user.get("fio", "Супер-Админ"),
+        f"Изменил пароль роли «{ROLE_NAMES_RU.get(role, role)}»",
+        target_type="system",
+    )
+    return {"status": "ok"}
+
+
+async def _target_for_admin_action(target_id: int, current_user: dict) -> tuple[int, dict]:
+    resolved_id = await resolve_id(target_id)
+    if resolved_id == int(current_user["tg_id"]):
+        raise HTTPException(400, "Нельзя выполнить это действие со своим аккаунтом")
+    row = await db.get_user(resolved_id)
+    if not row:
+        raise HTTPException(404, "Пользователь не найден")
+    target = dict(row)
+    if target.get("role") == "superadmin" and current_user.get("role") != "superadmin":
+        raise HTTPException(403, "Только супер-администратор может управлять супер-администратором")
+    return resolved_id, target
+
+
+@router.post("/api/users/{target_id}/ban")
+async def ban_user(target_id: int, body: BanUserRequest,
+                   current_user=Depends(_require_boss_plus)):
+    resolved_id, target = await _target_for_admin_action(target_id, current_user)
+    reason = body.reason.strip() or "Причина не указана"
+    actor_id = int(current_user["tg_id"])
+    actor_fio = current_user.get("fio", "Администратор")
+    await db.conn.execute(
+        "UPDATE users SET is_blacklisted=1, ban_reason=?, banned_at=datetime('now'), "
+        "banned_by=?, banned_by_fio=? WHERE user_id=?",
+        (reason, actor_id, actor_fio, resolved_id),
+    )
+    linked_ids = await get_all_linked_ids(resolved_id)
+    placeholders = ",".join("?" for _ in linked_ids)
+    if linked_ids:
+        await db.conn.execute(
+            f"DELETE FROM sessions WHERE user_id IN ({placeholders})", tuple(linked_ids)
+        )
+    await db.conn.commit()
+    await db.add_log(
+        actor_id, actor_fio, f"Заблокировал пользователя {target.get('fio') or resolved_id}",
+        target_type="user", target_id=resolved_id,
+        details=json.dumps({"action": "user_banned", "reason": reason}, ensure_ascii=False),
+    )
+    asyncio.create_task(notify_users(
+        [], f"⛔ <b>Учётная запись заблокирована</b>\nПричина: {reason}\nКем: {actor_fio}",
+        "dashboard", extra_tg_ids=[resolved_id], event_key="account_banned",
+    ))
+    return {"status": "ok"}
+
+
+@router.delete("/api/users/{target_id}/ban")
+async def unban_user(target_id: int, current_user=Depends(_require_boss_plus)):
+    resolved_id, target = await _target_for_admin_action(target_id, current_user)
+    await db.conn.execute(
+        "UPDATE users SET is_blacklisted=0, ban_reason='', banned_at=NULL, "
+        "banned_by=NULL, banned_by_fio='' WHERE user_id=?",
+        (resolved_id,),
+    )
+    await db.conn.commit()
+    await db.add_log(
+        current_user["tg_id"], current_user.get("fio", "Администратор"),
+        f"Снял блокировку с пользователя {target.get('fio') or resolved_id}",
+        target_type="user", target_id=resolved_id,
+        details=json.dumps({"action": "user_unbanned"}, ensure_ascii=False),
+    )
+    asyncio.create_task(notify_users(
+        [], "✅ <b>Блокировка вашей учётной записи снята</b>\nВы снова можете войти в приложение.",
+        "dashboard", extra_tg_ids=[resolved_id], event_key="account_unbanned",
+    ))
+    return {"status": "ok"}
+
+
+@router.post("/api/users/{target_id}/restore")
+async def restore_deleted_user(target_id: int, current_user=Depends(_require_boss_plus)):
+    resolved_id, target = await _target_for_admin_action(target_id, current_user)
+    if not target.get("is_deleted"):
+        raise HTTPException(400, "Пользователь не удалён")
+    await db.conn.execute(
+        "UPDATE users SET is_deleted=0, is_active=0 WHERE user_id=?", (resolved_id,)
+    )
+    await db.conn.commit()
+    await db.add_log(
+        current_user["tg_id"], current_user.get("fio", "Администратор"),
+        f"Восстановил пользователя {target.get('fio') or resolved_id}",
+        target_type="user", target_id=resolved_id,
+        details=json.dumps({"action": "user_restored"}, ensure_ascii=False),
+    )
+    return {"status": "ok"}
 
 
 @router.get("/api/users")
@@ -31,23 +151,15 @@ async def get_users(current_user=Depends(_require_office)):
     """List all users. Office (moderator+) only."""
     async with db.conn.execute(
         "SELECT user_id, fio, last_name, first_name, middle_name, specialty, "
-        "role, is_blacklisted, linked_user_id, avatar_url FROM users"
+        "role, is_blacklisted, linked_user_id, avatar_url, is_deleted, "
+        "ban_reason, banned_at, banned_by, banned_by_fio, is_active, last_active FROM users"
     ) as cur:
         users = []
         for r in await cur.fetchall():
             user_id = r[0]
             linked_uid = r[8]
 
-            linked_platform = None
-            if linked_uid is not None:
-                linked_platform = "TG" if linked_uid > 0 else "MAX"
-
-            own_platform = "TG" if user_id > 0 else "MAX"
-            platforms = [own_platform]
-            if linked_uid is not None:
-                other_platform = "TG" if linked_uid > 0 else "MAX"
-                if other_platform not in platforms:
-                    platforms.append(other_platform)
+            has_max = user_id < 0 or (linked_uid is not None and linked_uid < 0)
 
             users.append({
                 "user_id": user_id,
@@ -59,9 +171,16 @@ async def get_users(current_user=Depends(_require_office)):
                 "role": r[6] or "",
                 "is_blacklisted": r[7],
                 "linked_user_id": linked_uid,
-                "linked_platform": linked_platform,
-                "platforms": platforms,
+                "linked_platform": "MAX" if has_max else None,
+                "platforms": ["MAX"] if has_max else [],
                 "avatar_url": r[9] or "",
+                "is_deleted": int(r[10] or 0),
+                "ban_reason": r[11] or "",
+                "banned_at": r[12],
+                "banned_by": r[13],
+                "banned_by_fio": r[14] or "",
+                "is_active": int(r[15] or 0),
+                "last_active": r[16],
             })
         return users
 
@@ -530,6 +649,9 @@ def _user_public(user: dict) -> dict:
         "role": user.get("role") or "",
         "avatar_url": user.get("avatar_url") or "",
         "is_blacklisted": int(user.get("is_blacklisted") or 0),
+        "is_deleted": int(user.get("is_deleted") or 0),
+        "ban_reason": user.get("ban_reason") or "",
+        "banned_at": user.get("banned_at"),
         "linked_user_id": user.get("linked_user_id"),
         "settings": settings,
     }

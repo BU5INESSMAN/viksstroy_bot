@@ -1,4 +1,4 @@
-import { Link, X, Send, MessageCircle, Copy } from 'lucide-react';
+import { Link, X, MessageCircle, Copy } from 'lucide-react';
 import { useState } from 'react';
 import { copyToClipboard } from '../../../utils/clipboard.js';
 import { displayFio } from '../../../utils/fioFormat';
@@ -6,19 +6,17 @@ import toast from 'react-hot-toast';
 
 /**
  * Post-create invite modal. Mirrors EquipmentInviteModal in tone.
- * Shows both TG bot deep-link and MAX /join command, plus a single-button
- * "copy everything" message.
+ * Shows the MAX /join command and a ready-to-send message.
  */
 export default function DriverInviteModal({ driver, onClose }) {
     const [copied, setCopied] = useState('');
     if (!driver) return null;
 
     const code = driver.invite_code;
-    const tgBotLink = `https://t.me/viksstroy_bot?start=driver_${code}`;
     const fio = displayFio(driver);
 
     const copyAll = () => {
-        const msg = `🚜 Привет! Вот приглашение для привязки профиля водителя в «ВиКС».\n\nФИО: ${fio}\n\n✈️ Для Telegram бота:\n${tgBotLink}\n\n💬 Для мессенджера MAX:\nОтправьте боту команду:\n/join ${code}`;
+        const msg = `🚜 Привет! Вот приглашение для привязки профиля водителя в «ВиКС».\n\nФИО: ${fio}\n\nОткройте бота MAX и отправьте команду:\n/join ${code}`;
         copyToClipboard(msg, 'all', setCopied);
         toast.success('Сообщение скопировано');
     };
@@ -33,17 +31,9 @@ export default function DriverInviteModal({ driver, onClose }) {
                     <Link className="w-6 h-6 text-cyan-500" /> Приглашение
                 </h3>
                 <p className="text-sm font-bold text-cyan-700 dark:text-cyan-400 mb-4 bg-cyan-50 dark:bg-cyan-900/20 p-3 rounded-xl border border-cyan-100 dark:border-cyan-800/30">{fio}</p>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mb-6 font-medium">Отправьте водителю — он привяжет к этому коду свой Telegram или MAX.</p>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-6 font-medium">Отправьте водителю — он привяжет к этому коду свой MAX.</p>
 
                 <div className="space-y-4 mb-6">
-                    <div>
-                        <label className="flex items-center gap-1.5 text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
-                            <Send className="w-4 h-4" /> Для Telegram:
-                        </label>
-                        <button onClick={() => copyToClipboard(tgBotLink, 'tg', setCopied)} className="w-full text-left px-4 py-3.5 border border-gray-200 dark:border-gray-600 rounded-xl text-sm bg-gray-50 dark:bg-gray-700/50 font-bold hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors shadow-sm text-blue-600 dark:text-blue-400 active:scale-[0.98]">
-                            {copied === 'tg' ? '✅ Успешно скопировано!' : '🔗 Нажмите, чтобы скопировать'}
-                        </button>
-                    </div>
                     <div>
                         <label className="flex items-center gap-1.5 text-xs font-bold text-gray-500 dark:text-gray-400 mb-2 uppercase tracking-wider">
                             <MessageCircle className="w-4 h-4" /> Для мессенджера MAX:

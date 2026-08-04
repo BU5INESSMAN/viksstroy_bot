@@ -19,6 +19,7 @@ from database_deps import db
 from utils import resolve_id
 from services.notifications import notify_users, notify_fio_match
 from rate_limit import registration_limiter
+from services.role_passwords import match_role_password
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ async def _create_session(user_id: int) -> str:
 
 
 async def _check_fio_match(new_user_id: int, new_fio: str):
-    """Stage 5B-1: Ищет пользователей с совпадающим ФИО на другой платформе."""
+    """Ищет старые записи с совпадающим ФИО для безопасного объединения истории."""
     if not new_fio or new_fio.startswith("Пользователь"):
         return
 
@@ -325,7 +326,7 @@ async def api_auth_by_code(code: str = Form(...)):
                 status_code=400,
                 detail=(
                     "Этот код привязки водителя. "
-                    "Войдите через Telegram или MAX и затем откройте ссылку "
+                    "Войдите через MAX и затем откройте ссылку "
                     "приглашения, чтобы привязать профиль."
                 ),
             )
@@ -417,6 +418,8 @@ async def api_max_auth(code: str = Form(...)):
     if user:
         if dict(user).get("is_blacklisted"):
             raise HTTPException(status_code=403, detail="Заблокирован")
+        if dict(user).get("is_deleted"):
+            raise HTTPException(status_code=403, detail="Аккаунт удалён")
         token = await _create_session(real_tg_id)
         user_dict = dict(user)
         return _make_auth_response(
@@ -435,24 +438,9 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
     pseudo_tg_id = -int(max_id)
     # v2.7.1 (M-1/M-3): throttle registration attempts before checking passwords.
     await _registration_rate_check(pseudo_tg_id)
-    role = None
-    if _check_role_password(password, "FOREMAN_PASS"):
-        role = "foreman"
-    elif _check_role_password(password, "MODERATOR_PASS"):
-        role = "moderator"
-    elif _check_role_password(password, "BOSS_PASS"):
-        role = "boss"
-    elif _check_role_password(password, "SUPERADMIN_PASS"):
-        role = "superadmin"
+    role = await match_role_password(db, password)
     if not role: raise HTTPException(status_code=401, detail="Неверный пароль")
     fio = f"{last_name} {first_name}".strip() or f"Пользователь MAX {max_id}"
-    # v2.7.1 (M-1): a static role password cannot self-provision an office role.
-    if role in OFFICE_ROLES:
-        await _audit_office_role_block(pseudo_tg_id, fio, role, "password")
-        raise HTTPException(
-            status_code=403,
-            detail="Роли модератор/босс/суперадмин выдаются только по приглашению от суперадмина.",
-        )
     await db.add_user(pseudo_tg_id, fio, role)
     await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался через MAX (Роль: {role})", target_type='user', target_id=pseudo_tg_id,
                      details=json.dumps({"action": "user_registration", "requested_role": role, "method": "password"}, ensure_ascii=False))
@@ -473,10 +461,11 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
         {"status": "ok", "role": role, "tg_id": pseudo_tg_id}, token)
 
 
-@router.post("/api/telegram_auth")
-async def telegram_auth(data: dict):
+async def _removed_legacy_widget_auth(data: dict):
+    raise HTTPException(status_code=410, detail="Интеграция удалена")
+    """Legacy implementation retained only for migration history; no route exposes it."""
     try:
-        bot_token = os.getenv("BOT_TOKEN")
+        bot_token = ""
         received_hash = data.pop('hash', None)
         if time.time() - int(data.get('auth_date', 0)) > 86400: raise HTTPException(status_code=403,
                                                                                     detail="Данные устарели")
@@ -507,9 +496,8 @@ async def telegram_auth(data: dict):
         raise HTTPException(status_code=400, detail=f"Ошибка: {str(e)}")
 
 
-@router.post("/api/tma/auth")
-async def api_tma_auth(init_data: str = Form(...)):
-    """Telegram Mini App auth via initData HMAC verification.
+async def _removed_legacy_miniapp_auth(init_data: str = Form(...)):
+    """Removed legacy Mini App authentication implementation.
 
     SECURITY: Verifies HMAC-SHA256 signature using the WebAppData scheme.
     Never trusts raw tg_id — extracts it from cryptographically verified data.
@@ -517,7 +505,8 @@ async def api_tma_auth(init_data: str = Form(...)):
     import json
     from urllib.parse import parse_qsl
 
-    bot_token = os.getenv("BOT_TOKEN", "")
+    raise HTTPException(status_code=410, detail="Интеграция удалена")
+    bot_token = ""
     if not bot_token:
         raise HTTPException(500, "Auth not configured")
 
@@ -597,8 +586,7 @@ async def api_tma_auth(init_data: str = Form(...)):
             "first_name": first_name, "last_name": last_name}
 
 
-@router.post("/api/register_telegram")
-async def register_telegram(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form(""),
+async def _removed_legacy_registration(tg_id: int = Form(...), first_name: str = Form(""), last_name: str = Form(""),
                             password: str = Form(...), photo_url: str = Form("")):
     # v2.7.1 (M-1/M-3): throttle registration attempts before checking passwords.
     await _registration_rate_check(tg_id)
@@ -673,6 +661,10 @@ async def validate_session(
     if not user:
         raise HTTPException(status_code=401, detail="Пользователь не найден")
     user_dict = dict(user)
+    if user_dict.get("is_blacklisted"):
+        raise HTTPException(status_code=403, detail="Аккаунт заблокирован")
+    if user_dict.get("is_deleted"):
+        raise HTTPException(status_code=403, detail="Аккаунт удалён")
 
     # role MUST come from get_current_user (fresh DB), never from the session row — see test_sandbox/REPORT.md
     data = {"status": "ok", "tg_id": user_id, "role": user_dict['role'], "fio": user_dict.get('fio', '')}

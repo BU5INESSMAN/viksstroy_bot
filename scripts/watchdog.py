@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import asyncio
 import argparse
-import html
 import json
 import os
 from pathlib import Path
@@ -68,7 +67,7 @@ def health_issues() -> list[str]:
                 except json.JSONDecodeError:
                     pass
             by_service = {row.get("Service"): row for row in rows}
-            for service in ("api", "bot", "bot_max"):
+            for service in ("api", "bot_max"):
                 row = by_service.get(service)
                 state = (row or {}).get("State", "missing")
                 if state != "running":
@@ -102,7 +101,7 @@ def recipients(event_key: str = "system_unavailable") -> list[dict]:
         with sqlite3.connect(DB_FILE, timeout=5) as conn:
             conn.row_factory = sqlite3.Row
             users = conn.execute(
-                "SELECT user_id,notify_tg,notify_max,settings FROM users "
+                "SELECT user_id,notify_max,settings FROM users "
                 "WHERE role='superadmin' AND is_active=1 AND is_blacklisted=0"
             ).fetchall()
             for user in users:
@@ -123,28 +122,13 @@ def recipients(event_key: str = "system_unavailable") -> list[dict]:
                 except sqlite3.Error:
                     pass
                 result.append({
-                    "tg": [x for x in links if x > 0] if user["notify_tg"] and settings.get("notify_telegram", True) else [],
                     "max": [abs(x) for x in links if x < 0] if user["notify_max"] and settings.get("notify_max", True) else [],
                 })
     except Exception:
         fallback = [int(x) for x in os.getenv("SUPER_ADMIN_IDS", "").split(",") if x.strip().lstrip("-").isdigit()]
         if fallback:
-            result.append({"tg": [x for x in fallback if x > 0], "max": [abs(x) for x in fallback if x < 0]})
+            result.append({"max": [abs(x) for x in fallback if x < 0]})
     return result
-
-
-def send_telegram(chat_id: int, message: str) -> None:
-    token = os.getenv("BOT_TOKEN", "")
-    if not token:
-        return
-    body = json.dumps({"chat_id": chat_id, "text": message, "parse_mode": "HTML"}).encode()
-    request = urllib.request.Request(
-        f"https://api.telegram.org/bot{token}/sendMessage", body,
-        {"Content-Type": "application/json"}, method="POST",
-    )
-    with urllib.request.urlopen(request, timeout=12) as response:
-        if response.status >= 400:
-            raise RuntimeError(f"Telegram HTTP {response.status}")
 
 
 async def send_max(chat_id: int, message: str) -> None:
@@ -160,24 +144,17 @@ async def send_max(chat_id: int, message: str) -> None:
 
 
 def dispatch(title: str, issues: list[str], event_key: str = "system_unavailable") -> None:
-    details = "\n".join(f"• {html.escape(item)}" for item in issues)
-    message = f"🚨 <b>{html.escape(title)}</b>\n\n{details}\n\nСервер: {html.escape(HEALTH_URL)}"
-    plain = message.replace("<b>", "").replace("</b>", "")
+    details = "\n".join(f"• {item}" for item in issues)
+    message = f"🚨 {title}\n\n{details}\n\nСервер: {HEALTH_URL}"
     for recipient in recipients(event_key):
-        for chat_id in recipient["tg"]:
-            try:
-                send_telegram(chat_id, message)
-            except Exception:
-                pass
         for chat_id in recipient["max"]:
             try:
-                asyncio.run(send_max(chat_id, plain))
+                asyncio.run(send_max(chat_id, message))
             except Exception:
                 pass
 
 
-def group_chat_ids() -> tuple[str, str]:
-    telegram = os.getenv("GROUP_CHAT_ID", "").strip()
+def group_chat_id() -> str:
     max_chat = os.getenv("MAX_GROUP_CHAT_ID", "").strip()
     if not max_chat:
         try:
@@ -188,21 +165,16 @@ def group_chat_ids() -> tuple[str, str]:
                 max_chat = str(row[0]).strip() if row and row[0] else ""
         except Exception:
             pass
-    return telegram, max_chat
+    return max_chat
 
 
 def dispatch_group(title: str, details: str) -> None:
     """Send a deploy status message to the operational group chats only."""
-    message = f"{title}\n\n{html.escape(details)}"
-    telegram, max_chat = group_chat_ids()
-    if telegram:
-        try:
-            send_telegram(int(telegram), message)
-        except Exception:
-            pass
+    message = f"{title}\n\n{details}"
+    max_chat = group_chat_id()
     if max_chat:
         try:
-            asyncio.run(send_max(int(max_chat), message.replace("<b>", "").replace("</b>", "")))
+            asyncio.run(send_max(int(max_chat), message))
         except Exception:
             pass
 

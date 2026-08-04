@@ -610,7 +610,6 @@ async def generate_equip_invite(equip_id: int, current_user=Depends(_require_off
     code = await db.get_or_create_equip_invite(equip_id)
     return {
         "invite_link": f"https://miniapp.viks22.ru/equip-invite/{code}",
-        "tg_bot_link": f"https://t.me/viksstroy_bot?start=equip_{code}",
         "invite_code": code,
         "join_password": code
     }
@@ -933,7 +932,7 @@ async def list_eligible_drivers(
     if include_all or not eq_category:
         sql = (
             f"SELECT {common_cols} FROM users u {common_joins} "
-            f"WHERE u.role = 'driver' AND COALESCE(u.is_blacklisted, 0) = 0 "
+            f"WHERE u.role = 'driver' AND COALESCE(u.is_blacklisted, 0) = 0 AND COALESCE(u.is_deleted, 0) = 0 "
             f"{order_clause}"
         )
         params = (eq_id,)
@@ -942,7 +941,7 @@ async def list_eligible_drivers(
             f"SELECT {common_cols} FROM users u "
             f"JOIN driver_categories dc ON dc.user_id = u.user_id "
             f"{common_joins} "
-            f"WHERE u.role = 'driver' AND COALESCE(u.is_blacklisted, 0) = 0 "
+            f"WHERE u.role = 'driver' AND COALESCE(u.is_blacklisted, 0) = 0 AND COALESCE(u.is_deleted, 0) = 0 "
             f"AND dc.category = ? "
             f"{order_clause}"
         )

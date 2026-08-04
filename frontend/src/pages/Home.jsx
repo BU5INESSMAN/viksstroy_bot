@@ -239,6 +239,7 @@ export default function Home() {
     const upcomingApps = activeApps.filter(a => a.date_target > todayYYYYMMDD);
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
     const isHr = role === 'hr';
+    const isEmployee = role === 'employee';
     const canArchive = ['moderator', 'boss', 'superadmin'].includes(role);
 
     // -------------------------------------------------------------------------
@@ -270,7 +271,7 @@ export default function Home() {
                 {myTeam && <MyTeamCard myTeam={myTeam} />}
             </div>
 
-            {!isWorkerOrDriver && !isHr && !hideDebtors && debtors.length > 0 && (
+            {!isWorkerOrDriver && !isHr && !isEmployee && !hideDebtors && debtors.length > 0 && (
                 <div data-tour="debtors-widget">
                     <AnimatePresence mode="wait" initial={false}>
                         {debtorsHiddenSession ? (
@@ -291,7 +292,7 @@ export default function Home() {
                 </div>
             )}
 
-            {!isWorkerOrDriver && !isHr && (
+            {!isWorkerOrDriver && !isHr && !isEmployee && (
                 <div className="space-y-6">
                     <div className="flex justify-between items-center mt-4">
                         <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">

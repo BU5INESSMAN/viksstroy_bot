@@ -30,13 +30,8 @@ async def _get_user_fio(user_id: int) -> str:
 
 
 async def _send_exchange_notification_with_buttons(donor_id: int, text: str, exchange_id: int):
-    """Send notification with accept/reject inline buttons to donor via notify_users (TG + MAX)."""
+    """Send a MAX notification with accept/reject buttons to the donor."""
     from maxapi.types import ButtonsPayload, CallbackButton
-
-    tg_markup = {"inline_keyboard": [
-        [{"text": "✅ Отдать", "callback_data": f"exchange_accept_{exchange_id}"}],
-        [{"text": "❌ Отказать", "callback_data": f"exchange_reject_{exchange_id}"}]
-    ]}
 
     max_buttons = [
         [CallbackButton(text="✅ Отдать", payload=f"exchange_accept_{exchange_id}")],
@@ -47,7 +42,6 @@ async def _send_exchange_notification_with_buttons(donor_id: int, text: str, exc
     await notify_users(
         [], text, "dashboard",
         extra_tg_ids=[donor_id],
-        tg_reply_markup=tg_markup,
         max_attachments=[max_payload],
         category="exchange",
         event_key="exchange_request",

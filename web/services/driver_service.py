@@ -94,7 +94,7 @@ async def list_drivers(db, category: Optional[str] = None) -> list[dict]:
                  WHERE e.default_driver_user_id = u.user_id
                  ORDER BY e.id LIMIT 1) AS default_equipment_category
         FROM users u
-        WHERE u.role = 'driver' AND u.is_blacklisted = 0
+        WHERE u.role = 'driver' AND u.is_blacklisted = 0 AND COALESCE(u.is_deleted, 0) = 0
     """
     params: list = []
     if category:
@@ -180,7 +180,7 @@ async def list_drivers_for_equipment(db, equipment_id: int) -> dict:
         JOIN driver_categories dc ON dc.user_id = u.user_id
         LEFT JOIN equipment_driver_usage edu
                ON edu.driver_user_id = u.user_id AND edu.equipment_id = ?
-        WHERE u.role = 'driver' AND u.is_blacklisted = 0
+        WHERE u.role = 'driver' AND u.is_blacklisted = 0 AND COALESCE(u.is_deleted, 0) = 0
           AND dc.category = ?
         ORDER BY (u.user_id = ?) DESC,
                  edu.last_used_at DESC,
@@ -214,7 +214,7 @@ async def list_drivers_for_equipment(db, equipment_id: int) -> dict:
         JOIN driver_categories dc ON dc.user_id = u.user_id
         LEFT JOIN equipment_category_settings ecs ON ecs.category = dc.category
         LEFT JOIN equipment_driver_usage edu ON edu.driver_user_id = u.user_id
-        WHERE u.role = 'driver' AND u.is_blacklisted = 0
+        WHERE u.role = 'driver' AND u.is_blacklisted = 0 AND COALESCE(u.is_deleted, 0) = 0
           AND dc.category != ?
           {excl_sql}
         GROUP BY u.user_id, dc.category
@@ -363,8 +363,8 @@ async def update_driver(
 async def delete_driver(db, user_id: int) -> None:
     """Soft-delete while preserving the historical ``driver`` role.
 
-    The row remains resolvable for audits, but is blacklisted so it is absent
-    from active driver pickers and cannot authenticate.
+    The row remains resolvable for audits, but is marked deleted so it is absent
+    from active driver pickers without being falsely presented as banned.
 
     v2.6: also detach this user from any ``equipment.default_driver_user_id``
     that points at them, otherwise the equipment card would still show
@@ -374,7 +374,8 @@ async def delete_driver(db, user_id: int) -> None:
         "DELETE FROM driver_categories WHERE user_id=?", (user_id,),
     )
     await db.conn.execute(
-        "UPDATE users SET role='driver', is_active=0, is_blacklisted=1, "
+        "UPDATE users SET role='driver', is_active=0, is_blacklisted=0, is_deleted=1, "
+        "ban_reason='', banned_at=NULL, banned_by=NULL, banned_by_fio='', "
         "default_equipment_id=NULL "
         "WHERE user_id=? AND role='driver'",
         (user_id,),

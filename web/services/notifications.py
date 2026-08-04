@@ -3,7 +3,6 @@ import json
 import logging
 import secrets
 import asyncio
-import aiohttp
 
 from maxapi.types import ButtonsPayload, LinkButton, CallbackButton
 
@@ -11,7 +10,6 @@ from database_deps import db
 from utils import get_all_linked_ids, resolve_id
 from services.image_service import strip_html
 from services.max_api import get_max_group_id, send_max_text, get_max_dm_chat_id
-from services.tg_session import get_tg_session
 from services.push_templates import build_push_payload
 from utils_fio import get_user_settings
 from notification_events import event_enabled
@@ -20,7 +18,6 @@ from application_numbers import get_application_number
 
 # Maps channel name → settings key used by Settings page toggles
 CHANNEL_KEY = {
-    'telegram': 'notify_telegram',
     'max': 'notify_max',
     'pwa': 'notify_pwa',
 }
@@ -57,20 +54,6 @@ logger = logging.getLogger("NOTIFICATIONS")
 
 BASE_URL = os.getenv("WEB_APP_URL", "https://miniapp.viks22.ru")
 
-
-async def _telegram_post(session, bot_token: str, method: str, payload: dict) -> dict:
-    """Send a Telegram request and treat API-level failures as failures."""
-    response = await session.post(
-        f"https://api.telegram.org/bot{bot_token}/{method}", json=payload
-    )
-    try:
-        data = await response.json(content_type=None)
-    except Exception:
-        data = {}
-    if response.status >= 400 or not data.get('ok'):
-        description = data.get('description') or f'HTTP {response.status}'
-        raise RuntimeError(f"Telegram {method}: {description}")
-    return data
 
 # url_path → frontend route mapping
 _URL_PATH_MAP = {
@@ -112,31 +95,14 @@ NOTIFY_CATEGORY_COLUMNS = {
 
 
 async def notify_group_chat(text: str, url_path: str = "dashboard", target_platform: str = "all"):
-    """Отправляет уведомление только в групповой чат (TG + MAX)"""
+    """Отправляет уведомление в групповой чат MAX."""
     if db.conn is None: await db.init_db()
 
-    bot_token = os.getenv("BOT_TOKEN")
-    group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
     max_group_id = await get_max_group_id()
 
     redirect = _URL_PATH_MAP.get(url_path, f"/{url_path}")
-    markup = {"inline_keyboard": [
-        [{"text": "📱 Открыть платформу", "web_app": {"url": f"{BASE_URL}/{url_path}"}}]]}
-
-    if target_platform in ["all", "tg"] and bot_token and group_id:
-        try:
-            async with await get_tg_session() as session:
-                await _telegram_post(session, bot_token, 'sendMessage',
-                    {"chat_id": str(group_id), "text": text, "parse_mode": "HTML", "reply_markup": markup})
-            try:
-                await db.add_log(0, 'Система', f"📨 TG групповое: {strip_html(text)[:100]}", target_type='notification')
-            except Exception:
-                pass
-        except Exception as exc:
-            logger.error("Telegram group notification failed: %s", exc)
-
-    if target_platform in ["all", "max"] and max_bot_token and max_group_id:
+    if max_bot_token and max_group_id:
         max_plain_text = strip_html(text)
         max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"{BASE_URL}{redirect}")]]
         max_payload = ButtonsPayload(buttons=max_buttons).pack()
@@ -149,18 +115,16 @@ async def notify_group_chat(text: str, url_path: str = "dashboard", target_platf
 
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
                        target_platform: str = "all", category: str = None,
-                       tg_reply_markup: dict = None, max_attachments: list = None,
+                       max_attachments: list = None,
                        push_type: str = None, push_body: str = None,
                        event_key: str = None):
-    """Универсальная рассылка уведомлений в личные DM (Telegram и MAX) с учетом настроек пользователя.
+    """Рассылка в личные сообщения MAX и центр уведомлений приложения.
     category: 'new_users' | 'orders' | 'reports' | 'errors' | None (None = всегда отправлять)
     push_type: typed push notification key (e.g. 'app_approved'); forwarded to build_push_payload.
     push_body: single-line push body (no emojis, ' • ' separators); falls back to stripped text.
     """
     if db.conn is None: await db.init_db()
 
-    bot_token = os.getenv("BOT_TOKEN")
-    group_id = os.getenv("GROUP_CHAT_ID")
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
 
     raw_user_ids = set()
@@ -181,7 +145,6 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             if tid: raw_user_ids.add(int(tid))
 
     # --- ПРОВЕРЯЕМ НАСТРОЙКИ УВЕДОМЛЕНИЙ (Тумблеры) ---
-    final_tg_ids = set()
     final_max_ids = set()
     eligible_user_ids = set()
 
@@ -193,18 +156,18 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         pl_ids = ','.join(['?'] * len(raw_user_ids))
         try:
             cat_select = f", {cat_col}" if cat_col else ""
-            async with db.conn.execute(f"SELECT user_id, notify_tg, notify_max{cat_select}, settings, role FROM users WHERE user_id IN ({pl_ids})",
+            async with db.conn.execute(f"SELECT user_id, notify_max{cat_select}, settings, role FROM users WHERE user_id IN ({pl_ids})",
                                        list(raw_user_ids)) as cur:
                 for row in await cur.fetchall():
-                    cat_enabled = row[3] != 0 if cat_col else True
+                    cat_enabled = row[2] != 0 if cat_col else True
                     settings_json = row[-2]
-                    user_prefs[row[0]] = {"tg": row[1] != 0, "max": row[2] != 0, "cat": cat_enabled, "role": row[-1] or ''}
+                    user_prefs[row[0]] = {"max": row[1] != 0, "cat": cat_enabled, "role": row[-1] or ''}
                     user_settings_by_id[row[0]] = get_user_settings(settings_json)
         except Exception:
             pass
 
     for uid in raw_user_ids:
-        prefs = user_prefs.get(uid, {"tg": True, "max": True, "cat": True})
+        prefs = user_prefs.get(uid, {"max": True, "cat": True})
         user_settings = user_settings_by_id.get(uid, get_user_settings('{}'))
         resolved_event_key = event_key or push_type
         overrides = user_settings.get("notification_events") or {}
@@ -221,13 +184,10 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         eligible_user_ids.add(uid)
         linked_ids = await get_all_linked_ids(uid)
 
-        tg_allowed = prefs["tg"] and user_settings.get("notify_telegram", True)
         max_allowed = prefs["max"] and user_settings.get("notify_max", True)
 
         for lid in linked_ids:
-            if lid > 0 and tg_allowed:
-                final_tg_ids.add(lid)
-            elif lid < 0 and max_allowed:
+            if lid < 0 and max_allowed:
                 final_max_ids.add(abs(lid))
 
     # ── Save to notification center (one entry per user, before platform split) ──
@@ -260,15 +220,12 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     except Exception:
         pass
 
-    markup = tg_reply_markup or {"inline_keyboard": [
-        [{"text": "📱 Открыть платформу", "web_app": {"url": f"{BASE_URL}/{url_path}"}}]]}
-
     max_plain_text = _notif_plain
     short_text = _notif_title
 
     # Batch-lookup FIO for logging
     _fio_cache = {}
-    all_log_ids = set(final_tg_ids) | {-int(m) for m in final_max_ids}
+    all_log_ids = {-int(m) for m in final_max_ids}
     if all_log_ids:
         try:
             for _lid in all_log_ids:
@@ -278,22 +235,16 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
         except Exception:
             pass
 
-    # Групповой чат — только если явно указан "report_group"
+    # Групповой чат MAX — только если явно указан "report_group"
     if "report_group" in target_roles:
-        if group_id and target_platform in ["all", "tg"] and bot_token:
-            try:
-                async with await get_tg_session() as session:
-                    await _telegram_post(session, bot_token, 'sendMessage',
-                        {"chat_id": str(group_id), "text": text, "parse_mode": "HTML", "reply_markup": markup})
-            except Exception as exc:
-                logger.error("Telegram report-group notification failed: %s", exc)
+        await notify_group_chat(text, url_path, target_platform="max")
 
     # v2.4.1 FIX 2: collect per-recipient lines into one grouped log entry
     # rather than writing a row per channel.
     _event_lines: list[str] = []
 
     # Личные сообщения — MAX DM (с персональными auth-токенами)
-    if target_platform in ["all", "max"] and max_bot_token:
+    if max_bot_token:
         for mid in final_max_ids:
             dm_chat_id = await get_max_dm_chat_id(str(mid))
             if max_attachments is not None:
@@ -312,23 +263,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
             fio = _fio_cache.get(-int(mid), f'MAX#{mid}')
             _event_lines.append(f"MAX → {fio}" + ("" if ok else " · ОШИБКА"))
 
-    if target_platform in ["all", "tg"] and bot_token:
-        try:
-            async with await get_tg_session() as session:
-                for tid in final_tg_ids:
-                    ok = True
-                    try:
-                        await _telegram_post(session, bot_token, 'sendMessage',
-                            {"chat_id": tid, "text": text, "parse_mode": "HTML", "reply_markup": markup})
-                    except Exception as exc:
-                        ok = False
-                        logger.warning("Telegram DM failed for %s: %s", tid, exc)
-                    fio = _fio_cache.get(tid, f'TG#{tid}')
-                    _event_lines.append(f"TG → {fio}" + ("" if ok else " · ОШИБКА"))
-        except Exception:
-            pass
-
-    # ── Web Push (fire-and-forget, never blocks TG/MAX flow) ──
+    # ── Web Push (fire-and-forget, never blocks MAX delivery) ──
     try:
         push_user_ids = list(eligible_user_ids)
         if push_user_ids:
@@ -349,7 +284,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
     if _event_lines:
         unique_lines = sorted(set(_event_lines))
         try:
-            recipients_count = len(set(final_tg_ids) | set(final_max_ids) | set(push_user_ids if 'push_user_ids' in dir() else []))
+            recipients_count = len(set(final_max_ids) | set(push_user_ids if 'push_user_ids' in dir() else []))
         except Exception:
             recipients_count = len(unique_lines)
         summary = f"📨 Уведомление ({recipients_count} получ.): {short_text}"
@@ -587,6 +522,7 @@ ROLE_LABELS = {
     'foreman': 'Прораб',
     'brigadier': 'Бригадир',
     'worker': 'Рабочий',
+    'employee': 'Сотрудник',
     'driver': 'Водитель',
     'hr': 'Кадры',
     'viewer': 'Наблюдатель',
@@ -601,13 +537,13 @@ async def notify_role_conflict(primary_id: int, secondary_id: int, primary_role:
     user = await db.get_user(primary_id)
     fio = dict(user).get('fio', 'Неизвестный') if user else 'Неизвестный'
 
-    tg_role_label = ROLE_LABELS.get(primary_role if primary_id > 0 else secondary_role, primary_role)
+    legacy_role_label = ROLE_LABELS.get(primary_role if primary_id > 0 else secondary_role, primary_role)
     max_role_label = ROLE_LABELS.get(secondary_role if primary_id > 0 else primary_role, secondary_role)
 
     text = (
         f"⚠️ <b>Конфликт ролей при связывании аккаунтов</b>\n\n"
         f"Пользователь: {fio}\n"
-        f"TG роль: {tg_role_label}\n"
+        f"Роль старой записи: {legacy_role_label}\n"
         f"MAX роль: {max_role_label}\n\n"
         f"Выберите роль:"
     )
@@ -618,9 +554,6 @@ async def notify_role_conflict(primary_id: int, secondary_id: int, primary_role:
         if r not in roles_for_buttons:
             roles_for_buttons.append(r)
 
-    tg_buttons = [[{"text": ROLE_LABELS.get(r, r), "callback_data": f"set_role:{primary_id}:{r}"}] for r in roles_for_buttons]
-    tg_markup = {"inline_keyboard": tg_buttons}
-
     max_buttons = [[CallbackButton(text=ROLE_LABELS.get(r, r), payload=f"set_role:{primary_id}:{r}")] for r in roles_for_buttons]
     max_payload = ButtonsPayload(buttons=max_buttons).pack()
 
@@ -628,7 +561,6 @@ async def notify_role_conflict(primary_id: int, secondary_id: int, primary_role:
         ["superadmin", "boss", "moderator"],
         text,
         url_path="system",
-        tg_reply_markup=tg_markup,
         max_attachments=[max_payload],
         category=None,
         event_key="account_link_alert",
@@ -745,8 +677,8 @@ async def notify_foreman_of_moderator_edit(
 
 async def notify_fio_match(new_user_id: int, new_fio: str, existing_user_id: int, existing_fio: str):
     """Уведомляет модераторов+ о возможном совпадении аккаунтов на разных платформах."""
-    platform_new = "TG" if new_user_id > 0 else "MAX"
-    platform_existing = "TG" if existing_user_id > 0 else "MAX"
+    platform_new = "старая запись" if new_user_id > 0 else "MAX"
+    platform_existing = "старая запись" if existing_user_id > 0 else "MAX"
 
     text = (
         f"🔗 <b>Возможное совпадение аккаунтов</b>\n\n"

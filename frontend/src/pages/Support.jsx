@@ -127,7 +127,7 @@ export default function Support() {
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [historyLoading, setHistoryLoading] = useState(true);
-    const [supportLinks, setSupportLinks] = useState({ support_tg_link: '', support_max_link: '' });
+    const [supportLinks, setSupportLinks] = useState({ support_max_link: '' });
 
     // Boss state
     const [dialogs, setDialogs] = useState([]);
@@ -244,9 +244,8 @@ export default function Support() {
         el.style.height = Math.min(el.scrollHeight, 120) + 'px';
     };
 
-    const hasTg = supportLinks.support_tg_link?.trim();
     const hasMax = supportLinks.support_max_link?.trim();
-    const hasLinks = hasTg || hasMax;
+    const hasLinks = hasMax;
 
     if (historyLoading && !isBoss) {
         return (
@@ -286,12 +285,6 @@ export default function Support() {
                     </span>
                 ) : (
                     <div className="flex items-center gap-1.5 ml-auto flex-shrink-0">
-                        {hasTg && (
-                            <a href={supportLinks.support_tg_link} target="_blank" rel="noopener noreferrer"
-                               className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors" title="Telegram">
-                                <Send className="w-3.5 h-3.5 text-blue-500" />
-                            </a>
-                        )}
                         {hasMax && (
                             <a href={supportLinks.support_max_link} target="_blank" rel="noopener noreferrer"
                                className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 flex items-center justify-center hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-colors" title="MAX">

@@ -10,6 +10,7 @@ import BroadcastPanel from '../features/system/components/BroadcastPanel';
 import LogViewer from '../features/system/components/LogViewer';
 import { SystemSkeleton } from '../components/ui/PageSkeletons';
 import UsersTable from '../features/admin/components/UsersTable';
+import RolePasswordsPanel from '../features/admin/components/RolePasswordsPanel';
 
 const ADMIN_ROLES = ['boss', 'superadmin'];
 
@@ -54,11 +55,10 @@ export default function Admin() {
         equip_base_time_start: '08:00', equip_base_time_end: '18:00',
         exchange_enabled: true,
         log_retention_days: '90',
-        support_tg_link: '',
         support_max_link: '',
         gemini_api_key: '',
     });
-    const [testPlatform, setTestPlatform] = useState('all');
+    const [testPlatform, setTestPlatform] = useState('max');
 
     const [broadcastText, setBroadcastText] = useState('');
     const [broadcastLoading, setBroadcastLoading] = useState(false);
@@ -95,7 +95,6 @@ export default function Admin() {
                 equip_base_time_end: res.data.equip_base_time_end || '18:00',
                 exchange_enabled: b('exchange_enabled'),
                 log_retention_days: res.data.log_retention_days || '90',
-                support_tg_link: res.data.support_tg_link || '',
                 support_max_link: res.data.support_max_link || '',
                 gemini_api_key: res.data.gemini_api_key || '',
             });
@@ -126,7 +125,6 @@ export default function Admin() {
                 equip_base_time_end: settings.equip_base_time_end,
                 exchange_enabled: settings.exchange_enabled ? '1' : '0',
                 log_retention_days: settings.log_retention_days,
-                support_tg_link: settings.support_tg_link,
                 support_max_link: settings.support_max_link,
                 gemini_api_key: settings.gemini_api_key,
             }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
@@ -138,7 +136,7 @@ export default function Admin() {
         try {
             const formData = new FormData();
             formData.append('platform', testPlatform);
-            await axios.post('/api/system/test_notification', formData);
+            await axios.post('/api/system/test_notification_full', formData);
             toast.success('Тестовые уведомления успешно отправлены!');
         } catch { toast.error('Ошибка отправки теста.'); }
     };
@@ -224,6 +222,8 @@ export default function Admin() {
                     onReload={fetchUsers}
                 />
             </div>
+
+            <RolePasswordsPanel role={role} />
 
             {/* Automation Settings */}
             <SystemSettings

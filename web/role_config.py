@@ -7,13 +7,14 @@ by the server.
 
 ROLE_RANKS = {
     "driver": 1,
-    "worker": 2,
-    "brigadier": 3,
-    "foreman": 4,
-    "hr": 5,
-    "moderator": 6,
-    "boss": 7,
-    "superadmin": 8,
+    "employee": 2,
+    "worker": 3,
+    "brigadier": 4,
+    "foreman": 5,
+    "hr": 6,
+    "moderator": 7,
+    "boss": 8,
+    "superadmin": 9,
 }
 
 ASSIGNABLE_ROLES = frozenset(ROLE_RANKS)
@@ -23,6 +24,7 @@ ASSIGNABLE_ROLES = frozenset(ROLE_RANKS)
 # organizational or elevated role.
 AUTO_ROLE_PROTECTED = frozenset({
     "brigadier",
+    "employee",
     "foreman",
     "hr",
     "moderator",
@@ -38,6 +40,7 @@ ROLE_NAMES_RU = {
     "foreman": "Прораб",
     "brigadier": "Бригадир",
     "worker": "Рабочий",
+    "employee": "Сотрудник",
     "driver": "Водитель",
 }
 

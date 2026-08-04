@@ -4,11 +4,10 @@ import { Toaster } from 'react-hot-toast';
 import axios from 'axios';
 import Layout from './components/Layout';
 import SplashScreen from './components/SplashScreen';
-import { loadAuthData, saveAuthData, clearAuthData, clearAuthAndRedirect } from './utils/tokenStorage';
+import { saveAuthData, clearAuthData, clearAuthAndRedirect } from './utils/tokenStorage';
 
 // Lazy-loaded pages
 const Login = lazy(() => import('./pages/Login'));
-const TMAAuth = lazy(() => import('./pages/TMAAuth'));
 const MAXAuth = lazy(() => import('./pages/MAXAuth'));
 const Home = lazy(() => import('./pages/Home'));
 const Guide = lazy(() => import('./pages/Guide'));
@@ -78,7 +77,6 @@ function ProtectedRoute({ children }) {
         // Network / 5xx — keep whatever we optimistically rendered.
         // useApiHealth will surface the maintenance screen if the API
         // stays down. We log so the cause is visible in DevTools.
-        // eslint-disable-next-line no-console
         console.warn('[auth] /api/auth/session reconciliation failed:', err?.message || status);
         // If we never had localStorage to optimistically render from,
         // we can't stay on 'checking' forever — drop to the Login page.
@@ -100,10 +98,6 @@ function ProtectedRoute({ children }) {
   }
 
   if (authState === 'unauthenticated') {
-    const isTMA = window.Telegram?.WebApp?.initData ||
-                  window.location.search.includes('tgWebAppData') ||
-                  window.location.hash.includes('tgWebAppData');
-
     const isMAX = window.location.pathname.includes('/max') ||
                   window.location.search.includes('WebAppData') ||
                   window.location.hash.includes('WebAppData');
@@ -111,15 +105,15 @@ function ProtectedRoute({ children }) {
     if (isMAX) {
       return <Navigate to={`/max?return_to=${window.location.pathname}${window.location.hash}`} replace />;
     }
-    if (isTMA) {
-      return <Navigate to={`/tma?return_to=${window.location.pathname}${window.location.hash}`} replace />;
-    }
     return <Navigate to="/" replace />;
   }
 
   const role = localStorage.getItem('user_role');
   if (role === 'hr' && ['/review', '/my-apps', '/admin', '/system'].includes(location.pathname)) {
     return <Navigate to="/objects" replace />;
+  }
+  if (role === 'employee' && !['/dashboard', '/settings', '/guide', '/updates', '/support'].includes(location.pathname)) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return children;
@@ -143,10 +137,6 @@ export default function App() {
 
   useEffect(() => {
     document.body.style.overscrollBehaviorY = 'none';
-
-    if (window.Telegram?.WebApp?.disableVerticalSwipes) {
-        window.Telegram.WebApp.disableVerticalSwipes();
-    }
   }, []);
 
   return (
@@ -174,7 +164,6 @@ export default function App() {
           {/* /login is the explicit target of clearAuthAndRedirect — alias to Login */}
           <Route path="/login" element={<Login />} />
           <Route path="/auth" element={<AuthRedirect />} />
-          <Route path="/tma" element={<TMAAuth />} />
           <Route path="/max" element={<MAXAuth />} />
 
           {/* Публичные роуты для приглашений */}

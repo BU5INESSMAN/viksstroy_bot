@@ -1,3 +1,7 @@
+CURRENT RUNTIME NOTE (v2.15.0, 2026-08-04): the application is MAX-only.
+Telegram SDK, bot process, Mini App authentication, delivery and deployment
+dependencies were removed. Older Telegram references below are historical.
+
 ================================================================================
                     VIKSSTROY BOT -- CONTEXT & STAGE TRACKER
                               (updated 2026-04-22)
@@ -7,7 +11,7 @@
 
 Construction workforce management platform (Kanban orders, scheduling,
 equipment exchange, cost estimation, PWA push notifications, AI support)
-with dual-bot architecture (TG + MAX), React frontend, FastAPI backend,
+with MAX messenger integration, React frontend, FastAPI backend,
 SQLite database, and session-cookie auth on all endpoints.
 
 Stack: FastAPI + SQLite (aiosqlite, WAL) | React 19 + Vite 7 + Tailwind 3 + framer-motion | aiogram 3.27 (TG) + maxapi 1.0 (MAX)

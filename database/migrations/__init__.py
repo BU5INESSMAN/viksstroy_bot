@@ -51,6 +51,9 @@ MIGRATIONS_ORDER = [
     # Stable short application numbers + repair of historical drivers whose
     # soft-delete path used to erase their role.
     "m_2026_08_application_numbers_and_driver_roles",
+    # User administration: real bans are distinct from archived/deleted
+    # driver rows; also seeds the basic employee role password setting.
+    "m_2026_08_user_admin",
 ]
 
 

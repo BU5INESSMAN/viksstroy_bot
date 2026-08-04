@@ -4,7 +4,7 @@ import toast from 'react-hot-toast';
 import { useNavigate } from 'react-router-dom';
 import {
     User, X, Camera, Trash2, Unplug, ShieldCheck,
-    Send, Smartphone, MessageCircle, Bell, UserPlus, LogOut, ChevronRight
+    Smartphone, MessageCircle, Bell, UserPlus, LogOut, ChevronRight
 } from 'lucide-react';
 import useConfirm from '../../../hooks/useConfirm';
 import useEnterToSubmit from '../../../hooks/useEnterToSubmit';
@@ -152,7 +152,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
     };
 
     const handleUnlinkPlatform = async (platform) => {
-        const platformName = platform === 'max' ? 'MAX' : 'Telegram';
+        const platformName = 'MAX';
         const ok = await confirm(`Вы уверены, что хотите отвязать мессенджер ${platformName}?`, {
             title: 'Отвязка мессенджера', variant: 'warning', confirmText: 'Отвязать',
         });
@@ -199,9 +199,9 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
         if (!query.trim() || query.length < 2) { setLinkCandidates([]); return; }
         try {
             const res = await axios.get('/api/users');
-            const currentPlatform = profileData.user_id > 0 ? 'TG' : 'MAX';
+            const currentPlatform = profileData.user_id > 0 ? 'legacy' : 'MAX';
             const candidates = (res.data || []).filter((u) => {
-                const otherPlatform = u.user_id > 0 ? 'TG' : 'MAX';
+                const otherPlatform = u.user_id > 0 ? 'legacy' : 'MAX';
                 const fio = displayFio(u) || '';
                 return otherPlatform !== currentPlatform
                     && !u.linked_user_id
@@ -279,19 +279,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                         ) : (
                             <div className="p-6 sm:p-8 space-y-6">
                                 {/* Platforms card */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                    <div className={`flex items-start p-3.5 rounded-2xl border transition-all ${profileData.links?.has_tg ? 'bg-blue-50/50 border-blue-200 dark:bg-blue-900/20 dark:border-blue-800/50' : 'bg-gray-50 border-gray-100 dark:bg-gray-800 dark:border-gray-700'}`}>
-                                        <Send className={`w-5 h-5 mr-3 mt-0.5 ${profileData.links?.has_tg ? 'text-blue-500' : 'text-gray-400'}`} />
-                                        <div className="w-full">
-                                            <p className="text-[10px] uppercase font-bold text-gray-500 dark:text-gray-400 tracking-wider mb-1">Telegram</p>
-                                            {profileData.links?.has_tg ? (
-                                                <a href={`tg://user?id=${profileData.links.tg_account_id}`} target="_blank" rel="noopener noreferrer" className="text-sm font-bold text-blue-600 dark:text-blue-400 hover:underline">Написать в ЛС</a>
-                                            ) : (
-                                                <p className="text-sm font-bold text-gray-400 dark:text-gray-500">Не привязан</p>
-                                            )}
-                                        </div>
-                                    </div>
-
+                                <div className="grid grid-cols-1 gap-3">
                                     <div className={`flex items-start p-3.5 rounded-2xl border transition-all ${profileData.links?.has_max ? 'bg-indigo-50/50 border-indigo-200 dark:bg-indigo-900/20 dark:border-indigo-800/50' : 'bg-gray-50 border-gray-100 dark:bg-gray-800 dark:border-gray-700'}`}>
                                         <Smartphone className={`w-5 h-5 mr-3 mt-0.5 ${profileData.links?.has_max ? 'text-indigo-500' : 'text-gray-400'}`} />
                                         <div className="w-full">
@@ -389,13 +377,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                             </div>
                                         )}
 
-                                        {!profileData.links.has_tg && (
-                                            <div className="mb-4 p-3 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm text-xs text-gray-600 dark:text-gray-300 leading-relaxed">
-                                                <span className="font-bold text-blue-600 dark:text-blue-400">Telegram:</span> Для привязки отправьте <code className="bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded font-mono font-bold border border-gray-200 dark:border-gray-600">/web</code> в <a href="https://t.me/viksstroy_bot" target="_blank" rel="noopener noreferrer" className="text-blue-500 hover:underline font-bold">Telegram боте</a> и введите код ниже.
-                                            </div>
-                                        )}
-
-                                        {(!profileData.links.has_max || !profileData.links.has_tg) && (
+                                        {!profileData.links.has_max && (
                                             <div className="flex gap-2 mb-2">
                                                 <input type="text" maxLength={6} value={linkCode} onChange={(e) => setLinkCode(e.target.value.replace(/\D/g, ''))} placeholder="000000" className="w-full px-4 py-3 border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-xl outline-none font-mono tracking-[0.3em] text-center shadow-inner focus:ring-2 focus:ring-indigo-500 transition-colors" />
                                                 <button onClick={handleLinkAccount} className="bg-emerald-500 hover:bg-emerald-600 text-white px-6 py-3 rounded-xl font-bold text-sm transition-all shadow-md active:scale-95 whitespace-nowrap">Привязать</button>
@@ -412,12 +394,6 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                                             <button onClick={() => handleUnlinkPlatform('max')} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-red-100 dark:border-red-800/50 active:scale-95">Отвязать</button>
                                                         </div>
                                                     )}
-                                                    {profileData.links.has_tg && (
-                                                        <div className="flex justify-between items-center bg-white dark:bg-gray-800 px-4 py-3 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                                                            <span className="text-sm font-bold text-gray-800 dark:text-gray-200 flex items-center gap-2"><Send className="w-4 h-4 text-blue-500" /> Telegram</span>
-                                                            <button onClick={() => handleUnlinkPlatform('tg')} className="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/40 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-red-100 dark:border-red-800/50 active:scale-95">Отвязать</button>
-                                                        </div>
-                                                    )}
                                                 </div>
                                             </div>
                                         )}
@@ -431,7 +407,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                             <UserPlus className="w-4 h-4 text-amber-500" /> Связать с аккаунтом другой платформы
                                         </h4>
                                         <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                                            Найдите пользователя на {profileData.user_id > 0 ? 'MAX' : 'Telegram'} для объединения аккаунтов.
+                                            Найдите профиль MAX или старую учётную запись для объединения данных.
                                         </p>
 
                                         {!showLinkSearch ? (
@@ -461,7 +437,7 @@ export default function ProfileModal({ profileData, setProfileData, editProfile,
                                                                     <span className="text-[10px] text-gray-400 ml-2 font-mono">ID: {c.user_id}</span>
                                                                 </div>
                                                                 <span className={`flex-shrink-0 text-[10px] font-bold px-2 py-0.5 rounded ${c.user_id > 0 ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400' : 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 dark:text-purple-400'}`}>
-                                                                    {c.user_id > 0 ? 'Telegram' : 'MAX'}
+                                                                    {c.user_id > 0 ? 'Старая запись' : 'MAX'}
                                                                 </span>
                                                             </button>
                                                         ))}

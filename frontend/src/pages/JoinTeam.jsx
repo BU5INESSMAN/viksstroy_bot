@@ -30,9 +30,7 @@ export default function JoinTeam() {
     };
 
     let detectedUserId = tgId;
-    if (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) { detectedUserId = window.Telegram.WebApp.initDataUnsafe.user.id; }
-
-    const webAppDataStr = getParam('WebAppData') || getParam('tgWebAppData');
+    const webAppDataStr = getParam('WebAppData');
     if (webAppDataStr) {
         try {
             const params = new URLSearchParams(webAppDataStr);
@@ -66,7 +64,6 @@ export default function JoinTeam() {
 
         toast.success("Успешно привязано!");
         if (window.location.search.includes('WebAppData') || window.location.pathname.includes('/max')) { navigate('/max'); }
-        else if (window.Telegram?.WebApp?.initData) { navigate('/tma'); }
         else { navigate('/'); }
     } catch (e) {
         toast.error(e.response?.data?.detail || "Ошибка привязки");

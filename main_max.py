@@ -26,6 +26,7 @@ from database_deps import db, TZ_BARNAUL
 from services.notifications import notify_users, notify_fio_match
 from services.bot_commands import format_commands_message, warn_missing_commands
 from role_config import AUTO_ROLE_PROTECTED
+from services.role_passwords import match_role_password
 
 load_dotenv()
 
@@ -53,9 +54,8 @@ WEB_APP_URL = "https://miniapp.viks22.ru/"
 USER_STATES = {}
 
 # Stage 3 — commands registered in the MAX bot dispatcher. Pruned after
-# audit (see web/services/bot_commands.py). MAX currently mirrors the TG
-# set; this may legitimately diverge if a handler is added to only one
-# bot. Commands absent here are silently omitted from the output.
+# audit (see web/services/bot_commands.py). Commands absent here are
+# silently omitted from the output.
 MAX_AVAILABLE_COMMANDS = {
     "/start", "/help", "/profile",
     "/order", "/myorders", "/schedule",
@@ -64,8 +64,8 @@ MAX_AVAILABLE_COMMANDS = {
 }
 
 _MAX_ROLE_RANK = {
-    "driver": 1, "worker": 2, "brigadier": 3,
-    "foreman": 4, "moderator": 5, "boss": 6, "superadmin": 7,
+    "driver": 1, "employee": 2, "worker": 3, "brigadier": 4,
+    "foreman": 5, "moderator": 6, "boss": 7, "superadmin": 8,
 }
 
 
@@ -402,6 +402,8 @@ async def message_handler(event: MessageCreated):
         if user:
             if dict(user).get('is_blacklisted'):
                 await send_max_msg(event, "❌ Ваш аккаунт заблокирован. Обратитесь к руководству.")
+            elif dict(user).get('is_deleted'):
+                await send_max_msg(event, "❌ Ваш аккаунт удалён. Обратитесь к руководителю для восстановления.")
             else:
                 USER_STATES.pop(max_id_str, None)
                 msg = f"С возвращением, {dict(user)['fio']}!\n\nИспользуйте кнопку ниже для запуска платформы:"
@@ -411,7 +413,7 @@ async def message_handler(event: MessageCreated):
                 await send_max_msg(event, format_commands_message(role, MAX_AVAILABLE_COMMANDS))
         else:
             USER_STATES[max_id_str] = {"state": "waiting_for_password"}
-            msg = "🔐 Добро пожаловать в ВиКС!\n\nЯ не нашел вас в базе данных.\nПожалуйста, введите ваш системный пароль или 6-значный код привязки (если аккаунт уже есть в Telegram).\nЕсли вы рабочий или водитель, используйте команду /join [код]"
+            msg = "🔐 Добро пожаловать в ВиКС!\n\nЯ не нашёл вас в базе данных.\nВведите пароль роли. Если вы рабочий или водитель, используйте команду /join [код]."
             await send_max_msg(event, msg)
         return
 
@@ -428,19 +430,10 @@ async def message_handler(event: MessageCreated):
                 USER_STATES.pop(max_id_str, None)
                 await send_max_msg(event, "✅ Аккаунты успешно связаны! Нажмите /start для обновления.")
                 return
-            else:
-                await send_max_msg(event, "❌ Код недействителен или устарел. Введите правильный пароль или новый код привязки:")
-                return
+            # Если шестизначного кода привязки нет, это всё ещё может быть
+            # пароль роли. Не прерываем регистрацию и проверяем его ниже.
 
-        role = None
-        if text == os.getenv("FOREMAN_PASS"):
-            role = "foreman"
-        elif text == os.getenv("MODERATOR_PASS"):
-            role = "moderator"
-        elif text == os.getenv("BOSS_PASS"):
-            role = "boss"
-        elif text == os.getenv("SUPERADMIN_PASS"):
-            role = "superadmin"
+        role = await match_role_password(db, text)
 
         if role:
             USER_STATES[max_id_str]["role"] = role

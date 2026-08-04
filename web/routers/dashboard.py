@@ -16,7 +16,7 @@ from utils import (
 )
 from services.notifications import notify_users
 from services.publish_service import execute_app_publish
-from auth_deps import get_current_user, require_role
+from auth_deps import get_current_user, get_current_user_optional, require_role
 
 logger = logging.getLogger(__name__)
 from routers.applications import enrich_app_with_members_data
@@ -397,14 +397,18 @@ SENSITIVE_SETTINGS = {
     "gemini_api_key",
     "openrouter_api_key",
     "vapid_private_key",
-    "bot_token",
-    "telegram_bot_token",
 }
 
 
 @router.get("/api/settings")
-async def get_settings(current_user=Depends(get_current_user)):
+async def get_settings(current_user=Depends(get_current_user_optional)):
     """Return settings. Sensitive fields only visible to superadmin."""
+    # Compatibility escape hatch for old service workers: releases before
+    # v2.15 polled this protected endpoint while showing maintenance. Returning
+    # a harmless 200 lets already-stuck phones reload and install the fixed SW.
+    if not current_user:
+        return {"status": "ok"}
+
     async with db.conn.execute("SELECT key, value FROM settings") as cur:
         rows = await cur.fetchall()
 
@@ -420,9 +424,9 @@ async def get_settings(current_user=Depends(get_current_user)):
 @router.get("/api/settings/support")
 async def get_support_settings():
     """Public endpoint — returns support messenger links (no auth required)."""
-    result = {"support_tg_link": "", "support_max_link": ""}
+    result = {"support_max_link": ""}
     async with db.conn.execute(
-        "SELECT key, value FROM settings WHERE key IN ('support_tg_link', 'support_max_link')"
+        "SELECT key, value FROM settings WHERE key='support_max_link'"
     ) as cur:
         for row in await cur.fetchall():
             result[row[0]] = row[1]
@@ -443,7 +447,6 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
                           equip_base_time_end: str = Form("18:00"),
                           exchange_enabled: str = Form("1"),
                           log_retention_days: str = Form("90"),
-                          support_tg_link: str = Form(""),
                           support_max_link: str = Form(""),
                           gemini_api_key: str = Form(""),
                           current_user=Depends(_require_office)):
@@ -468,7 +471,6 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
     # Support settings + API key — superadmin only
     if current_user.get('role') == 'superadmin':
         pairs.extend([
-            ('support_tg_link', support_tg_link),
             ('support_max_link', support_max_link),
             ('gemini_api_key', gemini_api_key),
         ])
@@ -568,14 +570,15 @@ async def cron_check_timeouts(request: Request):
     return {"status": "ok"}
 
 
-@router.post("/api/system/test_notification")
-async def test_notification(platform: str = Form("all"), current_user=Depends(get_current_user)):
+@router.post("/api/system/test_notification_full")
+async def test_notification(platform: str = Form("max"), current_user=Depends(get_current_user)):
     if current_user.get('role') != 'superadmin':
         raise HTTPException(403, "Нет прав")
 
     real_tg_id = current_user["tg_id"]
     fio = current_user.get('fio', 'Супер-Админ')
-    platform_name = "MAX" if platform == "max" else "Telegram"
+    platform = "max"
+    platform_name = "MAX"
 
     fake_app = {
         'id': 9999,

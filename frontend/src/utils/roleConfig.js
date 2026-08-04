@@ -1,4 +1,4 @@
-export const ROLE_ORDER = ['superadmin', 'boss', 'moderator', 'hr', 'foreman', 'brigadier', 'worker', 'driver'];
+export const ROLE_ORDER = ['superadmin', 'boss', 'moderator', 'hr', 'foreman', 'brigadier', 'worker', 'employee', 'driver'];
 
 export const ROLE_NAMES = {
     superadmin: 'Супер-Админ',
@@ -8,6 +8,7 @@ export const ROLE_NAMES = {
     foreman: 'Прораб',
     brigadier: 'Бригадир',
     worker: 'Рабочий',
+    employee: 'Сотрудник',
     driver: 'Водитель',
     'Гость': 'Гость',
 };
@@ -20,6 +21,7 @@ export const ROLE_COLORS = {
     foreman: 'bg-emerald-50 text-emerald-700 border-emerald-200 dark:bg-emerald-900/20 dark:text-emerald-400 dark:border-emerald-800/50',
     brigadier: 'bg-violet-50 text-violet-700 border-violet-200 dark:bg-violet-900/20 dark:text-violet-400 dark:border-violet-800/50',
     worker: 'bg-gray-50 text-gray-600 border-gray-200 dark:bg-gray-700/30 dark:text-gray-400 dark:border-gray-600/50',
+    employee: 'bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800/40 dark:text-slate-300 dark:border-slate-700',
     driver: 'bg-cyan-50 text-cyan-700 border-cyan-200 dark:bg-cyan-900/20 dark:text-cyan-400 dark:border-cyan-800/50',
 };
 
@@ -31,6 +33,7 @@ export const ROLE_ICON_COLORS = {
     foreman: 'text-emerald-500',
     brigadier: 'text-violet-500',
     worker: 'text-gray-400',
+    employee: 'text-slate-500',
     driver: 'text-cyan-500',
 };
 

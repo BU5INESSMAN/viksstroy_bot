@@ -104,7 +104,7 @@ export default function BroadcastPanel({
                                                                 }}
                                                                 className="w-4 h-4 text-pink-600 rounded border-gray-300 focus:ring-pink-500" />
                                                             <span className="text-sm font-bold text-gray-800 dark:text-gray-200">{u.fio}</span>
-                                                            <span className="text-[10px] text-gray-400 ml-auto font-mono">{u.user_id > 0 ? 'TG' : 'MAX'}</span>
+                                                            <span className="text-[10px] text-gray-400 ml-auto font-mono">{u.user_id > 0 ? 'Старая запись' : 'MAX'}</span>
                                                         </label>
                                                     ))}
                                                 </div>

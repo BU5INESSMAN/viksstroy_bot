@@ -1,8 +1,8 @@
 import { Bell } from 'lucide-react';
 
-export default function Header({ isTMA, unreadCount = 0, onlineCount = 0, onNotificationsClick, onOnlineClick }) {
+export default function Header({ isEmbedded, unreadCount = 0, onlineCount = 0, onNotificationsClick, onOnlineClick }) {
     return (
-        <header className="w-full max-w-full bg-white dark:bg-gray-800 shadow-sm border-b border-gray-100 dark:border-gray-700/80 mb-4" style={{ paddingTop: isTMA ? 64 : 'env(safe-area-inset-top, 16px)' }}>
+        <header className="w-full max-w-full bg-white dark:bg-gray-800 shadow-sm border-b border-gray-100 dark:border-gray-700/80 mb-4" style={{ paddingTop: isEmbedded ? 64 : 'env(safe-area-inset-top, 16px)' }}>
             <nav className="px-4 sm:px-6 py-2.5 flex items-center justify-between max-w-7xl mx-auto gap-3">
                 {/* Left: notification bell */}
                 <button

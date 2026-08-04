@@ -116,6 +116,7 @@ async def api_drivers_availability(
         "SELECT user_id, fio, last_name, first_name, middle_name "
         "FROM users WHERE role = 'driver' "
         "AND COALESCE(is_blacklisted, 0) = 0 "
+        "AND COALESCE(is_deleted, 0) = 0 "
         "ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE"
     ) as cur:
         cols = [c[0] for c in cur.description]
@@ -448,7 +449,6 @@ async def api_regenerate_invite(
     return {
         "invite_code": code,
         "invite_link": f"https://miniapp.viks22.ru/driver-invite/{code}",
-        "tg_bot_link": f"https://t.me/viksstroy_bot?start=driver_{code}",
     }
 
 

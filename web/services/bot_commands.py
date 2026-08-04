@@ -1,10 +1,9 @@
-"""Shared bot-command registry used by both TG (main.py) and MAX (main_max.py).
+"""Command registry and text builders for the MAX bot.
 
 Single source of truth for /start output and unknown-command fallback.
 
-Each bot passes its own `available` set — the intersection of this intended
-map with what is actually registered in that bot — so a command missing in
-one bot is simply omitted from its displayed list.
+The bot passes its `available` set so a command without a registered handler
+is omitted from the displayed list.
 """
 from __future__ import annotations
 
@@ -29,7 +28,7 @@ BOT_COMMANDS = [
 ]
 
 ROLE_RANK = {
-    "driver": 1, "worker": 2, "brigadier": 3,
+    "driver": 1, "employee": 1, "worker": 2, "brigadier": 3,
     "hr": 1, "foreman": 4, "moderator": 5, "boss": 6, "superadmin": 7,
 }
 
@@ -50,8 +49,7 @@ def commands_for_role(user_role: str, available: set[str]) -> list[tuple[str, st
 
 
 def format_commands_message(user_role: str, available: set[str]) -> str:
-    """Plain-text list shown to the user. No markdown, no emojis — both TG
-    and MAX render plain text uniformly."""
+    """Plain-text command list shown to the user in MAX."""
     cmds = commands_for_role(user_role, available)
     if not cmds:
         return "Доступных команд нет. Обратитесь к администратору."
@@ -71,7 +69,7 @@ def warn_missing_commands(logger, bot_name: str, available: set[str]) -> None:
 
 
 # ─────────────────────────────────────────────────────────────
-# Shared text builders for command handlers (TG + MAX parity)
+# Shared text builders for MAX command handlers
 # ─────────────────────────────────────────────────────────────
 
 _ROLE_NAMES_RU = {
@@ -82,6 +80,7 @@ _ROLE_NAMES_RU = {
     'foreman': 'Прораб',
     'brigadier': 'Бригадир',
     'worker': 'Рабочий',
+    'employee': 'Сотрудник',
     'driver': 'Водитель',
 }
 

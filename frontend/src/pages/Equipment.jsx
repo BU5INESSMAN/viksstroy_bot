@@ -138,7 +138,7 @@ export default function Equipment() {
     };
 
     const handleUnlinkEquipment = async (equipId) => {
-        const ok = await confirm("Отвязать Telegram/MAX аккаунт водителя от этой техники?", { title: "Отвязка аккаунта", variant: "warning", confirmText: "Отвязать" });
+        const ok = await confirm("Отвязать аккаунт MAX водителя от этой техники?", { title: "Отвязка аккаунта", variant: "warning", confirmText: "Отвязать" });
         if (!ok) return;
         try {
             await axios.post(`/api/equipment/${equipId}/unlink`);

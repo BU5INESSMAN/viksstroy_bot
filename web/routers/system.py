@@ -18,8 +18,6 @@ from services.max_api import get_max_dm_chat_id, send_max_message
 from services.broadcast_service import broadcast_group, broadcast_dm_roles, broadcast_dm_users, run_test_notification
 from schedule_generator import publish_schedule_to_group, generate_schedule_images
 import asyncio
-import aiohttp
-from services.tg_session import get_tg_session
 
 router = APIRouter(tags=["System"])
 logger = logging.getLogger("SYSTEM")
@@ -133,11 +131,11 @@ async def api_test_notification(request: Request, current_user=Depends(_require_
 
     Body: {
       target_user_id: int | null,      # null = self
-      channels: ["telegram", "max", "pwa"],
+      channels: ["max", "pwa"],
       notification_type: str,          # e.g. "app_approved"
       custom_message: str,
     }
-    Returns {results: ["TG → …: OK", …]}.
+    Returns {results: ["MAX → …: OK", "Push → …: OK"]}.
     """
     data = await request.json()
     try:
@@ -157,35 +155,12 @@ async def api_test_notification(request: Request, current_user=Depends(_require_
 
     results: list[str] = []
 
-    # Gather linked TG / MAX ids for this user (positive = TG, negative = MAX).
+    # Gather linked account ids; active messenger identities are MAX ids.
     try:
         from utils import get_all_linked_ids
         linked_ids = await get_all_linked_ids(target_id)
     except Exception:
         linked_ids = [target_id]
-
-    if 'telegram' in channels:
-        tg_ids = [i for i in linked_ids if i > 0]
-        if not tg_ids:
-            results.append(f"TG → {target_name}: не привязан")
-        else:
-            import os as _os
-            token = _os.getenv("BOT_TOKEN")
-            if not token:
-                results.append("TG → BOT_TOKEN не задан")
-            else:
-                from services.tg_session import get_tg_session
-                for tid in tg_ids:
-                    try:
-                        async with await get_tg_session() as session:
-                            async with session.post(
-                                f"https://api.telegram.org/bot{token}/sendMessage",
-                                json={"chat_id": tid, "text": custom_msg},
-                            ) as resp:
-                                ok = resp.status == 200
-                        results.append(f"TG → {target_name}: {'OK' if ok else 'HTTP ' + str(resp.status)}")
-                    except Exception as e:
-                        results.append(f"TG → {target_name}: {str(e)[:80]}")
 
     if 'max' in channels:
         max_ids = [abs(i) for i in linked_ids if i < 0]
@@ -237,7 +212,7 @@ async def api_test_notification(request: Request, current_user=Depends(_require_
 
 @router.post("/api/system/test_schedule")
 async def api_test_schedule(current_user=Depends(_require_boss_plus)):
-    """Generate a fresh tomorrow-schedule PNG and send it to the caller in TG."""
+    """Generate tomorrow's schedule images and send them to the caller in MAX."""
     import os as _os
 
     tomorrow = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
@@ -247,44 +222,39 @@ async def api_test_schedule(current_user=Depends(_require_boss_plus)):
     except Exception as e:
         raise HTTPException(500, f"Не удалось сгенерировать PNG: {e}")
 
-    token = _os.getenv("BOT_TOKEN")
+    token = _os.getenv("MAX_BOT_TOKEN")
     if not token:
-        raise HTTPException(500, "BOT_TOKEN не задан")
+        raise HTTPException(500, "MAX_BOT_TOKEN не задан")
 
-    tg_id = current_user["tg_id"]
-    if tg_id <= 0:
-        raise HTTPException(400, "TG не привязан — откройте через Telegram")
+    user_id = current_user["tg_id"]
+    linked_ids = await get_all_linked_ids(user_id)
+    max_ids = [abs(item) for item in linked_ids if item < 0]
+    if not max_ids:
+        raise HTTPException(400, "MAX не привязан — откройте приложение через MAX")
 
     # v2.7.2: two images — бригады first, техника second.
     images = [
         (buf_a, f'Тестовая расстановка на {tomorrow} — Бригады'),
         (buf_b, f'Тестовая расстановка на {tomorrow} — Техника'),
     ]
-    ok = True
-    resp_text = ""
     try:
-        import aiohttp as _aiohttp
-        async with _aiohttp.ClientSession() as session:
-            for _buf, _caption in images:
-                _buf.seek(0)
-                form = _aiohttp.FormData()
-                form.add_field('chat_id', str(tg_id))
-                form.add_field('caption', _caption)
-                form.add_field('photo', _buf.getvalue(), filename='schedule.png',
-                               content_type='image/png')
-                async with session.post(
-                    f"https://api.telegram.org/bot{token}/sendPhoto", data=form
-                ) as resp:
-                    if resp.status != 200:
-                        ok = False
-                        resp_text = await resp.text()
+        import time as _time
+        os.makedirs(os.path.join("data", "uploads"), exist_ok=True)
+        for index, (_buf, _caption) in enumerate(images, start=1):
+            filepath = os.path.join(
+                "data", "uploads",
+                f"schedule_test_{tomorrow}_{index}_{int(_time.time())}.png",
+            )
+            with open(filepath, "wb") as file_obj:
+                file_obj.write(_buf.getvalue())
+            for max_id in max_ids:
+                chat_id = await get_max_dm_chat_id(str(max_id))
+                await send_max_message(token, chat_id, _caption, filepath)
     except Exception as e:
         raise HTTPException(500, f"Ошибка отправки: {e}")
 
-    await db.add_log(tg_id, current_user.get('fio', ''),
+    await db.add_log(user_id, current_user.get('fio', ''),
                      f"Отправил тестовую расстановку на {tomorrow}", target_type='system')
-    if not ok:
-        return {"status": "error", "message": resp_text[:200]}
     return {"status": "ok", "date": tomorrow}
 
 
@@ -364,8 +334,8 @@ async def remind_smr(req: RemindSMRRequest, current_user=Depends(_require_office
 
     async def _do_remind():
         try:
-            # One canonical dispatch resolves linked Telegram/MAX accounts and
-            # applies the foreman's channel + event switches to both sources.
+            # One canonical dispatch resolves the foreman's MAX account and
+            # applies the user's notification settings.
             await notify_users(
                 [], message, "kp", extra_tg_ids=[req.foreman_id],
                 category="reports", event_key="smr_debt",
@@ -418,7 +388,7 @@ async def api_schedule_warnings(date: str = "", current_user=Depends(_require_of
 
 @router.post("/api/system/send_schedule_group")
 async def api_send_schedule_group(date: str = Form(""), current_user=Depends(_require_office)):
-    """Отправить расстановку-картинку в групповой чат (TG + MAX)."""
+    """Отправить расстановку-картинку в групповой чат MAX."""
     real_id = current_user["tg_id"]
     user_fio = current_user.get('fio', 'Модератор')
     if not date:
@@ -475,28 +445,9 @@ async def api_send_schedule_self(date: str = Form(""), current_user=Depends(_req
             cap_b = f"📋 Расстановка на {date} — Техника"
 
             linked_ids = await get_all_linked_ids(real_id)
-            tg_ids = [lid for lid in linked_ids if lid > 0]
             max_ids = [abs(lid) for lid in linked_ids if lid < 0]
 
-            bot_token = os.getenv("BOT_TOKEN")
             max_bot_token = os.getenv("MAX_BOT_TOKEN")
-
-            if bot_token and tg_ids:
-                async with await get_tg_session() as session:
-                    for tid in tg_ids:
-                        for _buf, _caption in ((buf_a, cap_a), (buf_b, cap_b)):
-                            try:
-                                _buf.seek(0)
-                                form = aiohttp.FormData()
-                                form.add_field("chat_id", str(tid))
-                                form.add_field("photo", _buf.getvalue(), filename="schedule.png", content_type="image/png")
-                                form.add_field("caption", _caption)
-                                form.add_field("parse_mode", "HTML")
-                                await session.post(
-                                    f"https://api.telegram.org/bot{bot_token}/sendPhoto", data=form
-                                )
-                            except Exception:
-                                pass
 
             if max_bot_token and max_ids:
                 for mid in max_ids:

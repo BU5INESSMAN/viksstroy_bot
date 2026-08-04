@@ -39,7 +39,7 @@ export default function Layout() {
     const [profileData, setProfileData] = useState(null);
     const [editProfile, setEditProfile] = useState({});
 
-    const [isTMA, setIsTMA] = useState(false);
+    const [isEmbedded, setIsEmbedded] = useState(false);
     const [isGlobalCreateAppOpen, setGlobalCreateAppOpen] = useState(false);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
@@ -107,14 +107,8 @@ export default function Layout() {
     }, [theme]);
 
     useEffect(() => {
-        const tg = window.Telegram?.WebApp;
-        if (tg && tg.initData) {
-            setIsTMA(true);
-            tg.expand();
-            if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
-        }
         if (window.location.pathname.includes('/max') || window.location.search.includes('WebAppData')) {
-            setIsTMA(true);
+            setIsEmbedded(true);
         }
         document.body.style.overscrollBehaviorY = 'none';
     }, []);
@@ -216,14 +210,10 @@ export default function Layout() {
                     <img src="/logo-white.svg" alt="ВиКС" className="h-12 mx-auto" />
                     <div>
                         <p className="text-gray-400 text-sm leading-relaxed">
-                            Для доступа к платформе авторизуйтесь через бот Telegram или MAX
+                            Для доступа к платформе авторизуйтесь через бот MAX
                         </p>
                     </div>
                     <div className="flex flex-col gap-3">
-                        <a href="https://t.me/viksstroy_bot" target="_blank" rel="noopener noreferrer"
-                           className="flex items-center justify-center gap-2 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3.5 px-6 rounded-xl transition-colors shadow-lg active:scale-95">
-                            Telegram
-                        </a>
                         <a href="https://max.ru/id222264297116_bot" target="_blank" rel="noopener noreferrer"
                            className="flex items-center justify-center gap-2 bg-gray-700 hover:bg-gray-600 text-white font-bold py-3.5 px-6 rounded-xl transition-colors shadow-lg active:scale-95 border border-gray-600">
                             MAX
@@ -277,7 +267,7 @@ export default function Layout() {
                 {/* Header — mobile only */}
                 <div className="lg:hidden">
                     <Header
-                        isTMA={isTMA}
+                        isEmbedded={isEmbedded}
                         realRole={realRole}
                         role={role}
                         unreadCount={unreadCount}

@@ -35,7 +35,7 @@ notify_deploy() {
 }
 
 release_details() {
-  printf 'Версия: %s\nКратко:\n' "$RELEASE_VERSION"
+  printf 'Версия: %s\n\nЧто изменится:\n' "$RELEASE_VERSION"
   local note
   for note in "${RELEASE_NOTES[@]}"; do
     printf '• %s\n' "$note"
@@ -53,14 +53,18 @@ rollback() {
   local reason="$1"
   write_state "rollback" "$reason"
   notify_deploy "deploy_failed" "Ошибка обновления" "$reason; запускается автоматический откат"
-  notify_deploy_group "❌ Обновление не завершено" "$(release_details)Причина: $reason\nВыполняется автоматический откат."
+  local rollback_message
+  rollback_message="$(release_details)"
+  rollback_message+="Причина: $reason"
+  rollback_message+=$'\nВыполняется автоматический откат.'
+  notify_deploy_group "❌ Обновление не завершено" "$rollback_message"
   echo "Ошибка обновления: $reason"
   git reset --hard "$OLD_COMMIT"
   if [ -d "$FRONTEND_BACKUP" ]; then
     rm -rf frontend/dist
     mv "$FRONTEND_BACKUP" frontend/dist
   fi
-  timeout 12m docker compose up -d --build || true
+  timeout 12m docker compose up -d --build --remove-orphans || true
   write_state "failed" "$reason; выполнен откат"
 }
 
@@ -83,7 +87,9 @@ if [ -f deploy/release.env ]; then
   source deploy/release.env
 fi
 notify_deploy "deploy_started" "Обновление началось" "Запускается версия $RELEASE_VERSION"
-notify_deploy_group "🔄 Обновление системы" "$(release_details)Возможна короткая перезагрузка приложения."
+START_MESSAGE="$(release_details)"
+START_MESSAGE+=$'\nСтатус: сборка и проверка\nПриложение может быть кратковременно недоступно.'
+notify_deploy_group "🚀 ОБНОВЛЕНИЕ НАЧАЛОСЬ" "$START_MESSAGE"
 
 echo "==> Проверка и сборка интерфейса во временный каталог"
 rm -rf frontend/dist.next
@@ -128,6 +134,9 @@ docker compose logs --tail 20
 DEPLOY_OK=1
 write_state "succeeded" "обновление завершено"
 notify_deploy "deploy_succeeded" "Обновление завершено" "Версия $NEW_COMMIT запущена, API прошёл проверку"
-notify_deploy_group "✅ Обновление завершено" "$(release_details)API и база данных прошли проверку."
+FINISH_MESSAGE="$(printf 'Версия: %s\n\nУстановлено:\n' "$RELEASE_VERSION")"
+FINISH_MESSAGE+="$(printf '• %s\n' "${RELEASE_NOTES[@]}")"
+FINISH_MESSAGE+=$'\nПроверки:\n✓ API отвечает\n✓ база данных доступна\n✓ службы MAX запущены'
+notify_deploy_group "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО" "$FINISH_MESSAGE"
 trap - EXIT
 echo "Готово: $NEW_COMMIT"
