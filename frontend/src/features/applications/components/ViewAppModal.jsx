@@ -7,6 +7,7 @@ import {
 import { getStatusBadge } from '../../../utils/statusConfig';
 import { motion } from 'framer-motion';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
+import { formatApplicationNumber } from '../../../utils/applicationNumber';
 import { IconTruck } from '@tabler/icons-react';
 import {
     getIconComponent,
@@ -204,7 +205,7 @@ export default function ViewAppModal({ app, onClose, data }) {
                         <h2 className="text-lg font-bold flex items-center gap-2 text-gray-800 dark:text-white">
                             <ClipboardList className="w-5 h-5 text-blue-500" />
                             Просмотр наряда
-                            <span className="text-gray-400 font-normal text-base">#{app.id}</span>
+                            <span className="text-gray-400 font-normal text-base">{formatApplicationNumber(app)}</span>
                         </h2>
                         <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-lg text-[11px] font-bold uppercase tracking-wider ${st.color}`}>
                             <StIcon className="w-3.5 h-3.5" />

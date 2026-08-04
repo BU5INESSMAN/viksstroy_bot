@@ -14,6 +14,7 @@ import ExtraWorksPicker, { genRowId } from '../features/kp/components/ExtraWorks
 import SMRWizard from '../features/kp/components/SMRWizard';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
 import SMRReconciliationModal from '../features/kp/components/SMRReconciliationModal';
+import { formatApplicationNumber } from '../utils/applicationNumber';
 
 // Pull the server-supplied filename out of a Content-Disposition header.
 // Honours both `filename*=UTF-8''<pct-encoded>` and plain `filename="…"`.
@@ -830,7 +831,7 @@ export default function KP() {
                                                     {app.object_name || app.obj_name || app.object_address || 'Объект'}
                                                 </p>
                                                 <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
-                                                    №{app.id} · {app.date_target || '—'}{app.foreman_name ? ` · ${app.foreman_name}` : ''}
+                                                    {formatApplicationNumber(app)} · {app.date_target || '—'}{app.foreman_name ? ` · ${app.foreman_name}` : ''}
                                                 </p>
                                             </div>
                                             <Plus className="w-4 h-4 text-amber-500 flex-shrink-0" />
@@ -1034,7 +1035,7 @@ function SMRGroupRow({
                 onClick={rowAction || undefined}
             >
                 <p className="text-sm font-medium text-gray-800 dark:text-gray-100 flex items-center gap-1.5 flex-wrap min-w-0">
-                    <span className="whitespace-nowrap">Заявка №{app.id}</span>
+                    <span className="whitespace-nowrap">{formatApplicationNumber(app)}</span>
                     {isMerged && (
                         <span
                             className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-500/20 px-1.5 py-0.5 rounded-full inline-flex items-center gap-0.5"

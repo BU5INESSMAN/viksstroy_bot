@@ -24,6 +24,7 @@ from services.app_service import (
 )
 from services.notifications import notify_driver_assignment, notify_foreman_of_moderator_edit
 from services import driver_service
+from application_numbers import display_application_number
 from services.app_workflow import (
     review_application, send_review_notifications,
     change_application_status, send_status_change_notification,
@@ -37,6 +38,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Applications"])
 
 _require_office = require_role("superadmin", "boss", "moderator")
+_require_creator = require_role("superadmin", "boss", "moderator", "foreman")
 
 
 @router.get("/api/objects/active")
@@ -73,7 +75,7 @@ async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
                      equipment_data: str = Form(""), object_id: int = Form(0),
                      driver_assignments: str = Form(""),
                      force_assign: bool = Form(False),
-                     current_user=Depends(get_current_user)):
+                     current_user=Depends(_require_creator)):
     tg_id = current_user["tg_id"]
     # v2.6.1: force_assign is the office-only override flag. Foreman
     # callers may send it accidentally (e.g. stale client) — silently
@@ -81,7 +83,7 @@ async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
     # prevented the conflict for them.
     if force_assign and current_user.get("role") not in ("moderator", "boss", "superadmin"):
         force_assign = False
-    new_app_id, real_tg_id, fio = await create_application(
+    new_app_id, real_tg_id, fio, public_number = await create_application(
         tg_id, team_id, date_target, object_address, comment, selected_members, equipment_data, object_id,
         driver_assignments=driver_assignments,
         current_user=current_user,
@@ -89,9 +91,9 @@ async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
     )
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
-                       f"📝 <b>Новая заявка на выезд</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата: {date_target}\n🕒 Время: {now}",
+                       f"📝 <b>Новая заявка {public_number}</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата работ: {date_target}\n🕒 Время: {now}",
                        "review", category="orders", event_key="app_new"))
-    return {"status": "ok", "id": new_app_id}
+    return {"status": "ok", "id": new_app_id, "public_number": public_number}
 
 
 @router.post("/api/applications/{app_id}/update")
@@ -283,9 +285,10 @@ async def api_remove_app_driver(
 async def delete_app(app_id: int, current_user=Depends(get_current_user)):
     tg_id = current_user["tg_id"]
     real_tg_id, fio, app_dict = await delete_application(app_id, tg_id)
+    app_number = display_application_number(app_id, app_dict.get("public_number"))
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
     asyncio.create_task(notify_users(["report_group", "boss", "superadmin"],
-                       f"🗑 <b>Заявка №{app_id} удалена</b>\n👤 Кто: {fio}\n📍 Объект: {app_dict.get('object_address')}\n🕒 Время: {now}",
+                       f"🗑 <b>Заявка {app_number} удалена</b>\n👤 Кто: {fio}\n📍 Объект: {app_dict.get('object_address')}\n🕒 Время: {now}",
                        "review", category="orders", event_key="app_status_changed"))
     return {"status": "ok"}
 

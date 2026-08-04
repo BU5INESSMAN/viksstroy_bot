@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import useConfirm from '../../../hooks/useConfirm';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
+import { formatApplicationNumber } from '../../../utils/applicationNumber';
 import ModalPortal from '../../../components/ui/ModalPortal';
 
 export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
@@ -143,6 +144,7 @@ export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
 
                                                 return (
                                                     <div key={a.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm">
+                                                        <div className="text-[10px] font-black tracking-wide text-purple-600 dark:text-purple-400 mb-1">{formatApplicationNumber(a)}</div>
                                                         <div className="mb-1">
                                                             <ObjectDisplay
                                                                 name={a.object_name}

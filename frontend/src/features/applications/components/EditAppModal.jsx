@@ -15,6 +15,7 @@ import useEquipDefaultTime from '../../../hooks/useEquipDefaultTime';
 import DraftRestorePrompt from '../../../components/ui/DraftRestorePrompt';
 import { useDraft } from '../../../hooks/useDraft';
 import { loadDraft, clearDraft, formatDraftAge } from '../../../utils/draftStorage';
+import { formatApplicationNumber } from '../../../utils/applicationNumber';
 
 // Small structural diff helper. EditAppModal compares the current form
 // against the original app payload to decide whether anything is worth
@@ -566,7 +567,7 @@ export default function EditAppModal({
                         <div className="min-w-0 flex-1">
                             <h3 className="text-lg sm:text-xl font-bold flex items-center gap-2 dark:text-white min-w-0">
                                 <ClipboardList className="text-yellow-500 w-6 h-6 flex-shrink-0" />
-                                <span className="truncate">Редактирование наряда #{form.id}</span>
+                                <span className="truncate">Редактирование {formatApplicationNumber(form)}</span>
                             </h3>
                             {draftSavedAt && (
                                 <span

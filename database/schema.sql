@@ -202,6 +202,7 @@ CREATE TABLE IF NOT EXISTS applications (
     -- Office bookkeeping marker for completed SMR reports.
     smr_accounted_by INTEGER DEFAULT NULL,
     smr_accounted_at TEXT DEFAULT NULL,
+    public_number TEXT,
     FOREIGN KEY (foreman_id) REFERENCES users (user_id),
     FOREIGN KEY (team_id) REFERENCES teams (id),
     FOREIGN KEY (equipment_id) REFERENCES equipment (id)

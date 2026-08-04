@@ -5,6 +5,7 @@ import {
     Scale, X,
 } from 'lucide-react';
 import ModalPortal from '../../../components/ui/ModalPortal';
+import { formatApplicationNumber } from '../../../utils/applicationNumber';
 
 const money = (value) => `${Number(value || 0).toLocaleString('ru-RU', { maximumFractionDigits: 2 })} ₽`;
 const number = (value) => Number(value || 0).toLocaleString('ru-RU', { maximumFractionDigits: 3 });
@@ -98,7 +99,7 @@ export default function SMRReconciliationModal({ apps = [], onClose, onOpenApp }
                                         {options.length === 0 && <option value="">Нет готовых заявок</option>}
                                         {options.map((app) => (
                                             <option key={app.id} value={app.id}>
-                                                №{app.id} · {app.object_name || app.obj_name || app.object_address || 'Без объекта'} · {app.date_target || 'без даты'}
+                                                {formatApplicationNumber(app)} · {app.object_name || app.obj_name || app.object_address || 'Без объекта'} · {app.date_target || 'без даты'}
                                             </option>
                                         ))}
                                     </select>

@@ -7,6 +7,7 @@ from database_deps import db, TZ_BARNAUL
 from utils import resolve_id
 from services.notifications import notify_users, notify_group_chat
 from services.publish_service import execute_app_publish
+from application_numbers import display_application_number
 
 logger = logging.getLogger(__name__)
 
@@ -132,18 +133,20 @@ async def send_review_notifications(app_id, app_dict, mod_fio, new_status, reaso
             "❌ Отклонена / Отозвана" if new_status == 'rejected' else (
                 "🔄 Отозвана на доработку" if new_status == 'waiting' else "🏁 Досрочно завершена"))
         now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
+        app_number = display_application_number(app_id, app_dict.get("public_number"))
 
-        msg_group = f"📋 <b>Заявка №{app_id} {status_ru}</b>\n👤 Проверил: {mod_fio}\n📍 Объект: {app_dict['object_address']}\n🕒 Время: {now}"
+        msg_group = f"📋 <b>Заявка {app_number} {status_ru}</b>\n👤 Проверил: {mod_fio}\n📍 Объект: {app_dict['object_address']}\n🕒 Время: {now}"
         if reason: msg_group += f"\n💬 Причина: {reason}"
         await notify_users(["report_group", "boss", "superadmin"], msg_group, "review", category="orders", event_key="app_status_changed")
 
         if new_status in ['approved', 'rejected', 'waiting']:
             if new_status == 'waiting':
                 msg_foreman = (f"🔄 <b>Ваш наряд отозван на доработку</b>\n"
+                               f"🔖 {app_number}\n"
                                f"Заявка возвращена на рассмотрение — отредактируйте и отправьте повторно.\n"
                                f"📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}")
             else:
-                msg_foreman = f"🔔 <b>Ваша заявка {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
+                msg_foreman = f"🔔 <b>Ваша заявка {app_number} {status_ru}!</b>\n📍 Объект: {app_dict['object_address']}\n📅 Дата: {app_dict['date_target']}"
             if reason: msg_foreman += f"\n💬 Причина: {reason}"
             status_event = "app_approved" if new_status == "approved" else "app_rejected" if new_status == "rejected" else "app_status_changed"
             await notify_users([], msg_foreman, "dashboard", extra_tg_ids=[app_dict['foreman_id']], category="orders", event_key=status_event)

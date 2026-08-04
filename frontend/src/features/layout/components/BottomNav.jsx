@@ -32,7 +32,7 @@ export default function BottomNav({ role, canCreateApp, isModOrBoss, openProfile
             >
             <div className="max-w-5xl mx-auto flex justify-around items-stretch h-full px-1 sm:px-4">
 
-                {!isHr && <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} dataTour="bottomnav-home" />}
+                <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} dataTour="bottomnav-home" />
 
                 {isHr && (
                     <NavBtn icon={MapPin} label="Объекты" path="/objects" current={location.pathname} onClick={() => navigate('/objects')} />

@@ -48,6 +48,9 @@ MIGRATIONS_ORDER = [
     # Completed SMR bookkeeping: who marked the report as transferred to
     # the office's external program and when.
     "m_2026_07_smr_accounted",
+    # Stable short application numbers + repair of historical drivers whose
+    # soft-delete path used to erase their role.
+    "m_2026_08_application_numbers_and_driver_roles",
 ]
 
 

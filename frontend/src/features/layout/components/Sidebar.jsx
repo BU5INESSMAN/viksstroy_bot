@@ -84,7 +84,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
 
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
     const isHr = role === 'hr';
-    const canCreateApp = ['foreman', 'boss', 'superadmin'].includes(role);
+    const canCreateApp = ['foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeObjects = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeKP = ['hr', 'brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
@@ -94,7 +94,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
     const toggleMenu = (id) => setOpenMenus(p => ({ ...p, [id]: !p[id] }));
 
     const navItems = [
-        { id: 'home', icon: Home, label: 'Главная', path: '/dashboard', visible: !isHr },
+        { id: 'home', icon: Home, label: 'Главная', path: '/dashboard', visible: true },
         {
             id: 'objects', icon: MapPin, label: 'Объекты', path: '/objects', visible: canSeeObjects,
             subItems: [

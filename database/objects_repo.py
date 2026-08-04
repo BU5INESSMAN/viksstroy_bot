@@ -218,7 +218,7 @@ class ObjectsRepoMixin:
         positive quantity (volume > 0 / hours > 0).
 
         Unified columns (same order in every arm):
-            entry_type, app_id, date_target, smr_status, smr_filled_by_role,
+            entry_type, app_id, public_number, date_target, smr_status, smr_filled_by_role,
             category, name, unit, volume, hours, team_id, team_name,
             filled_at, filled_by_fio, filled_by_role
         """
@@ -227,6 +227,7 @@ class ObjectsRepoMixin:
                 -- Arm A: plan works (application_kp)
                 SELECT 'plan'                  AS entry_type,
                        a.id                    AS app_id,
+                       a.public_number         AS public_number,
                        a.date_target           AS date_target,
                        a.smr_status            AS smr_status,
                        a.smr_filled_by_role    AS smr_filled_by_role,
@@ -261,6 +262,7 @@ class ObjectsRepoMixin:
                 -- Arm B: extra works (application_extra_works)
                 SELECT 'extra'                 AS entry_type,
                        a.id                    AS app_id,
+                       a.public_number         AS public_number,
                        a.date_target           AS date_target,
                        a.smr_status            AS smr_status,
                        a.smr_filled_by_role    AS smr_filled_by_role,
@@ -295,6 +297,7 @@ class ObjectsRepoMixin:
                 -- Arm C: per-member hours (application_hours)
                 SELECT 'hours'                 AS entry_type,
                        a.id                    AS app_id,
+                       a.public_number         AS public_number,
                        a.date_target           AS date_target,
                        a.smr_status            AS smr_status,
                        a.smr_filled_by_role    AS smr_filled_by_role,

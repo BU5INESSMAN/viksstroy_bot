@@ -15,6 +15,7 @@ from services.tg_session import get_tg_session
 from services.push_templates import build_push_payload
 from utils_fio import get_user_settings
 from notification_events import event_enabled
+from application_numbers import get_application_number
 
 
 # Maps channel name → settings key used by Settings page toggles
@@ -648,21 +649,24 @@ async def notify_driver_assignment(
     """
     if not driver_user_id or int(driver_user_id) < 0:
         return
+    application_number = await get_application_number(db, app_id)
 
     if action == "unassigned":
         push_type = "driver_unassigned"
-        body = f"{equipment_name} — {date_target}. Объект: {object_name}"
+        body = f"{application_number}: {equipment_name} — {date_target}. Объект: {object_name}"
         html = (
             f"❎ <b>Вас сняли с техники</b>\n"
+            f"🔖 {application_number}\n"
             f"🚜 {equipment_name}\n"
             f"📅 {date_target}\n"
             f"📍 {object_name}"
         )
     else:
         push_type = "driver_assigned"
-        body = f"{equipment_name} — {date_target}. Объект: {object_name}"
+        body = f"{application_number}: {equipment_name} — {date_target}. Объект: {object_name}"
         html = (
             f"🚜 <b>Вас назначили на технику</b>\n"
+            f"🔖 {application_number}\n"
             f"📍 Техника: {equipment_name}\n"
             f"📅 Дата: {date_target}\n"
             f"🏗 Объект: {object_name}"
@@ -712,13 +716,14 @@ async def notify_foreman_of_moderator_edit(
         return
 
     fio = (moderator_fio or "").strip() or "модератор"
+    application_number = await get_application_number(db, application_id)
     text = (
         f"✏️ <b>{html.escape(fio)} отредактировал(а) вашу заявку "
-        f"№{application_id}</b>\n\n"
+        f"{application_number}</b>\n\n"
         + "\n\n".join(details)
     )
     body = (
-        f"{fio} отредактировал(а) заявку №{application_id}: "
+        f"{fio} отредактировал(а) заявку {application_number}: "
         f"{', '.join(labels)}."
     )
     try:

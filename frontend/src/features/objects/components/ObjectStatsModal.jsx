@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X, BarChart3, Calendar, ChevronDown, ChevronUp } from 'lucide-react';
 import ModalPortal from '../../../components/ui/ModalPortal';
+import { formatApplicationNumber } from '../../../utils/applicationNumber';
 
 /** Render a catalog unit string safely. Hides empties, pandas NaN
  *  leftovers, and purely numeric values (catalog sometimes has stray
@@ -185,6 +186,7 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                             if (!byKey[key]) {
                                                 byKey[key] = {
                                                     app_id: h.app_id,
+                                                    public_number: h.public_number,
                                                     date: h.date_target || '—',
                                                     smr_status: h.smr_status || '',
                                                     filled_by_fio: h.filled_by_fio || '',
@@ -220,7 +222,7 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                                                 <div className="min-w-0 flex-1">
                                                                     <div className="flex items-center gap-2">
                                                                         <span className="text-sm font-bold text-gray-700 dark:text-gray-300 truncate">
-                                                                            {group.date} — Заявка №{group.app_id}
+                                                                            {group.date} — {formatApplicationNumber({ id: group.app_id, public_number: group.public_number })}
                                                                         </span>
                                                                         {pending && (
                                                                             <span className="text-[10px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded whitespace-nowrap">

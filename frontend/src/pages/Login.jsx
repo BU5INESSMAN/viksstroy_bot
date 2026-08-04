@@ -24,7 +24,7 @@ export default function Login() {
 
     loadAuthData().then(stored => {
       if (stored?.tg_id && stored?.user_role) {
-        navigate(stored.user_role === 'hr' ? '/objects' : '/dashboard', { replace: true });
+        navigate('/dashboard', { replace: true });
       } else {
         setChecking(false);
       }
@@ -43,7 +43,7 @@ export default function Login() {
 
           if (res.data.status === 'ok') {
               await saveAuthData(res.data.tg_id, res.data.role);
-              navigate(res.data.role === 'hr' ? '/objects' : '/dashboard');
+              navigate('/dashboard');
           }
       } catch (err) {
           setError(err.response?.data?.detail || 'Ошибка авторизации. Проверьте правильность кода.');

@@ -3,6 +3,7 @@ import axios from 'axios';
 import { FolderGit2, Calendar as CalendarIcon, MapPin, Users, Truck, Search, Filter } from 'lucide-react';
 import { MyAppsSkeleton } from '../components/ui/PageSkeletons';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
+import { formatApplicationNumber } from '../utils/applicationNumber';
 
 export default function MyApps() {
     const tgId = localStorage.getItem('tg_id') || '0';
@@ -106,7 +107,7 @@ export default function MyApps() {
                                 <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-blue-400 dark:bg-blue-500"></div>
                                 <div className="text-sm space-y-2.5 pl-2">
                                     <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 uppercase text-[10px] tracking-widest font-bold mb-1">
-                                        <CalendarIcon className="w-3.5 h-3.5" /> {app.date_target}
+                                        <CalendarIcon className="w-3.5 h-3.5" /> {formatApplicationNumber(app)} · {app.date_target}
                                     </div>
                                     <ObjectDisplay
                                         name={app.object_name}

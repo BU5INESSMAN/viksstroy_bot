@@ -16,6 +16,8 @@ NEW_COMMIT="$OLD_COMMIT"
 STARTED_AT="$(date +%s)"
 FRONTEND_BACKUP="frontend/dist.rollback"
 DEPLOY_OK=0
+RELEASE_VERSION="без номера"
+RELEASE_NOTES=()
 mkdir -p data
 
 write_state() {
@@ -32,10 +34,26 @@ notify_deploy() {
   fi
 }
 
+release_details() {
+  printf 'Версия: %s\nКратко:\n' "$RELEASE_VERSION"
+  local note
+  for note in "${RELEASE_NOTES[@]}"; do
+    printf '• %s\n' "$note"
+  done
+}
+
+notify_deploy_group() {
+  local title="$1" details="$2"
+  if [ -x .venv/bin/python ]; then
+    .venv/bin/python scripts/watchdog.py --group --title "$title" --details "$details" >/dev/null 2>&1 || true
+  fi
+}
+
 rollback() {
   local reason="$1"
   write_state "rollback" "$reason"
   notify_deploy "deploy_failed" "Ошибка обновления" "$reason; запускается автоматический откат"
+  notify_deploy_group "❌ Обновление не завершено" "$(release_details)Причина: $reason\nВыполняется автоматический откат."
   echo "Ошибка обновления: $reason"
   git reset --hard "$OLD_COMMIT"
   if [ -d "$FRONTEND_BACKUP" ]; then
@@ -56,11 +74,16 @@ on_exit() {
 trap on_exit EXIT
 
 write_state "running" "получение обновления"
-notify_deploy "deploy_started" "Обновление началось" "Сервер получает и проверяет новую версию"
 echo "==> Получение origin/master"
 timeout 2m git fetch origin master
 NEW_COMMIT="$(git rev-parse origin/master)"
 git reset --hard "$NEW_COMMIT"
+if [ -f deploy/release.env ]; then
+  # shellcheck disable=SC1091
+  source deploy/release.env
+fi
+notify_deploy "deploy_started" "Обновление началось" "Запускается версия $RELEASE_VERSION"
+notify_deploy_group "🔄 Обновление системы" "$(release_details)Возможна короткая перезагрузка приложения."
 
 echo "==> Проверка и сборка интерфейса во временный каталог"
 rm -rf frontend/dist.next
@@ -105,5 +128,6 @@ docker compose logs --tail 20
 DEPLOY_OK=1
 write_state "succeeded" "обновление завершено"
 notify_deploy "deploy_succeeded" "Обновление завершено" "Версия $NEW_COMMIT запущена, API прошёл проверку"
+notify_deploy_group "✅ Обновление завершено" "$(release_details)API и база данных прошли проверку."
 trap - EXIT
 echo "Готово: $NEW_COMMIT"

@@ -172,6 +172,37 @@ def dispatch(title: str, issues: list[str], event_key: str = "system_unavailable
                 pass
 
 
+def group_chat_ids() -> tuple[str, str]:
+    telegram = os.getenv("GROUP_CHAT_ID", "").strip()
+    max_chat = os.getenv("MAX_GROUP_CHAT_ID", "").strip()
+    if not max_chat:
+        try:
+            with sqlite3.connect(DB_FILE, timeout=5) as conn:
+                row = conn.execute(
+                    "SELECT value FROM settings WHERE key='max_group_chat_id'"
+                ).fetchone()
+                max_chat = str(row[0]).strip() if row and row[0] else ""
+        except Exception:
+            pass
+    return telegram, max_chat
+
+
+def dispatch_group(title: str, details: str) -> None:
+    """Send a deploy status message to the operational group chats only."""
+    message = f"{title}\n\n{html.escape(details)}"
+    telegram, max_chat = group_chat_ids()
+    if telegram:
+        try:
+            send_telegram(int(telegram), message)
+        except Exception:
+            pass
+    if max_chat:
+        try:
+            asyncio.run(send_max(int(max_chat), message.replace("<b>", "").replace("</b>", "")))
+        except Exception:
+            pass
+
+
 def main() -> int:
     global DB_FILE, HEALTH_URL, REMIND_AFTER
     load_env()
@@ -182,7 +213,11 @@ def main() -> int:
     parser.add_argument("--notify", metavar="EVENT")
     parser.add_argument("--title", default="Системное событие")
     parser.add_argument("--details", default="")
+    parser.add_argument("--group", action="store_true")
     args = parser.parse_args()
+    if args.group:
+        dispatch_group(args.title, args.details or args.notify or "Обновление состояния")
+        return 0
     if args.notify:
         dispatch(args.title, [args.details or args.notify], args.notify)
         return 0

@@ -14,6 +14,7 @@ from services.max_api import get_max_group_id, send_max_message
 from services.tg_session import get_tg_session
 from services import driver_service
 from services.notifications import notify_driver_assignment
+from application_numbers import display_application_number
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     max_bot_token = os.getenv("MAX_BOT_TOKEN")
     max_group_id = await get_max_group_id()
     app_id = app_dict['id']
+    app_number = display_application_number(app_id, app_dict.get("public_number"))
 
     teams_dict = await fetch_teams_dict()
     enrich_app_with_team_name(app_dict, teams_dict)
@@ -165,9 +167,9 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     # В MAX просто ФИО одобрившего
     approved_max = f"\n🛡 Одобрил(а): {approved_name}" if approved_name else ""
 
-    tg_caption = f"<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД №{app_id}</b>\n📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n🚜 <b>Техника:</b>\n{equip_html}👷‍♂️ <b>Прораб:</b> {foreman_tg}\n👥 <b>Бригада «{team_name}»:</b>{staff_str_tg}{comment_html_tg}{approved_tg}</blockquote>"
+    tg_caption = f"<blockquote expandable>🟢 <b>УТВЕРЖДЕННЫЙ НАРЯД {app_number}</b>\n📅 <b>Дата:</b> <code>{app_dict['date_target']}</code>\n📍 <b>Объект:</b> {app_dict['object_address']}\n🚜 <b>Техника:</b>\n{equip_html}👷‍♂️ <b>Прораб:</b> {foreman_tg}\n👥 <b>Бригада «{team_name}»:</b>{staff_str_tg}{comment_html_tg}{approved_tg}</blockquote>"
 
-    max_caption = f"🟢 УТВЕРЖДЕННЫЙ НАРЯД №{app_id}\n📅 Дата: {app_dict['date_target']}\n📍 Объект: {app_dict['object_address']}\n🚜 Техника:\n{equip_html}👷‍♂️ Прораб: {foreman_max}\n👥 Бригада «{team_name}»:{staff_str_max}{comment_html_max}{approved_max}"
+    max_caption = f"🟢 УТВЕРЖДЕННЫЙ НАРЯД {app_number}\n📅 Дата: {app_dict['date_target']}\n📍 Объект: {app_dict['object_address']}\n🚜 Техника:\n{equip_html}👷‍♂️ Прораб: {foreman_max}\n👥 Бригада «{team_name}»:{staff_str_max}{comment_html_max}{approved_max}"
 
     published_tg = False
     if target_platform in ["all", "tg"] and bot_token and group_id:

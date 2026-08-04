@@ -147,6 +147,190 @@ async def get_dashboard_data(current_user=Depends(get_current_user)):
             "equip_categories": list(set(categories)), "kanban_apps": all_apps, "recent_addresses": recent_addresses}
 
 
+@router.get("/api/dashboard/role-summary")
+async def get_role_dashboard_summary(current_user=Depends(get_current_user)):
+    """Compact, role-aware facts for the first screen.
+
+    The endpoint deliberately returns counts rather than whole staff or
+    application rows, so worker dashboards cannot leak office-wide details.
+    """
+    role = current_user.get("role") or "worker"
+    user_id = int(current_user["tg_id"])
+    today = datetime.now(TZ_BARNAUL).strftime("%Y-%m-%d")
+    tomorrow = (datetime.now(TZ_BARNAUL) + timedelta(days=1)).strftime("%Y-%m-%d")
+
+    async def scalar(sql: str, params=()):
+        async with db.conn.execute(sql, params) as cur:
+            row = await cur.fetchone()
+        return int(row[0] or 0) if row else 0
+
+    summary = {
+        "role": role,
+        "today": today,
+    }
+
+    if role in ("superadmin", "boss", "moderator"):
+        summary["applications"] = {
+            "waiting": await scalar("SELECT COUNT(*) FROM applications WHERE status='waiting'"),
+            "approved_tomorrow": await scalar(
+                "SELECT COUNT(*) FROM applications WHERE date_target=? "
+                "AND status IN ('approved','published','in_progress')", (tomorrow,)
+            ),
+            "in_progress": await scalar(
+                "SELECT COUNT(*) FROM applications WHERE status IN ('published','in_progress')"
+            ),
+            "completed_today": await scalar(
+                "SELECT COUNT(*) FROM applications WHERE date_target=? AND status='completed'", (today,)
+            ),
+        }
+        summary["smr"] = {
+            "debts": await scalar(
+                "SELECT COUNT(*) FROM applications WHERE status IN ('in_progress','completed') "
+                "AND date_target < ? AND foreman_id IS NOT NULL "
+                "AND (kp_status IS NULL OR kp_status NOT IN ('approved','submitted')) "
+                "AND COALESCE(kp_archived,0)=0", (today,)
+            ),
+            "to_review": await scalar(
+                "SELECT COUNT(*) FROM applications WHERE COALESCE(kp_archived,0)=0 "
+                "AND (smr_status='pending_review' OR kp_status='submitted')"
+            ),
+            "unaccounted": await scalar(
+                "SELECT COUNT(*) FROM applications WHERE COALESCE(kp_archived,0)=0 "
+                "AND (smr_status='approved' OR kp_status='approved') "
+                "AND smr_accounted_at IS NULL"
+            ),
+        }
+
+    if role in ("superadmin", "boss", "moderator", "hr"):
+        summary["workforce"] = {
+            "teams": await scalar("SELECT COUNT(*) FROM teams"),
+            "team_members": await scalar("SELECT COUNT(*) FROM team_members"),
+            "drivers": await scalar(
+                "SELECT COUNT(*) FROM users WHERE role='driver' AND is_blacklisted=0"
+            ),
+            "unlinked": await scalar(
+                "SELECT COUNT(*) FROM team_members WHERE tg_user_id IS NULL"
+            ) + await scalar(
+                "SELECT COUNT(*) FROM users WHERE role='driver' AND is_blacklisted=0 AND is_active=0"
+            ),
+            "vacation": await scalar(
+                "SELECT COUNT(*) FROM team_members WHERE status='vacation' "
+                "AND (status_from IS NULL OR status_from<=?) AND (status_until IS NULL OR status_until>=?)",
+                (today, today),
+            ) + await scalar(
+                "SELECT COUNT(*) FROM users WHERE role='driver' AND is_blacklisted=0 "
+                "AND member_status='vacation' AND (status_from IS NULL OR status_from<=?) "
+                "AND (status_until IS NULL OR status_until>=?)", (today, today),
+            ),
+            "sick": await scalar(
+                "SELECT COUNT(*) FROM team_members WHERE status='sick' "
+                "AND (status_from IS NULL OR status_from<=?) AND (status_until IS NULL OR status_until>=?)",
+                (today, today),
+            ) + await scalar(
+                "SELECT COUNT(*) FROM users WHERE role='driver' AND is_blacklisted=0 "
+                "AND member_status='sick' AND (status_from IS NULL OR status_from<=?) "
+                "AND (status_until IS NULL OR status_until>=?)", (today, today),
+            ),
+        }
+
+    if role == "superadmin":
+        summary["system"] = {
+            "active_users": await scalar(
+                "SELECT COUNT(*) FROM users WHERE is_active=1 AND is_blacklisted=0"
+            ),
+            "online": await scalar(
+                "SELECT COUNT(*) FROM users WHERE last_active > datetime('now','-5 minutes') "
+                "AND is_blacklisted=0"
+            ),
+            "open_alerts": await scalar(
+                "SELECT COUNT(*) FROM system_alert_state WHERE status='error'"
+            ),
+            "users_without_role": await scalar(
+                "SELECT COUNT(*) FROM users WHERE role IS NULL OR TRIM(role)=''"
+            ),
+        }
+        async with db.conn.execute(
+            "SELECT last_success_at,last_error_at,last_error FROM system_heartbeats "
+            "WHERE component='scheduler'"
+        ) as cur:
+            heartbeat = await cur.fetchone()
+        summary["system"]["scheduler"] = {
+            "last_success_at": heartbeat[0] if heartbeat else None,
+            "last_error_at": heartbeat[1] if heartbeat else None,
+            "last_error": heartbeat[2] if heartbeat else "",
+        }
+
+    # Personal workload for field roles (and moderators who create their own
+    # requests). Build an access predicate from stable identity links.
+    predicates = []
+    params: list = []
+    if role in ("foreman", "moderator", "boss", "superadmin"):
+        predicates.append("a.foreman_id=?")
+        params.append(user_id)
+    if role in ("worker", "brigadier"):
+        async with db.conn.execute(
+            "SELECT id,team_id,status,status_from,status_until FROM team_members "
+            "WHERE tg_user_id=?", (user_id,)
+        ) as cur:
+            memberships = await cur.fetchall()
+        for member_id, team_id, *_ in memberships:
+            predicates.append(
+                "(((','||REPLACE(COALESCE(a.team_id,''),' ','')||',') LIKE ?) "
+                "AND (TRIM(COALESCE(a.selected_members,''))='' OR "
+                "(','||REPLACE(COALESCE(a.selected_members,''),' ','')||',') LIKE ?))"
+            )
+            params.extend((f"%,{team_id},%", f"%,{member_id},%"))
+        if memberships:
+            first = memberships[0]
+            summary["personal_status"] = {
+                "status": first[2] or "available",
+                "status_from": first[3],
+                "status_until": first[4],
+            }
+    if role == "driver":
+        predicates.append(
+            "EXISTS(SELECT 1 FROM application_drivers ad "
+            "WHERE ad.application_id=a.id AND ad.driver_user_id=?)"
+        )
+        params.append(user_id)
+        async with db.conn.execute(
+            "SELECT member_status,status_from,status_until FROM users WHERE user_id=?", (user_id,)
+        ) as cur:
+            status = await cur.fetchone()
+        if status:
+            summary["personal_status"] = {
+                "status": status[0] or "available",
+                "status_from": status[1],
+                "status_until": status[2],
+            }
+
+    if predicates:
+        where = "(" + " OR ".join(predicates) + ")"
+        summary["personal"] = {
+            "today": await scalar(
+                f"SELECT COUNT(*) FROM applications a WHERE {where} AND a.date_target=? "
+                "AND a.status NOT IN ('rejected','cancelled')", (*params, today),
+            ),
+            "upcoming": await scalar(
+                f"SELECT COUNT(*) FROM applications a WHERE {where} AND a.date_target>? "
+                "AND a.date_target<=date(?,'+7 days') AND a.status NOT IN ('rejected','cancelled')",
+                (*params, today, today),
+            ),
+            "smr_to_fill": await scalar(
+                f"SELECT COUNT(*) FROM applications a WHERE {where} "
+                "AND a.status IN ('in_progress','completed') "
+                "AND (a.kp_status IS NULL OR a.kp_status NOT IN ('approved','submitted')) "
+                "AND COALESCE(a.kp_archived,0)=0", tuple(params),
+            ),
+            "completed_today": await scalar(
+                f"SELECT COUNT(*) FROM applications a WHERE {where} "
+                "AND a.date_target=? AND a.status='completed'", (*params, today),
+            ),
+        }
+
+    return summary
+
+
 @router.get("/api/logs")
 async def get_logs(current_user=Depends(_require_boss_plus)):
     return await db.get_recent_logs(50)

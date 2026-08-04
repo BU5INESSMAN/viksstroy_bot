@@ -361,8 +361,10 @@ async def update_driver(
 
 
 async def delete_driver(db, user_id: int) -> None:
-    """Soft-delete per spec: clear role and links but keep the row so
-    historical references (application_drivers) stay resolvable for audits.
+    """Soft-delete while preserving the historical ``driver`` role.
+
+    The row remains resolvable for audits, but is blacklisted so it is absent
+    from active driver pickers and cannot authenticate.
 
     v2.6: also detach this user from any ``equipment.default_driver_user_id``
     that points at them, otherwise the equipment card would still show
@@ -372,7 +374,8 @@ async def delete_driver(db, user_id: int) -> None:
         "DELETE FROM driver_categories WHERE user_id=?", (user_id,),
     )
     await db.conn.execute(
-        "UPDATE users SET role=NULL, default_equipment_id=NULL "
+        "UPDATE users SET role='driver', is_active=0, is_blacklisted=1, "
+        "default_equipment_id=NULL "
         "WHERE user_id=? AND role='driver'",
         (user_id,),
     )

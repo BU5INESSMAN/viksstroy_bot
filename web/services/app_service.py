@@ -1,5 +1,6 @@
 import json
 import logging
+from datetime import datetime
 
 from database_deps import db
 from utils import resolve_id
@@ -676,13 +677,18 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
         "INSERT INTO applications (foreman_id, foreman_name, team_id, object_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed, freed_team_ids) VALUES (?, ?, ?, ?, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0, '')",
         (real_tg_id, fio, team_id, object_id, date_target, object_address, comment, selected_members, equipment_data))
     new_app_id = cursor.lastrowid
+    from application_numbers import allocate_application_number
+    from database_deps import TZ_BARNAUL
+    public_number = await allocate_application_number(
+        db, new_app_id, datetime.now(TZ_BARNAUL)
+    )
     await db.conn.commit()
 
     if assignments:
         await _apply_driver_assignments(new_app_id, assignments)
 
-    await db.add_log(real_tg_id, fio, f"Создал заявку на {object_address} ({date_target})", target_type='application', target_id=new_app_id)
-    return new_app_id, real_tg_id, fio
+    await db.add_log(real_tg_id, fio, f"Создал заявку {public_number} на {object_address} ({date_target})", target_type='application', target_id=new_app_id)
+    return new_app_id, real_tg_id, fio, public_number
 
 
 async def update_application(app_id, tg_id, team_id, date_target, object_address,

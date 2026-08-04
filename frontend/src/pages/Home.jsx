@@ -19,6 +19,7 @@ import CrossBrigadeWarningModal from '../features/applications/components/CrossB
 import useAppForm from '../features/applications/hooks/useAppForm';
 import useConfirm from '../hooks/useConfirm';
 import { HomeSkeleton } from '../components/ui/PageSkeletons';
+import RoleDashboard from '../features/dashboard/components/RoleDashboard';
 
 export default function Home() {
     const smartDates = getSmartDates();
@@ -33,6 +34,7 @@ export default function Home() {
     const [loading, setLoading] = useState(true);
     const [debtors, setDebtors] = useState([]);
     const [publishingTomorrow, setPublishingTomorrow] = useState(false);
+    const [roleSummary, setRoleSummary] = useState(null);
     const [isArchiveOpen, setArchiveOpen] = useState(false);
     // Server setting — persistent across devices, hides widget entirely
     const [hideDebtors, setHideDebtors] = useState(false);
@@ -82,13 +84,14 @@ export default function Home() {
 
     function fetchData() {
         axios.get('/api/dashboard').then(res => setData(res.data)).catch(() => {});
+        axios.get('/api/dashboard/role-summary').then(res => setRoleSummary(res.data)).catch(() => setRoleSummary(null));
         axios.get('/api/applications/active')
             .then(res => { setActiveApps(res.data || []); setLoading(false); })
             .catch(() => { setActiveApps([]); setLoading(false); });
         if (['moderator', 'boss', 'superadmin'].includes(role)) {
             axios.get('/api/system/debtors').then(res => setDebtors(res.data || [])).catch(() => {});
         }
-        if (['worker', 'foreman', 'boss', 'superadmin'].includes(role)) {
+        if (['worker', 'brigadier', 'foreman', 'boss', 'superadmin'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {
                 if (res.data?.profile?.team_id) {
                     axios.get(`/api/teams/${res.data.profile.team_id}/details`).then(tRes => setMyTeam(tRes.data));
@@ -235,6 +238,7 @@ export default function Home() {
     const todayApps = activeApps.filter(a => a.date_target <= todayYYYYMMDD);
     const upcomingApps = activeApps.filter(a => a.date_target > todayYYYYMMDD);
     const isWorkerOrDriver = ['worker', 'driver'].includes(role);
+    const isHr = role === 'hr';
     const canArchive = ['moderator', 'boss', 'superadmin'].includes(role);
 
     // -------------------------------------------------------------------------
@@ -245,6 +249,12 @@ export default function Home() {
 
     return (
         <main className="px-4 sm:px-6 lg:px-8 space-y-8 pb-24">
+
+            <RoleDashboard
+                role={role}
+                summary={roleSummary}
+                onCreateApplication={() => setGlobalCreateAppOpen(true)}
+            />
 
             <div className="space-y-6" data-tour="active-apps-card">
                 {['worker', 'driver', 'foreman'].includes(role) && (
@@ -260,7 +270,7 @@ export default function Home() {
                 {myTeam && <MyTeamCard myTeam={myTeam} />}
             </div>
 
-            {!isWorkerOrDriver && !hideDebtors && debtors.length > 0 && (
+            {!isWorkerOrDriver && !isHr && !hideDebtors && debtors.length > 0 && (
                 <div data-tour="debtors-widget">
                     <AnimatePresence mode="wait" initial={false}>
                         {debtorsHiddenSession ? (
@@ -281,7 +291,7 @@ export default function Home() {
                 </div>
             )}
 
-            {!isWorkerOrDriver && (
+            {!isWorkerOrDriver && !isHr && (
                 <div className="space-y-6">
                     <div className="flex justify-between items-center mt-4">
                         <h2 className="text-2xl font-bold text-gray-800 dark:text-white flex items-center gap-2">

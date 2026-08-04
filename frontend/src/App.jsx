@@ -118,7 +118,7 @@ function ProtectedRoute({ children }) {
   }
 
   const role = localStorage.getItem('user_role');
-  if (role === 'hr' && ['/dashboard', '/review', '/my-apps', '/admin', '/system'].includes(location.pathname)) {
+  if (role === 'hr' && ['/review', '/my-apps', '/admin', '/system'].includes(location.pathname)) {
     return <Navigate to="/objects" replace />;
   }
 

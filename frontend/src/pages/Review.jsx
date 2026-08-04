@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 
 import { getTodayStr, getSmartDates } from '../utils/dateUtils';
+import { formatApplicationNumber } from '../utils/applicationNumber';
 import useConfirm from '../hooks/useConfirm';
 import ScheduleModal from '../features/applications/components/ScheduleModal';
 import EditAppModal from '../features/applications/components/EditAppModal';
@@ -198,7 +199,7 @@ export default function Review() {
             <div key={app.id} onClick={() => setSelectedApp(app)} className="p-5 bg-white dark:bg-gray-800 rounded-2xl border border-gray-100/80 dark:border-gray-700 shadow-sm flex flex-col md:flex-row justify-between gap-4 transition-all duration-200 cursor-pointer hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500 active:scale-[0.99] group">
                 <div className="text-sm w-full md:w-3/4">
                     <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 uppercase text-[10px] tracking-widest font-bold mb-2">
-                        <span>Наряд №{app.id}</span>
+                        <span>{formatApplicationNumber(app)}</span>
                         <span className="w-1 h-1 bg-gray-300 dark:bg-gray-600 rounded-full"></span>
                         <span className="flex items-center gap-1"><Calendar className="w-3 h-3" /> {app.date_target}</span>
                     </div>
@@ -327,7 +328,7 @@ export default function Review() {
 
                             <div className="flex justify-between items-center px-6 py-5 border-b border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
                                 <h3 className="text-xl font-bold flex items-center gap-2 dark:text-white">
-                                    <ClipboardList className="w-6 h-6 text-blue-500" /> Наряд №{selectedApp.id}
+                                    <ClipboardList className="w-6 h-6 text-blue-500" /> {formatApplicationNumber(selectedApp)}
                                 </h3>
                                 <button disabled={isProcessing} onClick={() => setSelectedApp(null)} className="text-gray-400 hover:text-red-500 disabled:opacity-50 transition-colors bg-white dark:bg-gray-800 rounded-full p-1.5 shadow-sm border border-gray-100 dark:border-gray-700">
                                     <X className="w-6 h-6" />

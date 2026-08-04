@@ -13,6 +13,7 @@ from database_deps import db
 from auth_deps import get_current_user, require_role
 from urllib.parse import quote
 from services.notifications import notify_users
+from application_numbers import get_application_number
 from smr_calculations import (
     MAX_HOURS_PER_ROW,
     SmrNumberError,
@@ -594,9 +595,10 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     )
 
     fio = current_user.get('fio', '')
+    app_number = await get_application_number(db, app_id)
     await db.add_log(
         tg_id, fio,
-        f"СМР отправлен ({smr_role}) по заявке №{app_id}",
+        f"СМР отправлен ({smr_role}) по заявке {app_number}",
         target_type='smr', target_id=app_id,
     )
 
@@ -608,7 +610,7 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
                 from services.notifications import notify_users
                 asyncio.create_task(notify_users(
                     [],
-                    f"🔧 Бригадир {fio or ''} заполнил СМР по заявке №{app_id}. Требуется проверка.",
+                    f"🔧 Бригадир {fio or ''} заполнил СМР по заявке {app_number}. Требуется проверка.",
                     'kp', extra_tg_ids=[foreman_id], category='reports',
                     event_key='smr_submitted',
                 ))
@@ -1080,9 +1082,10 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
     )
 
     fio = current_user.get('fio', '')
+    app_number = await get_application_number(db, app_id)
     await db.add_log(
         tg_id, fio,
-        f"Доп. отчёт СМР по заявке №{app_id} "
+        f"Доп. отчёт СМР по заявке {app_number} "
         f"(работ: {n_works}, доп: {n_extras}, часов: {n_hours})",
         target_type='smr', target_id=app_id,
     )
@@ -1095,7 +1098,7 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
             foreman_ids = [int(r[0]) for r in await cur.fetchall() if r[0] and int(r[0]) != int(tg_id)]
         asyncio.create_task(notify_users(
             ["moderator", "boss", "superadmin", "hr"],
-            f"➕ <b>Добавлен доп. отчёт СМР №{app_id}</b>\n👤 {fio or 'Пользователь'}\n"
+            f"➕ <b>Добавлен доп. отчёт СМР по заявке {app_number}</b>\n👤 {fio or 'Пользователь'}\n"
             f"Работ: {n_works} · Доп. работ: {n_extras} · Записей часов: {n_hours}",
             "kp", extra_tg_ids=foreman_ids, category="reports", event_key="smr_addendum",
         ))
@@ -1336,7 +1339,7 @@ async def get_smr_list(current_user=Depends(get_current_user)):
     user_team_ids = set(await db.get_user_team_ids(tg_id))
 
     base_query = """
-        SELECT a.id, a.foreman_id, a.foreman_name, a.team_id, a.date_target,
+        SELECT a.id, a.public_number, a.foreman_id, a.foreman_name, a.team_id, a.date_target,
                a.object_id, a.object_address,
                a.status, a.kp_status,
                a.smr_status, a.smr_group_id, a.smr_filled_by_role,
@@ -1730,9 +1733,10 @@ async def review_app_kp(app_id: int, request: Request, current_user=Depends(_req
     if action in ("approve", "reject"):
         approved = action == "approve"
         title = "✅ СМР одобрено" if approved else "↩️ СМР возвращено"
+        app_number = await get_application_number(db, app_id)
         asyncio.create_task(notify_users(
             [],
-            f"{title}: №{app_id}\n👤 Проверил: {fio or 'Пользователь'}",
+            f"{title}: {app_number}\n👤 Проверил: {fio or 'Пользователь'}",
             "kp",
             extra_tg_ids=recipients,
             category="reports",
@@ -1812,7 +1816,7 @@ async def restore_kp(app_id: int, current_user=Depends(_require_office)):
 async def get_archived_kp(current_user=Depends(_require_office)):
     """Список архивированных СМР (только для модератор+)."""
     async with db.conn.execute("""
-        SELECT a.id, a.date_target, a.object_address, o.name as obj_name,
+        SELECT a.id, a.public_number, a.date_target, a.object_address, o.name as obj_name,
                u.fio as foreman_name, a.kp_status
         FROM applications a
         LEFT JOIN objects o ON a.object_id = o.id

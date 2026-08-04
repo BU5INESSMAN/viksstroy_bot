@@ -11,6 +11,7 @@ import {
     TEAM_ICONS, DEFAULT_TEAM_ICON,
     EQUIPMENT_ICONS, DEFAULT_EQUIPMENT_ICON,
 } from '../../../utils/iconConfig';
+import { formatApplicationNumber } from '../../../utils/applicationNumber';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const staggerContainer = { animate: { transition: { staggerChildren: 0.04 } } };
@@ -56,6 +57,7 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
 
                     return (
                         <motion.div key={a.id} variants={prefersReducedMotion ? {} : staggerItem} transition={{ duration: 0.2 }} onClick={() => onAppClick(a)} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm hover:shadow-md hover:border-blue-400 dark:hover:border-blue-500 text-sm cursor-pointer transition-all duration-200 group active:scale-[0.98]">
+                            <div className="text-[10px] font-black tracking-wide text-blue-600 dark:text-blue-400 mb-1">{formatApplicationNumber(a)}</div>
                             <div className="mb-1.5 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
                                 <ObjectDisplay
                                     name={a.object_name}
