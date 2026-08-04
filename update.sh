@@ -30,8 +30,8 @@ snapshot_compat_assets() {
     cp -an frontend/dist/assets/. "$COMPAT_ASSET_DIR/assets/"
   fi
 
-  # Also retain committed bundles from recent releases. This helps clients
-  # that have not opened the PWA for several updates, not only one release.
+  # Also retain committed bundles from recent MAX-only releases. Going deeper
+  # would republish obsolete Telegram-era code, which must stay unavailable.
   local commit history_dir index=0
   while IFS= read -r commit; do
     history_dir="$COMPAT_ASSET_DIR/history-$index"
@@ -42,7 +42,16 @@ snapshot_compat_assets() {
       fi
     fi
     index=$((index + 1))
-  done < <(git rev-list --max-count=8 HEAD)
+  done < <(git rev-list --max-count=4 HEAD)
+
+  # A currently served directory can itself contain accumulated historical
+  # files. Never carry forward a bundle capable of opening Telegram.
+  local asset
+  while IFS= read -r -d '' asset; do
+    if grep -qiE 'telegram\.org|api\.telegram|t\.me/|TelegramWebviewProxy|Telegram\.WebApp|TMAAuth' "$asset"; then
+      rm -f -- "$asset"
+    fi
+  done < <(find "$COMPAT_ASSET_DIR/assets" -maxdepth 1 -type f -print0)
 }
 
 cleanup_compat_assets() {
