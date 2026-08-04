@@ -15,10 +15,41 @@ OLD_COMMIT="$(git rev-parse HEAD)"
 NEW_COMMIT="$OLD_COMMIT"
 STARTED_AT="$(date +%s)"
 FRONTEND_BACKUP="frontend/dist.rollback"
+COMPAT_ASSET_DIR=""
 DEPLOY_OK=0
 RELEASE_VERSION="без номера"
 RELEASE_NOTES=()
 mkdir -p data
+
+snapshot_compat_assets() {
+  COMPAT_ASSET_DIR="$(mktemp -d /tmp/viks-assets.XXXXXX)"
+  mkdir -p "$COMPAT_ASSET_DIR/assets"
+
+  # Capture the files nginx is serving BEFORE git reset replaces the tree.
+  if [ -d frontend/dist/assets ]; then
+    cp -an frontend/dist/assets/. "$COMPAT_ASSET_DIR/assets/"
+  fi
+
+  # Also retain committed bundles from recent releases. This helps clients
+  # that have not opened the PWA for several updates, not only one release.
+  local commit history_dir index=0
+  while IFS= read -r commit; do
+    history_dir="$COMPAT_ASSET_DIR/history-$index"
+    mkdir -p "$history_dir"
+    if git archive "$commit" frontend/dist/assets 2>/dev/null | tar -x -C "$history_dir" 2>/dev/null; then
+      if [ -d "$history_dir/frontend/dist/assets" ]; then
+        cp -an "$history_dir/frontend/dist/assets/." "$COMPAT_ASSET_DIR/assets/"
+      fi
+    fi
+    index=$((index + 1))
+  done < <(git rev-list --max-count=8 HEAD)
+}
+
+cleanup_compat_assets() {
+  if [[ -n "$COMPAT_ASSET_DIR" && "$COMPAT_ASSET_DIR" == /tmp/viks-assets.* && -d "$COMPAT_ASSET_DIR" ]]; then
+    rm -rf -- "$COMPAT_ASSET_DIR"
+  fi
+}
 
 write_state() {
   local status="$1"
@@ -73,9 +104,12 @@ on_exit() {
   if [ "$code" -ne 0 ] && [ "$DEPLOY_OK" -ne 1 ]; then
     rollback "команда завершилась с кодом $code"
   fi
+  cleanup_compat_assets
   exit "$code"
 }
 trap on_exit EXIT
+
+snapshot_compat_assets
 
 write_state "running" "получение обновления"
 echo "==> Получение origin/master"
@@ -104,10 +138,10 @@ test -f frontend/dist.next/index.html
 # one of its hashed chunks. Keep all previously published assets available so
 # an update cannot turn that valid client into a white screen. New filenames
 # are content-hashed, therefore old and new files can safely coexist.
-if [ -d frontend/dist/assets ]; then
+if [ -d "$COMPAT_ASSET_DIR/assets" ]; then
   echo "==> Сохранение ресурсов предыдущих версий для мобильных клиентов"
   mkdir -p frontend/dist.next/assets
-  cp -an frontend/dist/assets/. frontend/dist.next/assets/
+  cp -an "$COMPAT_ASSET_DIR/assets/." frontend/dist.next/assets/
 fi
 
 echo "==> Сборка и мягкая замена контейнеров"
@@ -148,5 +182,6 @@ FINISH_MESSAGE="$(printf 'Версия: %s\n\nУстановлено:\n' "$RELEA
 FINISH_MESSAGE+="$(printf '• %s\n' "${RELEASE_NOTES[@]}")"
 FINISH_MESSAGE+=$'\nПроверки:\n✓ API отвечает\n✓ база данных доступна\n✓ службы MAX запущены'
 notify_deploy_group "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО" "$FINISH_MESSAGE"
+cleanup_compat_assets
 trap - EXIT
 echo "Готово: $NEW_COMMIT"
