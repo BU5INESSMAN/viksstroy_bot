@@ -6,6 +6,10 @@ import Layout from './components/Layout';
 import SplashScreen from './components/SplashScreen';
 import { saveAuthData, clearAuthData, clearAuthAndRedirect } from './utils/tokenStorage';
 
+function safeStorageGet(storage, key) {
+  try { return storage.getItem(key); } catch { return null; }
+}
+
 // Lazy-loaded pages
 const Login = lazy(() => import('./pages/Login'));
 const MAXAuth = lazy(() => import('./pages/MAXAuth'));
@@ -31,8 +35,8 @@ function ProtectedRoute({ children }) {
     // the protected tree immediately to avoid a flash of the checking
     // spinner. Reconciliation against /api/auth/session always happens
     // in the useEffect below — see comment block there for the why.
-    const role = localStorage.getItem('user_role');
-    const tgId = localStorage.getItem('tg_id');
+    const role = safeStorageGet(localStorage, 'user_role');
+    const tgId = safeStorageGet(localStorage, 'tg_id');
     if (role && tgId) return 'authenticated';
     return 'checking';
   });
@@ -108,7 +112,7 @@ function ProtectedRoute({ children }) {
     return <Navigate to="/" replace />;
   }
 
-  const role = localStorage.getItem('user_role');
+  const role = safeStorageGet(localStorage, 'user_role');
   if (role === 'hr' && ['/review', '/my-apps', '/admin', '/system'].includes(location.pathname)) {
     return <Navigate to="/objects" replace />;
   }
@@ -126,13 +130,13 @@ const SuspenseFallback = (
 export default function App() {
   const [showSplash, setShowSplash] = useState(() => {
     const isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone;
-    const hasShown = sessionStorage.getItem('splash_shown');
+    const hasShown = safeStorageGet(sessionStorage, 'splash_shown');
     return !hasShown && (isStandalone || !document.referrer);
   });
 
   const handleSplashFinish = useCallback(() => {
     setShowSplash(false);
-    sessionStorage.setItem('splash_shown', 'true');
+    try { sessionStorage.setItem('splash_shown', 'true'); } catch { /* private mode */ }
   }, []);
 
   useEffect(() => {

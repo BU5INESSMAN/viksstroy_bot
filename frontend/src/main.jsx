@@ -5,6 +5,7 @@ import App from './App.jsx'
 import './index.css'
 import { initPWAInstall } from './utils/pwaInstall'
 import { clearAuthAndRedirect } from './utils/tokenStorage'
+import RootErrorBoundary, { BootSignal } from './components/RootErrorBoundary'
 
 // Send HttpOnly cookies on all requests (required for session persistence)
 axios.defaults.withCredentials = true;
@@ -43,7 +44,9 @@ axios.interceptors.response.use(
     const isLogoutCall = url.includes('/api/auth/logout');
 
     if (error?.response?.status === 401 && !isLogoutCall) {
-      if (!sessionStorage.getItem('auth_redirecting')) {
+      let isRedirecting = false;
+      try { isRedirecting = Boolean(sessionStorage.getItem('auth_redirecting')); } catch { /* private mode */ }
+      if (!isRedirecting) {
         try { sessionStorage.setItem('auth_redirecting', '1'); } catch { /* silent */ }
         if (isSessionProbe) {
           // ProtectedRoute's own catch will also handle this — keep
@@ -66,7 +69,6 @@ axios.interceptors.response.use(
     const status = error?.response?.status;
     const isServerDown = !error.response || status === 502 || status === 503 || status === 504;
     if (isServerDown) {
-      // eslint-disable-next-line no-console
       console.warn('[api] unreachable — maintenance screen will handle it:', error.message || status);
     }
 
@@ -78,9 +80,12 @@ axios.interceptors.response.use(
 initPWAInstall();
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
+  <RootErrorBoundary>
+    <React.StrictMode>
+      <BootSignal />
+      <App />
+    </React.StrictMode>
+  </RootErrorBoundary>,
 )
 
 // Register service worker for PWA

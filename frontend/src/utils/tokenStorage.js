@@ -17,16 +17,40 @@ const DB_VERSION = 1;
 const STORE_NAME = 'session';
 const CACHE_NAME = 'viks-auth-v1';   // must match sw.js exclusion
 const CACHE_KEY = '/auth-token-store';
+const STORAGE_TIMEOUT_MS = 2500;
+
+function withTimeout(task, fallback = null) {
+  return Promise.race([
+    Promise.resolve(task),
+    new Promise((resolve) => setTimeout(() => resolve(fallback), STORAGE_TIMEOUT_MS)),
+  ]);
+}
 
 // ───────────────────── IndexedDB layer ─────────────────────
 
 function openDB() {
   return new Promise((resolve, reject) => {
     if (typeof indexedDB === 'undefined') return reject(new Error('No IndexedDB'));
+    let settled = false;
     const req = indexedDB.open(DB_NAME, DB_VERSION);
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      reject(new Error('IndexedDB open timeout'));
+    }, STORAGE_TIMEOUT_MS);
+    const finish = (callback, value) => {
+      if (settled) {
+        if (value && typeof value.close === 'function') value.close();
+        return;
+      }
+      settled = true;
+      clearTimeout(timer);
+      callback(value);
+    };
     req.onupgradeneeded = (e) => e.target.result.createObjectStore(STORE_NAME);
-    req.onsuccess = (e) => resolve(e.target.result);
-    req.onerror = (e) => reject(e.target.error);
+    req.onsuccess = (e) => finish(resolve, e.target.result);
+    req.onerror = (e) => finish(reject, e.target.error);
+    req.onblocked = () => finish(reject, new Error('IndexedDB open blocked'));
   });
 }
 
@@ -119,7 +143,7 @@ export async function saveAuthData(tgId, role) {
   // It is NOT stored in localStorage/IndexedDB/Cache API.
 
   // Layer 2 + 3 — async, fire in parallel
-  await Promise.all([idbSet(data), cacheSet(data)]);
+  await Promise.all([withTimeout(idbSet(data)), withTimeout(cacheSet(data))]);
 }
 
 /**
@@ -128,14 +152,18 @@ export async function saveAuthData(tgId, role) {
  */
 export async function loadAuthData() {
   // Layer 1 — localStorage (role + tgId required)
-  const role = localStorage.getItem('user_role');
-  const tgId = localStorage.getItem('tg_id');
+  let role = null;
+  let tgId = null;
+  try {
+    role = localStorage.getItem('user_role');
+    tgId = localStorage.getItem('tg_id');
+  } catch { /* private mode */ }
   if (role && tgId) {
     return { tg_id: tgId, user_role: role };
   }
 
   // Layer 2 — IndexedDB
-  const idbData = await idbGet();
+  const idbData = await withTimeout(idbGet());
   if (idbData?.tg_id && idbData?.user_role) {
     // Back-fill localStorage for fast path next time
     try {
@@ -146,14 +174,14 @@ export async function loadAuthData() {
   }
 
   // Layer 3 — Cache API
-  const cacheData = await cacheGet();
+  const cacheData = await withTimeout(cacheGet());
   if (cacheData?.tg_id && cacheData?.user_role) {
     // Back-fill localStorage + IndexedDB
     try {
       localStorage.setItem('tg_id', cacheData.tg_id);
       localStorage.setItem('user_role', cacheData.user_role);
     } catch { /* silent */ }
-    await idbSet(cacheData);
+    await withTimeout(idbSet(cacheData));
     return { tg_id: cacheData.tg_id, user_role: cacheData.user_role };
   }
 
@@ -170,7 +198,7 @@ export async function clearAuthData() {
     localStorage.removeItem('user_role');
     localStorage.removeItem('session_token'); // cleanup legacy entries
   } catch { /* silent */ }
-  await Promise.all([idbClear(), cacheClear()]);
+  await Promise.all([withTimeout(idbClear()), withTimeout(cacheClear())]);
 }
 
 /**

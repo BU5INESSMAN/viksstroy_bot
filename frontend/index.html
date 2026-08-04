@@ -16,9 +16,134 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
 
     <title>ВиКС</title>
+    <style>
+      html, body, #root { min-height: 100%; margin: 0; }
+      body { background: #111827; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      #boot-fallback {
+        min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+        justify-content: center; box-sizing: border-box; padding: 24px; color: #f8fafc;
+        text-align: center;
+      }
+      #boot-fallback-spinner {
+        width: 40px; height: 40px; margin-bottom: 20px; border: 3px solid #334155;
+        border-top-color: #3b82f6; border-radius: 50%; animation: boot-spin .8s linear infinite;
+      }
+      #boot-fallback h1 { margin: 0 0 8px; font-size: 20px; }
+      #boot-fallback p { max-width: 340px; margin: 0; color: #94a3b8; font-size: 14px; line-height: 1.5; }
+      #boot-retry {
+        display: none; margin-top: 20px; padding: 12px 18px; border: 0; border-radius: 12px;
+        background: #2563eb; color: #fff; font-size: 14px; font-weight: 700;
+      }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div id="boot-fallback" role="status" aria-live="polite">
+        <div id="boot-fallback-spinner"></div>
+        <h1 id="boot-title">Запуск приложения</h1>
+        <p id="boot-message">Проверяем установленную версию…</p>
+        <button id="boot-retry" type="button">Повторить запуск</button>
+      </div>
+    </div>
+    <script>
+      (function () {
+        var recoveryKey = 'viks_boot_recovery_count';
+        var recovering = false;
+        window.__VIKS_BOOTED__ = false;
+
+        function getAttempts() {
+          try { return parseInt(sessionStorage.getItem(recoveryKey) || '0', 10) || 0; }
+          catch (_) { return 0; }
+        }
+
+        function setAttempts(value) {
+          try { sessionStorage.setItem(recoveryKey, String(value)); } catch (_) { /* private mode */ }
+        }
+
+        function showManualRetry() {
+          var spinner = document.getElementById('boot-fallback-spinner');
+          var title = document.getElementById('boot-title');
+          var message = document.getElementById('boot-message');
+          var button = document.getElementById('boot-retry');
+          if (spinner) spinner.style.display = 'none';
+          if (title) title.textContent = 'Не удалось запустить приложение';
+          if (message) message.textContent = 'Нажмите кнопку, чтобы очистить старую версию и повторить запуск.';
+          if (button) button.style.display = 'block';
+        }
+
+        function reloadFresh() {
+          var separator = location.search ? '&' : '?';
+          location.replace(location.pathname + location.search + separator + 'recovered=' + Date.now() + location.hash);
+        }
+
+        function recover(reason, force) {
+          if (recovering) return;
+          var attempts = getAttempts();
+          if (!force && attempts >= 2) {
+            showManualRetry();
+            return;
+          }
+          recovering = true;
+          setAttempts(force ? 1 : attempts + 1);
+
+          var title = document.getElementById('boot-title');
+          var message = document.getElementById('boot-message');
+          if (title) title.textContent = 'Восстанавливаем приложение';
+          if (message) message.textContent = 'Удаляем устаревшую версию. Страница откроется автоматически.';
+
+          try {
+            if ('caches' in window) {
+              caches.keys().then(function (names) {
+                names.forEach(function (name) {
+                  if (name !== 'viks-auth-v1') caches.delete(name);
+                });
+              }).catch(function () {});
+            }
+          } catch (_) { /* cache API may be blocked */ }
+
+          try {
+            if ('serviceWorker' in navigator) {
+              navigator.serviceWorker.getRegistrations().then(function (registrations) {
+                registrations.forEach(function (registration) { registration.unregister(); });
+              }).catch(function () {});
+            }
+          } catch (_) { /* service workers may be blocked */ }
+
+          // Give the browser a moment to remove the old controller before reload.
+          setTimeout(reloadFresh, 700);
+          try { console.warn('[boot] recovery:', reason); } catch (_) { /* silent */ }
+        }
+
+        window.__VIKS_RECOVER__ = recover;
+        window.addEventListener('viks:booted', function () {
+          window.__VIKS_BOOTED__ = true;
+          setAttempts(0);
+        });
+        window.addEventListener('vite:preloadError', function (event) {
+          if (event && event.preventDefault) event.preventDefault();
+          recover('preload-error');
+        });
+        window.addEventListener('error', function (event) {
+          var target = event && event.target;
+          var linkRel = target && target.getAttribute ? target.getAttribute('rel') : '';
+          var sourceFailed = target && (target.tagName === 'SCRIPT' ||
+            (target.tagName === 'LINK' && (linkRel === 'stylesheet' || linkRel === 'modulepreload')));
+          var message = String((event && event.message) || '');
+          if (sourceFailed || /module|script|syntax/i.test(message)) recover('resource-error');
+        }, true);
+        window.addEventListener('unhandledrejection', function (event) {
+          var message = String((event && event.reason && (event.reason.message || event.reason)) || '');
+          if (/dynamic import|failed to fetch|module/i.test(message)) recover('module-rejection');
+        });
+
+        var retry = document.getElementById('boot-retry');
+        if (retry) retry.onclick = function () { recovering = false; recover('manual', true); };
+        setTimeout(function () {
+          if (!window.__VIKS_BOOTED__) recover('startup-timeout');
+        }, 12000);
+      })();
+    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>

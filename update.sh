@@ -100,6 +100,16 @@ rm -rf frontend/dist.next
 )
 test -f frontend/dist.next/index.html
 
+# Phones may still have the previous entry bundle cached while it lazy-loads
+# one of its hashed chunks. Keep all previously published assets available so
+# an update cannot turn that valid client into a white screen. New filenames
+# are content-hashed, therefore old and new files can safely coexist.
+if [ -d frontend/dist/assets ]; then
+  echo "==> Сохранение ресурсов предыдущих версий для мобильных клиентов"
+  mkdir -p frontend/dist.next/assets
+  cp -an frontend/dist/assets/. frontend/dist.next/assets/
+fi
+
 echo "==> Сборка и мягкая замена контейнеров"
 write_state "running" "сборка контейнеров"
 timeout 15m docker compose build
