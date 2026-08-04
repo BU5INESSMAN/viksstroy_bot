@@ -70,5 +70,5 @@ async def unlink_user_platform(tg_id: int, platform: str):
 
     user = await db.get_user(real_tg_id)
     fio = dict(user).get('fio', '') if user else ''
-    platform_name = "MAX" if platform == "max" else "Telegram"
+    platform_name = "MAX" if platform == "max" else "архивная учётная запись"
     await db.add_log(real_tg_id, fio, f"Отвязал {platform_name} от аккаунта", target_type='user', target_id=real_tg_id)

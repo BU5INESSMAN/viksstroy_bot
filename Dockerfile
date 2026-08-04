@@ -24,5 +24,6 @@ RUN mkdir -p data data/uploads data/uploads/objects data/backups data/kp_catalog
 
 USER viks
 
-# Запускаем бота
-CMD ["python", "main.py", "main_max.py"]
+# Единственная служба мессенджера — MAX. Docker Compose переопределяет эту
+# команду для API-контейнера.
+CMD ["python", "main_max.py"]
