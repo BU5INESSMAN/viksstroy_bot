@@ -4,7 +4,7 @@ export const ROLE_NAMES = {
     superadmin: 'Супер-Админ',
     boss: 'Руководитель',
     moderator: 'Модератор',
-    hr: 'Отдел кадров',
+    hr: 'Кадры',
     foreman: 'Прораб',
     brigadier: 'Бригадир',
     worker: 'Рабочий',

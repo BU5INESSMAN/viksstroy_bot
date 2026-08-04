@@ -339,7 +339,7 @@ async def api_update_driver(
             kwargs[k] = body[k]
     if "default_equipment_id" in body:
         if current_user.get('role') == 'hr':
-            raise HTTPException(403, "Отдел кадров не управляет назначением техники")
+            raise HTTPException(403, "Кадры не управляют назначением техники")
         kwargs["default_equipment_id"] = body["default_equipment_id"]
 
     updated = await driver_service.update_driver(db, user_id, **kwargs)

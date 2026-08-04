@@ -34,7 +34,7 @@ ROLE_NAMES_RU = {
     "superadmin": "Супер-Админ",
     "boss": "Руководитель",
     "moderator": "Модератор",
-    "hr": "Отдел кадров",
+    "hr": "Кадры",
     "foreman": "Прораб",
     "brigadier": "Бригадир",
     "worker": "Рабочий",
