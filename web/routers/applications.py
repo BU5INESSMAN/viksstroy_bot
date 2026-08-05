@@ -90,7 +90,7 @@ async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
         force_assign=force_assign,
     )
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
+    asyncio.create_task(notify_users(["moderator", "boss", "superadmin"],
                        f"📝 <b>Новая заявка {public_number}</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата работ: {date_target}\n🕒 Время: {now}",
                        "review", category="orders", event_key="app_new"))
     return {"status": "ok", "id": new_app_id, "public_number": public_number}
@@ -115,7 +115,7 @@ async def update_app(app_id: int, team_id: str = Form("0"), date_target: str = F
         force_assign=force_assign,
     )
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    asyncio.create_task(notify_users(["report_group", "moderator", "boss", "superadmin"],
+    asyncio.create_task(notify_users(["moderator", "boss", "superadmin"],
                        f"⚠️ <b>Заявка #{app_id} (Объект: {object_address}) была отредактирована</b>\n👤 Прораб: {fio}\n🕒 Время: {now}",
                        "review", category="orders", event_key="app_edited"))
 
@@ -287,7 +287,7 @@ async def delete_app(app_id: int, current_user=Depends(get_current_user)):
     real_tg_id, fio, app_dict = await delete_application(app_id, tg_id)
     app_number = display_application_number(app_id, app_dict.get("public_number"))
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    asyncio.create_task(notify_users(["report_group", "boss", "superadmin"],
+    asyncio.create_task(notify_users(["boss", "superadmin"],
                        f"🗑 <b>Заявка {app_number} удалена</b>\n👤 Кто: {fio}\n📍 Объект: {app_dict.get('object_address')}\n🕒 Время: {now}",
                        "review", category="orders", event_key="app_status_changed"))
     return {"status": "ok"}

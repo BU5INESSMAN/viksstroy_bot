@@ -90,7 +90,7 @@ async def api_join_team(invite_code: str = Form(...), worker_id: int = Form(...)
 
     async def _send_join_notification():
         try:
-            await notify_users(["report_group", "boss", "superadmin"],
+            await notify_users(["boss", "superadmin"],
                                f"🔗 <b>Привязка аккаунта (Бригада)</b>\n👤 Рабочий: {fio}\n🏗 Добавлен в бригаду: «{team['name']}»\n🕒 Время: {now}",
                                "teams", category="new_users", event_key="staff_changed")
         except Exception as e:
@@ -116,7 +116,7 @@ async def create_team(
 
     async def _send_create_team_notification():
         try:
-            await notify_users(["report_group", "boss", "superadmin"],
+            await notify_users(["boss", "superadmin"],
                                f"🏗 <b>Новая бригада</b>\n👤 Создал: {fio}\n📍 Название: «{name}»\n🕒 Время: {now}", "teams", category="orders", event_key="team_changed")
         except Exception as e:
             logger.error(f"Team create notification error: {e}")

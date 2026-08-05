@@ -19,6 +19,7 @@ COMPAT_ASSET_DIR=""
 DEPLOY_OK=0
 RELEASE_VERSION="без номера"
 RELEASE_NOTES=()
+SKIP_GROUP_NOTIFICATIONS="${SKIP_GROUP_NOTIFICATIONS:-0}"
 mkdir -p data
 
 snapshot_compat_assets() {
@@ -84,6 +85,10 @@ release_details() {
 
 notify_deploy_group() {
   local title="$1" details="$2"
+  if [ "$SKIP_GROUP_NOTIFICATIONS" = "1" ]; then
+    echo "==> Уведомление об обновлении в беседу отключено для этого запуска"
+    return 0
+  fi
   if [ -x .venv/bin/python ]; then
     .venv/bin/python scripts/watchdog.py --group --title "$title" --details "$details" >/dev/null 2>&1 || true
   fi

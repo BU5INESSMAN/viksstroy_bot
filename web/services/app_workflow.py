@@ -5,7 +5,7 @@ import logging
 from datetime import datetime
 from database_deps import db, TZ_BARNAUL
 from utils import resolve_id
-from services.notifications import notify_users, notify_group_chat
+from services.notifications import notify_users
 from services.publish_service import execute_app_publish
 from application_numbers import display_application_number
 
@@ -137,7 +137,7 @@ async def send_review_notifications(app_id, app_dict, mod_fio, new_status, reaso
 
         msg_group = f"📋 <b>Заявка {app_number} {status_ru}</b>\n👤 Проверил: {mod_fio}\n📍 Объект: {app_dict['object_address']}\n🕒 Время: {now}"
         if reason: msg_group += f"\n💬 Причина: {reason}"
-        await notify_users(["report_group", "boss", "superadmin"], msg_group, "review", category="orders", event_key="app_status_changed")
+        await notify_users(["boss", "superadmin"], msg_group, "review", category="orders", event_key="app_status_changed")
 
         if new_status in ['approved', 'rejected', 'waiting']:
             if new_status == 'waiting':
@@ -277,14 +277,17 @@ async def free_equipment(app_id: int, tg_id: int):
 
     await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (my_eq_id,))
 
-    async with db.conn.execute("SELECT equipment_data, object_address FROM applications WHERE id = ?",
+    async with db.conn.execute("SELECT equipment_data, object_address, foreman_id FROM applications WHERE id = ?",
                                (app_id,)) as cur:
         app_row = await cur.fetchone()
 
     obj_addr = ""
+    foreman_id = None
+    if app_row:
+        obj_addr = app_row[1]
+        foreman_id = app_row[2]
     if app_row and app_row[0]:
         eq_data_str = app_row[0]
-        obj_addr = app_row[1]
         try:
             eq_list = json.loads(eq_data_str)
             for eq in eq_list:
@@ -314,7 +317,14 @@ async def free_equipment(app_id: int, tg_id: int):
 
     async def _send_free_equip_notification():
         try:
-            await notify_group_chat(f"{eq_name} освобожден(а) {fio} ({role_label})", "equipment")
+            await notify_users(
+                ["moderator", "boss", "superadmin"],
+                f"🟢 <b>Техника освобождена</b>\n🚜 {eq_name}\n👤 {fio} ({role_label})",
+                "equipment",
+                extra_tg_ids=[foreman_id] if foreman_id else None,
+                category="orders",
+                event_key="resource_released",
+            )
         except Exception as e:
             logger.error(f"Free equipment notification error: {e}")
 
@@ -329,7 +339,7 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
 
-    async with db.conn.execute("SELECT object_address, team_id, freed_team_ids FROM applications WHERE id = ?",
+    async with db.conn.execute("SELECT object_address, team_id, freed_team_ids, foreman_id FROM applications WHERE id = ?",
                                (app_id,)) as cur:
         app_row = await cur.fetchone()
         if not app_row:
@@ -337,6 +347,7 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
         obj_addr = app_row[0]
         all_team_ids_str = str(app_row[1] or "")
         freed_str = str(app_row[2] or "")
+        foreman_id = app_row[3]
 
     freed_list = [int(x) for x in freed_str.split(',') if x.strip().isdigit()]
     all_t_ids = [int(x) for x in all_team_ids_str.split(',') if x.strip().isdigit()]
@@ -364,7 +375,14 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
 
         async def _send_free_team_notification():
             try:
-                await notify_group_chat(f"Бригада «{t_name}» освобожден(а) {fio} ({role_label})", "dashboard")
+                await notify_users(
+                    ["moderator", "boss", "superadmin"],
+                    f"🟢 <b>Бригада освобождена</b>\n👷 «{t_name}»\n👤 {fio} ({role_label})",
+                    "dashboard",
+                    extra_tg_ids=[foreman_id] if foreman_id else None,
+                    category="orders",
+                    event_key="resource_released",
+                )
             except Exception as e:
                 logger.error(f"Free team notification error: {e}")
 
@@ -378,7 +396,14 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
 
         async def _send_free_all_teams_notification():
             try:
-                await notify_group_chat(f"Все бригады освобожден(а) {fio} ({role_label})", "dashboard")
+                await notify_users(
+                    ["moderator", "boss", "superadmin"],
+                    f"🟢 <b>Все бригады освобождены</b>\n👤 {fio} ({role_label})",
+                    "dashboard",
+                    extra_tg_ids=[foreman_id] if foreman_id else None,
+                    category="orders",
+                    event_key="resource_released",
+                )
             except Exception as e:
                 logger.error(f"Free all teams notification error: {e}")
 

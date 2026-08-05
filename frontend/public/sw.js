@@ -1,98 +1,19 @@
-// Bump this integer whenever sw.js or cache strategy changes.
-// v2.9.1: bumped 2 -> 3 to purge the pre-v2.9 cache-first /assets/* bundle so
-// clients fetch the new object-chronology render instead of the stale one.
-const CACHE_VERSION = 10;
-const CACHE_NAME = 'viks-cache-v' + CACHE_VERSION;
-
-const MAINTENANCE_HTML = `
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-    <title>ВИКС — Обновление</title>
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            background: #111827; color: #f3f4f6;
-            display: flex; align-items: center; justify-content: center;
-            min-height: 100vh; text-align: center; padding: 20px;
-        }
-        .container { max-width: 400px; }
-        .spinner { width: 48px; height: 48px; border: 4px solid #374151; border-top-color: #3b82f6;
-            border-radius: 50%; animation: spin 1s linear infinite; margin: 0 auto 24px; }
-        @keyframes spin { to { transform: rotate(360deg); } }
-        h1 { font-size: 24px; font-weight: 800; margin-bottom: 12px; }
-        p { font-size: 14px; color: #9ca3af; margin-bottom: 24px; line-height: 1.6; }
-        .btn { background: #3b82f6; color: white; border: none; padding: 14px 32px;
-            border-radius: 12px; font-size: 14px; font-weight: 700; cursor: pointer;
-            transition: background 0.2s; }
-        .btn:hover { background: #2563eb; }
-        .status { font-size: 12px; color: #6b7280; margin-top: 16px; }
-        .updated { display: none; background: #065f46; color: #6ee7b7; padding: 12px 20px;
-            border-radius: 12px; font-weight: 700; font-size: 14px; margin-top: 16px; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="spinner" id="spinner"></div>
-        <h1>Обновление платформы</h1>
-        <p>Приложение обновляется. Это займёт несколько секунд.</p>
-        <button class="btn" onclick="reloadFresh()">Открыть приложение</button>
-        <div class="status" id="status">Проверка соединения...</div>
-        <div class="updated" id="updated">✅ Приложение обновлено! Перезагрузите страницу.</div>
-    </div>
-    <script>
-        let checkInterval;
-        function reloadFresh() {
-            const url = new URL('/', location.origin);
-            url.searchParams.set('recovered', Date.now());
-            location.replace(url.toString());
-        }
-        function checkServer() {
-            fetch('/api/health', { method: 'GET', cache: 'no-store', credentials: 'omit' })
-                .then(r => {
-                    if (r.ok) {
-                        document.getElementById('spinner').style.display = 'none';
-                        document.getElementById('status').style.display = 'none';
-                        document.getElementById('updated').style.display = 'block';
-                        clearInterval(checkInterval);
-                        setTimeout(reloadFresh, 1200);
-                    }
-                })
-                .catch(() => {
-                    document.getElementById('status').textContent = 'Сервер перезапускается...';
-                });
-        }
-        checkInterval = setInterval(checkServer, 3000);
-        checkServer();
-    </script>
-</body>
-</html>
-`;
-
-// Install: cache maintenance page. An existing client activates this worker
-// through the explicit SKIP_WAITING message, preventing competing reload loops.
-self.addEventListener('install', (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) =>
-      cache.put(
-        new Request('offline-page'),
-        new Response(MAINTENANCE_HTML, {
-          headers: { 'Content-Type': 'text/html; charset=utf-8' }
-        })
-      )
-    ).catch(() => {}) // never block install on cache failure
-  );
+// The service worker is deliberately push-only. Application pages and assets
+// always go straight to the network/browser HTTP cache. Intercepting them here
+// previously allowed an old worker to keep serving a maintenance page after
+// the server had recovered, causing the visible endless-update loop.
+// Activate immediately so a previously cached maintenance worker is replaced
+// even when the React application itself cannot finish booting.
+self.addEventListener('install', () => {
+  self.skipWaiting();
 });
 
-// Activate: delete old caches, but PRESERVE auth token cache
+// Delete every old runtime cache, but preserve the auth fallback cache.
 const AUTH_CACHE = 'viks-auth-v1';
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
-      Promise.all(keys.filter((key) => key !== CACHE_NAME && key !== AUTH_CACHE).map((key) => caches.delete(key)))
+      Promise.all(keys.filter((key) => key !== AUTH_CACHE).map((key) => caches.delete(key)))
     ).then(() => self.clients.claim())
   );
 });
@@ -117,17 +38,6 @@ self.addEventListener('message', (event) => {
   }
 });
 
-// Safe cache write — never throws
-function safeCachePut(request, response) {
-  try {
-    if (!response || !response.ok || response.type !== 'basic') return;
-    const clone = response.clone();
-    caches.open(CACHE_NAME)
-      .then((cache) => cache.put(request, clone))
-      .catch(() => {}); // silently ignore quota / put errors
-  } catch { /* silent */ }
-}
-
 // ─── Push Notifications ───────────────────────
 self.addEventListener('push', function(event) {
   if (!event.data) return;
@@ -145,7 +55,7 @@ self.addEventListener('push', function(event) {
     event.waitUntil(
       self.registration.showNotification(payload.title || 'ВиКС Расписание', options)
     );
-  } catch (e) {
+  } catch {
     event.waitUntil(
       self.registration.showNotification('ВиКС Расписание', { body: event.data.text() })
     );
@@ -156,60 +66,19 @@ self.addEventListener('notificationclick', function(event) {
   event.notification.close();
   const url = event.notification.data?.url || '/';
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(function(clientList) {
       for (const client of clientList) {
         if ('focus' in client) {
           if ('navigate' in client) {
-            try { client.navigate(url); } catch (_) { /* cross-origin safety */ }
+            try { client.navigate(url); } catch { /* cross-origin safety */ }
           }
           return client.focus();
         }
       }
-      return clients.openWindow(url);
+      return self.clients.openWindow(url);
     })
   );
 });
 
-// ─── Fetch Handler ────────────────────────────
-self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-
-  // API calls: NETWORK ONLY — never cache
-  if (url.pathname.startsWith('/api/')) {
-    return;
-  }
-
-  // Hashed assets (/assets/*): CACHE FIRST — safe to cache forever
-  if (url.pathname.startsWith('/assets/')) {
-    event.respondWith(
-      caches.match(event.request).then((cached) => {
-        if (cached) return cached;
-        return fetch(event.request).then((response) => {
-          safeCachePut(event.request, response);
-          return response;
-        });
-      }).catch(() => fetch(event.request)) // fallback to network on any cache error
-    );
-    return;
-  }
-
-  // Navigation (HTML pages): NETWORK FIRST — fall back to maintenance page
-  if (event.request.mode === 'navigate') {
-    event.respondWith(
-      fetch(event.request).catch(() =>
-        caches.match('offline-page').then((r) => r || new Response('Offline', { status: 503 }))
-      )
-    );
-    return;
-  }
-
-  // Everything else (icons, manifest, etc.): NETWORK FIRST with cache fallback
-  event.respondWith(
-    fetch(event.request).then((response) => {
-      safeCachePut(event.request, response);
-      return response;
-    }).catch(() =>
-      caches.match(event.request).then((r) => r || new Response('', { status: 503 }))
-    )
-  );
-});
+// No fetch handler by design: HTML, API calls and assets can never be trapped
+// behind a stale service-worker cache. Push notifications remain fully usable.

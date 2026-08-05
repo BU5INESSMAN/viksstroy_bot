@@ -22,7 +22,7 @@ export default function BroadcastPanel({
             {/* ====== BROADCAST (Рассылка) ====== */}
             <GlassCard className="p-6 sm:p-8">
                 <SectionHeader icon={Megaphone} iconColor="text-pink-500 bg-pink-500" title="Рассылка"
-                    subtitle="Отправьте сообщение в групповой чат или персональные сообщения." />
+                    subtitle="Отправьте сообщение всем пользователям или выбранным получателям в личные сообщения." />
 
                 <textarea
                     value={broadcastText}
@@ -35,7 +35,7 @@ export default function BroadcastPanel({
                 <div className="flex gap-3">
                     <button onClick={sendBroadcastGroup} disabled={broadcastLoading || !broadcastText.trim()}
                         className="flex-1 bg-gradient-to-r from-pink-500 to-rose-500 hover:from-pink-600 hover:to-rose-600 disabled:opacity-50 text-white font-bold rounded-xl text-sm py-3 transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-md">
-                        <Send className="w-4 h-4" /> Отправить в группу
+                        <Send className="w-4 h-4" /> Всем в ЛС
                     </button>
                     <button onClick={() => setDmModalOpen(true)} disabled={!broadcastText.trim()}
                         className="flex-1 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 text-gray-800 dark:text-gray-200 font-bold rounded-xl text-sm py-3 border border-gray-200 dark:border-gray-600 transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-sm">

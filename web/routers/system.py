@@ -45,7 +45,7 @@ class BroadcastDMRequest(BaseModel):
 
 @router.post("/api/system/broadcast/group")
 async def broadcast_to_group(req: BroadcastGroupRequest, current_user=Depends(_require_office)):
-    """Send a broadcast message to the group chat."""
+    """Send a broadcast to all active users in personal messages."""
     if not req.message.strip():
         raise HTTPException(400, "Сообщение не может быть пустым")
     real_id = current_user["tg_id"]

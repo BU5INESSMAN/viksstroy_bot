@@ -35,6 +35,7 @@ EVENTS = {
     "account_unbanned": ("Сотрудники", "Блокировка моей учётной записи снята", {"employee", "worker", "driver", "brigadier", "foreman", "moderator", "boss", "hr"}),
     "equipment_changed": ("Ресурсы", "Изменения техники", {"moderator", "boss", "superadmin"}),
     "team_changed": ("Ресурсы", "Изменения бригады", {"moderator", "boss", "superadmin", "hr"}),
+    "resource_released": ("Ресурсы", "Освобождение техники или бригады", {"foreman", "moderator", "boss", "superadmin"}),
     "account_link_alert": ("Сотрудники", "Связывание и конфликт аккаунтов", {"moderator", "boss", "superadmin", "hr"}),
     # Exchange/support
     "exchange_request": ("Обмен", "Запрос обмена техникой", {"foreman", "moderator", "boss", "superadmin"}),

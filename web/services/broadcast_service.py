@@ -2,19 +2,20 @@ import logging
 from datetime import datetime
 
 from database_deps import db, TZ_BARNAUL
-from services.notifications import notify_users, notify_group_chat
+from services.notifications import notify_users
+from role_config import ASSIGNABLE_ROLES
 
 logger = logging.getLogger("SYSTEM")
 
 
 async def broadcast_group(real_id: int, fio: str, message: str):
-    """Format and send a broadcast message to the group chat."""
+    """Backward-compatible endpoint: send a broadcast to every user in DMs."""
     text = f"📢 <b>Рассылка от {fio}:</b>\n\n{message}"
     try:
-        await notify_group_chat(text, "dashboard")
-        await db.add_log(real_id, fio, f"Отправил рассылку в группу", target_type='system')
+        await notify_users(list(ASSIGNABLE_ROLES), text, "dashboard", event_key="broadcast")
+        await db.add_log(real_id, fio, "Отправил рассылку всем пользователям в ЛС", target_type='system')
     except Exception as e:
-        logger.error(f"Broadcast group error: {e}")
+        logger.error(f"Broadcast all users error: {e}")
 
 
 async def broadcast_dm_roles(real_id: int, fio: str, message: str, roles: list):
@@ -93,7 +94,7 @@ async def run_test_notification(real_tg_id: int, fio: str, test_type: str, platf
             f"🕐 {datetime.now(TZ_BARNAUL).strftime('%H:%M:%S')}"
         )
         await notify_users(
-            ["report_group", "superadmin"],
+            ["superadmin"],
             error_msg,
             "system",
             extra_tg_ids=[real_tg_id],

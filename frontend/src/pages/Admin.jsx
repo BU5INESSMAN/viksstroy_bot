@@ -171,7 +171,7 @@ export default function Admin() {
         setBroadcastLoading(true);
         try {
             await axios.post('/api/system/broadcast/group', { message: broadcastText });
-            toast.success('Сообщение отправлено в группу!');
+            toast.success('Сообщение отправляется всем пользователям в ЛС!');
             setBroadcastText('');
         } catch { toast.error('Ошибка отправки.'); }
         setBroadcastLoading(false);

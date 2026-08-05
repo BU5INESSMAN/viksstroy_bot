@@ -9,7 +9,7 @@ from maxapi.types import ButtonsPayload, LinkButton, CallbackButton
 from database_deps import db
 from utils import get_all_linked_ids, resolve_id
 from services.image_service import strip_html
-from services.max_api import get_max_group_id, send_max_text, get_max_dm_chat_id
+from services.max_api import send_max_text, get_max_dm_chat_id
 from services.push_templates import build_push_payload
 from utils_fio import get_user_settings
 from notification_events import event_enabled
@@ -94,25 +94,6 @@ NOTIFY_CATEGORY_COLUMNS = {
 }
 
 
-async def notify_group_chat(text: str, url_path: str = "dashboard", target_platform: str = "all"):
-    """Отправляет уведомление в групповой чат MAX."""
-    if db.conn is None: await db.init_db()
-
-    max_bot_token = os.getenv("MAX_BOT_TOKEN")
-    max_group_id = await get_max_group_id()
-
-    redirect = _URL_PATH_MAP.get(url_path, f"/{url_path}")
-    if max_bot_token and max_group_id:
-        max_plain_text = strip_html(text)
-        max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"{BASE_URL}{redirect}")]]
-        max_payload = ButtonsPayload(buttons=max_buttons).pack()
-        await send_max_text(max_bot_token, max_group_id, max_plain_text, attachments=[max_payload])
-        try:
-            await db.add_log(0, 'Система', f"📨 MAX групповое: {max_plain_text[:100]}", target_type='notification')
-        except Exception:
-            pass
-
-
 async def notify_users(target_roles: list, text: str, url_path: str = "dashboard", extra_tg_ids: list = None,
                        target_platform: str = "all", category: str = None,
                        max_attachments: list = None,
@@ -129,7 +110,7 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
     raw_user_ids = set()
 
-    roles_to_fetch = [r for r in target_roles if r != "report_group"]
+    roles_to_fetch = target_roles
     if roles_to_fetch:
         pl = ','.join(['?'] * len(roles_to_fetch))
         try:
@@ -234,10 +215,6 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
                     _fio_cache[_lid] = dict(u).get('fio', f'#{_lid}')
         except Exception:
             pass
-
-    # Групповой чат MAX — только если явно указан "report_group"
-    if "report_group" in target_roles:
-        await notify_group_chat(text, url_path, target_platform="max")
 
     # v2.4.1 FIX 2: collect per-recipient lines into one grouped log entry
     # rather than writing a row per channel.

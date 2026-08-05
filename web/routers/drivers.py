@@ -493,7 +493,7 @@ async def api_redeem_driver_invite(
         try:
             now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
             await notify_users(
-                ["report_group", "boss", "superadmin"],
+                ["boss", "superadmin"],
                 f"🔗 <b>Привязка водителя</b>\n👤 {fio}\n🕒 {now}",
                 "equipment", category="new_users", event_key="staff_changed",
             )

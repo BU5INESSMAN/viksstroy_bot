@@ -14,7 +14,7 @@ from datetime import datetime
 from database_deps import db, TZ_BARNAUL
 from auth_deps import get_current_user, require_role
 from utils import normalize_invite_code
-from services.notifications import notify_users, notify_group_chat
+from services.notifications import notify_users
 from services.image_service import process_base64_image
 from role_config import AUTO_ROLE_PROTECTED
 
@@ -41,8 +41,13 @@ async def set_equipment_free(current_user=Depends(get_current_user)):
 
     async def _send_free_notification():
         try:
-            await notify_group_chat(
-                f"🟢 <b>Техника освобождена</b>\n👤 Водитель: {fio}\n🕒 Время: {now}", "equipment")
+            await notify_users(
+                ["moderator", "boss", "superadmin"],
+                f"🟢 <b>Техника освобождена</b>\n👤 Водитель: {fio}\n🕒 Время: {now}",
+                "equipment",
+                category="orders",
+                event_key="resource_released",
+            )
         except Exception as e:
             logger.error(f"Equipment free notification error: {e}")
 
@@ -275,7 +280,7 @@ async def add_equipment(name: str = Form(...), category: str = Form(...),
 
     async def _send_add_equip_notification():
         try:
-            await notify_users(["report_group", "boss", "superadmin"],
+            await notify_users(["boss", "superadmin"],
                                f"🚜 <b>Новая техника</b>\n👤 Добавил: {fio}\n🚜 Название: {name}\n🕒 Время: {now}", "equipment", category="orders", event_key="equipment_changed")
         except Exception as e:
             logger.error(f"Equipment add notification error: {e}")
@@ -312,7 +317,7 @@ async def bulk_add_equipment(request: Request, current_user=Depends(_require_off
 
     async def _send_bulk_equip_notification():
         try:
-            await notify_users(["report_group", "boss", "superadmin"],
+            await notify_users(["boss", "superadmin"],
                                f"🚜 <b>Массовая загрузка техники</b>\n✅ Загружено единиц: {count}\n🕒 Время: {now}", "equipment", category="orders", event_key="equipment_changed")
         except Exception as e:
             logger.error(f"Equipment bulk add notification error: {e}")
@@ -517,7 +522,7 @@ async def bulk_upload_equipment(
         try:
             now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
             await notify_users(
-                ["report_group", "boss", "superadmin"],
+                ["boss", "superadmin"],
                 f"🚜 <b>Массовая загрузка техники</b>\n"
                 f"✅ Загружено единиц: {inserted}\n🕒 Время: {now}",
                 "equipment", category="orders", event_key="equipment_changed",
@@ -750,7 +755,7 @@ async def join_equipment(invite_code: str = Form(...), current_user=Depends(get_
 
     async def _send_equip_join_notification():
         try:
-            await notify_users(["report_group", "boss", "superadmin"],
+            await notify_users(["boss", "superadmin"],
                                f"🔗 <b>Привязка аккаунта (Техника)</b>\n👤 Водитель: {fio}\n🚜 Привязан к технике: «{eq_row[1]}»\n🕒 Время: {now}",
                                "equipment", category="new_users", event_key="staff_changed")
         except Exception as e:

@@ -12,8 +12,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
  *   - Requires 2 consecutive failures before flipping apiDown = true
  *     (avoids flicker on a single network hiccup). First failure
  *     schedules a fast retry (~2s) so the screen appears within ~4s.
- *   - On recovery (transition apiDown → false), hard-reloads the page
- *     so all data refetches cleanly with a valid session cookie.
+ *   - On recovery the maintenance screen is simply removed. The protected
+ *     page mounts again and performs its own data requests; a hard reload here
+ *     used to create a reload loop on unstable mobile connections.
  */
 const HEALTH_CHECK_URL = '/api/health';
 const RETRY_INTERVAL = 5000;
@@ -27,7 +28,6 @@ export default function useApiHealth() {
     const intervalRef = useRef(null);
     const fastRetryTimerRef = useRef(null);
     const mountedRef = useRef(true);
-    const wasDownRef = useRef(false);
 
     const checkHealth = useCallback(async function pollHealth() {
         if (!mountedRef.current) return;
@@ -91,15 +91,6 @@ export default function useApiHealth() {
             if (fastRetryTimerRef.current) clearTimeout(fastRetryTimerRef.current);
         };
     }, [checkHealth]);
-
-    // Recovery: hard-reload once the API starts responding again so the
-    // whole app refetches its initial data with a clean state.
-    useEffect(() => {
-        if (wasDownRef.current && !apiDown) {
-            window.location.reload();
-        }
-        wasDownRef.current = apiDown;
-    }, [apiDown]);
 
     return { apiDown };
 }

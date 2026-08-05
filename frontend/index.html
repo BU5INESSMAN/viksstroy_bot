@@ -61,14 +61,16 @@
           try { sessionStorage.setItem(recoveryKey, String(value)); } catch (_) { /* private mode */ }
         }
 
-        function showManualRetry() {
+        function showManualRetry(reason) {
           var spinner = document.getElementById('boot-fallback-spinner');
           var title = document.getElementById('boot-title');
           var message = document.getElementById('boot-message');
           var button = document.getElementById('boot-retry');
           if (spinner) spinner.style.display = 'none';
           if (title) title.textContent = 'Не удалось запустить приложение';
-          if (message) message.textContent = 'Нажмите кнопку, чтобы очистить старую версию и повторить запуск.';
+          if (message) message.textContent = reason === 'startup-timeout'
+            ? 'Запуск занял слишком много времени. Проверьте соединение или очистите старую версию кнопкой ниже.'
+            : 'Нажмите кнопку, чтобы очистить старую версию и повторить запуск.';
           if (button) button.style.display = 'block';
         }
 
@@ -80,38 +82,50 @@
         function recover(reason, force) {
           if (recovering) return;
           var attempts = getAttempts();
-          if (!force && attempts >= 2) {
-            showManualRetry();
+
+          // A slow mobile connection is not an update. Never reload merely
+          // because the boot timer elapsed: that was the source of the
+          // endless-update loop on iPhone. A concrete missing script/chunk may
+          // be recovered automatically once; every later retry is manual.
+          var automatic = !force && reason !== 'startup-timeout' && attempts < 1;
+          if (!force && !automatic) {
+            showManualRetry(reason);
             return;
           }
           recovering = true;
-          setAttempts(force ? 1 : attempts + 1);
+          setAttempts(attempts + 1);
 
           var title = document.getElementById('boot-title');
           var message = document.getElementById('boot-message');
           if (title) title.textContent = 'Восстанавливаем приложение';
           if (message) message.textContent = 'Удаляем устаревшую версию. Страница откроется автоматически.';
 
+          var cleanupTasks = [];
           try {
             if ('caches' in window) {
-              caches.keys().then(function (names) {
-                names.forEach(function (name) {
-                  if (name !== 'viks-auth-v1') caches.delete(name);
-                });
-              }).catch(function () {});
+              cleanupTasks.push(caches.keys().then(function (names) {
+                return Promise.all(names.filter(function (name) {
+                  return name !== 'viks-auth-v1';
+                }).map(function (name) { return caches.delete(name); }));
+              }).catch(function () {}));
             }
           } catch (_) { /* cache API may be blocked */ }
 
           try {
             if ('serviceWorker' in navigator) {
-              navigator.serviceWorker.getRegistrations().then(function (registrations) {
-                registrations.forEach(function (registration) { registration.unregister(); });
-              }).catch(function () {});
+              cleanupTasks.push(navigator.serviceWorker.getRegistrations().then(function (registrations) {
+                return Promise.all(registrations.map(function (registration) {
+                  return registration.unregister();
+                }));
+              }).catch(function () {}));
             }
           } catch (_) { /* service workers may be blocked */ }
 
-          // Give the browser a moment to remove the old controller before reload.
-          setTimeout(reloadFresh, 700);
+          Promise.all(cleanupTasks).then(function () {
+            setTimeout(reloadFresh, 250);
+          }).catch(function () {
+            setTimeout(reloadFresh, 250);
+          });
           try { console.warn('[boot] recovery:', reason); } catch (_) { /* silent */ }
         }
 
@@ -141,7 +155,7 @@
         if (retry) retry.onclick = function () { recovering = false; recover('manual', true); };
         setTimeout(function () {
           if (!window.__VIKS_BOOTED__) recover('startup-timeout');
-        }, 12000);
+        }, 20000);
       })();
     </script>
     <script type="module" src="/src/main.jsx"></script>
