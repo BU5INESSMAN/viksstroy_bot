@@ -1,0 +1,1 @@
+import{p as o,c as t}from"./index-Dm6YqGX_.js";var r=o();const a=[["path",{d:"M5 12h14",key:"1ays0h"}],["path",{d:"M12 5v14",key:"s699le"}]],n=t("plus",a);function s({children:e}){return typeof document>"u"?null:r.createPortal(e,document.body)}export{s as M,n as P,r};

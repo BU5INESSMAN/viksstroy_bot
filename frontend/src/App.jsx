@@ -2,8 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-route
 import { useEffect, useState, useCallback, lazy, Suspense } from 'react';
 import { Toaster } from 'react-hot-toast';
 import axios from 'axios';
-import Layout from './components/Layout';
 import SplashScreen from './components/SplashScreen';
+import Login from './pages/Login';
 import { saveAuthData, clearAuthData, clearAuthAndRedirect } from './utils/tokenStorage';
 
 function safeStorageGet(storage, key) {
@@ -11,8 +11,8 @@ function safeStorageGet(storage, key) {
 }
 
 // Lazy-loaded pages
-const Login = lazy(() => import('./pages/Login'));
 const MAXAuth = lazy(() => import('./pages/MAXAuth'));
+const Layout = lazy(() => import('./components/Layout'));
 const Home = lazy(() => import('./pages/Home'));
 const Guide = lazy(() => import('./pages/Guide'));
 const Updates = lazy(() => import('./pages/Updates'));

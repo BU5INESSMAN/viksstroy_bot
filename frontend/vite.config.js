@@ -11,17 +11,4 @@ export default defineConfig({
       targets: ['iOS >= 11', 'Safari >= 11.1', 'Chrome >= 64', 'Android >= 7'],
     }),
   ],
-  build: {
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          'vendor-motion': ['framer-motion'],
-          'vendor-icons': ['lucide-react'],
-          'vendor-axios': ['axios'],
-          'vendor-toast': ['react-hot-toast'],
-        },
-      },
-    },
-  },
 })

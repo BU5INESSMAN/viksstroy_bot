@@ -1,0 +1,1 @@
+System.register([],(function(e,n){"use strict";return{execute:function(){e("d",(function(e){return e&&(n=e.last_name,t=e.first_name,r=e.middle_name,[n,t,r].map((function(e){return(e||"").trim()})).filter(Boolean).join(" ")||e.fio)||"";var n,t,r}))}}}));

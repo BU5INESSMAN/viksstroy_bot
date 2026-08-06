@@ -1,7 +1,10 @@
 import React from 'react';
 
 export function BootSignal() {
-  React.useEffect(() => {
+  // Signal as soon as React commits its first frame. useLayoutEffect runs
+  // before ordinary effects and avoids treating a busy mobile main thread as
+  // a failed application download.
+  React.useLayoutEffect(() => {
     window.__VIKS_BOOTED__ = true;
     try { window.dispatchEvent(new CustomEvent('viks:booted')); } catch { /* old WebView */ }
   }, []);
