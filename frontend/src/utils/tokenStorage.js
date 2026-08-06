@@ -213,7 +213,9 @@ export function fullAuthCleanup() {
   // 1. localStorage — preserve theme only
   try {
     const preserved = {};
-    const keep = ['theme'];
+    // A login-device handle is not an auth token. Keep it so explicit logout
+    // can still be followed by a MAX approval on the same trusted device.
+    const keep = ['theme', 'viks_login_device', 'viks_login_device_id'];
     keep.forEach(k => {
       const v = localStorage.getItem(k);
       if (v !== null) preserved[k] = v;

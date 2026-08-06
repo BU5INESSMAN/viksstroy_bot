@@ -17,6 +17,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Копируем все файлы проекта в контейнер
 COPY . .
 
+# Passkey/WebAuthn dependencies are vendored because production can have
+# intermittent access to PyPI. Hashes and upstream versions are documented in
+# vendor/passkeys/README.md. --no-deps prevents any network access here.
+RUN pip install --no-cache-dir --no-index --no-deps vendor/passkeys/*.whl
+
 # L-01: Security — run as non-root user
 RUN mkdir -p data data/uploads data/uploads/objects data/backups data/kp_catalogs data/fonts \
     && groupadd -r viks && useradd -r -g viks -d /app -s /sbin/nologin viks \

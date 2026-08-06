@@ -1,11 +1,13 @@
-import { useEffect, useState } from 'react';
+import { createElement, useEffect, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { motion } from 'framer-motion';
-import { Settings as SettingsIcon, Smartphone, Bell, EyeOff } from 'lucide-react';
+import { motion as Motion } from 'framer-motion';
+import { Settings as SettingsIcon, Smartphone, Bell, EyeOff, KeyRound, Trash2, ShieldCheck } from 'lucide-react';
 import GlassCard from '../components/ui/GlassCard';
 import ToggleRow from '../features/settings/components/ToggleRow';
 import { subscribeToPush } from '../utils/pushSubscription';
+import { registerPasskey, passkeysSupported } from '../utils/passkeys';
+import { ensureLoginDevice, getDeviceName, getLoginDeviceId, getLoginDeviceToken, forgetLoginDevice } from '../utils/loginDevice';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -27,6 +29,9 @@ export default function Settings() {
     const [pushSubscribed, setPushSubscribed] = useState(false);
     const [pushBusy, setPushBusy] = useState(false);
     const [notificationEvents, setNotificationEvents] = useState([]);
+    const [passkeys, setPasskeys] = useState([]);
+    const [loginDevices, setLoginDevices] = useState([]);
+    const [securityBusy, setSecurityBusy] = useState(false);
 
     // Detect if PWA push is usable: standalone app OR active subscription
     useEffect(() => {
@@ -49,11 +54,15 @@ export default function Settings() {
         Promise.all([
             axios.get('/api/users/me'),
             axios.get('/api/users/me/notification-events'),
+            axios.get('/api/auth/passkeys'),
+            axios.get('/api/auth/devices'),
         ])
-            .then(([res, eventRes]) => {
+            .then(([res, eventRes, passkeyRes, deviceRes]) => {
                 const s = res.data?.user?.settings || {};
                 setSettings({ ...DEFAULTS, ...s });
                 setNotificationEvents(eventRes.data?.events || []);
+                setPasskeys(passkeyRes.data?.passkeys || []);
+                setLoginDevices(deviceRes.data?.devices || []);
                 setLoading(false);
             })
             .catch(() => {
@@ -102,6 +111,43 @@ export default function Settings() {
         }
     };
 
+    const addPasskey = async () => {
+        setSecurityBusy(true);
+        try {
+            const created = await registerPasskey(getDeviceName());
+            setPasskeys((current) => [created.passkey, ...current]);
+            await ensureLoginDevice().catch(() => '');
+            toast.success('Ключ доступа создан. Теперь вход возможен по отпечатку, лицу или PIN устройства.');
+        } catch (e) {
+            if (e?.name !== 'NotAllowedError') {
+                toast.error(e?.response?.data?.detail || e?.message || 'Не удалось создать ключ доступа');
+            }
+        } finally {
+            setSecurityBusy(false);
+        }
+    };
+
+    const removePasskey = async (credentialId) => {
+        try {
+            await axios.delete(`/api/auth/passkeys/${encodeURIComponent(credentialId)}`);
+            setPasskeys((current) => current.filter((item) => item.credential_id !== credentialId));
+            toast.success('Ключ доступа удалён');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Не удалось удалить ключ доступа');
+        }
+    };
+
+    const removeLoginDevice = async (deviceId) => {
+        try {
+            await axios.delete(`/api/auth/devices/${deviceId}`);
+            setLoginDevices((current) => current.filter((item) => item.id !== deviceId));
+            if (getLoginDeviceId() === deviceId) forgetLoginDevice();
+            toast.success('Доверенное устройство удалено');
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Не удалось удалить устройство');
+        }
+    };
+
     if (loading) {
         return (
             <div className="max-w-3xl mx-auto p-4 pb-24 space-y-4">
@@ -113,7 +159,7 @@ export default function Settings() {
     }
 
     return (
-        <motion.div
+        <Motion.div
             className="max-w-3xl mx-auto p-4 pb-24 space-y-4"
             initial={prefersReducedMotion ? false : { opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
@@ -129,6 +175,71 @@ export default function Settings() {
                     <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Уведомления и предпочтения интерфейса</p>
                 </div>
             </div>
+
+            <GlassCard className="p-5">
+                <SectionTitle>Безопасность и быстрый вход</SectionTitle>
+                <div className="mt-3 rounded-xl border border-blue-500/15 bg-blue-500/[0.06] p-4">
+                    <div className="flex items-start gap-3">
+                        <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
+                            <ShieldCheck className="h-5 w-5 text-blue-500" />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-gray-900 dark:text-gray-100">Ключ доступа</p>
+                            <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                                Вход одним касанием: по отпечатку пальца, лицу или PIN-коду устройства. Пароль и код из MAX не нужны.
+                            </p>
+                        </div>
+                    </div>
+                    {passkeysSupported() ? (
+                        <button
+                            type="button"
+                            disabled={securityBusy}
+                            onClick={addPasskey}
+                            className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60 active:scale-[0.98]"
+                        >
+                            <KeyRound className="h-4 w-4" />
+                            {securityBusy ? 'Создаём ключ…' : 'Создать ключ доступа'}
+                        </button>
+                    ) : (
+                        <p className="mt-3 text-xs text-amber-600 dark:text-amber-400">На этом устройстве ключи доступа не поддерживаются.</p>
+                    )}
+                </div>
+
+                {passkeys.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                        <p className="px-1 text-xs font-bold text-gray-700 dark:text-gray-200">Ваши ключи</p>
+                        {passkeys.map((item) => (
+                            <SecurityRow
+                                key={item.credential_id}
+                                icon={KeyRound}
+                                title={item.name || 'Ключ доступа'}
+                                subtitle={formatSecurityDate(item.last_used_at || item.created_at)}
+                                onRemove={() => removePasskey(item.credential_id)}
+                            />
+                        ))}
+                    </div>
+                )}
+
+                {loginDevices.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                        <p className="px-1 text-xs font-bold text-gray-700 dark:text-gray-200">Вход через MAX разрешён на устройствах</p>
+                        {loginDevices.map((item) => (
+                            <SecurityRow
+                                key={item.id}
+                                icon={Smartphone}
+                                title={item.name || 'Устройство'}
+                                badge={getLoginDeviceId() === item.id ? 'Это устройство' : ''}
+                                subtitle={formatSecurityDate(item.last_used_at || item.created_at)}
+                                onRemove={() => removeLoginDevice(item.id)}
+                            />
+                        ))}
+                    </div>
+                )}
+
+                {!getLoginDeviceToken() && (
+                    <p className="mt-3 text-[11px] text-gray-400">Это устройство будет автоматически привязано после следующего входа.</p>
+                )}
+            </GlassCard>
 
             {/* 1. Уведомления */}
             <GlassCard className="p-5">
@@ -207,7 +318,7 @@ export default function Settings() {
                     />
                 </div>
             </GlassCard>
-        </motion.div>
+        </Motion.div>
     );
 }
 
@@ -217,4 +328,34 @@ function SectionTitle({ children }) {
             {children}
         </h2>
     );
+}
+
+function SecurityRow({ icon, title, subtitle, badge, onRemove }) {
+    return (
+        <div className="flex min-h-14 items-center gap-3 rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2 dark:border-white/[0.06] dark:bg-white/[0.025]">
+            {createElement(icon, { className: 'h-4 w-4 shrink-0 text-gray-500 dark:text-gray-400' })}
+            <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center gap-2">
+                    <p className="truncate text-sm font-semibold text-gray-800 dark:text-gray-100">{title}</p>
+                    {badge && <span className="shrink-0 rounded-full bg-emerald-500/10 px-2 py-0.5 text-[9px] font-bold text-emerald-600 dark:text-emerald-400">{badge}</span>}
+                </div>
+                <p className="mt-0.5 text-[11px] text-gray-400">{subtitle}</p>
+            </div>
+            <button
+                type="button"
+                onClick={onRemove}
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-gray-400 transition-colors hover:bg-red-500/10 hover:text-red-500"
+                aria-label={`Удалить: ${title}`}
+            >
+                <Trash2 className="h-4 w-4" />
+            </button>
+        </div>
+    );
+}
+
+function formatSecurityDate(value) {
+    if (!value) return 'Ещё не использовался';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Дата неизвестна';
+    return `Последняя активность: ${date.toLocaleDateString('ru-RU')}`;
 }

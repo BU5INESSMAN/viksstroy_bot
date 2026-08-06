@@ -4,7 +4,7 @@ import os
 # Переходим на уровень выше (в папку web), чтобы импорты сработали
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException, Query, Cookie, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Cookie, Request
 from fastapi.responses import JSONResponse
 import asyncio
 import json
@@ -16,7 +16,8 @@ import secrets
 import logging
 from datetime import datetime, timedelta
 from database_deps import db
-from utils import resolve_id
+from utils import get_all_linked_ids, resolve_id
+from auth_deps import get_current_user
 from services.notifications import notify_users, notify_fio_match
 from rate_limit import max_login_limiter, registration_limiter
 from services.role_passwords import match_role_password
@@ -404,20 +405,143 @@ async def max_web_auth(code: str = Form(...)):
         {"status": "ok", "role": dict(user)['role'], "tg_id": real_tg_id}, token)
 
 
-@router.post("/api/auth/max-login/start")
-async def start_max_login(request: Request):
-    """Create a short-lived browser-to-MAX authorization request.
+def _clean_device_name(value: str) -> str:
+    cleaned = " ".join((value or "").strip().split())[:80]
+    return cleaned or "Неизвестное устройство"
 
-    The request id is safe to pass through a MAX bot deep link. Polling also
-    requires a separate secret which never leaves the browser, so knowing or
-    forwarding the MAX link alone is not enough to claim the resulting session.
-    """
+
+def _device_token_hash(value: str) -> str:
+    return hashlib.sha256((value or "").encode("utf-8")).hexdigest()
+
+
+async def _send_max_login_approval(user_id: int, request_id: str, device_name: str) -> bool:
+    """Send a private MAX confirmation; never route login requests to groups."""
+    from maxapi.types import ButtonsPayload, CallbackButton
+    from services.max_api import get_max_dm_chat_id, send_max_text
+
+    max_ids = sorted(abs(linked_id) for linked_id in await get_all_linked_ids(user_id) if linked_id < 0)
+    if not max_ids:
+        return False
+
+    max_user_id = max_ids[0]
+    chat_id = await get_max_dm_chat_id(str(max_user_id))
+    buttons = ButtonsPayload(buttons=[
+        [CallbackButton(text="✅ Подтвердить вход", payload=f"login_approve|{request_id}")],
+        [CallbackButton(text="⛔ Это не я", payload=f"login_deny|{request_id}")],
+    ]).pack()
+    now_label = datetime.now().strftime("%d.%m.%Y %H:%M")
+    text = (
+        "🔐 Вход в ВиКС\n\n"
+        f"Устройство: {device_name}\n"
+        f"Время: {now_label}\n\n"
+        "Подтвердите вход, только если запрос отправили вы."
+    )
+    return bool(await send_max_text(
+        os.getenv("MAX_BOT_TOKEN", "").strip(),
+        chat_id,
+        text,
+        attachments=[buttons],
+    ))
+
+
+@router.post("/api/auth/devices/register")
+async def register_login_device(
+    device_token: str = Form(""),
+    device_name: str = Form(""),
+    current_user=Depends(get_current_user),
+):
+    """Bind a non-authenticating browser handle to the signed-in user."""
+    user_id = int(current_user["user_id"])
+    now = time.time()
+    name = _clean_device_name(device_name)
+    supplied = (device_token or "").strip()
+    if supplied:
+        token_hash = _device_token_hash(supplied)
+        async with db.conn.execute(
+            "SELECT id, user_id FROM login_devices "
+            "WHERE token_hash = ? AND revoked_at IS NULL",
+            (token_hash,),
+        ) as cur:
+            existing = await cur.fetchone()
+        if existing and int(existing[1]) == user_id:
+            await db.conn.execute(
+                "UPDATE login_devices SET name = ?, last_used_at = ? WHERE id = ?",
+                (name, now, existing[0]),
+            )
+            await db.conn.commit()
+            return {"status": "ok", "device_token": supplied, "device_id": existing[0]}
+
+    new_token = secrets.token_urlsafe(32)
+    cursor = await db.conn.execute(
+        "INSERT INTO login_devices "
+        "(user_id, token_hash, name, created_at, last_used_at) VALUES (?, ?, ?, ?, ?)",
+        (user_id, _device_token_hash(new_token), name, now, now),
+    )
+    await db.conn.commit()
+    return {"status": "ok", "device_token": new_token, "device_id": cursor.lastrowid}
+
+
+@router.get("/api/auth/devices")
+async def list_login_devices(current_user=Depends(get_current_user)):
+    async with db.conn.execute(
+        "SELECT id, name, created_at, last_used_at FROM login_devices "
+        "WHERE user_id = ? AND revoked_at IS NULL ORDER BY last_used_at DESC",
+        (int(current_user["user_id"]),),
+    ) as cur:
+        rows = await cur.fetchall()
+    return {"devices": [
+        {"id": row[0], "name": row[1], "created_at": row[2], "last_used_at": row[3]}
+        for row in rows
+    ]}
+
+
+@router.delete("/api/auth/devices/{device_id}")
+async def revoke_login_device(device_id: int, current_user=Depends(get_current_user)):
+    result = await db.conn.execute(
+        "UPDATE login_devices SET revoked_at = ? "
+        "WHERE id = ? AND user_id = ? AND revoked_at IS NULL",
+        (time.time(), device_id, int(current_user["user_id"])),
+    )
+    await db.conn.commit()
+    if result.rowcount != 1:
+        raise HTTPException(status_code=404, detail="Устройство не найдено")
+    return {"status": "ok"}
+
+
+@router.post("/api/auth/max-login/start")
+async def start_max_login(
+    request: Request,
+    device_token: str = Form(...),
+    device_name: str = Form(""),
+):
+    """Send a passwordless login approval to the bound user's MAX DM."""
     await _max_login_rate_check(request)
     now = time.time()
+    token_hash = _device_token_hash(device_token.strip())
+    async with db.conn.execute(
+        "SELECT id, user_id, name FROM login_devices "
+        "WHERE token_hash = ? AND revoked_at IS NULL",
+        (token_hash,),
+    ) as cur:
+        device = await cur.fetchone()
+    if not device:
+        raise HTTPException(
+            status_code=404,
+            detail="Это устройство ещё не привязано. Войдите кодом один раз.",
+        )
+
+    user_id = await resolve_id(int(device[1]))
+    user = await db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    user_dict = dict(user)
+    if user_dict.get("is_blacklisted") or user_dict.get("is_deleted"):
+        raise HTTPException(status_code=403, detail="Аккаунт недоступен")
+
     request_id = secrets.token_hex(16)
     poll_token = secrets.token_urlsafe(32)
     poll_token_hash = hashlib.sha256(poll_token.encode("utf-8")).hexdigest()
-    expires = now + 5 * 60
+    expires = now + 2 * 60
 
     # Opportunistic cleanup keeps the test flow from accumulating stale rows.
     await db.conn.execute(
@@ -426,22 +550,44 @@ async def start_max_login(request: Request):
         (now, now - 3600),
     )
     await db.conn.execute(
+        "UPDATE max_login_requests SET status = 'denied' "
+        "WHERE user_id = ? AND status IN ('pending', 'approved')",
+        (user_id,),
+    )
+    await db.conn.execute(
         "INSERT INTO max_login_requests "
-        "(request_id, poll_token_hash, status, expires, created_at) "
-        "VALUES (?, ?, 'pending', ?, ?)",
-        (request_id, poll_token_hash, expires, now),
+        "(request_id, poll_token_hash, status, user_id, expires, created_at) "
+        "VALUES (?, ?, 'pending', ?, ?, ?)",
+        (request_id, poll_token_hash, user_id, expires, now),
+    )
+    await db.conn.execute(
+        "UPDATE login_devices SET name = ?, last_used_at = ? WHERE id = ?",
+        (_clean_device_name(device_name) if device_name else device[2], now, device[0]),
     )
     await db.conn.commit()
 
-    bot_url = os.getenv(
-        "MAX_BOT_URL", "https://max.ru/id222264297116_bot"
-    ).strip().rstrip("/")
+    delivered = await _send_max_login_approval(
+        user_id,
+        request_id,
+        _clean_device_name(device_name) if device_name else device[2],
+    )
+    if not delivered:
+        await db.conn.execute(
+            "UPDATE max_login_requests SET status = 'denied' WHERE request_id = ?",
+            (request_id,),
+        )
+        await db.conn.commit()
+        raise HTTPException(
+            status_code=409,
+            detail="Не удалось отправить сообщение в MAX. Откройте личный чат с ботом и попробуйте снова.",
+        )
+
     return {
         "status": "pending",
         "request_id": request_id,
         "poll_token": poll_token,
-        "deep_link": f"{bot_url}?start=login_{request_id}",
-        "expires_in": 300,
+        "expires_in": 120,
+        "delivery": "max_dm",
     }
 
 
@@ -544,6 +690,263 @@ async def poll_max_login(
             "role": user_dict.get("role"),
             "fio": user_dict.get("fio", ""),
             "tg_id": user_id,
+        },
+        session_token,
+    )
+
+
+async def _consume_passkey_challenge(challenge_id: str, ceremony: str):
+    async with db.conn.execute(
+        "SELECT user_id, challenge, expires FROM passkey_challenges "
+        "WHERE challenge_id = ? AND ceremony = ?",
+        (challenge_id, ceremony),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row or time.time() > row[2]:
+        if row:
+            await db.conn.execute(
+                "DELETE FROM passkey_challenges WHERE challenge_id = ?", (challenge_id,)
+            )
+            await db.conn.commit()
+        raise HTTPException(status_code=410, detail="Проверка ключа истекла. Попробуйте ещё раз.")
+    await db.conn.execute(
+        "DELETE FROM passkey_challenges WHERE challenge_id = ?", (challenge_id,)
+    )
+    await db.conn.commit()
+    return row
+
+
+async def _save_passkey_challenge(user_id, challenge: str, ceremony: str) -> str:
+    now = time.time()
+    challenge_id = secrets.token_hex(16)
+    await db.conn.execute(
+        "DELETE FROM passkey_challenges WHERE expires < ?", (now,)
+    )
+    await db.conn.execute(
+        "INSERT INTO passkey_challenges "
+        "(challenge_id, user_id, challenge, ceremony, expires) VALUES (?, ?, ?, ?, ?)",
+        (challenge_id, user_id, challenge, ceremony, now + 120),
+    )
+    await db.conn.commit()
+    return challenge_id
+
+
+@router.post("/api/auth/passkeys/register/options")
+async def passkey_registration_options(current_user=Depends(get_current_user)):
+    from services.passkeys import registration_options
+
+    user_id = int(current_user["user_id"])
+    async with db.conn.execute(
+        "SELECT user_handle FROM passkey_users WHERE user_id = ?", (user_id,)
+    ) as cur:
+        handle_row = await cur.fetchone()
+    if handle_row:
+        user_handle = handle_row[0]
+    else:
+        user_handle = secrets.token_hex(32)
+        await db.conn.execute(
+            "INSERT INTO passkey_users (user_id, user_handle) VALUES (?, ?)",
+            (user_id, user_handle),
+        )
+        await db.conn.commit()
+
+    async with db.conn.execute(
+        "SELECT credential_id FROM passkey_credentials WHERE user_id = ?", (user_id,)
+    ) as cur:
+        credential_ids = [row[0] for row in await cur.fetchall()]
+    fio = current_user.get("fio") or f"Пользователь {user_id}"
+    options = registration_options(
+        user_name=f"viks-{user_handle[:12]}",
+        display_name=fio,
+        user_handle_hex=user_handle,
+        credential_ids=credential_ids,
+    )
+    challenge_id = await _save_passkey_challenge(
+        user_id, options["challenge"], "registration"
+    )
+    return {"challenge_id": challenge_id, "publicKey": options}
+
+
+@router.post("/api/auth/passkeys/register/verify")
+async def passkey_registration_verify(
+    request: Request,
+    current_user=Depends(get_current_user),
+):
+    from services.passkeys import enum_value, verify_registration
+
+    body = await request.json()
+    challenge_id = str(body.get("challenge_id") or "")
+    credential = body.get("credential")
+    if not challenge_id or not isinstance(credential, dict):
+        raise HTTPException(status_code=400, detail="Некорректный ответ ключа доступа")
+    challenge_row = await _consume_passkey_challenge(challenge_id, "registration")
+    user_id = int(current_user["user_id"])
+    if challenge_row[0] is None or int(challenge_row[0]) != user_id:
+        raise HTTPException(status_code=403, detail="Ключ создавался для другого пользователя")
+    try:
+        verification = verify_registration(
+            credential=credential,
+            challenge=challenge_row[1],
+        )
+    except Exception as exc:
+        logger.warning("passkey registration verification failed: %s", exc)
+        raise HTTPException(status_code=400, detail="Не удалось проверить ключ доступа") from exc
+
+    credential_id = str(credential.get("id") or "")
+    if not credential_id:
+        raise HTTPException(status_code=400, detail="Ключ не содержит идентификатор")
+    transports = credential.get("response", {}).get("transports") or []
+    name = _clean_device_name(str(body.get("name") or "Ключ доступа"))
+    try:
+        await db.conn.execute(
+            "INSERT INTO passkey_credentials "
+            "(credential_id, user_id, public_key, sign_count, transports, "
+            "device_type, backed_up, name, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                credential_id,
+                user_id,
+                verification.credential_public_key,
+                int(verification.sign_count),
+                json.dumps(transports, ensure_ascii=False),
+                enum_value(verification.credential_device_type),
+                int(bool(verification.credential_backed_up)),
+                name,
+                time.time(),
+            ),
+        )
+        await db.conn.commit()
+    except Exception as exc:
+        await db.conn.rollback()
+        if "UNIQUE" in str(exc).upper():
+            raise HTTPException(status_code=409, detail="Этот ключ уже добавлен") from exc
+        raise
+    return {
+        "status": "ok",
+        "passkey": {
+            "credential_id": credential_id,
+            "name": name,
+            "device_type": enum_value(verification.credential_device_type),
+            "backed_up": bool(verification.credential_backed_up),
+            "created_at": time.time(),
+            "last_used_at": None,
+        },
+    }
+
+
+@router.get("/api/auth/passkeys")
+async def list_passkeys(current_user=Depends(get_current_user)):
+    async with db.conn.execute(
+        "SELECT credential_id, name, device_type, backed_up, created_at, last_used_at "
+        "FROM passkey_credentials WHERE user_id = ? ORDER BY created_at DESC",
+        (int(current_user["user_id"]),),
+    ) as cur:
+        rows = await cur.fetchall()
+    return {"passkeys": [
+        {
+            "credential_id": row[0], "name": row[1], "device_type": row[2],
+            "backed_up": bool(row[3]), "created_at": row[4], "last_used_at": row[5],
+        }
+        for row in rows
+    ]}
+
+
+@router.delete("/api/auth/passkeys/{credential_id}")
+async def delete_passkey(credential_id: str, current_user=Depends(get_current_user)):
+    result = await db.conn.execute(
+        "DELETE FROM passkey_credentials WHERE credential_id = ? AND user_id = ?",
+        (credential_id, int(current_user["user_id"])),
+    )
+    await db.conn.commit()
+    if result.rowcount != 1:
+        raise HTTPException(status_code=404, detail="Ключ доступа не найден")
+    return {"status": "ok"}
+
+
+@router.post("/api/auth/passkeys/login/options")
+async def passkey_login_options(request: Request):
+    from services.passkeys import authentication_options
+
+    await _max_login_rate_check(request)
+    options = authentication_options()
+    challenge_id = await _save_passkey_challenge(
+        None, options["challenge"], "authentication"
+    )
+    return {"challenge_id": challenge_id, "publicKey": options}
+
+
+@router.post("/api/auth/passkeys/login/verify")
+async def passkey_login_verify(request: Request):
+    from services.passkeys import base64url_to_bytes, enum_value, verify_authentication
+
+    body = await request.json()
+    challenge_id = str(body.get("challenge_id") or "")
+    credential = body.get("credential")
+    if not challenge_id or not isinstance(credential, dict):
+        raise HTTPException(status_code=400, detail="Некорректный ответ ключа доступа")
+    challenge_row = await _consume_passkey_challenge(challenge_id, "authentication")
+    credential_id = str(credential.get("id") or "")
+    async with db.conn.execute(
+        "SELECT c.user_id, c.public_key, c.sign_count, u.user_handle "
+        "FROM passkey_credentials c JOIN passkey_users u ON u.user_id = c.user_id "
+        "WHERE c.credential_id = ?",
+        (credential_id,),
+    ) as cur:
+        passkey = await cur.fetchone()
+    if not passkey:
+        raise HTTPException(status_code=404, detail="Ключ доступа не зарегистрирован в ВиКС")
+
+    response_user_handle = credential.get("response", {}).get("userHandle")
+    if response_user_handle:
+        try:
+            if not secrets.compare_digest(
+                base64url_to_bytes(response_user_handle), bytes.fromhex(passkey[3])
+            ):
+                raise HTTPException(status_code=403, detail="Ключ принадлежит другому аккаунту")
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="Повреждён идентификатор ключа") from exc
+    try:
+        verification = verify_authentication(
+            credential=credential,
+            challenge=challenge_row[1],
+            public_key=bytes(passkey[1]),
+            sign_count=int(passkey[2]),
+        )
+    except Exception as exc:
+        logger.warning("passkey authentication verification failed: %s", exc)
+        raise HTTPException(status_code=401, detail="Ключ доступа не прошёл проверку") from exc
+
+    user_id = await resolve_id(int(passkey[0]))
+    user = await db.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    user_dict = dict(user)
+    if user_dict.get("is_blacklisted") or user_dict.get("is_deleted"):
+        raise HTTPException(status_code=403, detail="Аккаунт недоступен")
+    await db.conn.execute(
+        "UPDATE passkey_credentials SET sign_count = ?, device_type = ?, "
+        "backed_up = ?, last_used_at = ? WHERE credential_id = ?",
+        (
+            int(verification.new_sign_count),
+            enum_value(verification.credential_device_type),
+            int(bool(verification.credential_backed_up)),
+            time.time(),
+            credential_id,
+        ),
+    )
+    await db.conn.commit()
+    session_token = await _create_session(user_id)
+    try:
+        await db.add_log(
+            user_id, user_dict.get("fio", ""), "Вошёл по ключу доступа Passkey",
+            target_type="system",
+        )
+    except Exception:
+        pass
+    return _make_auth_response(
+        {
+            "status": "ok", "role": user_dict.get("role"),
+            "fio": user_dict.get("fio", ""), "tg_id": user_id,
         },
         session_token,
     )

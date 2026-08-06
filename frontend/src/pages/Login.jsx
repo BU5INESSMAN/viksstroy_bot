@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import { motion as Motion, AnimatePresence } from 'framer-motion';
-import { CheckCircle2, MessageCircle, RefreshCw, Send, XCircle } from 'lucide-react';
+import { CheckCircle2, KeyRound, MessageCircle, Send, XCircle } from 'lucide-react';
 import { saveAuthData, loadAuthData } from '../utils/tokenStorage';
+import { ensureLoginDevice, getDeviceName, getLoginDeviceToken } from '../utils/loginDevice';
+import { loginWithPasskey, passkeysSupported } from '../utils/passkeys';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const ease = [0.22, 1, 0.36, 1];
@@ -17,8 +19,12 @@ export default function Login() {
   const [maxRequest, setMaxRequest] = useState(null);
   const [maxStatus, setMaxStatus] = useState('idle');
   const [maxError, setMaxError] = useState('');
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [hasLoginDevice, setHasLoginDevice] = useState(() => !!getLoginDeviceToken());
+  const [showCode, setShowCode] = useState(() => !passkeysSupported() && !getLoginDeviceToken());
 
   const navigate = useNavigate();
+  const passkeyAvailable = passkeysSupported();
 
   // Redirect already-authenticated users to dashboard
   useEffect(() => {
@@ -34,30 +40,33 @@ export default function Login() {
     }).catch(() => setChecking(false));
   }, [navigate]);
 
-  const prepareMaxLogin = useCallback(async () => {
-    setMaxStatus('preparing');
+  const startMaxLogin = async () => {
+    const deviceToken = getLoginDeviceToken();
+    if (!deviceToken) {
+      setMaxStatus('error');
+      setMaxError('Сначала войдите кодом один раз, чтобы привязать это устройство.');
+      setShowCode(true);
+      return;
+    }
+    setMaxStatus('sending');
     setMaxError('');
     try {
-      const res = await axios.post('/api/auth/max-login/start');
+      const fd = new FormData();
+      fd.append('device_token', deviceToken);
+      fd.append('device_name', getDeviceName());
+      const res = await axios.post('/api/auth/max-login/start', fd);
       setMaxRequest({
         requestId: res.data.request_id,
         pollToken: res.data.poll_token,
-        deepLink: res.data.deep_link,
         expiresAt: Date.now() + (res.data.expires_in * 1000),
       });
-      setMaxStatus('ready');
+      setMaxStatus('awaiting');
     } catch (err) {
       setMaxRequest(null);
       setMaxStatus('error');
-      setMaxError(err.response?.data?.detail || 'Не удалось подготовить вход через MAX.');
+      setMaxError(err.response?.data?.detail || 'Не удалось отправить подтверждение в MAX.');
     }
-  }, []);
-
-  // Prepare the deep link in advance so the actual tap remains a direct user
-  // action. This is important for iOS PWA, where delayed popups are blocked.
-  useEffect(() => {
-    if (!checking && maxStatus === 'idle') prepareMaxLogin();
-  }, [checking, maxStatus, prepareMaxLogin]);
+  };
 
   useEffect(() => {
     if (maxStatus !== 'awaiting' || !maxRequest) return undefined;
@@ -81,6 +90,7 @@ export default function Login() {
           cancelled = true;
           setMaxStatus('success');
           await saveAuthData(res.data.tg_id, res.data.role);
+          ensureLoginDevice().catch(() => {});
           navigate('/dashboard', { replace: true });
           return;
         }
@@ -91,8 +101,7 @@ export default function Login() {
           setMaxError(err.response?.data?.detail || 'Не удалось подтвердить вход через MAX.');
           return;
         }
-        // A temporary network interruption is expected when switching from
-        // the PWA to MAX. Keep waiting and retry when the PWA becomes active.
+        // Temporary mobile network interruptions should not cancel approval.
       }
 
       if (!cancelled) timer = window.setTimeout(poll, 1800);
@@ -105,9 +114,23 @@ export default function Login() {
     };
   }, [maxRequest, maxStatus, navigate]);
 
-  const handleMaxOpen = () => {
-    setMaxError('');
-    setMaxStatus('awaiting');
+  const handlePasskeyLogin = async () => {
+    setError('');
+    setPasskeyLoading(true);
+    try {
+      const data = await loginWithPasskey();
+      await saveAuthData(data.tg_id, data.role);
+      ensureLoginDevice().catch(() => {});
+      navigate('/dashboard', { replace: true });
+    } catch (err) {
+      if (err?.name === 'NotAllowedError') {
+        setError('Вход по ключу отменён или подходящий ключ не найден.');
+      } else {
+        setError(err.response?.data?.detail || err.message || 'Не удалось войти по ключу доступа.');
+      }
+    } finally {
+      setPasskeyLoading(false);
+    }
   };
 
   const handleCodeLogin = async (e) => {
@@ -122,6 +145,8 @@ export default function Login() {
 
           if (res.data.status === 'ok') {
               await saveAuthData(res.data.tg_id, res.data.role);
+              const token = await ensureLoginDevice().catch(() => '');
+              if (token) setHasLoginDevice(true);
               navigate('/dashboard');
           }
       } catch (err) {
@@ -193,107 +218,95 @@ export default function Login() {
 
           <h2 className="text-lg font-bold text-white mb-4 text-center">Вход в систему</h2>
 
-          {/* Experimental MAX confirmation flow. The existing code login stays below. */}
-          <div className="rounded-xl border border-blue-400/20 bg-blue-500/[0.08] p-3.5 mb-4">
-            <div className="flex items-center justify-between gap-3 mb-2.5">
-              <div>
-                <p className="text-sm font-bold text-white">Быстрый вход через MAX</p>
-                <p className="text-[11px] text-blue-300/70 mt-0.5">Тестовый режим</p>
-              </div>
-              {maxStatus === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
-            </div>
-
-            <p className="text-xs text-white/50 leading-relaxed mb-3">
-              Откройте бота по кнопке, затем вернитесь сюда. ВиКС выполнит вход автоматически — вводить код не потребуется.
-            </p>
-
-            {maxRequest && !['preparing', 'error', 'expired'].includes(maxStatus) ? (
-              <a
-                href={maxRequest.deepLink}
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={handleMaxOpen}
-                className="w-full min-h-11 bg-[#6d5dfc] hover:bg-[#7c6eff] text-white px-4 py-3 rounded-xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
-              >
-                <MessageCircle className="w-5 h-5" />
-                {maxStatus === 'awaiting' ? 'Открыть MAX ещё раз' : 'Войти через MAX'}
-              </a>
-            ) : (
+          <div className="space-y-3 mb-4">
+            {passkeyAvailable && (
               <button
                 type="button"
-                disabled={maxStatus === 'preparing'}
-                onClick={prepareMaxLogin}
-                className="w-full min-h-11 bg-[#6d5dfc] hover:bg-[#7c6eff] disabled:bg-[#6d5dfc]/50 text-white px-4 py-3 rounded-xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+                disabled={passkeyLoading}
+                onClick={handlePasskeyLogin}
+                className="w-full min-h-12 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-60 text-white px-4 py-3.5 rounded-xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
               >
-                <RefreshCw className={`w-4 h-4 ${maxStatus === 'preparing' ? 'animate-spin' : ''}`} />
-                {maxStatus === 'preparing' ? 'Подготовка...' : 'Подготовить новый вход'}
+                {passkeyLoading ? (
+                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                ) : <KeyRound className="w-5 h-5" />}
+                Войти по ключу доступа
               </button>
             )}
 
-            {maxStatus === 'awaiting' && (
-              <div className="mt-3 flex items-center gap-2 text-xs text-blue-200/80" role="status">
-                <span className="w-3.5 h-3.5 border-2 border-blue-300/30 border-t-blue-300 rounded-full animate-spin flex-shrink-0" />
-                Ожидаем подтверждение в MAX…
-              </div>
-            )}
-            {maxError && <p className="mt-2.5 text-xs text-red-300">{maxError}</p>}
-          </div>
-
-          <div className="flex items-center gap-3 mb-4" aria-hidden="true">
-            <div className="h-px flex-1 bg-white/[0.08]" />
-            <span className="text-[10px] uppercase tracking-widest text-white/25">или старый способ</span>
-            <div className="h-px flex-1 bg-white/[0.08]" />
-          </div>
-
-          {/* Instructions */}
-          <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-3.5 mb-4">
-              <p className="text-sm text-white/60 mb-3 leading-relaxed">
-                  Для входа на платформу с компьютера или браузера вам понадобится одноразовый код.
+            <button
+              type="button"
+              disabled={!hasLoginDevice || ['sending', 'awaiting'].includes(maxStatus)}
+              onClick={startMaxLogin}
+              className="w-full min-h-12 bg-[#6d5dfc] hover:bg-[#7c6eff] disabled:bg-[#6d5dfc]/30 disabled:text-white/40 text-white px-4 py-3.5 rounded-xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+            >
+              {['sending', 'awaiting'].includes(maxStatus) ? (
+                <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : maxStatus === 'success' ? (
+                <CheckCircle2 className="w-5 h-5 text-emerald-300" />
+              ) : <MessageCircle className="w-5 h-5" />}
+              {maxStatus === 'sending' && 'Отправляем в MAX…'}
+              {maxStatus === 'awaiting' && 'Подтвердите вход в MAX'}
+              {!['sending', 'awaiting'].includes(maxStatus) && 'Подтвердить через MAX'}
+            </button>
+            {!hasLoginDevice && (
+              <p className="text-[11px] text-center text-white/35">
+                MAX-вход появится после первого входа кодом на этом устройстве
               </p>
-              <p className="text-[11px] text-blue-400/80 mb-2.5 font-bold uppercase tracking-widest">Как получить код?</p>
-              <ul className="space-y-2.5 text-sm text-white/50">
-                  <li className="flex items-start gap-2.5">
-                      <MessageCircle className="w-4 h-4 text-white/30 mt-0.5 flex-shrink-0" />
-                      <span>Откройте бота <a href="https://max.ru/id222264297116_bot" className="text-blue-400 font-semibold hover:text-blue-300 transition-colors">MAX</a></span>
-                  </li>
-                  <li className="flex items-center gap-2.5">
-                      <Send className="w-4 h-4 text-white/30 flex-shrink-0" />
-                      <span>Отправьте команду <code className="bg-white/[0.08] text-blue-300 px-1.5 py-0.5 rounded border border-white/[0.06] font-mono font-bold text-xs">/web</code></span>
-                  </li>
-              </ul>
+            )}
+            {maxStatus === 'awaiting' && (
+              <p className="text-xs text-center text-blue-200/80" role="status">
+                Мы отправили личное сообщение с кнопками подтверждения
+              </p>
+            )}
+            {maxError && <p className="text-xs text-center text-red-300">{maxError}</p>}
           </div>
 
-          {/* Form */}
-          <form onSubmit={handleCodeLogin} className="flex flex-col space-y-3">
-              <div>
-                <label htmlFor="auth-code" className="block text-xs font-semibold text-white/30 mb-1.5 uppercase tracking-wider">Код авторизации</label>
-                <input
-                    id="auth-code"
-                    type="text"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    maxLength={6}
-                    value={loginCode}
-                    onChange={(e) => setLoginCode(e.target.value.replace(/\D/g, ''))}
-                    placeholder="000000"
-                    required
-                    aria-label="Код авторизации"
-                    className="w-full px-4 py-3.5 bg-white/[0.04] border border-white/[0.08] text-white rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-center font-mono text-3xl sm:text-4xl tracking-[0.3em] sm:tracking-[0.5em] placeholder:text-white/20 placeholder:tracking-normal placeholder:font-sans placeholder:text-lg"
-                />
+          <button
+            type="button"
+            onClick={() => setShowCode((value) => !value)}
+            className="mx-auto flex items-center gap-1.5 text-[11px] text-white/30 hover:text-white/60 transition-colors mb-3"
+          >
+            <Send className="w-3.5 h-3.5" />
+            {showCode ? 'Скрыть резервный вход' : 'Войти одноразовым кодом'}
+          </button>
+
+          {showCode && (
+            <div className="border-t border-white/[0.07] pt-4">
+              <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-3 mb-3 text-xs text-white/45 leading-relaxed">
+                Откройте <a href="https://max.ru/id222264297116_bot" target="_blank" rel="noopener noreferrer" className="text-blue-400 font-semibold">бота MAX</a>, отправьте <code className="text-blue-300 font-bold">/web</code> и введите полученный код.
               </div>
-              <button
-                  type="submit"
-                  disabled={isLoading || loginCode.length < 6}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:from-blue-600/50 disabled:to-blue-500/50 disabled:cursor-not-allowed text-white px-6 py-3.5 rounded-xl font-bold transition-all shadow-lg shadow-blue-600/20 hover:shadow-blue-500/30 active:scale-[0.98] text-base flex justify-center items-center"
-              >
-                  {isLoading ? (
-                    <span className="flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                      Проверка кода...
-                    </span>
-                  ) : 'Войти в панель'}
-              </button>
-          </form>
+              <form onSubmit={handleCodeLogin} className="flex flex-col space-y-3">
+                <div>
+                  <label htmlFor="auth-code" className="block text-[10px] font-semibold text-white/25 mb-1.5 uppercase tracking-wider">Резервный код</label>
+                  <input
+                      id="auth-code"
+                      type="text"
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      maxLength={6}
+                      value={loginCode}
+                      onChange={(e) => setLoginCode(e.target.value.replace(/\D/g, ''))}
+                      placeholder="000000"
+                      required
+                      aria-label="Код авторизации"
+                      className="w-full px-4 py-3 bg-white/[0.04] border border-white/[0.08] text-white rounded-xl focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all text-center font-mono text-2xl tracking-[0.35em] placeholder:text-white/20 placeholder:tracking-normal placeholder:font-sans placeholder:text-base"
+                  />
+                </div>
+                <button
+                    type="submit"
+                    disabled={isLoading || loginCode.length < 6}
+                    className="w-full bg-white/[0.08] hover:bg-white/[0.12] disabled:opacity-40 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-bold transition-all active:scale-[0.98] flex justify-center items-center"
+                >
+                    {isLoading ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        Проверка кода...
+                      </span>
+                    ) : 'Войти по коду'}
+                </button>
+              </form>
+            </div>
+          )}
         </Motion.div>
       </Motion.div>
     </div>

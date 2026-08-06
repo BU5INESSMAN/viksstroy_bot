@@ -227,6 +227,46 @@ async def startup():
             "CREATE INDEX IF NOT EXISTS idx_max_login_requests_expires "
             "ON max_login_requests(expires)"
         )
+        await db.conn.execute("""CREATE TABLE IF NOT EXISTS login_devices (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            token_hash TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            last_used_at REAL NOT NULL,
+            revoked_at REAL
+        )""")
+        await db.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_login_devices_user "
+            "ON login_devices(user_id, revoked_at)"
+        )
+        await db.conn.execute("""CREATE TABLE IF NOT EXISTS passkey_users (
+            user_id INTEGER PRIMARY KEY,
+            user_handle TEXT NOT NULL UNIQUE
+        )""")
+        await db.conn.execute("""CREATE TABLE IF NOT EXISTS passkey_credentials (
+            credential_id TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            public_key BLOB NOT NULL,
+            sign_count INTEGER NOT NULL DEFAULT 0,
+            transports TEXT NOT NULL DEFAULT '[]',
+            device_type TEXT,
+            backed_up INTEGER NOT NULL DEFAULT 0,
+            name TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            last_used_at REAL
+        )""")
+        await db.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_passkey_credentials_user "
+            "ON passkey_credentials(user_id)"
+        )
+        await db.conn.execute("""CREATE TABLE IF NOT EXISTS passkey_challenges (
+            challenge_id TEXT PRIMARY KEY,
+            user_id INTEGER,
+            challenge TEXT NOT NULL,
+            ceremony TEXT NOT NULL,
+            expires REAL NOT NULL
+        )""")
         try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_tg INTEGER DEFAULT 1")
         except: pass
         try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_max INTEGER DEFAULT 1")

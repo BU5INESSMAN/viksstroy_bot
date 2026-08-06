@@ -5,6 +5,7 @@ import axios from 'axios';
 import SplashScreen from './components/SplashScreen';
 import Login from './pages/Login';
 import { saveAuthData, clearAuthData, clearAuthAndRedirect } from './utils/tokenStorage';
+import { ensureLoginDevice } from './utils/loginDevice';
 
 function safeStorageGet(storage, key) {
   try { return storage.getItem(key); } catch { return null; }
@@ -61,6 +62,7 @@ function ProtectedRoute({ children }) {
           // Always saveAuthData — even when the role matches, this
           // back-fills IndexedDB + Cache API for iOS PWA persistence.
           await saveAuthData(res.data.tg_id, res.data.role);
+          ensureLoginDevice().catch(() => {});
           setAuthState('authenticated');
         } else {
           // Shouldn't happen (server returns 200 + payload OR 401), but
