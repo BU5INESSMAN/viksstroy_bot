@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import axios from 'axios';
 import { KeyRound, XCircle, ShieldCheck } from 'lucide-react';
@@ -16,11 +16,36 @@ export default function MAXAuth() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const getParam = (key) => {
+  const getParam = useCallback((key) => {
     const searchParams = new URLSearchParams(location.search);
     const hashParams = new URLSearchParams(location.hash.replace('#', '?'));
     return searchParams.get(key) || hashParams.get(key);
-  };
+  }, [location.hash, location.search]);
+
+  const submitCode = useCallback(async (codeValue) => {
+    setLoading(true);
+    setError('');
+    try {
+      const formData = new FormData();
+      formData.append('code', codeValue);
+
+      const res = await axios.post('/api/max/auth', formData);
+      if (res.data.status === 'ok') {
+        await saveAuthData(res.data.tg_id, res.data.role);
+        const returnUrl = getParam('return_to') || '/dashboard';
+        navigate(returnUrl);
+      } else if (res.data.status === 'needs_password') {
+        setMaxUser(prev => ({ ...prev, id: res.data.max_id }));
+        setNeedsCode(false);
+        setNeedsPassword(true);
+        setLoading(false);
+      }
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Неверный или истёкший код');
+      setLoading(false);
+      setNeedsCode(true);
+    }
+  }, [getParam, navigate]);
 
   useEffect(() => {
     // Check if a one-time code is provided in the URL (deep-link from bot)
@@ -46,7 +71,7 @@ export default function MAXAuth() {
           firstName = u.first_name || firstName;
           lastName = u.last_name || lastName;
         }
-      } catch {}
+      } catch { /* malformed embedded MAX payload */ }
     }
 
     const userStr = getParam('user');
@@ -56,7 +81,7 @@ export default function MAXAuth() {
         userId = u.id || u.user_id || userId;
         firstName = u.first_name || firstName;
         lastName = u.last_name || lastName;
-      } catch {}
+      } catch { /* malformed user payload */ }
     }
 
     if (window.max?.initDataUnsafe?.user) {
@@ -74,32 +99,7 @@ export default function MAXAuth() {
     // Show code entry form — no auto-auth with raw max_id
     setNeedsCode(true);
     setLoading(false);
-  }, [navigate, location]);
-
-  async function submitCode(codeValue) {
-    setLoading(true);
-    setError('');
-    try {
-      const formData = new FormData();
-      formData.append('code', codeValue);
-
-      const res = await axios.post('/api/max/auth', formData);
-      if (res.data.status === 'ok') {
-        await saveAuthData(res.data.tg_id, res.data.role);
-        const returnUrl = getParam('return_to') || '/dashboard';
-        navigate(returnUrl);
-      } else if (res.data.status === 'needs_password') {
-        setMaxUser(prev => ({ ...prev, id: res.data.max_id }));
-        setNeedsCode(false);
-        setNeedsPassword(true);
-        setLoading(false);
-      }
-    } catch (err) {
-      setError(err.response?.data?.detail || 'Неверный или истёкший код');
-      setLoading(false);
-      setNeedsCode(true);
-    }
-  }
+  }, [getParam, submitCode]);
 
   const handleCodeSubmit = (e) => {
     e.preventDefault();
