@@ -448,7 +448,7 @@ async def api_regenerate_invite(
     )
     return {
         "invite_code": code,
-        "invite_link": f"https://miniapp.viks22.ru/driver-invite/{code}",
+        "invite_link": f"{os.getenv('WEB_APP_URL', 'https://n.viksstroy.online').rstrip('/')}/driver-invite/{code}",
     }
 
 

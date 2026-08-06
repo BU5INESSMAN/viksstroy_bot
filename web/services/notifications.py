@@ -52,7 +52,7 @@ from database_deps import TZ_BARNAUL
 
 logger = logging.getLogger("NOTIFICATIONS")
 
-BASE_URL = os.getenv("WEB_APP_URL", "https://miniapp.viks22.ru")
+BASE_URL = os.getenv("WEB_APP_URL", "https://n.viksstroy.online").rstrip("/")
 
 
 # url_path → frontend route mapping
@@ -404,10 +404,13 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
                 vapid_claims=vapid_claims,
             )
         except WebPushException as e:
-            if e.response and e.response.status_code in (404, 410):
+            # requests.Response is false-y for 4xx responses. Checking it as a
+            # boolean prevented expired 404/410 subscriptions from ever being
+            # removed and caused the same failed pushes on every notification.
+            if e.response is not None and e.response.status_code in (404, 410):
                 expired_ids.append(sub_id)
                 logger.info(f"PUSH — Subscription expired for user {sub_uid}, removing")
-            elif e.response and e.response.status_code == 403:
+            elif e.response is not None and e.response.status_code == 403:
                 # 403 from a push service: either the `aud` claim doesn't
                 # match the endpoint origin, the `sub` is malformed, or
                 # the VAPID key is wrong.
@@ -421,7 +424,6 @@ async def _send_web_push_safe(user_ids: list, title: str, body: str, url: str = 
                     f"sub={vapid_claims.get('sub')!r}, "
                     f"aud={vapid_claims.get('aud')!r}, "
                     f"key_len={len(vapid_private)}, "
-                    f"key_prefix={vapid_private[:10]!r}, "
                     f"endpoint_host={endpoint.split('/')[2] if '/' in endpoint else '?'}, "
                     f"body={body_text[:200]}"
                 )

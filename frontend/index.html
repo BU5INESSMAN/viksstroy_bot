@@ -50,6 +50,7 @@
       (function () {
         var recoveryKey = 'viks_boot_recovery_count';
         var recovering = false;
+        var stableTimer = null;
         window.__VIKS_BOOTED__ = false;
         window.__VIKS_BOOT_STAGE__ = 'html-ready';
         window.__VIKS_BOOT_FAILURE__ = null;
@@ -98,8 +99,13 @@
         }
 
         function reloadFresh() {
-          var separator = location.search ? '&' : '?';
-          location.replace(location.pathname + location.search + separator + 'recovered=' + Date.now() + location.hash);
+          try {
+            var url = new URL(location.href);
+            url.searchParams.set('recovered', String(Date.now()));
+            location.replace(url.href);
+          } catch (_) {
+            location.replace(location.pathname + '?recovered=' + Date.now() + location.hash);
+          }
         }
 
         function recover(reason, force) {
@@ -134,16 +140,6 @@
             }
           } catch (_) { /* cache API may be blocked */ }
 
-          try {
-            if ('serviceWorker' in navigator) {
-              cleanupTasks.push(navigator.serviceWorker.getRegistrations().then(function (registrations) {
-                return Promise.all(registrations.map(function (registration) {
-                  return registration.unregister();
-                }));
-              }).catch(function () {}));
-            }
-          } catch (_) { /* service workers may be blocked */ }
-
           Promise.all(cleanupTasks).then(function () {
             setTimeout(reloadFresh, 250);
           }).catch(function () {
@@ -157,7 +153,11 @@
           window.__VIKS_BOOTED__ = true;
           window.__VIKS_BOOT_STAGE__ = 'react-mounted';
           window.__VIKS_BOOT_FAILURE__ = null;
-          setAttempts(0);
+          // Keep the recovery guard for a short stability window. React can
+          // mount before a lazy route finishes downloading; resetting here
+          // immediately allowed a failing chunk to trigger an endless reload.
+          if (stableTimer) clearTimeout(stableTimer);
+          stableTimer = setTimeout(function () { setAttempts(0); }, 10000);
         });
         window.addEventListener('vite:preloadError', function (event) {
           if (event && event.preventDefault) event.preventDefault();

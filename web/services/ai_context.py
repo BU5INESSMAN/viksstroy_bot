@@ -4,6 +4,7 @@ support AI.  Every operation is READ-ONLY.  Every DB call is wrapped
 in try/except so the AI keeps working even if individual fetches fail.
 """
 import logging
+import os
 from datetime import datetime, timedelta
 from collections import defaultdict
 
@@ -252,7 +253,8 @@ async def _invites(db, role, team_id) -> str:
             try:
                 code, pwd = await db.get_or_create_team_invite(team_id)
                 lines.append(f"Моя бригада (ID {team_id}): код {code}, пароль {pwd}")
-                lines.append(f"  Ссылка: https://miniapp.viks22.ru/invite/{code}")
+                base_url = os.getenv("WEB_APP_URL", "https://n.viksstroy.online").rstrip("/")
+                lines.append(f"  Ссылка: {base_url}/invite/{code}")
             except Exception:
                 pass
         if role in _OFFICE:

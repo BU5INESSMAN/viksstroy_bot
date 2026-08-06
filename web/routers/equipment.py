@@ -614,7 +614,7 @@ async def delete_equipment(equip_id: int, current_user=Depends(_require_office))
 async def generate_equip_invite(equip_id: int, current_user=Depends(_require_office)):
     code = await db.get_or_create_equip_invite(equip_id)
     return {
-        "invite_link": f"https://miniapp.viks22.ru/equip-invite/{code}",
+        "invite_link": f"{os.getenv('WEB_APP_URL', 'https://n.viksstroy.online').rstrip('/')}/equip-invite/{code}",
         "invite_code": code,
         "join_password": code
     }

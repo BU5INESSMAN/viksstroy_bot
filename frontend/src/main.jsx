@@ -88,11 +88,12 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </RootErrorBoundary>,
 )
 
-// Register service worker for PWA
+// Register the push-only service worker immediately after the React root is
+// scheduled. Waiting for window.load meant a single slow image could prevent
+// registration and push setup altogether on mobile networks. The worker never
+// caches application pages, so updating it does not require a forced reload.
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    // Update detection and the single controlled reload live in pwaUpdate.js.
-    // Keeping registration here avoids two competing reload listeners.
-    navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' }).catch(() => {});
-  });
+  navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
+    .then((registration) => registration.update().catch(() => {}))
+    .catch(() => {});
 }

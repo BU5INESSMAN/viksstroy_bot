@@ -44,7 +44,7 @@ def _effective_member_status(
 async def api_generate_invite(team_id: int, current_user=Depends(get_current_user)):
     invite_code, join_password = await db.generate_team_invite(team_id)
     return {
-        "invite_link": f"https://miniapp.viks22.ru/invite/{invite_code}",
+        "invite_link": f"{os.getenv('WEB_APP_URL', 'https://n.viksstroy.online').rstrip('/')}/invite/{invite_code}",
         "invite_code": invite_code,
         "join_password": join_password
     }

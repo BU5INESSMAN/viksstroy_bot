@@ -34,6 +34,11 @@ export default function Objects() {
 
     // Create modal
     const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+    // Object requests are declared before URL-param handling so React's hook
+    // analysis and the first render both see a stable setter.
+    const [isRequestModalOpen, setRequestModalOpen] = useState(false);
+    const [objectRequests, setObjectRequests] = useState([]);
+    const [showRequests, setShowRequests] = useState(false);
 
     // Handle URL params from sidebar
     useEffect(() => {
@@ -65,9 +70,6 @@ export default function Objects() {
     const tgId = localStorage.getItem('tg_id') || '0';
     const isForeman = role === 'foreman';
     const isOffice = ['moderator', 'boss', 'superadmin'].includes(role);
-    const [isRequestModalOpen, setRequestModalOpen] = useState(false);
-    const [objectRequests, setObjectRequests] = useState([]);
-    const [showRequests, setShowRequests] = useState(false);
 
     const fetchObjects = async () => {
         setLoading(true);

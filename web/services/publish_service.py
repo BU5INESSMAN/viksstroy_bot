@@ -135,8 +135,6 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     with open(filepath, "wb") as f:
         f.write(img_buf.getvalue())
 
-    file_url = f"https://miniapp.viks22.ru/uploads/{filename}"
-
     comment_html_max = f"\n💬 Комментарий: {comment_text}" if comment_text and comment_text.lower() != 'нет' else ""
 
     foreman_name = app_dict.get('foreman_name', 'Неизвестно')
@@ -150,7 +148,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
     published_max = False
     if max_bot_token and max_group_id:
         max_text = strip_html(max_caption)
-        base_url = os.getenv("WEB_APP_URL", "https://miniapp.viks22.ru")
+        base_url = os.getenv("WEB_APP_URL", "https://n.viksstroy.online").rstrip("/")
         max_buttons = [[LinkButton(text="📱 Открыть платформу", url=f"{base_url}/dashboard")]]
         max_payload = ButtonsPayload(buttons=max_buttons).pack()
 
@@ -159,7 +157,7 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
             max_group_id,
             max_text,
             filepath,
-            file_url,
+            None,
             attachments=[max_payload]
         )
 

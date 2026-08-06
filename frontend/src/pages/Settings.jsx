@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import { Settings as SettingsIcon, Smartphone, Bell, EyeOff } from 'lucide-react';
 import GlassCard from '../components/ui/GlassCard';
 import ToggleRow from '../features/settings/components/ToggleRow';
+import { subscribeToPush } from '../utils/pushSubscription';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -23,21 +24,23 @@ export default function Settings() {
     const [settings, setSettings] = useState(DEFAULTS);
     const [loading, setLoading] = useState(true);
     const [pwaAvailable, setPwaAvailable] = useState(false);
+    const [pushSubscribed, setPushSubscribed] = useState(false);
+    const [pushBusy, setPushBusy] = useState(false);
     const [notificationEvents, setNotificationEvents] = useState([]);
 
     // Detect if PWA push is usable: standalone app OR active subscription
     useEffect(() => {
         const standalone = window.matchMedia('(display-mode: standalone)').matches
             || window.navigator.standalone === true;
-        if (standalone) {
-            setPwaAvailable(true);
-            return;
-        }
+        setPwaAvailable(standalone || ('PushManager' in window));
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.ready
                 .then((r) => r.pushManager.getSubscription())
-                .then((sub) => setPwaAvailable(!!sub))
-                .catch(() => setPwaAvailable(false));
+                .then((sub) => {
+                    setPushSubscribed(!!sub);
+                    if (sub) setPwaAvailable(true);
+                })
+                .catch(() => setPushSubscribed(false));
         }
     }, []);
 
@@ -86,6 +89,19 @@ export default function Settings() {
         }
     };
 
+    const enablePushOnDevice = async () => {
+        setPushBusy(true);
+        const subscribed = await subscribeToPush({ requestPermission: true });
+        setPushBusy(false);
+        setPushSubscribed(subscribed);
+        if (subscribed) {
+            await setKey('notify_pwa', true);
+            toast.success('Push-уведомления включены на этом устройстве');
+        } else {
+            toast.error('Не удалось включить Push. Проверьте разрешения приложения.');
+        }
+    };
+
     if (loading) {
         return (
             <div className="max-w-3xl mx-auto p-4 pb-24 space-y-4">
@@ -126,13 +142,28 @@ export default function Settings() {
                         onChange={(v) => setKey('notify_max', v)}
                     />
                     {pwaAvailable && (
-                        <ToggleRow
-                            icon={Bell}
-                            label="Push-уведомления (приложение)"
-                            description="Работает только если приложение установлено"
-                            value={settings.notify_pwa}
-                            onChange={(v) => setKey('notify_pwa', v)}
-                        />
+                        <>
+                            <ToggleRow
+                                icon={Bell}
+                                label="Push-уведомления (приложение)"
+                                description={pushSubscribed ? 'Подключены на этом устройстве' : 'Требуется подключить на новом адресе'}
+                                value={settings.notify_pwa && pushSubscribed}
+                                onChange={(value) => {
+                                    if (value && !pushSubscribed) enablePushOnDevice();
+                                    else setKey('notify_pwa', value);
+                                }}
+                            />
+                            {!pushSubscribed && (
+                                <button
+                                    type="button"
+                                    disabled={pushBusy}
+                                    onClick={enablePushOnDevice}
+                                    className="mt-3 w-full rounded-xl bg-blue-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-60 active:scale-[0.98]"
+                                >
+                                    {pushBusy ? 'Подключаем…' : 'Включить Push на этом устройстве'}
+                                </button>
+                            )}
+                        </>
                     )}
                 </div>
             </GlassCard>

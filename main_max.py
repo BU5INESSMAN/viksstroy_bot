@@ -50,7 +50,7 @@ if not MAX_TOKEN:
 bot = Bot(MAX_TOKEN)
 dp = Dispatcher()
 
-WEB_APP_URL = "https://miniapp.viks22.ru/"
+WEB_APP_URL = os.getenv("WEB_APP_URL", "https://n.viksstroy.online").rstrip("/") + "/"
 USER_STATES = {}
 
 # Stage 3 — commands registered in the MAX bot dispatcher. Pruned after

@@ -100,7 +100,7 @@ async def _call_ai(messages: list, api_key: str, user_id: int = 0) -> str:
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://miniapp.viks22.ru",
+        "HTTP-Referer": os.getenv("WEB_APP_URL", "https://n.viksstroy.online").rstrip("/"),
         "X-Title": "VIKS Schedule",
     }
     last_error = None

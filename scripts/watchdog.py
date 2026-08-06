@@ -19,7 +19,7 @@ DATA = ROOT / "data"
 STATE_FILE = DATA / "watchdog-state.json"
 DEPLOY_FILE = DATA / "deploy-state.json"
 DB_FILE = Path(os.getenv("DB_PATH", str(DATA / "viksstroy.db")))
-HEALTH_URL = os.getenv("WATCHDOG_HEALTH_URL", "https://miniapp.viks22.ru/api/health")
+HEALTH_URL = os.getenv("WATCHDOG_HEALTH_URL", "https://n.viksstroy.online/api/health")
 REMIND_AFTER = int(os.getenv("WATCHDOG_REMIND_SECONDS", "3600"))
 
 
@@ -183,7 +183,7 @@ def main() -> int:
     global DB_FILE, HEALTH_URL, REMIND_AFTER
     load_env()
     DB_FILE = Path(os.getenv("DB_PATH", str(DATA / "viksstroy.db")))
-    HEALTH_URL = os.getenv("WATCHDOG_HEALTH_URL", "https://miniapp.viks22.ru/api/health")
+    HEALTH_URL = os.getenv("WATCHDOG_HEALTH_URL", "https://n.viksstroy.online/api/health")
     REMIND_AFTER = int(os.getenv("WATCHDOG_REMIND_SECONDS", "3600"))
     parser = argparse.ArgumentParser()
     parser.add_argument("--notify", metavar="EVENT")

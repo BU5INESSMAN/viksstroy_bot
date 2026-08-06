@@ -25,8 +25,13 @@ logging.getLogger().addHandler(file_handler)
 
 app = FastAPI(title="VIKS API")
 
-# M-03: Environment-aware CORS origins — localhost only in dev mode
-_prod_origins = ["https://miniapp.viks22.ru"]
+# M-03: Environment-aware CORS origins — localhost only in dev mode.
+# Keep the legacy origin during the migration window so an already-open old
+# PWA can finish its current session while every generated link points at the
+# new canonical domain.
+_canonical_origin = os.getenv("WEB_APP_URL", "https://n.viksstroy.online").rstrip("/")
+_configured_origins = [item.strip().rstrip("/") for item in os.getenv("CORS_ORIGINS", "").split(",") if item.strip()]
+_prod_origins = list(dict.fromkeys([_canonical_origin, "https://miniapp.viks22.ru", *_configured_origins]))
 _dev_origins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
 _is_dev = os.getenv("ENV", "production").lower() in ("dev", "development", "local")
 origins = _prod_origins + (_dev_origins if _is_dev else [])

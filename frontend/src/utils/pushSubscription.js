@@ -3,7 +3,7 @@
  * Requests permission, subscribes to push, sends subscription to backend.
  */
 
-export async function subscribeToPush() {
+export async function subscribeToPush({ requestPermission = false } = {}) {
     if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
         return false;
     }
@@ -14,7 +14,10 @@ export async function subscribeToPush() {
         const { public_key } = await response.json();
         if (!public_key) return false;
 
-        const permission = await Notification.requestPermission();
+        let permission = Notification.permission;
+        if (permission === 'default' && requestPermission) {
+            permission = await Notification.requestPermission();
+        }
         if (permission !== 'granted') return false;
 
         const registration = await navigator.serviceWorker.ready;

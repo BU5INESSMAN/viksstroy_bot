@@ -78,7 +78,7 @@ export default function Layout() {
     }, []);
 
     useEffect(() => {
-        const publicPaths = ['/login', '/invite', '/equip-invite'];
+        const publicPaths = ['/login', '/invite', '/equip-invite', '/driver-invite'];
         const isPublic = publicPaths.some(path => location.pathname.startsWith(path));
         if (!tgId && !isPublic && location.pathname !== '/') {
             setSessionModalOpen(true);

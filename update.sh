@@ -130,6 +130,7 @@ echo "==> Получение origin/master"
 timeout 2m git fetch origin master
 NEW_COMMIT="$(git rev-parse origin/master)"
 git reset --hard "$NEW_COMMIT"
+export GIT_COMMIT="$NEW_COMMIT"
 if [ -f deploy/release.env ]; then
   # shellcheck disable=SC1091
   source deploy/release.env

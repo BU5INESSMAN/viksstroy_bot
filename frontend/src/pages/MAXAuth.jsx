@@ -46,7 +46,7 @@ export default function MAXAuth() {
           firstName = u.first_name || firstName;
           lastName = u.last_name || lastName;
         }
-      } catch(e) {}
+      } catch {}
     }
 
     const userStr = getParam('user');
@@ -56,7 +56,7 @@ export default function MAXAuth() {
         userId = u.id || u.user_id || userId;
         firstName = u.first_name || firstName;
         lastName = u.last_name || lastName;
-      } catch(e) {}
+      } catch {}
     }
 
     if (window.max?.initDataUnsafe?.user) {
@@ -76,7 +76,7 @@ export default function MAXAuth() {
     setLoading(false);
   }, [navigate, location]);
 
-  const submitCode = async (codeValue) => {
+  async function submitCode(codeValue) {
     setLoading(true);
     setError('');
     try {
@@ -99,7 +99,7 @@ export default function MAXAuth() {
       setLoading(false);
       setNeedsCode(true);
     }
-  };
+  }
 
   const handleCodeSubmit = (e) => {
     e.preventDefault();

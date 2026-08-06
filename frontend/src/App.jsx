@@ -25,6 +25,7 @@ const Objects = lazy(() => import('./pages/Objects'));
 const KP = lazy(() => import('./pages/KP'));
 const JoinTeam = lazy(() => import('./pages/JoinTeam'));
 const JoinEquipment = lazy(() => import('./pages/JoinEquipment'));
+const JoinDriver = lazy(() => import('./pages/JoinDriver'));
 const AuthRedirect = lazy(() => import('./pages/AuthRedirect'));
 const Support = lazy(() => import('./pages/Support'));
 
@@ -173,6 +174,7 @@ export default function App() {
           {/* Публичные роуты для приглашений */}
           <Route path="/invite/:code" element={<JoinTeam />} />
           <Route path="/equip-invite/:code" element={<JoinEquipment />} />
+          <Route path="/driver-invite/:code" element={<JoinDriver />} />
 
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/dashboard" element={<Home />} />
