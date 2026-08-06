@@ -20,11 +20,21 @@ export default function Login() {
   const [maxStatus, setMaxStatus] = useState('idle');
   const [maxError, setMaxError] = useState('');
   const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [passkeyHelp, setPasskeyHelp] = useState('');
   const [hasLoginDevice, setHasLoginDevice] = useState(() => !!getLoginDeviceToken());
   const [showCode, setShowCode] = useState(() => !passkeysSupported() && !getLoginDeviceToken());
 
   const navigate = useNavigate();
   const passkeyAvailable = passkeysSupported();
+
+  const openCodeFallback = () => {
+    setPasskeyHelp('');
+    setShowCode(true);
+    window.requestAnimationFrame(() => {
+      document.getElementById('auth-code')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById('auth-code')?.focus({ preventScroll: true });
+    });
+  };
 
   // Redirect already-authenticated users to dashboard
   useEffect(() => {
@@ -123,8 +133,8 @@ export default function Login() {
       ensureLoginDevice().catch(() => {});
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      if (err?.name === 'NotAllowedError') {
-        setError('Вход по ключу отменён или подходящий ключ не найден.');
+      if (err?.name === 'NotAllowedError' || err.response?.status === 404) {
+        setPasskeyHelp('missing');
       } else {
         setError(err.response?.data?.detail || err.message || 'Не удалось войти по ключу доступа.');
       }
@@ -220,17 +230,26 @@ export default function Login() {
 
           <div className="space-y-3 mb-4">
             {passkeyAvailable && (
-              <button
-                type="button"
-                disabled={passkeyLoading}
-                onClick={handlePasskeyLogin}
-                className="w-full min-h-12 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-60 text-white px-4 py-3.5 rounded-xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
-              >
-                {passkeyLoading ? (
-                  <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                ) : <KeyRound className="w-5 h-5" />}
-                Войти по ключу доступа
-              </button>
+              <div>
+                <button
+                  type="button"
+                  disabled={passkeyLoading}
+                  onClick={handlePasskeyLogin}
+                  className="w-full min-h-12 bg-gradient-to-r from-blue-600 to-blue-500 hover:from-blue-500 hover:to-blue-400 disabled:opacity-60 text-white px-4 py-3.5 rounded-xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2 shadow-lg shadow-blue-600/20"
+                >
+                  {passkeyLoading ? (
+                    <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  ) : <KeyRound className="w-5 h-5" />}
+                  Войти по ключу доступа
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPasskeyHelp('info')}
+                  className="mx-auto mt-1.5 block text-[11px] text-blue-300/50 transition-colors hover:text-blue-300"
+                >
+                  Что это и как настроить?
+                </button>
+              </div>
             )}
 
             <button
@@ -263,7 +282,7 @@ export default function Login() {
 
           <button
             type="button"
-            onClick={() => setShowCode((value) => !value)}
+            onClick={() => { if (showCode) setShowCode(false); else openCodeFallback(); }}
             className="mx-auto flex items-center gap-1.5 text-[11px] text-white/30 hover:text-white/60 transition-colors mb-3"
           >
             <Send className="w-3.5 h-3.5" />
@@ -309,6 +328,73 @@ export default function Login() {
           )}
         </Motion.div>
       </Motion.div>
+
+      <AnimatePresence>
+        {passkeyHelp && (
+          <Motion.div
+            className="fixed inset-0 z-50 flex items-end justify-center bg-black/70 p-3 backdrop-blur-sm sm:items-center"
+            {...anim({ initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } })}
+            onClick={() => setPasskeyHelp('')}
+          >
+            <Motion.div
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="passkey-help-title"
+              className="max-h-[calc(100vh-1.5rem)] w-full max-w-sm overflow-y-auto rounded-2xl border border-white/[0.1] bg-gray-900 p-5 shadow-2xl"
+              {...anim({ initial: { opacity: 0, y: 24, scale: 0.98 }, animate: { opacity: 1, y: 0, scale: 1 }, exit: { opacity: 0, y: 16, scale: 0.98 } })}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="flex items-start gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-blue-500/10">
+                  <KeyRound className="h-5 w-5 text-blue-400" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <h3 id="passkey-help-title" className="font-bold text-white">
+                    {passkeyHelp === 'missing' ? 'Ключ не найден или не настроен' : 'Как работает ключ доступа'}
+                  </h3>
+                  <p className="mt-1 text-xs leading-relaxed text-white/50">
+                    Это быстрый вход по Face ID, отпечатку пальца или PIN-коду вашего устройства — без пароля и кода из MAX.
+                  </p>
+                </div>
+                <button type="button" onClick={() => setPasskeyHelp('')} className="text-white/35 hover:text-white" aria-label="Закрыть">
+                  <XCircle className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="mt-4 rounded-xl bg-white/[0.04] p-4">
+                <p className="text-xs font-bold text-white/80">Как настроить:</p>
+                <ol className="mt-2 space-y-2 text-xs leading-relaxed text-white/55">
+                  <li><span className="mr-2 font-bold text-blue-400">1.</span>Войдите в ВиКС через MAX или одноразовый код.</li>
+                  <li><span className="mr-2 font-bold text-blue-400">2.</span>Откройте «Настройки» → «Безопасность и быстрый вход».</li>
+                  <li><span className="mr-2 font-bold text-blue-400">3.</span>Нажмите «Создать ключ доступа» и подтвердите действие на устройстве.</li>
+                </ol>
+              </div>
+
+              <p className="mt-4 text-center text-[11px] font-semibold uppercase tracking-wider text-white/30">Войти другим способом</p>
+              <div className="mt-2 space-y-2">
+                {hasLoginDevice && (
+                  <button
+                    type="button"
+                    onClick={() => { setPasskeyHelp(''); startMaxLogin(); }}
+                    className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#6d5dfc] px-4 py-3 text-sm font-bold text-white active:scale-[0.98]"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    Подтвердить вход через MAX
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={openCodeFallback}
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white/[0.08] px-4 py-3 text-sm font-bold text-white active:scale-[0.98]"
+                >
+                  <Send className="h-4 w-4" />
+                  Войти одноразовым кодом
+                </button>
+              </div>
+            </Motion.div>
+          </Motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

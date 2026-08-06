@@ -188,6 +188,11 @@ export default function Settings() {
                             <p className="mt-1 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
                                 Вход одним касанием: по отпечатку пальца, лицу или PIN-коду устройства. Пароль и код из MAX не нужны.
                             </p>
+                            <ol className="mt-3 space-y-1.5 text-xs leading-relaxed text-gray-500 dark:text-gray-400">
+                                <li><span className="mr-1.5 font-bold text-blue-500">1.</span>Нажмите кнопку создания ключа ниже.</li>
+                                <li><span className="mr-1.5 font-bold text-blue-500">2.</span>Подтвердите действие на телефоне или компьютере.</li>
+                                <li><span className="mr-1.5 font-bold text-blue-500">3.</span>При следующем входе выберите «Войти по ключу доступа».</li>
+                            </ol>
                         </div>
                     </div>
                     {passkeysSupported() ? (
