@@ -59,3 +59,7 @@ support_limiter = UserRateLimiter(max_per_window=10, window_sec=60, max_concurre
 # is generous — registration is not a concurrency concern; the sliding window
 # is what throttles abuse.
 registration_limiter = UserRateLimiter(max_per_window=5, window_sec=900, max_concurrent=5)
+
+# Public MAX login requests are cheap but unauthenticated. Limit request
+# creation per network client so a scanner cannot fill the SQLite table.
+max_login_limiter = UserRateLimiter(max_per_window=10, window_sec=300, max_concurrent=5)

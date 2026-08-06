@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from database_deps import db
 from utils import resolve_id
 from services.notifications import notify_users, notify_fio_match
-from rate_limit import registration_limiter
+from rate_limit import max_login_limiter, registration_limiter
 from services.role_passwords import match_role_password
 
 logger = logging.getLogger(__name__)
@@ -47,6 +47,26 @@ async def _registration_rate_check(key: int) -> None:
         await registration_limiter.release(int(key))
     else:
         raise HTTPException(status_code=429, detail=reason or "Слишком много попыток. Попробуйте позже.")
+
+
+async def _max_login_rate_check(request: Request) -> None:
+    """Throttle public login-request creation by the originating network."""
+    forwarded = (
+        request.headers.get("cf-connecting-ip")
+        or request.headers.get("x-forwarded-for", "").split(",")[0].strip()
+    )
+    client_host = forwarded or (request.client.host if request.client else "unknown")
+    key = int.from_bytes(
+        hashlib.sha256(client_host.encode("utf-8")).digest()[:8], "big"
+    )
+    ok, reason = await max_login_limiter.acquire(key)
+    if ok:
+        await max_login_limiter.release(key)
+        return
+    raise HTTPException(
+        status_code=429,
+        detail=reason or "Слишком много запросов входа. Попробуйте позже.",
+    )
 
 
 async def _audit_office_role_block(uid: int, fio: str, requested_role: str, method: str) -> None:
@@ -382,6 +402,151 @@ async def max_web_auth(code: str = Form(...)):
     token = await _create_session(real_tg_id)
     return _make_auth_response(
         {"status": "ok", "role": dict(user)['role'], "tg_id": real_tg_id}, token)
+
+
+@router.post("/api/auth/max-login/start")
+async def start_max_login(request: Request):
+    """Create a short-lived browser-to-MAX authorization request.
+
+    The request id is safe to pass through a MAX bot deep link. Polling also
+    requires a separate secret which never leaves the browser, so knowing or
+    forwarding the MAX link alone is not enough to claim the resulting session.
+    """
+    await _max_login_rate_check(request)
+    now = time.time()
+    request_id = secrets.token_hex(16)
+    poll_token = secrets.token_urlsafe(32)
+    poll_token_hash = hashlib.sha256(poll_token.encode("utf-8")).hexdigest()
+    expires = now + 5 * 60
+
+    # Opportunistic cleanup keeps the test flow from accumulating stale rows.
+    await db.conn.execute(
+        "DELETE FROM max_login_requests "
+        "WHERE expires < ? OR (status = 'consumed' AND consumed_at < ?)",
+        (now, now - 3600),
+    )
+    await db.conn.execute(
+        "INSERT INTO max_login_requests "
+        "(request_id, poll_token_hash, status, expires, created_at) "
+        "VALUES (?, ?, 'pending', ?, ?)",
+        (request_id, poll_token_hash, expires, now),
+    )
+    await db.conn.commit()
+
+    bot_url = os.getenv(
+        "MAX_BOT_URL", "https://max.ru/id222264297116_bot"
+    ).strip().rstrip("/")
+    return {
+        "status": "pending",
+        "request_id": request_id,
+        "poll_token": poll_token,
+        "deep_link": f"{bot_url}?start=login_{request_id}",
+        "expires_in": 300,
+    }
+
+
+@router.post("/api/auth/max-login/poll")
+async def poll_max_login(
+    request_id: str = Form(...),
+    poll_token: str = Form(...),
+):
+    """Wait for the MAX bot to approve a browser/PWA login request."""
+    async with db.conn.execute(
+        "SELECT poll_token_hash, status, user_id, expires "
+        "FROM max_login_requests WHERE request_id = ?",
+        (request_id,),
+    ) as cur:
+        row = await cur.fetchone()
+
+    now = time.time()
+    if not row or now > row[3]:
+        if row:
+            await db.conn.execute(
+                "DELETE FROM max_login_requests WHERE request_id = ?", (request_id,)
+            )
+            await db.conn.commit()
+        raise HTTPException(status_code=410, detail="Запрос входа истёк. Попробуйте ещё раз.")
+
+    supplied_hash = hashlib.sha256(poll_token.encode("utf-8")).hexdigest()
+    if not secrets.compare_digest(supplied_hash, row[0]):
+        raise HTTPException(status_code=403, detail="Неверный запрос входа")
+
+    status, user_id = row[1], row[2]
+    if status in {"pending", "consuming"}:
+        return JSONResponse(status_code=202, content={"status": status})
+    if status == "denied":
+        raise HTTPException(status_code=403, detail="Вход через MAX отклонён")
+    if status == "consumed":
+        raise HTTPException(status_code=409, detail="Этот запрос входа уже использован")
+    if status != "approved" or user_id is None:
+        raise HTTPException(status_code=400, detail="Некорректное состояние запроса входа")
+
+    # Claim atomically so two simultaneous poll requests cannot mint sessions.
+    claim = await db.conn.execute(
+        "UPDATE max_login_requests SET status = 'consuming' "
+        "WHERE request_id = ? AND status = 'approved'",
+        (request_id,),
+    )
+    await db.conn.commit()
+    if claim.rowcount != 1:
+        return JSONResponse(status_code=202, content={"status": "consuming"})
+
+    user_id = await resolve_id(int(user_id))
+    user = await db.get_user(user_id)
+    if not user:
+        await db.conn.execute(
+            "UPDATE max_login_requests SET status = 'denied' WHERE request_id = ?",
+            (request_id,),
+        )
+        await db.conn.commit()
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+
+    user_dict = dict(user)
+    if user_dict.get("is_blacklisted") or user_dict.get("is_deleted"):
+        await db.conn.execute(
+            "UPDATE max_login_requests SET status = 'denied' WHERE request_id = ?",
+            (request_id,),
+        )
+        await db.conn.commit()
+        detail = "Аккаунт заблокирован" if user_dict.get("is_blacklisted") else "Аккаунт удалён"
+        raise HTTPException(status_code=403, detail=detail)
+
+    try:
+        session_token = await _create_session(user_id)
+    except Exception:
+        await db.conn.execute(
+            "UPDATE max_login_requests SET status = 'approved' "
+            "WHERE request_id = ? AND status = 'consuming'",
+            (request_id,),
+        )
+        await db.conn.commit()
+        raise
+
+    await db.conn.execute(
+        "UPDATE max_login_requests SET status = 'consumed', consumed_at = ? "
+        "WHERE request_id = ?",
+        (time.time(), request_id),
+    )
+    await db.conn.commit()
+    try:
+        await db.add_log(
+            user_id,
+            user_dict.get("fio", ""),
+            "Вошёл в PWA через подтверждение в MAX",
+            target_type="system",
+        )
+    except Exception:
+        pass
+
+    return _make_auth_response(
+        {
+            "status": "ok",
+            "role": user_dict.get("role"),
+            "fio": user_dict.get("fio", ""),
+            "tg_id": user_id,
+        },
+        session_token,
+    )
 
 
 @router.post("/api/max/auth")

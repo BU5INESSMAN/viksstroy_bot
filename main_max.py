@@ -198,6 +198,55 @@ async def message_handler(event: MessageCreated):
                 await send_max_msg(event, f"❌ Ошибка при сохранении группы в базу данных: {e}")
         return
 
+    if text.startswith("/start login_"):
+        request_id = text[len("/start login_"):].strip().lower()
+        if not re.fullmatch(r"[a-f0-9]{32}", request_id):
+            await send_max_msg(event, "❌ Некорректная ссылка для входа. Вернитесь в ВиКС и попробуйте ещё раз.")
+            return
+        if not user:
+            await send_max_msg(
+                event,
+                "❌ Аккаунт MAX ещё не зарегистрирован в ВиКС. Сначала используйте /start или /join.",
+            )
+            return
+        user_dict = dict(user)
+        if user_dict.get("is_blacklisted"):
+            await send_max_msg(event, "❌ Ваш аккаунт заблокирован. Обратитесь к руководству.")
+            return
+        if user_dict.get("is_deleted"):
+            await send_max_msg(event, "❌ Ваш аккаунт удалён. Обратитесь к руководителю для восстановления.")
+            return
+
+        now = time.time()
+        result = await db.conn.execute(
+            "UPDATE max_login_requests "
+            "SET status = 'approved', user_id = ?, approved_at = ? "
+            "WHERE request_id = ? AND status = 'pending' AND expires >= ?",
+            (real_tg_id, now, request_id, now),
+        )
+        await db.conn.commit()
+        if result.rowcount == 1:
+            USER_STATES.pop(max_id_str, None)
+            try:
+                await db.add_log(
+                    real_tg_id,
+                    user_dict.get('fio', ''),
+                    "Подтвердил тестовый вход через MAX",
+                    target_type='system',
+                )
+            except Exception:
+                pass
+            await send_max_msg(
+                event,
+                "✅ Вход подтверждён\n\nВернитесь в ВиКС — сайт или PWA откроет ваш аккаунт автоматически.",
+            )
+        else:
+            await send_max_msg(
+                event,
+                "⚠️ Запрос входа уже использован или истёк. Вернитесь в ВиКС и нажмите кнопку входа ещё раз.",
+            )
+        return
+
     if text.startswith("/web"):
         if not user:
             return await send_max_msg(event, "❌ Сначала зарегистрируйтесь (используйте /start или /join).")

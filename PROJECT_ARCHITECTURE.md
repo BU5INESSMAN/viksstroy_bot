@@ -54,7 +54,7 @@
 
 ### Роутеры
 
-`web/routers/auth.py` — Эндпоинты аутентификации. `POST /api/auth/code` — авторизация по 6-значному коду (для веб). `POST /api/users/link_account` — привязка старой записи к основному MAX-профилю. `POST /api/users/unlink_platform` — отвязка старой записи. `POST /api/max/web_auth` — веб-аутентификация для MAX. `POST /api/max/auth`, `POST /api/max/register` — аутентификация и регистрация MAX с паролем. Telegram-аутентификация и её маршруты удалены в v2.15.0.
+`web/routers/auth.py` — Эндпоинты аутентификации. `POST /api/auth/code` — авторизация по 6-значному коду (для веб). Тестовая пара `POST /api/auth/max-login/start` + `POST /api/auth/max-login/poll` создаёт одноразовый запрос и выполняет вход в отдельный сайт/PWA после подтверждения через личный чат MAX; старый кодовый сценарий остаётся резервным. `POST /api/users/link_account` — привязка старой записи к основному MAX-профилю. `POST /api/users/unlink_platform` — отвязка старой записи. `POST /api/max/web_auth` — веб-аутентификация для MAX. `POST /api/max/auth`, `POST /api/max/register` — аутентификация и регистрация MAX с паролем. Telegram-аутентификация и её маршруты удалены в v2.15.0.
 
 `web/routers/dashboard.py` — Главная панель управления. `GET /api/dashboard` — полные данные для дашборда (статистика, бригады, техника, заявки за 14 дней, адреса). `GET /api/logs` — последние 50 логов. `GET /api/settings` — системные настройки. `POST /api/settings/update` — обновление настроек (moderator+). `POST /api/cron/start_day` — ручная публикация нарядов. `POST /api/cron/end_day` — завершение дневных нарядов. `POST /api/cron/check_timeouts` — проверка просроченных ресурсов. `POST /api/system/test_notification` — тестовое уведомление с фото наряда.
 
@@ -164,7 +164,7 @@
 
 ### Прочие страницы
 
-`frontend/src/pages/Login.jsx` — Страница входа. Инструкция по получению кода (команда `/web` в боте), ввод 6-значного кода, POST на `/api/auth/code`, сохранение `role` и `tg_id` в localStorage, редирект на `/dashboard`.
+`frontend/src/pages/Login.jsx` — Страница входа. Содержит тестовую кнопку быстрого подтверждения через MAX с ожиданием одноразового запроса, а также прежнюю инструкцию по получению кода (команда `/web` в боте), ввод 6-значного кода и POST на `/api/auth/code`. После успешного сценария сохраняет `role` и `tg_id` и перенаправляет на `/dashboard`.
 
 Аутентификация выполняется через `frontend/src/pages/MAXAuth.jsx`; прежняя страница Mini App удалена в v2.15.0.
 

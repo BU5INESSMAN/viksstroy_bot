@@ -213,6 +213,20 @@ async def startup():
         await db.conn.execute("CREATE TABLE IF NOT EXISTS web_codes (code TEXT, max_id INTEGER, expires REAL)")
         await db.conn.execute("CREATE TABLE IF NOT EXISTS account_links (primary_id INTEGER, secondary_id INTEGER UNIQUE)")
         await db.conn.execute("CREATE TABLE IF NOT EXISTS link_codes (code TEXT UNIQUE, user_id INTEGER, expires REAL)")
+        await db.conn.execute("""CREATE TABLE IF NOT EXISTS max_login_requests (
+            request_id TEXT PRIMARY KEY,
+            poll_token_hash TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            user_id INTEGER,
+            expires REAL NOT NULL,
+            created_at REAL NOT NULL,
+            approved_at REAL,
+            consumed_at REAL
+        )""")
+        await db.conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_max_login_requests_expires "
+            "ON max_login_requests(expires)"
+        )
         try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_tg INTEGER DEFAULT 1")
         except: pass
         try: await db.conn.execute("ALTER TABLE users ADD COLUMN notify_max INTEGER DEFAULT 1")

@@ -1,8 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
-import { motion, AnimatePresence } from 'framer-motion';
-import { MessageCircle, Send, XCircle } from 'lucide-react';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
+import { CheckCircle2, MessageCircle, RefreshCw, Send, XCircle } from 'lucide-react';
 import { saveAuthData, loadAuthData } from '../utils/tokenStorage';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -14,6 +14,9 @@ export default function Login() {
   const [loginCode, setLoginCode] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [checking, setChecking] = useState(true);
+  const [maxRequest, setMaxRequest] = useState(null);
+  const [maxStatus, setMaxStatus] = useState('idle');
+  const [maxError, setMaxError] = useState('');
 
   const navigate = useNavigate();
 
@@ -30,6 +33,82 @@ export default function Login() {
       }
     }).catch(() => setChecking(false));
   }, [navigate]);
+
+  const prepareMaxLogin = useCallback(async () => {
+    setMaxStatus('preparing');
+    setMaxError('');
+    try {
+      const res = await axios.post('/api/auth/max-login/start');
+      setMaxRequest({
+        requestId: res.data.request_id,
+        pollToken: res.data.poll_token,
+        deepLink: res.data.deep_link,
+        expiresAt: Date.now() + (res.data.expires_in * 1000),
+      });
+      setMaxStatus('ready');
+    } catch (err) {
+      setMaxRequest(null);
+      setMaxStatus('error');
+      setMaxError(err.response?.data?.detail || 'Не удалось подготовить вход через MAX.');
+    }
+  }, []);
+
+  // Prepare the deep link in advance so the actual tap remains a direct user
+  // action. This is important for iOS PWA, where delayed popups are blocked.
+  useEffect(() => {
+    if (!checking && maxStatus === 'idle') prepareMaxLogin();
+  }, [checking, maxStatus, prepareMaxLogin]);
+
+  useEffect(() => {
+    if (maxStatus !== 'awaiting' || !maxRequest) return undefined;
+
+    let cancelled = false;
+    let timer;
+    const poll = async () => {
+      if (cancelled) return;
+      if (Date.now() >= maxRequest.expiresAt) {
+        setMaxStatus('expired');
+        setMaxError('Время подтверждения истекло. Создайте новый запрос.');
+        return;
+      }
+
+      try {
+        const fd = new FormData();
+        fd.append('request_id', maxRequest.requestId);
+        fd.append('poll_token', maxRequest.pollToken);
+        const res = await axios.post('/api/auth/max-login/poll', fd);
+        if (res.data.status === 'ok') {
+          cancelled = true;
+          setMaxStatus('success');
+          await saveAuthData(res.data.tg_id, res.data.role);
+          navigate('/dashboard', { replace: true });
+          return;
+        }
+      } catch (err) {
+        const status = err.response?.status;
+        if ([403, 409, 410].includes(status)) {
+          setMaxStatus(status === 410 ? 'expired' : 'error');
+          setMaxError(err.response?.data?.detail || 'Не удалось подтвердить вход через MAX.');
+          return;
+        }
+        // A temporary network interruption is expected when switching from
+        // the PWA to MAX. Keep waiting and retry when the PWA becomes active.
+      }
+
+      if (!cancelled) timer = window.setTimeout(poll, 1800);
+    };
+
+    timer = window.setTimeout(poll, 500);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [maxRequest, maxStatus, navigate]);
+
+  const handleMaxOpen = () => {
+    setMaxError('');
+    setMaxStatus('awaiting');
+  };
 
   const handleCodeLogin = async (e) => {
       e.preventDefault();
@@ -68,20 +147,20 @@ export default function Login() {
         <div className="absolute -bottom-[20%] -right-[10%] w-[400px] h-[400px] bg-purple-600/[0.08] rounded-full blur-[120px]" />
       </div>
 
-      <motion.div
+      <Motion.div
         className="max-w-md w-full relative z-10"
         {...anim({ initial: { opacity: 0, y: 20 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.5, ease } })}
       >
         {/* ── Logo ── */}
-        <motion.div
+        <Motion.div
           className="flex items-center justify-center mb-6"
           {...anim({ initial: { opacity: 0, scale: 0.8 }, animate: { opacity: 1, scale: 1 }, transition: { duration: 0.6, delay: 0.1, ease } })}
         >
           <img src="/logo-white.svg" alt="ВиКС" className="h-10 w-auto" />
-        </motion.div>
+        </Motion.div>
 
         {/* ── Card ── */}
-        <motion.div
+        <Motion.div
           className="rounded-2xl border border-white/[0.08] bg-white/[0.03] backdrop-blur-xl shadow-2xl shadow-black/40 p-5 sm:p-6 relative overflow-hidden"
           {...anim({ initial: { opacity: 0, y: 30 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.5, delay: 0.2, ease } })}
         >
@@ -91,7 +170,7 @@ export default function Login() {
           {/* Error block */}
           <AnimatePresence>
             {error && (
-              <motion.div
+              <Motion.div
                 className="mb-6 p-4 bg-red-500/10 border border-red-500/20 rounded-xl flex gap-3 overflow-hidden"
                 {...anim({
                   initial: { opacity: 0, y: -10, height: 0, marginBottom: 0 },
@@ -108,11 +187,63 @@ export default function Login() {
                         <a href="https://max.ru/id222264297116_bot" target="_blank" rel="noopener noreferrer" className="text-red-400/70 underline hover:text-red-300 transition-colors">Техподдержка</a>
                     </p>
                 </div>
-              </motion.div>
+              </Motion.div>
             )}
           </AnimatePresence>
 
           <h2 className="text-lg font-bold text-white mb-4 text-center">Вход в систему</h2>
+
+          {/* Experimental MAX confirmation flow. The existing code login stays below. */}
+          <div className="rounded-xl border border-blue-400/20 bg-blue-500/[0.08] p-3.5 mb-4">
+            <div className="flex items-center justify-between gap-3 mb-2.5">
+              <div>
+                <p className="text-sm font-bold text-white">Быстрый вход через MAX</p>
+                <p className="text-[11px] text-blue-300/70 mt-0.5">Тестовый режим</p>
+              </div>
+              {maxStatus === 'success' && <CheckCircle2 className="w-5 h-5 text-emerald-400" />}
+            </div>
+
+            <p className="text-xs text-white/50 leading-relaxed mb-3">
+              Откройте бота по кнопке, затем вернитесь сюда. ВиКС выполнит вход автоматически — вводить код не потребуется.
+            </p>
+
+            {maxRequest && !['preparing', 'error', 'expired'].includes(maxStatus) ? (
+              <a
+                href={maxRequest.deepLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={handleMaxOpen}
+                className="w-full min-h-11 bg-[#6d5dfc] hover:bg-[#7c6eff] text-white px-4 py-3 rounded-xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <MessageCircle className="w-5 h-5" />
+                {maxStatus === 'awaiting' ? 'Открыть MAX ещё раз' : 'Войти через MAX'}
+              </a>
+            ) : (
+              <button
+                type="button"
+                disabled={maxStatus === 'preparing'}
+                onClick={prepareMaxLogin}
+                className="w-full min-h-11 bg-[#6d5dfc] hover:bg-[#7c6eff] disabled:bg-[#6d5dfc]/50 text-white px-4 py-3 rounded-xl font-bold transition-all active:scale-[0.98] flex items-center justify-center gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${maxStatus === 'preparing' ? 'animate-spin' : ''}`} />
+                {maxStatus === 'preparing' ? 'Подготовка...' : 'Подготовить новый вход'}
+              </button>
+            )}
+
+            {maxStatus === 'awaiting' && (
+              <div className="mt-3 flex items-center gap-2 text-xs text-blue-200/80" role="status">
+                <span className="w-3.5 h-3.5 border-2 border-blue-300/30 border-t-blue-300 rounded-full animate-spin flex-shrink-0" />
+                Ожидаем подтверждение в MAX…
+              </div>
+            )}
+            {maxError && <p className="mt-2.5 text-xs text-red-300">{maxError}</p>}
+          </div>
+
+          <div className="flex items-center gap-3 mb-4" aria-hidden="true">
+            <div className="h-px flex-1 bg-white/[0.08]" />
+            <span className="text-[10px] uppercase tracking-widest text-white/25">или старый способ</span>
+            <div className="h-px flex-1 bg-white/[0.08]" />
+          </div>
 
           {/* Instructions */}
           <div className="bg-white/[0.04] border border-white/[0.06] rounded-xl p-3.5 mb-4">
@@ -163,8 +294,8 @@ export default function Login() {
                   ) : 'Войти в панель'}
               </button>
           </form>
-        </motion.div>
-      </motion.div>
+        </Motion.div>
+      </Motion.div>
     </div>
   );
 }
