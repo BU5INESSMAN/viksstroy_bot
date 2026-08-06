@@ -162,7 +162,7 @@ fi
 echo "==> Сборка и мягкая замена контейнеров"
 write_state "running" "сборка контейнеров"
 timeout 15m docker compose build
-timeout 5m docker compose up -d --remove-orphans
+timeout 5m env GIT_COMMIT="$NEW_COMMIT" docker compose up -d --remove-orphans
 
 echo "==> Проверка API"
 healthy=0
