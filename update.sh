@@ -143,6 +143,7 @@ if [ -f deploy/release.env ]; then
   # shellcheck disable=SC1091
   source deploy/release.env
 fi
+export APP_VERSION="$RELEASE_VERSION"
 notify_deploy "deploy_started" "Обновление началось" "Запускается версия $RELEASE_VERSION"
 START_MESSAGE="$(release_details)"
 START_MESSAGE+=$'\nСтатус: сборка и проверка\nПриложение может быть кратковременно недоступно.'
