@@ -34,6 +34,8 @@ export default function EquipmentSelector({
     driverAssignments,
     setDriverForEquipment,
     clearDriverForEquipment,
+    onReplaceEquipment,
+    onRemoveEquipment,
     // v2.6 commit 4: availability context for hard-block conflict marking
     // inside DriverPickerModal. All three values are read by the picker
     // when it fetches /api/drivers/availability and computes overlap
@@ -279,7 +281,7 @@ export default function EquipmentSelector({
                                         const assigned = (driverAssignments || {})[eq.id];
                                         const isSynthetic = assigned && Number(assigned.user_id) < 0;
                                         return (
-                                            <div>
+                                            <div className="flex flex-wrap items-center gap-2">
                                                 {assigned && assigned.user_id ? (
                                                     <button type="button" disabled={isViewOnly || isSubmitting}
                                                         onClick={() => setDriverPickerEq(eq)}
@@ -316,6 +318,20 @@ export default function EquipmentSelector({
                                                             </button>
                                                         )
                                                     )
+                                                )}
+                                                {!isViewOnly && isModeratorEditor && onReplaceEquipment && (
+                                                    <button type="button" disabled={isSubmitting}
+                                                        onClick={() => onReplaceEquipment(eq)}
+                                                        className="inline-flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border border-blue-200 dark:border-blue-800/60 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition active:scale-95 disabled:opacity-60">
+                                                        <RefreshCw className="w-3.5 h-3.5" /> Заменить технику
+                                                    </button>
+                                                )}
+                                                {!isViewOnly && isModeratorEditor && onRemoveEquipment && (
+                                                    <button type="button" disabled={isSubmitting}
+                                                        onClick={() => onRemoveEquipment(eq)}
+                                                        className="inline-flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border border-red-200 dark:border-red-800/60 bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 hover:bg-red-100 transition active:scale-95 disabled:opacity-60">
+                                                        <XCircle className="w-3.5 h-3.5" /> Снять технику и водителя
+                                                    </button>
                                                 )}
                                             </div>
                                         );

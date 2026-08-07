@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
-    ClipboardList, HardHat, X, UserCircle2
+    ClipboardList, HardHat, X, RefreshCw
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
@@ -29,6 +29,7 @@ const sameFormShape = (a, b) => {
     if (JSON.stringify(arr(a.team_ids)) !== JSON.stringify(arr(b.team_ids))) return false;
     if (JSON.stringify(arr(a.members)) !== JSON.stringify(arr(b.members))) return false;
     if (JSON.stringify(a.equipment || []) !== JSON.stringify(b.equipment || [])) return false;
+    if (JSON.stringify(a.driverAssignments || {}) !== JSON.stringify(b.driverAssignments || {})) return false;
     return true;
 };
 
@@ -88,12 +89,6 @@ export default function EditAppModal({
     }, [app?.id]);
 
     const [form, setForm] = useState(initialForm);
-    const detachedDrivers = useMemo(() => {
-        const selectedIds = new Set((form.equipment || []).map(eq => Number(eq.id)));
-        return Object.entries(form.driverAssignments || {})
-            .filter(([equipmentId, driver]) => driver?.user_id && !selectedIds.has(Number(equipmentId)))
-            .map(([equipmentId, driver]) => ({ equipmentId: Number(equipmentId), ...driver }));
-    }, [form.equipment, form.driverAssignments]);
     const DRAFT_KEY = `edit-app:${app.id}`;
 
     // v2.6.1: snapshot equipment ids present at modal open. Used to
@@ -112,6 +107,7 @@ export default function EditAppModal({
     const [equipLoading, setEquipLoading] = useState(false);
     const [timeAutoSet, setTimeAutoSet] = useState(false);
     const [actionChoiceEquip, setActionChoiceEquip] = useState(null);
+    const [equipmentReplacement, setEquipmentReplacement] = useState(null);
     const defaultTime = useEquipDefaultTime();
 
     // ───── Draft autosave ─────
@@ -374,10 +370,9 @@ export default function EditAppModal({
             const exists = prev.equipment.find(e => e.id === equip.id);
             if (exists) {
                 const next = { ...(prev.driverAssignments || {}) };
-                // During office review the driver is an independent human
-                // resource. Removing the machine must not silently remove
-                // that person from the application.
-                if (!isReviewEdit) delete next[equip.id];
+                // Equipment and its assigned driver form one request row.
+                // Removing the row always removes both resources.
+                delete next[equip.id];
                 return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id), driverAssignments: next };
             }
             const displayName = equip.driver ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})` : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
@@ -412,6 +407,62 @@ export default function EditAppModal({
         }));
     };
     const clearDriverForEquipment = (equipmentId) => setDriverForEquipment(equipmentId, null);
+
+    const replaceEquipmentOnly = (replacement) => {
+        if (!equipmentReplacement || !replacement) return;
+        const replacementState = getEquipState(replacement);
+        if (!['available', 'free_time'].includes(replacementState)) {
+            toast.error('Для замены выберите свободную технику или технику со свободным временем');
+            return;
+        }
+
+        setForm(prev => {
+            const source = prev.equipment.find(eq => Number(eq.id) === Number(equipmentReplacement.id));
+            if (!source) return prev;
+
+            let timeStart = source.time_start;
+            let timeEnd = source.time_end;
+            let isPartialTime = false;
+            if (replacementState === 'free_time') {
+                const slots = replacement.free_slots || [];
+                const toMinutes = value => {
+                    const [hours, minutes = '0'] = String(value || '0').split(':');
+                    return Number(hours) * 60 + Number(minutes);
+                };
+                const best = slots.reduce((current, slot) => {
+                    if (!current) return slot;
+                    return toMinutes(slot.time_end) - toMinutes(slot.time_start)
+                        > toMinutes(current.time_end) - toMinutes(current.time_start) ? slot : current;
+                }, null);
+                if (best) {
+                    timeStart = String(best.time_start).split(':')[0];
+                    timeEnd = String(best.time_end).split(':')[0];
+                    isPartialTime = true;
+                }
+            }
+
+            const replacementRow = {
+                ...source,
+                id: replacement.id,
+                name: makeDisplayName(replacement),
+                time_start: timeStart,
+                time_end: timeEnd,
+                isPartialTime,
+            };
+            const nextAssignments = { ...(prev.driverAssignments || {}) };
+            const currentDriver = nextAssignments[source.id];
+            delete nextAssignments[source.id];
+            if (currentDriver?.user_id) nextAssignments[replacement.id] = currentDriver;
+
+            return {
+                ...prev,
+                equipment: prev.equipment.map(eq => Number(eq.id) === Number(source.id) ? replacementRow : eq),
+                driverAssignments: nextAssignments,
+            };
+        });
+        setEquipmentReplacement(null);
+        toast.success('Техника заменена, водитель сохранён');
+    };
 
     const handleObjectSelect = async (objectId) => {
         const selObj = objectsList.find(o => o.id === parseInt(objectId));
@@ -475,7 +526,7 @@ export default function EditAppModal({
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!form.object_id) return toast.error("Выберите объект!");
-        if (form.team_ids.length === 0 && form.equipment.length === 0 && detachedDrivers.length === 0) return toast.error("Выберите бригаду, технику или водителя!");
+        if (form.team_ids.length === 0 && form.equipment.length === 0) return toast.error("Выберите бригаду или технику!");
         if (form.team_ids.length > 0 && form.members.length === 0) return toast.error("Выберите хотя бы одного рабочего из бригады!");
 
         // v2.6.1: moderator on review IS the final editor — empty driver
@@ -509,7 +560,7 @@ export default function EditAppModal({
 
             const selectedEquipmentIds = new Set((form.equipment || []).map(eq => Number(eq.id)));
             const driversPayload = Object.entries(form.driverAssignments || {})
-                .filter(([equipmentId, drv]) => drv?.user_id && (isReviewEdit || selectedEquipmentIds.has(Number(equipmentId))))
+                .filter(([equipmentId, drv]) => drv?.user_id && selectedEquipmentIds.has(Number(equipmentId)))
                 .map(([equipmentId, drv]) => ({ equipment_id: Number(equipmentId), driver_user_id: drv.user_id }));
             fd.append('driver_assignments', JSON.stringify(driversPayload));
             // v2.6.1: review-edit submit sends force_assign so the
@@ -547,6 +598,15 @@ export default function EditAppModal({
         { label: 'Завтра', val: smartDates[1].val },
         { label: 'Послезавтра', val: smartDates[2].val },
     ];
+    const selectedEquipmentIds = new Set((form.equipment || []).map(eq => Number(eq.id)));
+    const replacementOptions = equipmentReplacement
+        ? (equipAvailability || data.equipment || [])
+            .filter(eq => Number(eq.id) !== Number(equipmentReplacement.id))
+            .filter(eq => !selectedEquipmentIds.has(Number(eq.id)))
+            .filter(eq => ['available', 'free_time'].includes(getEquipState(eq)))
+            .sort((a, b) => String(a.category || '').localeCompare(String(b.category || ''), 'ru')
+                || String(a.name || '').localeCompare(String(b.name || ''), 'ru'))
+        : [];
 
     return (
         <motion.div
@@ -716,29 +776,9 @@ export default function EditAppModal({
                                 applicationId={form.id}
                                 editorRole={isReviewEdit ? 'moderator' : 'foreman'}
                                 softConflicts={isReviewEdit}
+                                onReplaceEquipment={isReviewEdit ? setEquipmentReplacement : undefined}
+                                onRemoveEquipment={isReviewEdit ? toggleEquipmentSelection : undefined}
                             />
-                            {isReviewEdit && detachedDrivers.length > 0 && (
-                                <div className="rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/15 p-4 space-y-3">
-                                    <div className="flex items-start gap-2 text-amber-800 dark:text-amber-300">
-                                        <UserCircle2 className="w-5 h-5 mt-0.5 shrink-0" />
-                                        <div>
-                                            <p className="text-sm font-bold">Водители без техники</p>
-                                            <p className="text-xs opacity-80">Техника снята, но водитель остаётся назначенным на объект.</p>
-                                        </div>
-                                    </div>
-                                    {detachedDrivers.map(driver => (
-                                        <div key={driver.equipmentId} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 dark:bg-gray-800 p-3 border border-amber-100 dark:border-amber-900/40">
-                                            <div className="min-w-0">
-                                                <p className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">{driver.fio}</p>
-                                                <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">Снятая техника: {driver.equipment_name || data.equipment?.find(eq => Number(eq.id) === driver.equipmentId)?.name || `#${driver.equipmentId}`}</p>
-                                            </div>
-                                            <button type="button" onClick={() => clearDriverForEquipment(driver.equipmentId)} className="shrink-0 px-3 py-2 rounded-lg text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400">
-                                                Снять водителя
-                                            </button>
-                                        </div>
-                                    ))}
-                                </div>
-                            )}
                         </div>
 
                         <hr className="border-gray-100 dark:border-gray-700/80" />
@@ -773,6 +813,47 @@ export default function EditAppModal({
                     dateTarget={form.date_target}
                     onClose={() => setExchangeDialog(null)}
                 />,
+                document.body
+            )}
+            {equipmentReplacement && createPortal(
+                <div className="fixed inset-0 z-[99999] bg-black/60 flex items-center justify-center p-4" onClick={() => setEquipmentReplacement(null)}>
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden" onClick={event => event.stopPropagation()}>
+                        <div className="p-5 border-b border-gray-100 dark:border-gray-700 flex items-start justify-between gap-3">
+                            <div>
+                                <h3 className="font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                                    <RefreshCw className="w-5 h-5 text-blue-500" /> Заменить технику
+                                </h3>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                    Водитель останется назначенным. Сейчас: {equipmentReplacement.name}
+                                </p>
+                            </div>
+                            <button type="button" onClick={() => setEquipmentReplacement(null)} className="p-2 rounded-lg text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Закрыть">
+                                <X className="w-5 h-5" />
+                            </button>
+                        </div>
+                        <div className="p-4 max-h-[60vh] overflow-y-auto space-y-2">
+                            {replacementOptions.length > 0 ? replacementOptions.map(option => {
+                                const isPartial = getEquipState(option) === 'free_time';
+                                return (
+                                    <button key={option.id} type="button" onClick={() => replaceEquipmentOnly(option)}
+                                        className="w-full text-left p-3 rounded-xl border border-gray-200 dark:border-gray-700 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors">
+                                        <div className="flex items-center justify-between gap-3">
+                                            <div className="min-w-0">
+                                                <p className="font-bold text-sm text-gray-800 dark:text-gray-100 truncate">{makeDisplayName(option)}</p>
+                                                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{option.category || 'Без категории'}</p>
+                                            </div>
+                                            <span className={`shrink-0 text-[10px] font-bold px-2 py-1 rounded-md ${isPartial ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300' : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300'}`}>
+                                                {isPartial ? 'Свободное время' : 'Свободна'}
+                                            </span>
+                                        </div>
+                                    </button>
+                                );
+                            }) : (
+                                <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-8">Нет доступной техники для замены</p>
+                            )}
+                        </div>
+                    </div>
+                </div>,
                 document.body
             )}
             <DraftRestorePrompt

@@ -56,6 +56,7 @@ MIGRATIONS_ORDER = [
     # User administration: real bans are distinct from archived/deleted
     # driver rows; also seeds the basic employee role password setting.
     "m_2026_08_user_admin",
+    "m_2026_08_remove_detached_drivers",
 ]
 
 

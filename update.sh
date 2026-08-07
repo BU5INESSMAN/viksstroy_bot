@@ -19,7 +19,8 @@ COMPAT_ASSET_DIR=""
 DEPLOY_OK=0
 RELEASE_VERSION="без номера"
 RELEASE_NOTES=()
-SKIP_GROUP_NOTIFICATIONS="${SKIP_GROUP_NOTIFICATIONS:-0}"
+RELEASE_SUMMARY="исправления и улучшения системы"
+SEND_UPDATE_NOTIFICATIONS="${SEND_UPDATE_NOTIFICATIONS:-0}"
 mkdir -p data
 
 snapshot_compat_assets() {
@@ -75,18 +76,10 @@ notify_deploy() {
   fi
 }
 
-release_details() {
-  printf 'Версия: %s\n\nЧто изменится:\n' "$RELEASE_VERSION"
-  local note
-  for note in "${RELEASE_NOTES[@]}"; do
-    printf '• %s\n' "$note"
-  done
-}
-
-notify_deploy_group() {
-  local title="$1" details="$2"
-  if [ "$SKIP_GROUP_NOTIFICATIONS" = "1" ]; then
-    echo "==> Уведомление об обновлении в беседу отключено для этого запуска"
+notify_release() {
+  local event="$1"
+  if [ "$SEND_UPDATE_NOTIFICATIONS" != "1" ]; then
+    echo "==> Уведомления об обновлении в MAX не запрошены"
     return 0
   fi
   if [ ! -x .venv/bin/python ]; then
@@ -95,7 +88,11 @@ notify_deploy_group() {
   fi
 
   local notification_result
-  if ! notification_result="$(.venv/bin/python scripts/watchdog.py --group --title "$title" --details "$details" 2>&1)"; then
+  if ! notification_result="$(.venv/bin/python scripts/release_notify.py \
+      --event "$event" \
+      --version "$RELEASE_VERSION" \
+      --changes "$RELEASE_SUMMARY" \
+      --deployment-id "$NEW_COMMIT" 2>&1)"; then
     echo "WARNING: MAX group notification was not delivered: $notification_result" >&2
     return 0
   fi
@@ -106,11 +103,6 @@ rollback() {
   local reason="$1"
   write_state "rollback" "$reason"
   notify_deploy "deploy_failed" "Ошибка обновления" "$reason; запускается автоматический откат"
-  local rollback_message
-  rollback_message="$(release_details)"
-  rollback_message+="Причина: $reason"
-  rollback_message+=$'\nВыполняется автоматический откат.'
-  notify_deploy_group "❌ Обновление не завершено" "$rollback_message"
   echo "Ошибка обновления: $reason"
   git reset --hard "$OLD_COMMIT"
   if [ -d "$FRONTEND_BACKUP" ]; then
@@ -144,10 +136,7 @@ if [ -f deploy/release.env ]; then
   source deploy/release.env
 fi
 export APP_VERSION="$RELEASE_VERSION"
-notify_deploy "deploy_started" "Обновление началось" "Запускается версия $RELEASE_VERSION"
-START_MESSAGE="$(release_details)"
-START_MESSAGE+=$'\nСтатус: сборка и проверка\nПриложение может быть кратковременно недоступно.'
-notify_deploy_group "🚀 ОБНОВЛЕНИЕ НАЧАЛОСЬ" "$START_MESSAGE"
+notify_release "started"
 
 echo "==> Проверка и сборка интерфейса во временный каталог"
 rm -rf frontend/dist.next
@@ -201,11 +190,7 @@ docker compose logs --tail 20
 
 DEPLOY_OK=1
 write_state "succeeded" "обновление завершено"
-notify_deploy "deploy_succeeded" "Обновление завершено" "Версия $NEW_COMMIT запущена, API прошёл проверку"
-FINISH_MESSAGE="$(printf 'Версия: %s\n\nУстановлено:\n' "$RELEASE_VERSION")"
-FINISH_MESSAGE+="$(printf '• %s\n' "${RELEASE_NOTES[@]}")"
-FINISH_MESSAGE+=$'\nПроверки:\n✓ API отвечает\n✓ база данных доступна\n✓ службы MAX запущены'
-notify_deploy_group "✅ ОБНОВЛЕНИЕ ЗАВЕРШЕНО" "$FINISH_MESSAGE"
+notify_release "completed"
 cleanup_compat_assets
 trap - EXIT
 echo "Готово: $NEW_COMMIT"

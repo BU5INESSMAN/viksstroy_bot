@@ -178,7 +178,7 @@ def group_chat_id() -> str:
 
 def dispatch_group(title: str, details: str) -> None:
     """Send a deploy status message to the operational group chats only."""
-    message = f"{title}\n\n{details}"
+    message = title if not details else f"{title}\n\n{details}"
     max_chat = group_chat_id()
     if not max_chat:
         raise RuntimeError("MAX schedule group is not configured; run /setchat in the target chat")

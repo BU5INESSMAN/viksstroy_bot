@@ -67,6 +67,24 @@ class WatchdogGroupNotificationTests(unittest.TestCase):
 
         self.assertEqual(delivered, [(-222, "Update\n\nDetails")])
 
+    def test_group_send_does_not_add_blank_lines_without_details(self):
+        with closing(sqlite3.connect(self.db_path)) as conn:
+            conn.execute(
+                "INSERT INTO settings (key, value) VALUES (?, ?)",
+                ("max_group_chat_id", "-222"),
+            )
+            conn.commit()
+
+        delivered = []
+
+        async def record_send(chat_id, message):
+            delivered.append((chat_id, message))
+
+        with patch.object(watchdog, "send_max", record_send):
+            watchdog.dispatch_group("Exact message", "")
+
+        self.assertEqual(delivered, [(-222, "Exact message")])
+
 
 if __name__ == "__main__":
     unittest.main()

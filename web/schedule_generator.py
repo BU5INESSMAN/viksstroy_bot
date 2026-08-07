@@ -311,7 +311,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
     # equipment's OWN status column (Статус техники) still reflects
     # equipment.status (Акт/Рем) regardless of assignment.
     async with db.conn.execute(
-        """SELECT e.id, e.name, e.category, e.status
+        """SELECT e.id, e.name, e.category, e.status, e.license_plate
            FROM equipment e
            WHERE e.is_active = 1
            ORDER BY e.category, e.name"""
@@ -323,7 +323,6 @@ async def _fetch_schedule_sections(target_date: str) -> list:
     # the object. First approved app per equipment wins (deterministic via
     # ORDER BY a.id). Only status='approved' feeds equipment assignments.
     eq_assign: dict[int, dict] = {}
-    detached_driver_rows: list[dict] = []
     driver_equipment_count: dict[int, set] = {}   # driver_user_id → {equipment_id, …}
     try:
         async with db.conn.execute(
@@ -350,11 +349,6 @@ async def _fetch_schedule_sections(target_date: str) -> list:
                 except (TypeError, ValueError, json.JSONDecodeError):
                     _attached_ids = set()
                 if _eid not in _attached_ids:
-                    detached_driver_rows.append({
-                        "driver_user_id": _did,
-                        "equipment_id": _eid,
-                        "object_name": (_oname or _oaddr or "").strip(),
-                    })
                     continue
                 if _eid not in eq_assign:
                     eq_assign[_eid] = {
@@ -371,10 +365,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
 
     # Assigned-driver display names + statuses come from users (v2.8:
     # users.member_status, the same Акт/Бол/Отп mechanism as brigade members).
-    assigned_ids = list(
-        {v["driver_user_id"] for v in eq_assign.values()}
-        | {v["driver_user_id"] for v in detached_driver_rows}
-    )
+    assigned_ids = list({v["driver_user_id"] for v in eq_assign.values()})
     driver_name_map: dict[int, str] = {}
     driver_status_map: dict[int, dict] = {}
     if assigned_ids:
@@ -397,7 +388,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
             driver_status_map = {}
 
     eq_cats: dict[str, list] = {}
-    for eid, ename, cat, eq_status in equip_rows:
+    for eid, ename, cat, eq_status, license_plate in equip_rows:
         cat = cat or "Прочая техника"
         assign = eq_assign.get(int(eid))
         if assign:
@@ -424,7 +415,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
             object_cell = ""
         eq_cats.setdefault(cat, []).append({
             "name": driver_name,
-            "role": ename or "—",
+            "role": f"{ename or '—'} [{license_plate}]" if license_plate else (ename or "—"),
             # Equipment's own status (Статус техники) — unchanged, from
             # equipment.status (Акт/Рем), independent of driver assignment.
             "status": _get_status_label({'status': eq_status}, target_date),
@@ -434,21 +425,6 @@ async def _fetch_schedule_sections(target_date: str) -> list:
 
     for cat, rows in eq_cats.items():
         sections.append({"title": cat, "rows": rows, "kind": "equipment"})
-
-    if detached_driver_rows:
-        sections.append({
-            "title": "Водители без техники",
-            "kind": "equipment",
-            "rows": [{
-                "name": driver_name_map.get(row["driver_user_id"], "—"),
-                "role": "Без техники",
-                "status": "",
-                "driver_status": _get_status_label(
-                    driver_status_map.get(row["driver_user_id"], {}), target_date
-                ),
-                "object": row["object_name"],
-            } for row in detached_driver_rows],
-        })
 
     return sections
 
