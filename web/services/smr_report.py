@@ -21,6 +21,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
+from application_numbers import display_application_number
+
 
 _HEADER_FILL = PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid")
 _HEADER_FONT = Font(bold=True)
@@ -42,8 +44,31 @@ def _sanitize_filename(name: str) -> str:
     if not name:
         return 'report'
     cleaned = re.sub(r'[\\/:*?"<>|]+', '_', name)
-    cleaned = re.sub(r'\s+', '_', cleaned).strip('_')
-    return cleaned[:80] or 'report'
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip(' ._')
+    return cleaned[:80].rstrip(' .') or 'report'
+
+
+def _format_work_date(value: str | None) -> str:
+    """Format an ISO work date as the Russian DD.MM.YYYY filename form."""
+    raw = str(value or '').strip()
+    if raw:
+        try:
+            return datetime.strptime(raw[:10], '%Y-%m-%d').strftime('%d.%m.%Y')
+        except ValueError:
+            # Keep an already formatted Russian date readable.
+            if re.fullmatch(r'\d{2}\.\d{2}\.\d{4}', raw):
+                return raw
+    return datetime.now().strftime('%d.%m.%Y')
+
+
+def _build_report_filename(
+    *, object_name: str | None, app_id: int,
+    public_number: str | None, date_target: str | None,
+) -> str:
+    obj_name = _sanitize_filename(object_name or f"Объект {app_id}")
+    app_number = _sanitize_filename(display_application_number(app_id, public_number))
+    work_date = _format_work_date(date_target)
+    return f"{obj_name} - {app_number} - {work_date}.xlsx"
 
 
 def _author_label(fio: str | None, role: str | None) -> str:
@@ -81,7 +106,7 @@ async def generate_smr_excel_bytes(db, app_id: int, *, include_financial: bool =
     # ── Application + object for filename + header context ──
     async with db.conn.execute(
         """
-        SELECT a.id, a.date_target, a.foreman_name, a.object_id,
+        SELECT a.id, a.public_number, a.date_target, a.foreman_name, a.object_id,
                o.name AS object_name, o.address AS object_address
         FROM applications a
         LEFT JOIN objects o ON o.id = a.object_id
@@ -226,9 +251,12 @@ async def generate_smr_excel_bytes(db, app_id: int, *, include_financial: bool =
     buf.seek(0)
     blob = buf.read()
 
-    obj_name = _sanitize_filename(app_meta.get('object_name') or f"app_{app_id}")
-    date = (app_meta.get('date_target') or datetime.now().strftime('%Y-%m-%d'))
-    filename = f"{obj_name}_{date}.xlsx"
+    filename = _build_report_filename(
+        object_name=app_meta.get('object_name') or app_meta.get('object_address'),
+        app_id=app_id,
+        public_number=app_meta.get('public_number'),
+        date_target=app_meta.get('date_target'),
+    )
 
     return blob, filename
 
