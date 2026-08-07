@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import sqlite3
 import subprocess
+import sys
 import time
 import urllib.request
 
@@ -134,7 +135,7 @@ def recipients(event_key: str = "system_unavailable") -> list[dict]:
 async def send_max(chat_id: int, message: str) -> None:
     token = os.getenv("MAX_BOT_TOKEN", "")
     if not token:
-        return
+        raise RuntimeError("MAX_BOT_TOKEN is not configured")
     from maxapi import Bot
     bot = Bot(token=token)
     try:
@@ -155,28 +156,33 @@ def dispatch(title: str, issues: list[str], event_key: str = "system_unavailable
 
 
 def group_chat_id() -> str:
-    max_chat = os.getenv("MAX_GROUP_CHAT_ID", "").strip()
-    if not max_chat:
-        try:
-            with sqlite3.connect(DB_FILE, timeout=5) as conn:
-                row = conn.execute(
-                    "SELECT value FROM settings WHERE key='max_group_chat_id'"
-                ).fetchone()
-                max_chat = str(row[0]).strip() if row and row[0] else ""
-        except Exception:
-            pass
-    return max_chat
+    """Return the same MAX group configured by /setchat for schedules."""
+    conn = None
+    try:
+        conn = sqlite3.connect(DB_FILE, timeout=5)
+        row = conn.execute(
+            "SELECT value FROM settings WHERE key='max_group_chat_id'"
+        ).fetchone()
+        db_chat = str(row[0]).strip() if row and row[0] else ""
+        if db_chat.lower() not in {"", "none", "null"}:
+            return db_chat
+    except Exception as exc:
+        print(f"MAX group lookup in database failed: {exc}", file=sys.stderr)
+    finally:
+        if conn is not None:
+            conn.close()
+
+    env_chat = os.getenv("MAX_GROUP_CHAT_ID", "").strip()
+    return "" if env_chat.lower() in {"", "none", "null"} else env_chat
 
 
 def dispatch_group(title: str, details: str) -> None:
     """Send a deploy status message to the operational group chats only."""
     message = f"{title}\n\n{details}"
     max_chat = group_chat_id()
-    if max_chat:
-        try:
-            asyncio.run(send_max(int(max_chat), message))
-        except Exception:
-            pass
+    if not max_chat:
+        raise RuntimeError("MAX schedule group is not configured; run /setchat in the target chat")
+    asyncio.run(send_max(int(max_chat), message))
 
 
 def main() -> int:
@@ -192,7 +198,12 @@ def main() -> int:
     parser.add_argument("--group", action="store_true")
     args = parser.parse_args()
     if args.group:
-        dispatch_group(args.title, args.details or args.notify or "Обновление состояния")
+        try:
+            dispatch_group(args.title, args.details or args.notify or "Обновление состояния")
+        except Exception as exc:
+            print(f"MAX group notification failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            return 2
+        print(f"MAX group notification delivered to chat {group_chat_id()}")
         return 0
     if args.notify:
         dispatch(args.title, [args.details or args.notify], args.notify)

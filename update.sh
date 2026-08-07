@@ -89,9 +89,17 @@ notify_deploy_group() {
     echo "==> Уведомление об обновлении в беседу отключено для этого запуска"
     return 0
   fi
-  if [ -x .venv/bin/python ]; then
-    .venv/bin/python scripts/watchdog.py --group --title "$title" --details "$details" >/dev/null 2>&1 || true
+  if [ ! -x .venv/bin/python ]; then
+    echo "WARNING: MAX group notification was skipped: Python environment is unavailable" >&2
+    return 0
   fi
+
+  local notification_result
+  if ! notification_result="$(.venv/bin/python scripts/watchdog.py --group --title "$title" --details "$details" 2>&1)"; then
+    echo "WARNING: MAX group notification was not delivered: $notification_result" >&2
+    return 0
+  fi
+  echo "==> $notification_result"
 }
 
 rollback() {
