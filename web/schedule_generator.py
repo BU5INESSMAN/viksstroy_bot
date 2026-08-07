@@ -323,6 +323,7 @@ async def _fetch_schedule_sections(target_date: str) -> list:
     # the object. First approved app per equipment wins (deterministic via
     # ORDER BY a.id). Only status='approved' feeds equipment assignments.
     eq_assign: dict[int, dict] = {}
+    detached_driver_rows: list[dict] = []
     driver_equipment_count: dict[int, set] = {}   # driver_user_id → {equipment_id, …}
     try:
         async with db.conn.execute(
@@ -341,6 +342,20 @@ async def _fetch_schedule_sections(target_date: str) -> list:
                 if _eid is None or _did is None:
                     continue
                 _eid = int(_eid); _did = int(_did)
+                try:
+                    _attached_ids = {
+                        int(item.get("id")) for item in json.loads(_eqdata or "[]")
+                        if isinstance(item, dict) and item.get("id") is not None
+                    }
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    _attached_ids = set()
+                if _eid not in _attached_ids:
+                    detached_driver_rows.append({
+                        "driver_user_id": _did,
+                        "equipment_id": _eid,
+                        "object_name": (_oname or _oaddr or "").strip(),
+                    })
+                    continue
                 if _eid not in eq_assign:
                     eq_assign[_eid] = {
                         "driver_user_id": _did,
@@ -356,7 +371,10 @@ async def _fetch_schedule_sections(target_date: str) -> list:
 
     # Assigned-driver display names + statuses come from users (v2.8:
     # users.member_status, the same Акт/Бол/Отп mechanism as brigade members).
-    assigned_ids = list({v["driver_user_id"] for v in eq_assign.values()})
+    assigned_ids = list(
+        {v["driver_user_id"] for v in eq_assign.values()}
+        | {v["driver_user_id"] for v in detached_driver_rows}
+    )
     driver_name_map: dict[int, str] = {}
     driver_status_map: dict[int, dict] = {}
     if assigned_ids:
@@ -416,6 +434,21 @@ async def _fetch_schedule_sections(target_date: str) -> list:
 
     for cat, rows in eq_cats.items():
         sections.append({"title": cat, "rows": rows, "kind": "equipment"})
+
+    if detached_driver_rows:
+        sections.append({
+            "title": "Водители без техники",
+            "kind": "equipment",
+            "rows": [{
+                "name": driver_name_map.get(row["driver_user_id"], "—"),
+                "role": "Без техники",
+                "status": "",
+                "driver_status": _get_status_label(
+                    driver_status_map.get(row["driver_user_id"], {}), target_date
+                ),
+                "object": row["object_name"],
+            } for row in detached_driver_rows],
+        })
 
     return sections
 

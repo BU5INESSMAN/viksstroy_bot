@@ -136,6 +136,10 @@ export default function ViewAppModal({ app, onClose, data }) {
             eqList = typeof app.equipment_data === 'string' ? JSON.parse(app.equipment_data) : app.equipment_data;
         } catch (_) {}
     }
+    const equipmentIds = new Set(eqList.map(eq => Number(eq.id)));
+    const detachedDrivers = (app.driver_assignments || []).filter(
+        driver => driver?.driver_user_id && (driver.is_detached || !equipmentIds.has(Number(driver.equipment_id)))
+    );
 
     // ── Workers: prefer enriched members_data, fall back to selected_members IDs ──
     let workersList = [];
@@ -399,6 +403,24 @@ export default function ViewAppModal({ app, onClose, data }) {
                             )}
                         </div>
                     </div>
+
+                    {detachedDrivers.length > 0 && (
+                        <div className="border border-amber-200 dark:border-amber-900/40 rounded-2xl overflow-hidden bg-amber-50/50 dark:bg-amber-900/10">
+                            <div className="px-5 pt-4 pb-2">
+                                <h4 className="text-sm font-bold text-amber-900 dark:text-amber-300 flex items-center gap-2">
+                                    <User className="w-5 h-5 text-amber-500" /> Водители без техники
+                                </h4>
+                            </div>
+                            <div className="px-4 pb-4 space-y-2">
+                                {detachedDrivers.map(driver => (
+                                    <div key={driver.equipment_id} className="rounded-xl bg-white dark:bg-gray-800 border border-amber-100 dark:border-amber-900/30 p-3">
+                                        <p className="text-sm font-bold text-gray-800 dark:text-gray-100">{driver.driver_fio || `Водитель #${driver.driver_user_id}`}</p>
+                                        <p className="text-[11px] text-gray-500 dark:text-gray-400">Техника снята: {driver.equipment_name || `#${driver.equipment_id}`}</p>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Comment / Plan */}
                     {(app.comment || app.plan_text) && (

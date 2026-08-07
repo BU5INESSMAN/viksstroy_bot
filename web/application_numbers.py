@@ -15,7 +15,8 @@ async def allocate_application_number(db, app_id: int, created_at: datetime) -> 
     The application INSERT and this call share one SQLite write transaction,
     so concurrent requests cannot receive the same sequence.
     """
-    date_key = created_at.strftime("%y%m%d")
+    # Russian reading order: day, month, year (ДДММГГ).
+    date_key = created_at.strftime("%d%m%y")
     prefix = f"З-{date_key}-"
     async with db.conn.execute(
         "SELECT public_number FROM applications "

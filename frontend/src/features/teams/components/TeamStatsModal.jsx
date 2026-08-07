@@ -13,38 +13,18 @@ export default function TeamStatsModal({ isOpen, onClose, team, tgId }) {
     useEffect(() => {
         if (isOpen && team?.id) {
             setLoading(true);
-            axios.get('/api/applications/review')
+            axios.get(`/api/teams/${team.id}/stats?period=${period}`)
                 .then(res => {
-                    const allApps = res.data || [];
-
-                    // Filter apps that include this team
-                    const teamApps = allApps.filter(app => {
-                        const ids = String(app.team_id || '').split(',').map(Number);
-                        return ids.includes(team.id);
+                    const d = res.data || {};
+                    setStats({
+                        ...d,
+                        workDays: d.work_days || 0,
+                        partialAssignments: d.partial_assignments || 0,
+                        peopleAssignments: d.people_assignments || 0,
+                        laborHours: d.labor_hours || 0,
+                        topForemen: d.top_foremen || [],
+                        lastApp: d.last_app || null,
                     });
-
-                    // Period filter
-                    const now = new Date();
-                    const cutoff = period === 'week' ? new Date(now - 7 * 86400000) :
-                                   period === 'month' ? new Date(now - 30 * 86400000) : new Date(0);
-
-                    const filtered = teamApps.filter(a => new Date(a.date_target) >= cutoff);
-
-                    const total = filtered.length;
-                    const completed = filtered.filter(a => a.status === 'completed').length;
-                    const rejected = filtered.filter(a => ['rejected', 'cancelled'].includes(a.status)).length;
-                    const objects = [...new Set(filtered.map(a => a.object_address).filter(Boolean))];
-                    const workDays = new Set(filtered.filter(a => !['rejected', 'cancelled'].includes(a.status)).map(a => a.date_target)).size;
-
-                    const foremanCounts = {};
-                    filtered.forEach(a => {
-                        if (a.foreman_name) foremanCounts[a.foreman_name] = (foremanCounts[a.foreman_name] || 0) + 1;
-                    });
-                    const topForemen = Object.entries(foremanCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-                    const lastApp = filtered.length > 0 ? filtered.sort((a, b) => b.date_target.localeCompare(a.date_target))[0] : null;
-
-                    setStats({ total, completed, rejected, objects, workDays, topForemen, lastApp });
                 })
                 .catch(() => setStats(null))
                 .finally(() => setLoading(false));
@@ -119,9 +99,17 @@ export default function TeamStatsModal({ isOpen, onClose, team, tgId }) {
                                         <p className="text-2xl font-extrabold text-blue-600 dark:text-blue-400">{stats.workDays}</p>
                                         <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Рабочих дней</p>
                                     </div>
-                                    <div className="bg-red-50 dark:bg-red-900/20 rounded-xl p-3.5 border border-red-100 dark:border-red-800/30">
-                                        <p className="text-2xl font-extrabold text-red-600 dark:text-red-400">{stats.rejected}</p>
-                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Отклонено</p>
+                                    <div className="bg-amber-50 dark:bg-amber-900/20 rounded-xl p-3.5 border border-amber-100 dark:border-amber-800/30">
+                                        <p className="text-2xl font-extrabold text-amber-600 dark:text-amber-400">{stats.partialAssignments}</p>
+                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Частичных выездов</p>
+                                    </div>
+                                    <div className="bg-indigo-50 dark:bg-indigo-900/20 rounded-xl p-3.5 border border-indigo-100 dark:border-indigo-800/30">
+                                        <p className="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400">{stats.peopleAssignments}</p>
+                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Выходов сотрудников</p>
+                                    </div>
+                                    <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-xl p-3.5 border border-cyan-100 dark:border-cyan-800/30">
+                                        <p className="text-2xl font-extrabold text-cyan-600 dark:text-cyan-400">{stats.laborHours}</p>
+                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Часов по СМР</p>
                                     </div>
                                 </div>
 
@@ -162,7 +150,7 @@ export default function TeamStatsModal({ isOpen, onClose, team, tgId }) {
                                 {/* Last activity */}
                                 {stats.lastApp && (
                                     <p className="text-xs text-gray-400 dark:text-gray-500 pt-2">
-                                        Последняя заявка: {stats.lastApp.date_target} — {stats.lastApp.object_address}
+                                        Последняя заявка: {stats.lastApp.date_target} — {stats.lastApp.object_name}
                                     </p>
                                 )}
                             </>

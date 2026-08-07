@@ -4,7 +4,7 @@ import os
 # Переходим на уровень выше (в папку web), чтобы импорты сработали
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from fastapi import APIRouter, Form, HTTPException, Depends
+from fastapi import APIRouter, Form, HTTPException, Depends, Query
 from pydantic import BaseModel
 from typing import Optional
 import asyncio
@@ -15,12 +15,50 @@ from auth_deps import get_current_user, require_role
 from utils import normalize_invite_code
 from services.notifications import notify_users
 from role_config import AUTO_ROLE_PROTECTED
+from services.resource_stats import team_stats
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Teams"])
 
 _require_office = require_role("superadmin", "boss", "moderator")
+
+
+async def _brigadier_team_ids(current_user: dict) -> set[int]:
+    """Return the only teams a brigadier may inspect through the UI/API."""
+    if current_user.get("role") != "brigadier":
+        return set()
+    return {int(team_id) for team_id in await db.get_user_team_ids(current_user["tg_id"])}
+
+
+async def _assert_team_visible(team_id: int, current_user: dict) -> None:
+    if current_user.get("role") != "brigadier":
+        return
+    if int(team_id) not in await _brigadier_team_ids(current_user):
+        raise HTTPException(403, "Доступна только ваша бригада")
+
+
+async def _team_summaries(team_ids: set[int] | None = None) -> list[dict]:
+    params: list[int] = []
+    where = ""
+    if team_ids is not None:
+        if not team_ids:
+            return []
+        marks = ",".join("?" for _ in team_ids)
+        where = f"WHERE t.id IN ({marks})"
+        params = sorted(team_ids)
+    async with db.conn.execute(
+        f"""SELECT t.id, t.name, COALESCE(t.icon, '') AS icon,
+                   COUNT(tm.id) AS member_count,
+                   MAX(CASE WHEN tm.is_foreman = 1 THEN tm.fio END) AS brigadier_name
+              FROM teams t
+              LEFT JOIN team_members tm ON tm.team_id = t.id
+              {where}
+             GROUP BY t.id, t.name, t.icon
+             ORDER BY t.name""",
+        params,
+    ) as cur:
+        return [dict(row) for row in await cur.fetchall()]
 
 
 def _effective_member_status(
@@ -42,6 +80,7 @@ def _effective_member_status(
 
 @router.post("/api/teams/{team_id}/generate_invite")
 async def api_generate_invite(team_id: int, current_user=Depends(get_current_user)):
+    await _assert_team_visible(team_id, current_user)
     invite_code, join_password = await db.generate_team_invite(team_id)
     return {
         "invite_link": f"{os.getenv('WEB_APP_URL', 'https://n.viksstroy.online').rstrip('/')}/invite/{invite_code}",
@@ -126,6 +165,24 @@ async def create_team(
     return {"status": "ok"}
 
 
+@router.get("/api/teams/mine")
+async def get_my_teams(current_user=Depends(get_current_user)):
+    """A brigadier sees only teams containing their linked member record."""
+    if current_user.get("role") != "brigadier":
+        raise HTTPException(403, "Раздел предназначен для бригадира")
+    return await _team_summaries(await _brigadier_team_ids(current_user))
+
+
+@router.get("/api/teams/{team_id}/stats")
+async def get_team_stats(
+    team_id: int,
+    period: str = Query("month", pattern="^(week|month|all)$"),
+    current_user=Depends(get_current_user),
+):
+    await _assert_team_visible(team_id, current_user)
+    return await team_stats(db, team_id, period)
+
+
 @router.get("/api/teams/{team_id}/details")
 async def get_team_details(
     team_id: int,
@@ -145,6 +202,7 @@ async def get_team_details(
     Apps that pick the whole team (no ``selected_members``) mark every
     member of the team as used for that date.
     """
+    await _assert_team_visible(team_id, current_user)
     async with db.conn.execute("SELECT name, icon FROM teams WHERE id = ?",
                                (team_id,)) as cur: team_row = await cur.fetchone()
     if not team_row:

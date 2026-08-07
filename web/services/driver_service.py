@@ -12,6 +12,7 @@ edit flows that need to record usage or send notifications.
 from __future__ import annotations
 
 import logging
+import json
 import secrets
 import string
 from datetime import datetime
@@ -441,7 +442,9 @@ async def get_application_drivers(db, app_id: int) -> list[dict]:
                ad.driver_user_id,
                COALESCE(u.fio, '') AS driver_fio,
                u.last_name, u.first_name, u.middle_name
+               ,a.equipment_data
         FROM application_drivers ad
+        JOIN applications a ON a.id = ad.application_id
         LEFT JOIN equipment e ON e.id = ad.equipment_id
         LEFT JOIN users u ON u.user_id = ad.driver_user_id
         WHERE ad.application_id = ?
@@ -450,6 +453,14 @@ async def get_application_drivers(db, app_id: int) -> list[dict]:
         cols = [c[0] for c in cur.description]
         rows = [dict(zip(cols, r)) for r in await cur.fetchall()]
     for r in rows:
+        attached_ids: set[int] = set()
+        try:
+            for entry in json.loads(r.pop("equipment_data", "") or "[]"):
+                if isinstance(entry, dict) and entry.get("id") is not None:
+                    attached_ids.add(int(entry["id"]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            pass
+        r["is_detached"] = int(r.get("equipment_id") or 0) not in attached_ids
         r["is_synthetic"] = int(r.get("driver_user_id", 0)) < 0
         r["is_default"] = (
             r.get("default_driver_user_id") is not None

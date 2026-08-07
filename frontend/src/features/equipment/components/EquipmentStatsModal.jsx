@@ -13,42 +13,16 @@ export default function EquipmentStatsModal({ isOpen, onClose, equipment, tgId }
     useEffect(() => {
         if (isOpen && equipment?.id) {
             setLoading(true);
-            axios.get('/api/applications/review')
+            axios.get(`/api/equipment/${equipment.id}/stats?period=${period}`)
                 .then(res => {
-                    const allApps = res.data || [];
-                    const eqId = equipment.id;
-
-                    // Filter apps containing this equipment
-                    const equipApps = allApps.filter(app => {
-                        try {
-                            const eqData = typeof app.equipment_data === 'string' ? JSON.parse(app.equipment_data || '[]') : (app.equipment_data || []);
-                            return eqData.some(e => e.id === eqId);
-                        } catch { return false; }
+                    const d = res.data || {};
+                    setStats({
+                        ...d,
+                        workDays: d.work_days || 0,
+                        workHours: d.work_hours || 0,
+                        topForemen: d.top_foremen || [],
+                        lastApp: d.last_app || null,
                     });
-
-                    // Period filter
-                    const now = new Date();
-                    const cutoff = period === 'week' ? new Date(now - 7 * 86400000) :
-                                   period === 'month' ? new Date(now - 30 * 86400000) : new Date(0);
-                    const periodDays = period === 'week' ? 7 : period === 'month' ? 30 : null;
-
-                    const filtered = equipApps.filter(a => new Date(a.date_target) >= cutoff);
-
-                    const total = filtered.length;
-                    const completed = filtered.filter(a => a.status === 'completed').length;
-                    const workDays = new Set(filtered.filter(a => !['rejected', 'cancelled'].includes(a.status)).map(a => a.date_target)).size;
-                    const objects = [...new Set(filtered.map(a => a.object_address).filter(Boolean))];
-                    const utilization = periodDays ? Math.round((workDays / periodDays) * 100) : null;
-
-                    const foremanCounts = {};
-                    filtered.forEach(a => {
-                        if (a.foreman_name) foremanCounts[a.foreman_name] = (foremanCounts[a.foreman_name] || 0) + 1;
-                    });
-                    const topForemen = Object.entries(foremanCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
-
-                    const lastApp = filtered.length > 0 ? filtered.sort((a, b) => b.date_target.localeCompare(a.date_target))[0] : null;
-
-                    setStats({ total, completed, workDays, objects, utilization, topForemen, lastApp });
                 })
                 .catch(() => setStats(null))
                 .finally(() => setLoading(false));
@@ -128,6 +102,10 @@ export default function EquipmentStatsModal({ isOpen, onClose, equipment, tgId }
                                         <p className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">{stats.objects.length}</p>
                                         <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Объектов</p>
                                     </div>
+                                    <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-xl p-3.5 border border-cyan-100 dark:border-cyan-800/30">
+                                        <p className="text-2xl font-extrabold text-cyan-600 dark:text-cyan-400">{stats.workHours}</p>
+                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Моточасов</p>
+                                    </div>
                                     {stats.utilization !== null ? (
                                         <div className={`rounded-xl p-3.5 border ${stats.utilization >= 70 ? 'bg-emerald-50 dark:bg-emerald-900/20 border-emerald-100 dark:border-emerald-800/30' : stats.utilization >= 40 ? 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-100 dark:border-yellow-800/30' : 'bg-gray-50 dark:bg-gray-700/40 border-gray-100 dark:border-gray-600'}`}>
                                             <p className={`text-2xl font-extrabold ${stats.utilization >= 70 ? 'text-emerald-600 dark:text-emerald-400' : stats.utilization >= 40 ? 'text-yellow-600 dark:text-yellow-400' : 'text-gray-600 dark:text-gray-300'}`}>{stats.utilization}%</p>
@@ -176,7 +154,7 @@ export default function EquipmentStatsModal({ isOpen, onClose, equipment, tgId }
                                 {stats.lastApp && (
                                     <p className="text-xs text-gray-400 dark:text-gray-500 pt-2 flex items-center gap-1.5">
                                         <Calendar className="w-3.5 h-3.5" />
-                                        Последняя заявка: {stats.lastApp.date_target} — {stats.lastApp.object_address}
+                                        Последняя заявка: {stats.lastApp.date_target} — {stats.lastApp.object_name}
                                     </p>
                                 )}
                             </>

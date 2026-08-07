@@ -12,6 +12,7 @@ import mimetypes
 from pathlib import Path
 from database_deps import db
 from auth_deps import get_current_user, require_role
+from services.resource_stats import object_resource_stats
 import json
 import tempfile
 from datetime import datetime
@@ -584,6 +585,7 @@ async def api_get_object_stats(obj_id: int, current_user=Depends(get_current_use
     progress = await db.get_object_stats(obj_id)
     extra_works = await db.get_object_extra_works_stats(obj_id)
     history = await db.get_object_history(obj_id)
+    resources = await object_resource_stats(db, obj_id)
     objects = await db.get_objects(include_archived=True)
     obj_data = next((o for o in objects if o['id'] == obj_id), None)
     created_at = obj_data.get('created_at', '') if obj_data else ''
@@ -591,6 +593,7 @@ async def api_get_object_stats(obj_id: int, current_user=Depends(get_current_use
         "progress": progress,
         "extra_works": extra_works,
         "history": history,
+        "resources": resources,
         "created_at": created_at,
     }
 

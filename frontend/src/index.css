@@ -63,6 +63,19 @@ html {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Rendered through a body portal so animated page wrappers cannot become
+   its containing block. This keeps the navigation attached to the visual
+   viewport in iOS Safari/PWA while the document scrolls. */
+.bottom-nav-fixed {
+  position: fixed;
+  inset-inline: 0;
+  bottom: 0;
+  width: 100%;
+  max-width: 100vw;
+  transform: translateZ(0);
+  -webkit-transform: translateZ(0);
+}
+
 body {
   /* Global overflow protection — prevent horizontal scroll on mobile.
      Applied ONLY to body (not html/#root) to avoid nested scroll containers

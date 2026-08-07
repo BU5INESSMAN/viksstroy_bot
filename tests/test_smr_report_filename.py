@@ -25,10 +25,10 @@ class SmrReportFilenameTests(unittest.TestCase):
             _build_report_filename(
                 object_name="ЖК Северный",
                 app_id=42,
-                public_number="З-260807-03",
+                public_number="З-070826-03",
                 date_target="2026-08-09",
             ),
-            "ЖК Северный - З-260807-03 - 09.08.2026.xlsx",
+            "ЖК Северный - З-070826-03 - 09.08.2026.xlsx",
         )
 
     def test_filename_is_windows_safe_and_has_legacy_number_fallback(self):

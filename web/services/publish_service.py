@@ -37,7 +37,7 @@ async def _track_and_notify_drivers(app_id: int, app_dict: dict) -> None:
     for r in rows:
         eq_id = r.get("equipment_id")
         drv_id = r.get("driver_user_id")
-        eq_name = r.get("equipment_name") or f"#{eq_id}"
+        eq_name = "без техники" if r.get("is_detached") else (r.get("equipment_name") or f"#{eq_id}")
         if not eq_id or not drv_id:
             continue
         if int(drv_id) > 0:
@@ -122,6 +122,17 @@ async def execute_app_publish(app_dict, target_platform: str = "all"):
                     )
         except Exception:
             pass
+
+    attached_equipment_ids = {int(eq.get("id") or 0) for eq in equip_list if isinstance(eq, dict)}
+    detached = [row for eq_id, row in drivers_map.items() if eq_id not in attached_equipment_ids]
+    for drv in detached:
+        drv_uid = int(drv.get("driver_user_id") or 0)
+        if drv_uid > 0:
+            drivers_ids.append(drv_uid)
+        equip_html += (
+            f"  ├ 👤 {drv.get('driver_fio') or 'Водитель'} — без техники"
+            f" (снята: {drv.get('equipment_name') or '#' + str(drv.get('equipment_id'))})\n"
+        )
 
     if not equip_html: equip_html = "  ├ Не требуется\n"
 

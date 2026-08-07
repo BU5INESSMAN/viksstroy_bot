@@ -29,11 +29,12 @@ export default function Teams() {
     const { confirm, ConfirmUI } = useConfirm();
 
     const fetchData = () => {
-        axios.get('/api/dashboard')
-            .then(res => { setTeams(res.data.teams || []); setLoading(false); })
+        const url = role === 'brigadier' ? '/api/teams/mine' : '/api/dashboard';
+        axios.get(url)
+            .then(res => { setTeams(role === 'brigadier' ? (res.data || []) : (res.data.teams || [])); setLoading(false); })
             .catch(() => { setLoading(false); });
     };
-    useEffect(() => { fetchData(); }, []);
+    useEffect(() => { fetchData(); }, [role]);
 
     const handleCreateTeam = async (e) => {
         e.preventDefault();
@@ -134,7 +135,9 @@ export default function Teams() {
                     <TeamCard key={t.id} t={t} canDeleteTeam={canDeleteTeam} openManageModal={openManageModal} handleDeleteTeam={handleDeleteTeam} onStats={setStatsTeam} />
                 ))}
                 {teams.length === 0 && (
-                    <div className="col-span-full text-center py-12 text-gray-400 italic">Бригад пока нет.</div>
+                    <div className="col-span-full text-center py-12 text-gray-400 italic">
+                        {role === 'brigadier' ? 'Ваш аккаунт пока не привязан к бригаде.' : 'Бригад пока нет.'}
+                    </div>
                 )}
             </div>
 

@@ -6,26 +6,32 @@ import Equipment from './Equipment';
 import Drivers from './Drivers';
 
 export default function Resources() {
+    const role = localStorage.getItem('user_role') || 'Гость';
+    const isBrigadier = role === 'brigadier';
     const [searchParams, setSearchParams] = useSearchParams();
-    const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'teams');
+    const [activeTab, setActiveTab] = useState(isBrigadier ? 'teams' : (searchParams.get('tab') || 'teams'));
 
     useEffect(() => {
         const tab = searchParams.get('tab');
-        if (tab && ['teams', 'equipment', 'drivers'].includes(tab)) {
+        if (!isBrigadier && tab && ['teams', 'equipment', 'drivers'].includes(tab)) {
             setActiveTab(tab);
             setSearchParams({}, { replace: true });
+        } else if (isBrigadier && tab !== 'teams') {
+            setActiveTab('teams');
         }
-    }, [searchParams]);
+    }, [searchParams, isBrigadier, setSearchParams]);
 
     return (
         <main className="px-4 sm:px-6 lg:px-8 space-y-6 pb-24">
             <div className="flex flex-col sm:flex-row justify-between sm:items-center pt-6 gap-4">
                 <h2 className="text-2xl font-bold flex items-center text-gray-800 dark:text-gray-100">
-                    <Briefcase className="w-7 h-7 text-blue-500 mr-2" /> Ресурсы
+                    {isBrigadier
+                        ? <><Users className="w-7 h-7 text-blue-500 mr-2" /> Моя бригада</>
+                        : <><Briefcase className="w-7 h-7 text-blue-500 mr-2" /> Ресурсы</>}
                 </h2>
             </div>
 
-            <div className="flex bg-gray-100 dark:bg-gray-800 rounded-2xl p-1.5 overflow-x-auto">
+            {!isBrigadier && <div className="flex bg-gray-100 dark:bg-gray-800 rounded-2xl p-1.5 overflow-x-auto">
                 <button
                     onClick={() => setActiveTab('teams')}
                     className={`flex-1 min-w-[108px] flex items-center justify-center gap-2 py-3 rounded-xl font-bold text-sm whitespace-nowrap transition-colors duration-200 ${
@@ -56,7 +62,7 @@ export default function Resources() {
                 >
                     <UserCircle2 className="w-4 h-4" /> Водители
                 </button>
-            </div>
+            </div>}
 
             <div className="animate-in fade-in duration-300">
                 {activeTab === 'teams' && <Teams />}

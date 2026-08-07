@@ -1,8 +1,9 @@
 import { useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Home, ClipboardList, Briefcase, Settings as SettingsIcon, ShieldAlert, User, Plus,
-    MapPin, FileText, Menu, X, BookOpen, Rocket, MessageCircle,
+    MapPin, FileText, Menu, X, BookOpen, Rocket, MessageCircle, Users,
     Sun, Moon, Monitor
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -21,33 +22,81 @@ export default function BottomNav({ role, canCreateApp, openProfile, setGlobalCr
     const canSeeObjectsKP = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeKP = ['hr', 'brigadier', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canSeeAdmin = ['boss', 'superadmin'].includes(role);
+    const canDirectResources = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const isBrigadier = role === 'brigadier';
 
     const ThemeIcon = theme === 'light' ? Sun : theme === 'dark' ? Moon : Monitor;
     const themeLabel = theme === 'light' ? 'Светлая' : theme === 'dark' ? 'Тёмная' : 'Авто';
 
-    return (
+    if (typeof document === 'undefined') return null;
+
+    const homeButton = (
+        <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} dataTour="bottomnav-home" />
+    );
+    const resourceButton = canDirectResources ? (
+        <NavBtn icon={Briefcase} label="Ресурсы" path="/resources" current={location.pathname} onClick={() => navigate('/resources')} />
+    ) : isBrigadier ? (
+        <NavBtn icon={Users} label="Бригада" path="/resources" current={location.pathname} onClick={() => navigate('/resources?tab=teams&mine=1')} />
+    ) : null;
+    const applicationsButton = canSeeApplications ? (
+        <NavBtn
+            icon={ClipboardList} label="Заявки"
+            path={isWorkerOrDriver ? "/my-apps" : "/review"}
+            current={location.pathname}
+            onClick={() => navigate(isWorkerOrDriver ? "/my-apps" : "/review")}
+            dataTour="bottomnav-orders"
+        />
+    ) : null;
+    const kpButton = canSeeKP ? (
+        <NavBtn icon={FileText} label="СМР" path="/kp" current={location.pathname} onClick={() => navigate('/kp')} />
+    ) : null;
+    const menuButton = (
+        <button
+            data-tour="bottomnav-menu"
+            onClick={() => setIsMenuOpen(true)}
+            className={`flex flex-col items-center justify-center gap-1 h-full flex-1 min-w-[44px] transition-colors active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
+        >
+            <Menu className="w-7 h-7" strokeWidth={2.4} />
+            <span className="hidden sm:block text-[11px] font-extrabold uppercase tracking-wide">Меню</span>
+        </button>
+    );
+
+    return createPortal((
         <>
             <div
-                className="lg:hidden fixed bottom-0 left-0 right-0 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 z-40 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors"
+                className="bottom-nav-fixed lg:hidden bg-white/90 dark:bg-gray-800/90 backdrop-blur-md border-t border-gray-200 dark:border-gray-700 z-40 shadow-[0_-10px_30px_-10px_rgba(0,0,0,0.05)] transition-colors"
                 style={{ height: 'calc(80px + env(safe-area-inset-bottom))', paddingBottom: 'env(safe-area-inset-bottom)' }}
             >
-            <div className="max-w-5xl mx-auto flex justify-around items-stretch h-full px-1 sm:px-4">
-
-                <NavBtn icon={Home} label="Главная" path="/dashboard" current={location.pathname} onClick={() => navigate('/dashboard')} dataTour="bottomnav-home" />
-
-                {isHr && (
-                    <NavBtn icon={MapPin} label="Объекты" path="/objects" current={location.pathname} onClick={() => navigate('/objects')} />
-                )}
-
-                {isHr && (
-                    <NavBtn icon={Briefcase} label="Ресурсы" path="/resources" current={location.pathname} onClick={() => navigate('/resources')} />
+            <div className="relative max-w-5xl mx-auto flex items-stretch h-full px-1 sm:px-4">
+                {canCreateApp ? (
+                    <>
+                        <div className="flex flex-1 min-w-0 pr-8 sm:pr-10">
+                            {homeButton}
+                            {resourceButton}
+                        </div>
+                        <div className="flex flex-1 min-w-0 pl-8 sm:pl-10">
+                            {applicationsButton}
+                            {kpButton}
+                            {menuButton}
+                        </div>
+                    </>
+                ) : (
+                    <>
+                        {homeButton}
+                        {isHr && <NavBtn icon={MapPin} label="Объекты" path="/objects" current={location.pathname} onClick={() => navigate('/objects')} />}
+                        {resourceButton}
+                        {applicationsButton}
+                        {kpButton}
+                        {menuButton}
+                    </>
                 )}
 
                 {canCreateApp && (
-                    <div className="relative flex flex-col items-center justify-center h-full flex-1" data-tour="bottomnav-create">
+                    <div className="absolute left-1/2 top-0 -translate-x-1/2 w-16 h-full flex flex-col items-center justify-center pointer-events-none" data-tour="bottomnav-create">
                         <motion.button
                             onClick={() => { navigate('/dashboard'); setGlobalCreateAppOpen(true); }}
-                            className="absolute -top-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-[0_10px_24px_-8px_rgba(37,99,235,0.55)] border-[3px] border-white dark:border-gray-800 transition-colors z-50"
+                            className="pointer-events-auto absolute -top-5 bg-blue-600 hover:bg-blue-700 text-white rounded-full w-14 h-14 flex items-center justify-center shadow-[0_10px_24px_-8px_rgba(37,99,235,0.55)] border-[3px] border-white dark:border-gray-800 transition-colors z-50"
+                            aria-label="Создать заявку"
                             whileHover={prefersReducedMotion ? {} : { scale: 1.05 }}
                             whileTap={prefersReducedMotion ? {} : { scale: 0.92 }}
                             transition={{ duration: 0.15 }}
@@ -57,32 +106,6 @@ export default function BottomNav({ role, canCreateApp, openProfile, setGlobalCr
                         <span className="hidden sm:block text-[11px] font-extrabold text-blue-600 dark:text-blue-400 uppercase tracking-wide mt-9">Создать</span>
                     </div>
                 )}
-
-                {canSeeApplications && <NavBtn
-                    icon={ClipboardList} label="Заявки"
-                    path={isWorkerOrDriver ? "/my-apps" : "/review"}
-                    current={location.pathname}
-                    onClick={() => navigate(isWorkerOrDriver ? "/my-apps" : "/review")}
-                    dataTour="bottomnav-orders"
-                />}
-
-                {canSeeKP && (
-                    <NavBtn icon={FileText} label="СМР" path="/kp" current={location.pathname} onClick={() => navigate('/kp')} />
-                )}
-
-                {/* Stage 7: Settings + Admin moved to Sidebar (burger menu)
-                    to keep BottomNav compact. The burger below opens the
-                    sidebar where both items live. */}
-
-                <button
-                    data-tour="bottomnav-menu"
-                    onClick={() => setIsMenuOpen(true)}
-                    className={`flex flex-col items-center justify-center gap-1 h-full flex-1 min-w-[44px] transition-colors active:scale-95 ${isMenuOpen ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'}`}
-                >
-                    <Menu className="w-7 h-7" strokeWidth={2.4} />
-                    <span className="hidden sm:block text-[11px] font-extrabold uppercase tracking-wide">Меню</span>
-                </button>
-
             </div>
             </div>
 
@@ -115,7 +138,7 @@ export default function BottomNav({ role, canCreateApp, openProfile, setGlobalCr
                         {/* Main items — full width */}
                         <div className="space-y-2 mb-4">
                             {canSeeObjectsKP && !isHr && <MenuRow icon={MapPin} color="emerald" label="Объекты" onClick={() => { setIsMenuOpen(false); navigate('/objects'); }} />}
-                            {canSeeObjectsKP && !isHr && <MenuRow icon={Briefcase} color="blue" label="Ресурсы" onClick={() => { setIsMenuOpen(false); navigate('/resources'); }} />}
+                            {canSeeObjectsKP && !canDirectResources && !isHr && <MenuRow icon={Briefcase} color="blue" label="Ресурсы" onClick={() => { setIsMenuOpen(false); navigate('/resources'); }} />}
                             <MenuRow icon={SettingsIcon} color="blue" label="Настройки" onClick={() => { setIsMenuOpen(false); navigate('/settings'); }} />
                             {canSeeAdmin && (
                                 <MenuRow icon={ShieldAlert} color="red" label="Админка" onClick={() => { setIsMenuOpen(false); navigate('/admin'); }} />
@@ -137,7 +160,7 @@ export default function BottomNav({ role, canCreateApp, openProfile, setGlobalCr
             )}
             </AnimatePresence>
         </>
-    );
+    ), document.body);
 }
 
 function MenuRow({ icon: Icon, color, label, onClick }) {

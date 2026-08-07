@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
-    ClipboardList, HardHat, X
+    ClipboardList, HardHat, X, UserCircle2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
@@ -69,6 +69,7 @@ export default function EditAppModal({
             driverAssignments[d.equipment_id] = {
                 user_id: d.driver_user_id,
                 fio: d.driver_fio,
+                equipment_name: d.equipment_name,
             };
         });
 
@@ -87,6 +88,12 @@ export default function EditAppModal({
     }, [app?.id]);
 
     const [form, setForm] = useState(initialForm);
+    const detachedDrivers = useMemo(() => {
+        const selectedIds = new Set((form.equipment || []).map(eq => Number(eq.id)));
+        return Object.entries(form.driverAssignments || {})
+            .filter(([equipmentId, driver]) => driver?.user_id && !selectedIds.has(Number(equipmentId)))
+            .map(([equipmentId, driver]) => ({ equipmentId: Number(equipmentId), ...driver }));
+    }, [form.equipment, form.driverAssignments]);
     const DRAFT_KEY = `edit-app:${app.id}`;
 
     // v2.6.1: snapshot equipment ids present at modal open. Used to
@@ -286,7 +293,7 @@ export default function EditAppModal({
         setForm(prev => ({
             ...prev,
             equipment: [...prev.equipment, { id: eqAvail.id, name: displayName, time_start: tsHour, time_end: teHour, isPartialTime: true }],
-            driverAssignments: { ...(prev.driverAssignments || {}), [eqAvail.id]: autoDriver },
+            driverAssignments: { ...(prev.driverAssignments || {}), [eqAvail.id]: (prev.driverAssignments || {})[eqAvail.id] || autoDriver },
         }));
         setTimeAutoSet(true);
         toast('Время автоматически изменено. Проверьте время техники.', { icon: '⏰' });
@@ -367,7 +374,10 @@ export default function EditAppModal({
             const exists = prev.equipment.find(e => e.id === equip.id);
             if (exists) {
                 const next = { ...(prev.driverAssignments || {}) };
-                delete next[equip.id];
+                // During office review the driver is an independent human
+                // resource. Removing the machine must not silently remove
+                // that person from the application.
+                if (!isReviewEdit) delete next[equip.id];
                 return { ...prev, equipment: prev.equipment.filter(e => e.id !== equip.id), driverAssignments: next };
             }
             const displayName = equip.driver ? `${equip.name} [${equip.license_plate || 'нет г.н.'}] (${equip.driver})` : `${equip.name} [${equip.license_plate || 'нет г.н.'}]`;
@@ -382,7 +392,7 @@ export default function EditAppModal({
             return {
                 ...prev,
                 equipment: [...prev.equipment, { id: equip.id, name: displayName, time_start: defaultTime.start, time_end: defaultTime.end }],
-                driverAssignments: { ...(prev.driverAssignments || {}), [equip.id]: autoDriver },
+                driverAssignments: { ...(prev.driverAssignments || {}), [equip.id]: (prev.driverAssignments || {})[equip.id] || autoDriver },
             };
         });
     };
@@ -465,7 +475,7 @@ export default function EditAppModal({
     const handleSubmit = async (e) => {
         e.preventDefault();
         if (!form.object_id) return toast.error("Выберите объект!");
-        if (form.team_ids.length === 0 && form.equipment.length === 0) return toast.error("Выберите бригаду или технику!");
+        if (form.team_ids.length === 0 && form.equipment.length === 0 && detachedDrivers.length === 0) return toast.error("Выберите бригаду, технику или водителя!");
         if (form.team_ids.length > 0 && form.members.length === 0) return toast.error("Выберите хотя бы одного рабочего из бригады!");
 
         // v2.6.1: moderator on review IS the final editor — empty driver
@@ -497,13 +507,10 @@ export default function EditAppModal({
             fd.append('selected_members', form.members.join(','));
             fd.append('equipment_data', JSON.stringify(form.equipment));
 
-            const driversPayload = (form.equipment || [])
-                .map((eq) => {
-                    const drv = (form.driverAssignments || {})[eq.id];
-                    if (!drv || !drv.user_id) return null;
-                    return { equipment_id: eq.id, driver_user_id: drv.user_id };
-                })
-                .filter(Boolean);
+            const selectedEquipmentIds = new Set((form.equipment || []).map(eq => Number(eq.id)));
+            const driversPayload = Object.entries(form.driverAssignments || {})
+                .filter(([equipmentId, drv]) => drv?.user_id && (isReviewEdit || selectedEquipmentIds.has(Number(equipmentId))))
+                .map(([equipmentId, drv]) => ({ equipment_id: Number(equipmentId), driver_user_id: drv.user_id }));
             fd.append('driver_assignments', JSON.stringify(driversPayload));
             // v2.6.1: review-edit submit sends force_assign so the
             // backend lets the moderator save through driver-overlap
@@ -710,6 +717,28 @@ export default function EditAppModal({
                                 editorRole={isReviewEdit ? 'moderator' : 'foreman'}
                                 softConflicts={isReviewEdit}
                             />
+                            {isReviewEdit && detachedDrivers.length > 0 && (
+                                <div className="rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/15 p-4 space-y-3">
+                                    <div className="flex items-start gap-2 text-amber-800 dark:text-amber-300">
+                                        <UserCircle2 className="w-5 h-5 mt-0.5 shrink-0" />
+                                        <div>
+                                            <p className="text-sm font-bold">Водители без техники</p>
+                                            <p className="text-xs opacity-80">Техника снята, но водитель остаётся назначенным на объект.</p>
+                                        </div>
+                                    </div>
+                                    {detachedDrivers.map(driver => (
+                                        <div key={driver.equipmentId} className="flex items-center justify-between gap-3 rounded-xl bg-white/80 dark:bg-gray-800 p-3 border border-amber-100 dark:border-amber-900/40">
+                                            <div className="min-w-0">
+                                                <p className="text-sm font-bold text-gray-800 dark:text-gray-100 truncate">{driver.fio}</p>
+                                                <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">Снятая техника: {driver.equipment_name || data.equipment?.find(eq => Number(eq.id) === driver.equipmentId)?.name || `#${driver.equipmentId}`}</p>
+                                            </div>
+                                            <button type="button" onClick={() => clearDriverForEquipment(driver.equipmentId)} className="shrink-0 px-3 py-2 rounded-lg text-xs font-bold text-red-600 bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:text-red-400">
+                                                Снять водителя
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
                         </div>
 
                         <hr className="border-gray-100 dark:border-gray-700/80" />

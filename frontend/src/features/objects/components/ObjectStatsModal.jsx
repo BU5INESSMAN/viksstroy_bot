@@ -66,6 +66,31 @@ export default function ObjectStatsModal({ statsObj, statsData, statsLoading, on
                                 </span>
                             </div>
 
+                            {statsData.resources && (
+                                <div>
+                                    <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">
+                                        Использование ресурсов
+                                    </h4>
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                                        {[
+                                            ['Заявок', statsData.resources.applications],
+                                            ['Рабочих дней', statsData.resources.work_days],
+                                            ['Назначений бригад', statsData.resources.team_assignments],
+                                            ['Частичных бригад', statsData.resources.partial_teams],
+                                            ['Выходов сотрудников', statsData.resources.people_assignments],
+                                            ['Часов сотрудников', statsData.resources.labor_hours],
+                                            ['Назначений техники', statsData.resources.equipment_assignments],
+                                            ['Моточасов', statsData.resources.equipment_hours],
+                                        ].map(([label, value]) => (
+                                            <div key={label} className="rounded-xl border border-gray-100 dark:border-gray-700 bg-gray-50 dark:bg-gray-900/30 p-3">
+                                                <p className="text-xl font-extrabold text-gray-900 dark:text-white">{value ?? 0}</p>
+                                                <p className="text-[11px] text-gray-500 dark:text-gray-400 leading-tight mt-1">{label}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Progress: Plan vs Fact */}
                             <div>
                                 <h4 className="text-sm font-bold text-gray-700 dark:text-gray-300 uppercase tracking-wider mb-3">
