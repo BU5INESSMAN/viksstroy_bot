@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
-import { useLocation, Outlet } from 'react-router-dom';
+import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion } from 'framer-motion';
@@ -23,6 +23,7 @@ import useApiHealth from '../hooks/useApiHealth';
 
 export default function Layout() {
     const location = useLocation();
+    const navigate = useNavigate();
     const [role, setRole] = useState(localStorage.getItem('user_role') || 'Гость');
     const [tgId, setTgId] = useState(localStorage.getItem('tg_id'));
     const realRole = localStorage.getItem('real_role');
@@ -315,6 +316,10 @@ export default function Layout() {
 
             <NotificationsModal
                 isOpen={showNotifications}
+                onNavigate={(url) => {
+                    setShowNotifications(false);
+                    navigate(url || '/dashboard');
+                }}
                 onClose={() => {
                     setShowNotifications(false);
                     if (tgId) axios.get('/api/notifications/my?limit=1').then(r => setUnreadCount(r.data.unread_count || 0)).catch(() => {});

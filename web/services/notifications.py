@@ -173,9 +173,12 @@ async def notify_users(target_roles: list, text: str, url_path: str = "dashboard
 
     # ── Save to notification center (one entry per user, before platform split) ──
     redirect = _URL_PATH_MAP.get(url_path, f"/{url_path}")
-    _notif_plain = strip_html(text)
-    _notif_title = _notif_plain[:100]
-    _notif_body = _notif_plain[:500]
+    _notif_plain = strip_html(text).strip()
+    # Keep the first meaningful line compact for the bell list, while the
+    # complete text remains available in the notification details view.
+    _notif_lines = [line.strip() for line in _notif_plain.splitlines() if line.strip()]
+    _notif_title = (_notif_lines[0] if _notif_lines else "Уведомление")[:140]
+    _notif_body = _notif_plain[:2000]
     _notif_type = event_key or push_type or category or 'info'
     for uid in raw_user_ids:
         prefs = user_prefs.get(uid, {"cat": True})

@@ -357,6 +357,7 @@ async def get_online_users(current_user=Depends(get_current_user)):
 @router.get("/api/notifications/my")
 async def get_my_notifications(limit: int = 50, current_user=Depends(get_current_user)):
     real_id = current_user["tg_id"]
+    limit = max(1, min(limit, 100))
 
     async with db.conn.execute(
         "SELECT id, type, title, body, is_read, created_at, link_url FROM user_notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT ?",
@@ -365,12 +366,19 @@ async def get_my_notifications(limit: int = 50, current_user=Depends(get_current
         rows = await cur.fetchall()
 
     notifications = []
-    unread = 0
     for r in rows:
         is_read = bool(r[4])
         notifications.append({"id": r[0], "type": r[1], "title": r[2], "body": r[3], "is_read": is_read, "created_at": r[5], "link_url": r[6]})
-        if not is_read:
-            unread += 1
+
+    # The badge must show the total unread count, not just unread items inside
+    # the requested page (the layout intentionally polls this endpoint with
+    # limit=1).
+    async with db.conn.execute(
+        "SELECT COUNT(*) FROM user_notifications WHERE user_id = ? AND is_read = 0",
+        (real_id,),
+    ) as cur:
+        unread_row = await cur.fetchone()
+    unread = int(unread_row[0] or 0) if unread_row else 0
 
     return {"notifications": notifications, "unread_count": unread}
 
