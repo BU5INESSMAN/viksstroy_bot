@@ -167,6 +167,53 @@ async def _check_fio_match(new_user_id: int, new_fio: str):
         pass  # Не ломаем регистрацию из-за ошибки поиска
 
 
+async def _claim_matching_synthetic_driver(real_user_id: int, fio: str) -> bool:
+    """Attach a MAX registration to one unambiguous office driver card.
+
+    Exact full-name matching is preferred. If MAX does not provide a middle
+    name, a unique last+first match is accepted. Ambiguous matches are left
+    untouched so an administrator can use the personal invite code instead.
+    """
+    if not fio or fio.startswith("Пользователь"):
+        return False
+
+    def _parts(value: str) -> list[str]:
+        return [part.casefold() for part in str(value or "").split() if part]
+
+    wanted = _parts(fio)
+    if len(wanted) < 2:
+        return False
+    async with db.conn.execute(
+        "SELECT user_id,fio,last_name,first_name,middle_name FROM users "
+        "WHERE role='driver' AND user_id!=? AND user_id<0 "
+        "AND COALESCE(is_active,0)=0 AND COALESCE(is_deleted,0)=0",
+        (real_user_id,),
+    ) as cur:
+        rows = await cur.fetchall()
+
+    exact = [row for row in rows if _parts(row[1]) == wanted]
+    candidates = exact or [
+        row for row in rows
+        if _parts(f"{row[2] or ''} {row[3] or ''}") == wanted[:2]
+    ]
+    if len(candidates) != 1:
+        return False
+
+    from services import driver_service
+    target = candidates[0]
+    await driver_service.redeem_synthetic_driver(db, int(target[0]), real_user_id)
+    # Keep the office-maintained identity, including the middle name, on the
+    # newly bound MAX account.
+    await driver_service.update_driver(
+        db,
+        real_user_id,
+        last_name=target[2] or wanted[0],
+        first_name=target[3] or wanted[1],
+        middle_name=target[4] or "",
+    )
+    return True
+
+
 @router.post("/api/auth/equip_invite_bridge")
 async def equip_invite_bridge(code: str = Form(...)):
     """v2.6 commit 7: one-time bridge for legacy equipment.invite_code links.
@@ -1010,6 +1057,8 @@ async def register_max(max_id: int = Form(...), first_name: str = Form(""), last
     if not role: raise HTTPException(status_code=401, detail="Неверный пароль")
     fio = f"{last_name} {first_name}".strip() or f"Пользователь MAX {max_id}"
     await db.add_user(pseudo_tg_id, fio, role)
+    if role == "driver":
+        await _claim_matching_synthetic_driver(pseudo_tg_id, fio)
     await db.add_log(pseudo_tg_id, fio, f"Зарегистрировался через MAX (Роль: {role})", target_type='user', target_id=pseudo_tg_id,
                      details=json.dumps({"action": "user_registration", "requested_role": role, "method": "password"}, ensure_ascii=False))
 

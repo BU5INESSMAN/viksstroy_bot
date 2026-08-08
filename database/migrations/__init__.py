@@ -57,6 +57,9 @@ MIGRATIONS_ORDER = [
     # driver rows; also seeds the basic employee role password setting.
     "m_2026_08_user_admin",
     "m_2026_08_remove_detached_drivers",
+    # Active MAX accounts and office placeholders historically shared the
+    # negative id space. Merge only unique exact-FIO duplicate pairs.
+    "m_2026_08_merge_duplicate_max_drivers",
 ]
 
 

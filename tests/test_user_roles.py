@@ -10,6 +10,7 @@ if str(WEB) not in sys.path:
     sys.path.insert(0, str(WEB))
 
 from role_config import ASSIGNABLE_ROLES, AUTO_ROLE_PROTECTED, ROLE_NAMES_RU, can_change_role
+from services.role_passwords import ROLE_PASSWORDS
 
 
 class _RoleDbStub:
@@ -69,6 +70,9 @@ class RoleCatalogTests(unittest.TestCase):
     def test_all_roles_have_names_and_elevated_roles_are_protected(self):
         self.assertEqual(set(ROLE_NAMES_RU), set(ASSIGNABLE_ROLES))
         self.assertTrue({"brigadier", "hr", "moderator", "boss", "superadmin"} <= AUTO_ROLE_PROTECTED)
+
+    def test_driver_has_shared_registration_password(self):
+        self.assertEqual(ROLE_PASSWORDS["driver"], ("role_password_driver", "DRIVER_PASS"))
 
 
 if __name__ == "__main__":

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Upload, Search, Cog } from 'lucide-react';
+import { Plus, Upload, Search, Cog, BarChart3 } from 'lucide-react';
 
 import EquipmentCard from '../features/equipment/components/EquipmentCard';
 import AddEquipForm from '../features/equipment/components/AddEquipForm';
@@ -14,8 +14,10 @@ import CategorySettingsModal from '../features/equipment/components/CategorySett
 import DefaultDriverModal from '../features/equipment/components/DefaultDriverModal';
 import useConfirm from '../hooks/useConfirm';
 import { EquipmentSkeleton } from '../components/ui/PageSkeletons';
+import ResourceStatsModal from '../components/resources/ResourceStatsModal';
+import { matchesDeepSearch } from '../utils/deepSearch';
 
-export default function Equipment() {
+export default function Equipment({ searchQuery = '' }) {
     const role = localStorage.getItem('user_role') || 'Гость';
     const tgId = localStorage.getItem('tg_id') || '0';
     const { openProfile } = useOutletContext();
@@ -40,6 +42,7 @@ export default function Equipment() {
     const [copiedLink, setCopiedLink] = useState('');
     const [editingEquip, setEditingEquip] = useState(null);
     const [statsEquip, setStatsEquip] = useState(null);
+    const [showOverview, setShowOverview] = useState(false);
     // v2.6: equipment whose default driver is being edited via the picker modal.
     const [defaultDriverEquip, setDefaultDriverEquip] = useState(null);
 
@@ -158,12 +161,24 @@ export default function Equipment() {
 
     if (loading) return <EquipmentSkeleton />;
 
+    const visibleEquipment = equipment.filter((item) => (
+        (activeTab === 'list' || item.category === activeTab)
+        && matchesDeepSearch([
+            item.name, item.license_plate, item.category, item.status,
+            item.default_driver_fio,
+            item.status === 'free' ? 'свободна' : item.status === 'repair' ? 'ремонт' : 'в работе',
+        ], searchQuery)
+    ));
+
     return (
         <div className="space-y-6">
 
             {/* Кнопки управления — flex-wrap gap-2.5, чтобы ничего не обрезалось на узких экранах */}
             {canManageEquipment && (
                 <div className="flex flex-wrap justify-end gap-2.5 mb-2">
+                    <button type="button" onClick={() => setShowOverview(true)} className="bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60 px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                        <BarChart3 className="w-4 h-4" /> Статистика
+                    </button>
                     <button data-tour="equip-add-btn" onClick={() => setActiveTab('new')} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
                         <Plus className="w-4 h-4" /> Добавить
                     </button>
@@ -183,6 +198,14 @@ export default function Equipment() {
                 </div>
             )}
 
+            {!canManageEquipment && (
+                <div className="flex justify-end mb-2">
+                    <button type="button" onClick={() => setShowOverview(true)} className="bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60 px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                        <BarChart3 className="w-4 h-4" /> Статистика
+                    </button>
+                </div>
+            )}
+
             <div className="flex overflow-x-auto space-x-2.5 pb-2 custom-scrollbar" data-tour="equip-categories">
                 <button onClick={() => setActiveTab('list')} className={`whitespace-nowrap px-5 py-2.5 rounded-xl text-sm font-bold transition-all ${activeTab === 'list' ? 'bg-indigo-600 text-white shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>Все машины</button>
                 {categories.map(c => (
@@ -192,7 +215,7 @@ export default function Equipment() {
 
             {['list', ...categories].includes(activeTab) && (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5" data-tour="equip-grid">
-                    {equipment.filter(e => activeTab === 'list' || e.category === activeTab).map(eq => (
+                    {visibleEquipment.map(eq => (
                         <EquipmentCard
                             key={eq.id}
                             eq={{ ...eq, category_icon: categoryIcons[eq.category] || '' }}
@@ -208,10 +231,10 @@ export default function Equipment() {
                             onSetDefaultDriver={setDefaultDriverEquip}
                         />
                     ))}
-                    {equipment.filter(e => activeTab === 'list' || e.category === activeTab).length === 0 && (
+                    {visibleEquipment.length === 0 && (
                         <div className="col-span-full flex flex-col items-center justify-center py-12 text-gray-400">
                             <Search className="w-12 h-12 mb-3 opacity-20" />
-                            <p className="italic font-medium">В этой категории пока нет техники.</p>
+                            <p className="italic font-medium">{searchQuery ? 'По вашему запросу техника не найдена.' : 'В этой категории пока нет техники.'}</p>
                         </div>
                     )}
                 </div>
@@ -258,6 +281,7 @@ export default function Equipment() {
                 setCopiedLink={setCopiedLink}
             />
             <EquipmentStatsModal isOpen={!!statsEquip} onClose={() => setStatsEquip(null)} equipment={statsEquip} tgId={tgId} />
+            {showOverview && <ResourceStatsModal kind="equipment" onClose={() => setShowOverview(false)} />}
             {isCategorySettingsOpen && (
                 <CategorySettingsModal
                     onClose={() => setCategorySettingsOpen(false)}

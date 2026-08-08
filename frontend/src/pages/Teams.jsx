@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus } from 'lucide-react';
+import { Plus, BarChart3 } from 'lucide-react';
 import TeamCard from '../features/teams/components/TeamCard';
 import CreateTeamModal from '../features/teams/components/CreateTeamModal';
 import ManageTeamModal from '../features/teams/components/ManageTeamModal';
@@ -10,8 +10,10 @@ import TeamInviteModal from '../features/teams/components/TeamInviteModal';
 import TeamStatsModal from '../features/teams/components/TeamStatsModal';
 import useConfirm from '../hooks/useConfirm';
 import { TeamsSkeleton } from '../components/ui/PageSkeletons';
+import ResourceStatsModal from '../components/resources/ResourceStatsModal';
+import { matchesDeepSearch } from '../utils/deepSearch';
 
-export default function Teams() {
+export default function Teams({ searchQuery = '' }) {
     const tgId = localStorage.getItem('tg_id') || '0';
     const role = localStorage.getItem('user_role') || 'Гость';
     const { openProfile } = useOutletContext();
@@ -26,6 +28,7 @@ export default function Teams() {
     const [inviteInfo, setInviteInfo] = useState(null);
     const [copiedLink, setCopiedLink] = useState('');
     const [statsTeam, setStatsTeam] = useState(null);
+    const [showOverview, setShowOverview] = useState(false);
     const { confirm, ConfirmUI } = useConfirm();
 
     const fetchData = () => {
@@ -115,6 +118,12 @@ export default function Teams() {
 
     const canManage = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
     const canDeleteTeam = ['moderator', 'boss', 'superadmin'].includes(role);
+    const visibleTeams = teams.filter((team) => matchesDeepSearch([
+        team.name,
+        team.brigadier_name,
+        team.search_text,
+        team.member_count,
+    ], searchQuery));
 
     if (loading) return <TeamsSkeleton />;
 
@@ -122,21 +131,24 @@ export default function Teams() {
         <div className="space-y-6">
 
             {/* Кнопка создания теперь выровнена по правому краю */}
-            {canManage && (
-                <div className="flex justify-end mb-2">
+            <div className="flex flex-wrap justify-end gap-2 mb-2">
+                <button type="button" onClick={() => setShowOverview(true)} className="bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60 px-4 py-2.5 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                    <BarChart3 className="w-4 h-4" /> Статистика
+                </button>
+                {canManage && (
                     <button data-tour="teams-create-btn" onClick={() => setTeamModalOpen(true)} className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold shadow-md hover:shadow-lg hover:bg-blue-700 transition-all active:scale-95 flex items-center gap-2">
                         <Plus className="w-4 h-4" /> Создать бригаду
                     </button>
-                </div>
-            )}
+                )}
+            </div>
 
             <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3" data-tour="teams-grid">
-                {teams.map(t => (
+                {visibleTeams.map(t => (
                     <TeamCard key={t.id} t={t} canDeleteTeam={canDeleteTeam} openManageModal={openManageModal} handleDeleteTeam={handleDeleteTeam} onStats={setStatsTeam} />
                 ))}
-                {teams.length === 0 && (
+                {visibleTeams.length === 0 && (
                     <div className="col-span-full text-center py-12 text-gray-400 italic">
-                        {role === 'brigadier' ? 'Ваш аккаунт пока не привязан к бригаде.' : 'Бригад пока нет.'}
+                        {searchQuery ? 'По вашему запросу бригад и участников не найдено.' : role === 'brigadier' ? 'Ваш аккаунт пока не привязан к бригаде.' : 'Бригад пока нет.'}
                     </div>
                 )}
             </div>
@@ -152,6 +164,7 @@ export default function Teams() {
 
             <TeamInviteModal inviteInfo={inviteInfo} setInviteInfo={setInviteInfo} copiedLink={copiedLink} setCopiedLink={setCopiedLink} />
             <TeamStatsModal isOpen={!!statsTeam} onClose={() => setStatsTeam(null)} team={statsTeam} tgId={tgId} />
+            {showOverview && <ResourceStatsModal kind="teams" onClose={() => setShowOverview(false)} />}
             {ConfirmUI}
         </div>
     );

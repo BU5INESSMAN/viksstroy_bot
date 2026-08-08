@@ -59,17 +59,33 @@ async def _driver_categories(db, user_id: int) -> list[dict]:
 
 async def _enrich_driver(db, row: dict) -> dict:
     uid = int(row["user_id"])
-    row["tg_id"] = uid if uid > 0 else None
-    row["is_synthetic"] = uid < 0
+    is_active = bool(row.get("is_active"))
+    # Both real MAX accounts and office-created placeholders use negative
+    # internal IDs. The old `uid < 0` check therefore labelled every MAX
+    # driver as synthetic. A placeholder is specifically an inactive
+    # negative row; an active negative row is a real MAX account.
+    row["is_synthetic"] = uid < 0 and not is_active
+    row["legacy_user_id"] = uid if uid > 0 else None
+    row["max_id"] = abs(uid) if uid < 0 and is_active else None
     row["categories"] = await _driver_categories(db, uid)
-    # MAX-link lookup via account_links (TG↔MAX pairing).
+    # MAX-link lookup must work in both directions. Some historical links
+    # store the legacy account as primary, while newer records may be opened
+    # from the MAX side (secondary).
     async with db.conn.execute(
-        "SELECT secondary_id FROM account_links WHERE primary_id = ?", (uid,)
+        "SELECT linked.user_id FROM ("
+        "SELECT secondary_id AS user_id FROM account_links WHERE primary_id = ? "
+        "UNION SELECT primary_id AS user_id FROM account_links WHERE secondary_id = ?"
+        ") linked JOIN users max_user ON max_user.user_id=linked.user_id "
+        "WHERE linked.user_id<0 AND COALESCE(max_user.is_active,0)=1",
+        (uid, uid),
     ) as cur:
-        link = await cur.fetchone()
-    if link and link[0] is not None and link[0] != uid:
-        row["max_id"] = link[0]
-    row["linked"] = uid > 0 or row.get("max_id") is not None
+        linked_ids = [int(link[0]) for link in await cur.fetchall() if link and link[0] is not None]
+    if row.get("max_id") is None:
+        max_link = next((linked_id for linked_id in linked_ids if linked_id < 0), None)
+        if max_link is not None:
+            row["max_id"] = abs(max_link)
+    row["max_linked"] = row.get("max_id") is not None
+    row["linked"] = row["max_linked"]
     return row
 
 

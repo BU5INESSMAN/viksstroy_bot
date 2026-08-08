@@ -1,17 +1,19 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Plus, Users } from 'lucide-react';
+import { Plus, Users, BarChart3 } from 'lucide-react';
 
 import DriverCard from '../features/drivers/components/DriverCard';
 import DriverEditModal from '../features/drivers/components/DriverEditModal';
 import DriverInviteModal from '../features/drivers/components/DriverInviteModal';
 import DriverStatusModal from '../features/drivers/components/DriverStatusModal';
 import { isOffice } from '../utils/roleConfig';
+import ResourceStatsModal from '../components/resources/ResourceStatsModal';
+import { matchesDeepSearch } from '../utils/deepSearch';
 
 const STATUS_ROLES = ['foreman', 'moderator', 'boss', 'superadmin'];
 
-export default function Drivers() {
+export default function Drivers({ searchQuery = '' }) {
     const role = localStorage.getItem('user_role') || 'Гость';
     const canManage = isOffice(role) || role === 'hr';
     // v2.8: driver status change is foreman+ (broader than office).
@@ -26,6 +28,7 @@ export default function Drivers() {
     const [editorInitial, setEditorInitial] = useState(null);
     const [inviteDriver, setInviteDriver] = useState(null);
     const [statusDriver, setStatusDriver] = useState(null);
+    const [showOverview, setShowOverview] = useState(false);
 
     // v2.6: equipment list no longer needed here — DriverEditModal lost its
     // "Техника по умолчанию" select. Default-driver assignment now lives
@@ -81,25 +84,38 @@ export default function Drivers() {
         );
     }
 
+    const visibleDrivers = drivers.filter((driver) => matchesDeepSearch([
+        driver.fio, driver.last_name, driver.first_name, driver.middle_name,
+        driver.categories?.map((category) => category.name).join(' '),
+        driver.member_status,
+        driver.max_linked ? 'MAX привязан привязан' : 'MAX не привязан без MAX',
+        driver.is_synthetic ? 'ожидает регистрации приглашение' : '',
+    ], searchQuery));
+
     return (
         <div className="space-y-4">
             <div className="flex items-center justify-between gap-3">
                 <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 flex items-center gap-2">
-                    <Users className="w-5 h-5 text-cyan-500" /> Водители ({drivers.length})
+                    <Users className="w-5 h-5 text-cyan-500" /> Водители ({visibleDrivers.length}{searchQuery ? ` из ${drivers.length}` : ''})
                 </h3>
-                {canManage && (
+                <div className="flex flex-wrap justify-end gap-2">
+                    <button type="button" onClick={() => setShowOverview(true)} className="px-4 py-2.5 rounded-xl bg-white dark:bg-gray-800 text-blue-700 dark:text-blue-400 border border-blue-200 dark:border-blue-800/60 text-sm font-bold flex items-center gap-2 hover:bg-blue-50 dark:hover:bg-blue-900/20">
+                        <BarChart3 className="w-4 h-4" /> Статистика
+                    </button>
+                    {canManage && (
                     <button onClick={() => { setEditorMode('create'); setEditorInitial(null); setEditorOpen(true); }}
                         className="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-bold shadow-sm hover:shadow-md transition-all active:scale-95 flex items-center gap-2">
                         <Plus className="w-4 h-4" /> Добавить водителя
                     </button>
-                )}
+                    )}
+                </div>
             </div>
 
-            {drivers.length === 0 ? (
+            {visibleDrivers.length === 0 ? (
                 <div className="text-center py-16 px-6 rounded-2xl border border-dashed border-gray-200 dark:border-gray-700 bg-gray-50/40 dark:bg-gray-800/30">
                     <Users className="w-10 h-10 mx-auto text-gray-300 dark:text-gray-600 mb-3" />
                     <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                        Пока нет водителей.
+                        {searchQuery ? 'По вашему запросу водители не найдены.' : 'Пока нет водителей.'}
                     </p>
                     {canManage && (
                         <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
@@ -109,7 +125,7 @@ export default function Drivers() {
                 </div>
             ) : (
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {drivers.map((d) => (
+                    {visibleDrivers.map((d) => (
                         <DriverCard
                             key={d.user_id}
                             driver={d}
@@ -146,6 +162,7 @@ export default function Drivers() {
                     onSaved={fetchData}
                 />
             )}
+            {showOverview && <ResourceStatsModal kind="drivers" onClose={() => setShowOverview(false)} />}
         </div>
     );
 }

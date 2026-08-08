@@ -16,7 +16,7 @@ from auth_deps import get_current_user, require_role
 from utils import normalize_invite_code
 from services.notifications import notify_users
 from services.image_service import process_base64_image
-from services.resource_stats import equipment_stats
+from services.resource_stats import equipment_stats, equipment_overview
 from role_config import AUTO_ROLE_PROTECTED
 
 logger = logging.getLogger(__name__)
@@ -80,6 +80,16 @@ async def admin_equip_list(current_user=Depends(get_current_user)):
             eq.pop("invite_code", None)
 
     return equip
+
+
+@router.get("/api/equipment/stats/overview")
+async def get_equipment_overview(
+    period: str = Query("month", pattern="^(week|month|all)$"),
+    current_user=Depends(get_current_user),
+):
+    if current_user.get("role") not in ("hr", "foreman", "moderator", "boss", "superadmin"):
+        raise HTTPException(403, "Недостаточно прав")
+    return await equipment_overview(db, period)
 
 
 @router.get("/api/equipment/{equipment_id}/stats")

@@ -1325,6 +1325,98 @@ async def unmerge_smr_app(request: Request, current_user=Depends(get_current_use
     return {"status": "ok"}
 
 
+async def _attach_smr_search_text(apps: list[dict]) -> None:
+    """Build a batched full-text index for the SMR list.
+
+    The index is intentionally returned as data rather than exposing a broad
+    SQL search endpoint: role scoping is applied first, and the client can
+    search instantly without making one request per keystroke.
+    """
+    if not apps:
+        return
+    app_ids = [int(app["id"]) for app in apps]
+    marks = ",".join("?" for _ in app_ids)
+    index: dict[int, list[str]] = {app_id: [] for app_id in app_ids}
+
+    async def _append_rows(sql: str) -> set[int]:
+        seen: set[int] = set()
+        async with db.conn.execute(sql, app_ids) as cur:
+            for row in await cur.fetchall():
+                app_id = int(row[0])
+                seen.add(app_id)
+                index.setdefault(app_id, []).append(" ".join(str(value or "") for value in row[1:]))
+        return seen
+
+    hours_apps = await _append_rows(
+        f"""SELECT ah.app_id,tm.fio,tm.position,t.name,ah.hours
+               FROM application_hours ah
+               LEFT JOIN team_members tm ON tm.id=ah.user_id
+               LEFT JOIN teams t ON t.id=ah.team_id
+              WHERE ah.app_id IN ({marks}) AND COALESCE(ah.hours,0)>0"""
+    )
+    await _append_rows(
+        f"""SELECT ak.application_id,kc.category,kc.name,ak.unit,ak.volume
+               FROM application_kp ak LEFT JOIN kp_catalog kc ON kc.id=ak.kp_id
+              WHERE ak.application_id IN ({marks}) AND COALESCE(ak.volume,0)>0"""
+    )
+    await _append_rows(
+        f"""SELECT aew.application_id,kc.category,
+                   COALESCE(NULLIF(aew.custom_name,''),kc.name,ewc.name),
+                   aew.unit,aew.volume
+               FROM application_extra_works aew
+               LEFT JOIN kp_catalog kc ON kc.id=aew.kp_id
+               LEFT JOIN extra_works_catalog ewc ON ewc.id=aew.extra_work_id
+              WHERE aew.application_id IN ({marks}) AND COALESCE(aew.volume,0)>0"""
+    )
+
+    team_ids: set[int] = set()
+    for app in apps:
+        for part in str(app.get("team_id") or "").split(","):
+            if part.strip().isdigit() and int(part) != 0:
+                team_ids.add(int(part))
+    members_by_team: dict[int, list[dict]] = {}
+    if team_ids:
+        team_marks = ",".join("?" for _ in team_ids)
+        async with db.conn.execute(
+            f"SELECT tm.id,tm.team_id,tm.fio,tm.position,t.name "
+            f"FROM team_members tm JOIN teams t ON t.id=tm.team_id "
+            f"WHERE tm.team_id IN ({team_marks})",
+            sorted(team_ids),
+        ) as cur:
+            for member in await cur.fetchall():
+                members_by_team.setdefault(int(member[1]), []).append({
+                    "id": int(member[0]), "fio": member[2],
+                    "position": member[3], "team_name": member[4],
+                })
+
+    for app in apps:
+        app_id = int(app["id"])
+        parts = [
+            app.get("public_number"), app_id, app.get("foreman_name"),
+            app.get("date_target"), app.get("object_name"),
+            app.get("object_address"), app.get("object_clean_address"),
+            app.get("comment"), app.get("equipment_data"),
+            app.get("smr_accounted_by_fio"),
+        ]
+        # Before hours are filled, index the requested participants. Once the
+        # report contains hours, the exact participants were already added
+        # above and we avoid false matches from non-participating team members.
+        if app_id not in hours_apps:
+            selected = {
+                int(part) for part in str(app.get("selected_members") or "").split(",")
+                if part.strip().isdigit()
+            }
+            for team_id in {
+                int(part) for part in str(app.get("team_id") or "").split(",")
+                if part.strip().isdigit() and int(part) != 0
+            }:
+                for member in members_by_team.get(team_id, []):
+                    if not selected or member["id"] in selected:
+                        parts.extend((member["team_name"], member["fio"], member["position"]))
+        index[app_id].append(" ".join(str(value or "") for value in parts))
+        app["search_text"] = " ".join(index[app_id])
+
+
 @router.get("/api/kp/smr/list")
 async def get_smr_list(current_user=Depends(get_current_user)):
     """Applications grouped into SMR-wizard tabs: к заполнению / на проверку / готовые."""
@@ -1340,7 +1432,8 @@ async def get_smr_list(current_user=Depends(get_current_user)):
 
     base_query = """
         SELECT a.id, a.public_number, a.foreman_id, a.foreman_name, a.team_id, a.date_target,
-               a.object_id, a.object_address,
+               a.object_id, a.object_address, a.selected_members,
+               a.equipment_data, a.comment,
                a.status, a.kp_status,
                a.smr_status, a.smr_group_id, a.smr_filled_by_role,
                a.smr_accounted_by, a.smr_accounted_at,
@@ -1384,6 +1477,7 @@ async def get_smr_list(current_user=Depends(get_current_user)):
                 return True
         return False
     apps = [a for a in apps if _has_brigade(a)]
+    await _attach_smr_search_text(apps)
 
     to_fill: list[dict] = []
     pending: list[dict] = []
@@ -1427,6 +1521,7 @@ async def get_smr_list(current_user=Depends(get_current_user)):
             continue
         members.sort(key=lambda x: int(x.get('id') or 0))
         primary = dict(members[0])
+        primary['search_text'] = ' '.join(str(m.get('search_text') or '') for m in members)
         primary['merged_with'] = [
             {
                 'id': m['id'],
@@ -1456,6 +1551,7 @@ async def get_smr_list(current_user=Depends(get_current_user)):
         for members in by_group.values():
             members.sort(key=lambda x: int(x.get('id') or 0))
             primary = dict(members[0])
+            primary['search_text'] = ' '.join(str(m.get('search_text') or '') for m in members)
             if len(members) > 1:
                 primary['merged_with'] = [
                     {'id': m['id'], 'date_target': m.get('date_target'),

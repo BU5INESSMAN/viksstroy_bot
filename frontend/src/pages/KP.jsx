@@ -15,6 +15,7 @@ import SMRWizard from '../features/kp/components/SMRWizard';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
 import SMRReconciliationModal from '../features/kp/components/SMRReconciliationModal';
 import { formatApplicationNumber } from '../utils/applicationNumber';
+import { matchesDeepSearch } from '../utils/deepSearch';
 
 // Pull the server-supplied filename out of a Content-Disposition header.
 // Honours both `filename*=UTF-8''<pct-encoded>` and plain `filename="…"`.
@@ -130,6 +131,7 @@ export default function KP() {
     const [showAccounted, setShowAccounted] = useState(false);
     const [accountingBusy, setAccountingBusy] = useState(false);
     const [showReconciliation, setShowReconciliation] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const fileInputRef = useRef(null);
 
@@ -385,6 +387,18 @@ export default function KP() {
     const visibleReady = showAccounted
         ? [...unaccountedReady, ...accountedReady]
         : unaccountedReady;
+    const activeItems = activeTab === 'approved' ? visibleReady : (data[activeTab] || []);
+    const searchedItems = activeItems.filter((app) => matchesDeepSearch([
+        app.search_text,
+        app.public_number,
+        app.id,
+        app.foreman_name,
+        app.object_name,
+        app.obj_name,
+        app.object_address,
+        app.date_target,
+        app.smr_accounted_at ? 'учтено учтенный' : 'не учтено',
+    ], searchQuery));
     const selectedUnaccounted = selectedForExport.filter(id =>
         unaccountedReady.some(app => app.id === id)
     );
@@ -501,17 +515,36 @@ export default function KP() {
                 )}
             </div>
 
+            <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder="Глубокий поиск: участник, работа, объект, прораб, номер, дата…"
+                    className="w-full min-h-12 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 pl-12 pr-24 text-sm text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+                <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
+                    {searchQuery && <span className="hidden sm:inline text-[11px] font-semibold text-gray-400">Найдено: {searchedItems.length}</span>}
+                    {searchQuery && (
+                        <button type="button" onClick={() => setSearchQuery('')} className="w-10 h-10 rounded-xl flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Очистить поиск">
+                            <X className="w-4 h-4 text-gray-400" />
+                        </button>
+                    )}
+                </div>
+            </div>
+
             {activeTab === 'approved' && isOffice && data.approved.length > 0 && (
                 <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-3 bg-emerald-50/50 dark:bg-emerald-900/10 p-4 rounded-2xl border border-emerald-100 dark:border-emerald-800/30">
                     <button
                         onClick={() => {
-                            const ids = visibleReady.map(app => app.id);
+                            const ids = searchedItems.map(app => app.id);
                             const allSelected = ids.length > 0 && ids.every(id => selectedForExport.includes(id));
                             setSelectedForExport(allSelected ? [] : ids);
                         }}
                         className="self-start text-sm font-bold text-emerald-700 dark:text-emerald-400"
                     >
-                        {visibleReady.length > 0 && visibleReady.every(app => selectedForExport.includes(app.id))
+                        {searchedItems.length > 0 && searchedItems.every(app => selectedForExport.includes(app.id))
                             ? 'Снять выделение'
                             : 'Выделить видимые'}
                     </button>
@@ -558,7 +591,7 @@ export default function KP() {
             )}
 
             <GroupedSMRList
-                items={activeTab === 'approved' ? visibleReady : (data[activeTab] || [])}
+                items={searchedItems}
                 tab={activeTab}
                 groupMode={groupMode}
                 isOffice={isOffice}

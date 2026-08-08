@@ -33,6 +33,7 @@ from auth_deps import get_current_user, require_office, require_role
 from utils import normalize_invite_code
 from services.notifications import notify_users
 from services import driver_service
+from services.resource_stats import drivers_overview
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["Drivers"])
@@ -190,6 +191,16 @@ async def api_drivers_availability(
     primary_out = [by_uid[int(d["user_id"])] for d in drivers]
     tail_out = [v for k, v in by_uid.items() if k not in primary_ids]
     return primary_out + tail_out
+
+
+@router.get("/api/drivers/stats/overview")
+async def get_drivers_overview(
+    period: str = Query("month", pattern="^(week|month|all)$"),
+    current_user=Depends(get_current_user),
+):
+    if current_user.get("role") not in ("hr", "foreman", "moderator", "boss", "superadmin"):
+        raise HTTPException(403, "Недостаточно прав")
+    return await drivers_overview(db, period)
 
 
 def _resolve_slot_for_equipment(

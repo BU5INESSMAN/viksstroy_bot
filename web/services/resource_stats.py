@@ -87,19 +87,24 @@ async def _applications(db, *, cutoff: str | None = None, object_id: int | None 
     return [row for row in rows if row.get("status") in ACTIVE_STATUSES]
 
 
-async def team_stats(db, team_id: int, period: str = "month") -> dict:
+async def team_stats(
+    db, team_id: int, period: str = "month", *,
+    _apps: list[dict] | None = None,
+    _app_hours: dict[int, float] | None = None,
+) -> dict:
     async with db.conn.execute(
         "SELECT id FROM team_members WHERE team_id=?", (int(team_id),)
     ) as cur:
         member_ids = {int(row[0]) for row in await cur.fetchall()}
 
-    apps = await _applications(db, cutoff=_cutoff(period))
-    app_hours: dict[int, float] = {}
-    async with db.conn.execute(
-        "SELECT app_id,COALESCE(SUM(hours),0) FROM application_hours WHERE team_id=? GROUP BY app_id",
-        (int(team_id),),
-    ) as cur:
-        app_hours = {int(row[0]): float(row[1] or 0) for row in await cur.fetchall()}
+    apps = _apps if _apps is not None else await _applications(db, cutoff=_cutoff(period))
+    app_hours: dict[int, float] = _app_hours or {}
+    if _app_hours is None:
+        async with db.conn.execute(
+            "SELECT app_id,COALESCE(SUM(hours),0) FROM application_hours WHERE team_id=? GROUP BY app_id",
+            (int(team_id),),
+        ) as cur:
+            app_hours = {int(row[0]): float(row[1] or 0) for row in await cur.fetchall()}
 
     assignments: list[dict] = []
     for app in apps:
@@ -133,8 +138,11 @@ async def team_stats(db, team_id: int, period: str = "month") -> dict:
     }
 
 
-async def equipment_stats(db, equipment_id: int, period: str = "month") -> dict:
-    apps = await _applications(db, cutoff=_cutoff(period))
+async def equipment_stats(
+    db, equipment_id: int, period: str = "month", *,
+    _apps: list[dict] | None = None,
+) -> dict:
+    apps = _apps if _apps is not None else await _applications(db, cutoff=_cutoff(period))
     assignments: list[dict] = []
     for app in apps:
         entry = next((row for row in _equipment_rows(app.get("equipment_data"))
@@ -157,6 +165,229 @@ async def equipment_stats(db, equipment_id: int, period: str = "month") -> dict:
         "utilization": utilization,
         "top_foremen": foremen.most_common(5),
         "last_app": assignments[0] if assignments else None,
+    }
+
+
+async def teams_overview(
+    db, period: str = "month", team_ids: set[int] | None = None,
+) -> dict:
+    """Aggregate every visible brigade and its real member participation."""
+    params: list[int] = []
+    where = ""
+    if team_ids is not None:
+        if not team_ids:
+            return {"kind": "teams", "metrics": [], "rows": []}
+        marks = ",".join("?" for _ in team_ids)
+        where = f"WHERE t.id IN ({marks})"
+        params = sorted(team_ids)
+    async with db.conn.execute(
+        f"""SELECT t.id,t.name,
+                   COUNT(tm.id) AS member_count,
+                   SUM(CASE WHEN EXISTS(
+                     SELECT 1 FROM users max_user
+                      WHERE max_user.user_id<0
+                        AND COALESCE(max_user.is_active,0)=1
+                        AND (
+                          max_user.user_id=tm.tg_user_id
+                          OR EXISTS(
+                            SELECT 1 FROM account_links al
+                             WHERE (al.primary_id=tm.tg_user_id AND al.secondary_id=max_user.user_id)
+                                OR (al.secondary_id=tm.tg_user_id AND al.primary_id=max_user.user_id)
+                          )
+                        )
+                   ) THEN 1 ELSE 0 END) AS linked_count,
+                   SUM(CASE WHEN tm.is_foreman=1 THEN 1 ELSE 0 END) AS brigadier_count
+              FROM teams t LEFT JOIN team_members tm ON tm.team_id=t.id
+              {where}
+             GROUP BY t.id,t.name ORDER BY t.name""",
+        params,
+    ) as cur:
+        base_rows = [dict(row) for row in await cur.fetchall()]
+
+    visible_team_ids = [int(row["id"]) for row in base_rows]
+    members_by_team: dict[int, list[dict]] = {}
+    member_hours: dict[int, float] = {}
+    if visible_team_ids:
+        team_marks = ",".join("?" for _ in visible_team_ids)
+        async with db.conn.execute(
+            f"SELECT tm.id,tm.team_id,tm.fio,tm.position,tm.tg_user_id,tm.status,tm.status_from,tm.status_until, "
+            f"CASE WHEN EXISTS(SELECT 1 FROM users max_user "
+            f"WHERE max_user.user_id<0 AND COALESCE(max_user.is_active,0)=1 AND ("
+            f"max_user.user_id=tm.tg_user_id OR EXISTS(SELECT 1 FROM account_links al "
+            f"WHERE (al.primary_id=tm.tg_user_id AND al.secondary_id=max_user.user_id) "
+            f"OR (al.secondary_id=tm.tg_user_id AND al.primary_id=max_user.user_id)))) "
+            f"THEN 1 ELSE 0 END "
+            f"FROM team_members tm WHERE tm.team_id IN ({team_marks}) "
+            f"ORDER BY team_id,is_foreman DESC,fio",
+            visible_team_ids,
+        ) as cur:
+            for member in await cur.fetchall():
+                members_by_team.setdefault(int(member[1]), []).append({
+                    "id": int(member[0]), "fio": member[2] or "Сотрудник",
+                    "position": member[3] or "", "max_linked": bool(member[8]),
+                    "status": member[5] or "available", "status_from": member[6],
+                    "status_until": member[7],
+                })
+        hours_sql = (
+            f"SELECT ah.user_id,COALESCE(SUM(ah.hours),0) "
+            f"FROM application_hours ah JOIN applications a ON a.id=ah.app_id "
+            f"WHERE ah.team_id IN ({team_marks}) "
+            f"AND a.status IN ('waiting','approved','published','in_progress','completed')"
+        )
+        hours_params: list = list(visible_team_ids)
+        cutoff = _cutoff(period)
+        if cutoff:
+            hours_sql += " AND a.date_target>=?"
+            hours_params.append(cutoff)
+        hours_sql += " GROUP BY ah.user_id"
+        async with db.conn.execute(hours_sql, hours_params) as cur:
+            member_hours = {int(row[0]): round(float(row[1] or 0), 2) for row in await cur.fetchall()}
+
+    rows = []
+    all_apps = await _applications(db, cutoff=_cutoff(period))
+    hours_by_team_app: dict[tuple[int, int], float] = {}
+    async with db.conn.execute(
+        "SELECT team_id,app_id,COALESCE(SUM(hours),0) "
+        "FROM application_hours GROUP BY team_id,app_id"
+    ) as cur:
+        hours_by_team_app = {
+            (int(row[0]), int(row[1])): float(row[2] or 0)
+            for row in await cur.fetchall()
+        }
+    for team in base_rows:
+        team_id = int(team["id"])
+        stats = await team_stats(
+            db, team_id, period,
+            _apps=all_apps,
+            _app_hours={
+                app_id: hours
+                for (hours_team_id, app_id), hours in hours_by_team_app.items()
+                if hours_team_id == team_id
+            },
+        )
+        members = members_by_team.get(int(team["id"]), [])
+        for member in members:
+            member["labor_hours"] = member_hours.get(member["id"], 0)
+        rows.append({
+            **team,
+            "members": members,
+            "assignments": stats["total"],
+            "work_days": stats["work_days"],
+            "partial_assignments": stats["partial_assignments"],
+            "people_assignments": stats["people_assignments"],
+            "labor_hours": stats["labor_hours"],
+            "objects_count": len(stats["objects"]),
+        })
+    return {
+        "kind": "teams",
+        "metrics": [
+            {"label": "Бригад", "value": len(rows)},
+            {"label": "Участников", "value": sum(int(r.get("member_count") or 0) for r in rows)},
+            {"label": "Привязано к MAX", "value": sum(int(r.get("linked_count") or 0) for r in rows)},
+            {"label": "Часов по СМР", "value": round(sum(float(r.get("labor_hours") or 0) for r in rows), 2)},
+        ],
+        "rows": rows,
+    }
+
+
+async def equipment_overview(db, period: str = "month") -> dict:
+    """Aggregate the whole fleet using the same shift-based calculations."""
+    async with db.conn.execute(
+        "SELECT id,name,category,status,license_plate,default_driver_user_id "
+        "FROM equipment WHERE COALESCE(is_active,1)=1 ORDER BY category,name"
+    ) as cur:
+        base_rows = [dict(row) for row in await cur.fetchall()]
+    rows = []
+    all_apps = await _applications(db, cutoff=_cutoff(period))
+    for equipment in base_rows:
+        stats = await equipment_stats(db, int(equipment["id"]), period, _apps=all_apps)
+        rows.append({
+            **equipment,
+            "assignments": stats["total"],
+            "work_days": stats["work_days"],
+            "work_hours": stats["work_hours"],
+            "objects_count": len(stats["objects"]),
+            "utilization": stats["utilization"],
+        })
+    return {
+        "kind": "equipment",
+        "metrics": [
+            {"label": "Единиц техники", "value": len(rows)},
+            {"label": "Свободно", "value": sum(r.get("status") == "free" for r in rows)},
+            {"label": "В ремонте", "value": sum(r.get("status") == "repair" for r in rows)},
+            {"label": "Моточасов", "value": round(sum(float(r.get("work_hours") or 0) for r in rows), 2)},
+        ],
+        "rows": rows,
+    }
+
+
+async def drivers_overview(db, period: str = "month") -> dict:
+    """MAX binding and assignment statistics for every active driver."""
+    cutoff = _cutoff(period)
+    async with db.conn.execute(
+        """SELECT u.user_id,u.fio,u.member_status,u.status_from,u.status_until,
+                  CASE
+                    WHEN u.user_id < 0 AND COALESCE(u.is_active,0)=1 THEN 1
+                    WHEN EXISTS(
+                      SELECT 1 FROM account_links al
+                      JOIN users max_user ON max_user.user_id = CASE
+                        WHEN al.primary_id=u.user_id THEN al.secondary_id
+                        ELSE al.primary_id END
+                       WHERE (al.primary_id=u.user_id OR al.secondary_id=u.user_id)
+                         AND max_user.user_id<0
+                         AND COALESCE(max_user.is_active,0)=1
+                    ) THEN 1 ELSE 0
+                  END AS max_linked
+             FROM users u
+            WHERE u.role='driver' AND COALESCE(u.is_blacklisted,0)=0
+              AND COALESCE(u.is_deleted,0)=0
+            ORDER BY u.fio"""
+    ) as cur:
+        drivers = [dict(row) for row in await cur.fetchall()]
+
+    sql = (
+        "SELECT ad.driver_user_id,COUNT(*) AS assignments,"
+        "COUNT(DISTINCT a.date_target) AS work_days,"
+        "COUNT(DISTINCT ad.equipment_id) AS equipment_count,"
+        "COUNT(DISTINCT COALESCE(a.object_id,a.object_address)) AS objects_count "
+        "FROM application_drivers ad JOIN applications a ON a.id=ad.application_id "
+        "WHERE a.status IN ('waiting','approved','published','in_progress','completed')"
+    )
+    query_params: list[str] = []
+    if cutoff:
+        sql += " AND a.date_target>=?"
+        query_params.append(cutoff)
+    sql += " GROUP BY ad.driver_user_id"
+    async with db.conn.execute(sql, query_params) as cur:
+        assignment_map = {int(row[0]): dict(row) for row in await cur.fetchall()}
+
+    today = date.today().isoformat()
+    for driver in drivers:
+        assignment = assignment_map.get(int(driver["user_id"]), {})
+        driver.update({
+            "assignments": int(assignment.get("assignments") or 0),
+            "work_days": int(assignment.get("work_days") or 0),
+            "equipment_count": int(assignment.get("equipment_count") or 0),
+            "objects_count": int(assignment.get("objects_count") or 0),
+        })
+        configured = driver.get("member_status") or "available"
+        active_now = configured
+        if configured in ("vacation", "sick"):
+            if driver.get("status_from") and today < driver["status_from"]:
+                active_now = "available"
+            if driver.get("status_until") and today > driver["status_until"]:
+                active_now = "available"
+        driver["effective_status"] = active_now
+
+    return {
+        "kind": "drivers",
+        "metrics": [
+            {"label": "Водителей", "value": len(drivers)},
+            {"label": "MAX привязан", "value": sum(bool(r.get("max_linked")) for r in drivers)},
+            {"label": "Без MAX", "value": sum(not bool(r.get("max_linked")) for r in drivers)},
+            {"label": "Назначений", "value": sum(int(r.get("assignments") or 0) for r in drivers)},
+        ],
+        "rows": drivers,
     }
 
 

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { Briefcase, Users, Truck, UserCircle2 } from 'lucide-react';
+import { Briefcase, Users, Truck, UserCircle2, Search, X } from 'lucide-react';
 import Teams from './Teams';
 import Equipment from './Equipment';
 import Drivers from './Drivers';
@@ -10,6 +10,7 @@ export default function Resources() {
     const isBrigadier = role === 'brigadier';
     const [searchParams, setSearchParams] = useSearchParams();
     const [activeTab, setActiveTab] = useState(isBrigadier ? 'teams' : (searchParams.get('tab') || 'teams'));
+    const [searchQuery, setSearchQuery] = useState('');
 
     useEffect(() => {
         const tab = searchParams.get('tab');
@@ -64,10 +65,30 @@ export default function Resources() {
                 </button>
             </div>}
 
+            <div className="relative">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400 pointer-events-none" />
+                <input
+                    type="search"
+                    value={searchQuery}
+                    onChange={(event) => setSearchQuery(event.target.value)}
+                    placeholder={activeTab === 'teams'
+                        ? 'Поиск по бригаде, участнику, должности…'
+                        : activeTab === 'equipment'
+                            ? 'Поиск по названию, госномеру, категории, водителю…'
+                            : 'Поиск по ФИО, категории, статусу, привязке MAX…'}
+                    className="w-full min-h-12 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 pl-12 pr-12 text-sm text-gray-900 dark:text-white outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                {searchQuery && (
+                    <button type="button" onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-10 rounded-xl flex items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Очистить поиск">
+                        <X className="w-4 h-4 text-gray-400" />
+                    </button>
+                )}
+            </div>
+
             <div className="animate-in fade-in duration-300">
-                {activeTab === 'teams' && <Teams />}
-                {activeTab === 'equipment' && <Equipment />}
-                {activeTab === 'drivers' && <Drivers />}
+                {activeTab === 'teams' && <Teams searchQuery={searchQuery} />}
+                {activeTab === 'equipment' && <Equipment searchQuery={searchQuery} />}
+                {activeTab === 'drivers' && <Drivers searchQuery={searchQuery} />}
             </div>
         </main>
     );

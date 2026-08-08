@@ -122,7 +122,7 @@ async def get_dashboard_data(current_user=Depends(get_current_user)):
             icon_val = t['icon']
         except (IndexError, KeyError):
             icon_val = None
-        team_info = {"id": tid, "name": t['name'], "icon": icon_val or '', "member_count": 0, "brigadier_name": None}
+        team_info = {"id": tid, "name": t['name'], "icon": icon_val or '', "member_count": 0, "brigadier_name": None, "search_text": ""}
         try:
             async with db.conn.execute("SELECT COUNT(*) FROM team_members WHERE team_id = ?", (tid,)) as c:
                 row = await c.fetchone()
@@ -131,6 +131,13 @@ async def get_dashboard_data(current_user=Depends(get_current_user)):
                 row = await c.fetchone()
                 if row:
                     team_info["brigadier_name"] = row[0]
+            async with db.conn.execute(
+                "SELECT GROUP_CONCAT(COALESCE(fio,'') || ' ' || COALESCE(position,''), ' | ') "
+                "FROM team_members WHERE team_id = ?",
+                (tid,),
+            ) as c:
+                row = await c.fetchone()
+                team_info["search_text"] = row[0] if row and row[0] else ""
         except Exception:
             pass
         enriched_teams.append(team_info)

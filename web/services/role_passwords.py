@@ -7,6 +7,7 @@ import secrets
 
 
 ROLE_PASSWORDS = {
+    "driver": ("role_password_driver", "DRIVER_PASS"),
     "employee": ("role_password_employee", "EMPLOYEE_PASS"),
     "foreman": ("role_password_foreman", "FOREMAN_PASS"),
     "moderator": ("role_password_moderator", "MODERATOR_PASS"),

@@ -15,7 +15,7 @@ from auth_deps import get_current_user, require_role
 from utils import normalize_invite_code
 from services.notifications import notify_users
 from role_config import AUTO_ROLE_PROTECTED
-from services.resource_stats import team_stats
+from services.resource_stats import team_stats, teams_overview
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,8 @@ async def _team_summaries(team_ids: set[int] | None = None) -> list[dict]:
     async with db.conn.execute(
         f"""SELECT t.id, t.name, COALESCE(t.icon, '') AS icon,
                    COUNT(tm.id) AS member_count,
-                   MAX(CASE WHEN tm.is_foreman = 1 THEN tm.fio END) AS brigadier_name
+                   MAX(CASE WHEN tm.is_foreman = 1 THEN tm.fio END) AS brigadier_name,
+                   GROUP_CONCAT(COALESCE(tm.fio,'') || ' ' || COALESCE(tm.position,''), ' | ') AS search_text
               FROM teams t
               LEFT JOIN team_members tm ON tm.team_id = t.id
               {where}
@@ -171,6 +172,19 @@ async def get_my_teams(current_user=Depends(get_current_user)):
     if current_user.get("role") != "brigadier":
         raise HTTPException(403, "Раздел предназначен для бригадира")
     return await _team_summaries(await _brigadier_team_ids(current_user))
+
+
+@router.get("/api/teams/stats/overview")
+async def get_teams_overview(
+    period: str = Query("month", pattern="^(week|month|all)$"),
+    current_user=Depends(get_current_user),
+):
+    role = current_user.get("role")
+    allowed = ("brigadier", "hr", "foreman", "moderator", "boss", "superadmin")
+    if role not in allowed:
+        raise HTTPException(403, "Недостаточно прав")
+    visible_ids = await _brigadier_team_ids(current_user) if role == "brigadier" else None
+    return await teams_overview(db, period, visible_ids)
 
 
 @router.get("/api/teams/{team_id}/stats")
