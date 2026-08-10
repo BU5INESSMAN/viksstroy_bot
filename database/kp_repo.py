@@ -102,6 +102,101 @@ class KpRepoMixin:
         async with self.conn.execute(query, (app_id, obj_id)) as cur:
             return [dict(row) for row in await cur.fetchall()]
 
+    async def get_group_kp_items(self, app_ids: list[int]):
+        """Return every plan and saved work from a merged SMR report.
+
+        Merged data is stored on the primary application, but the plan can
+        come from several objects. Reading saved rows through the primary
+        object's plan hides works unique to a secondary object, so the two
+        data sets must be loaded independently and combined afterwards.
+        """
+        ids = sorted({int(value) for value in (app_ids or []) if int(value) > 0})
+        if not ids:
+            return []
+        marks = ",".join("?" * len(ids))
+
+        async with self.conn.execute(
+            f"""
+            SELECT DISTINCT k.id AS kp_id, k.category, k.name, k.unit,
+                            k.salary, k.price
+            FROM applications a
+            JOIN object_kp_plan okp ON okp.object_id = a.object_id
+            JOIN kp_catalog k ON k.id = okp.kp_id
+            WHERE a.id IN ({marks})
+            ORDER BY k.category, k.id
+            """,
+            tuple(ids),
+        ) as cur:
+            plan_rows = [dict(row) for row in await cur.fetchall()]
+
+        async with self.conn.execute(
+            f"""
+            SELECT akp.id AS saved_row_id, akp.application_id,
+                   k.id AS kp_id, k.category, k.name, k.unit,
+                   k.salary, k.price, COALESCE(akp.volume, 0) AS volume,
+                   akp.current_salary AS saved_salary,
+                   akp.current_price AS saved_price,
+                   akp.team_id, t.name AS team_name,
+                   akp.filled_by_user_id, akp.filled_at,
+                   u.fio AS filled_by_fio, u.role AS filled_by_role
+            FROM application_kp akp
+            JOIN kp_catalog k ON k.id = akp.kp_id
+            LEFT JOIN teams t ON t.id = akp.team_id
+            LEFT JOIN users u ON u.user_id = akp.filled_by_user_id
+            WHERE akp.application_id IN ({marks})
+              AND COALESCE(akp.is_additional, 0) = 0
+            ORDER BY k.category, k.id, akp.team_id, akp.filled_at, akp.id
+            """,
+            tuple(ids),
+        ) as cur:
+            saved_rows = [dict(row) for row in await cur.fetchall()]
+
+        saved_by_key: dict[tuple[int, int | None], dict] = {}
+        for row in saved_rows:
+            key = (
+                int(row['kp_id']),
+                int(row['team_id']) if row.get('team_id') is not None else None,
+            )
+            existing = saved_by_key.get(key)
+            if existing is None:
+                saved_by_key[key] = row
+                continue
+            existing['volume'] = float(existing.get('volume') or 0) + float(row.get('volume') or 0)
+            old_stamp = (existing.get('filled_at') or '', int(existing.get('saved_row_id') or 0))
+            new_stamp = (row.get('filled_at') or '', int(row.get('saved_row_id') or 0))
+            if new_stamp > old_stamp:
+                total_volume = existing['volume']
+                existing.update(row)
+                existing['volume'] = total_volume
+
+        saved_kp_ids = {key[0] for key in saved_by_key}
+        items = list(saved_by_key.values())
+        for row in plan_rows:
+            if int(row['kp_id']) in saved_kp_ids:
+                continue
+            items.append({
+                **row,
+                'volume': 0,
+                'saved_salary': None,
+                'saved_price': None,
+                'team_id': None,
+                'team_name': None,
+                'filled_by_user_id': None,
+                'filled_at': None,
+                'filled_by_fio': None,
+                'filled_by_role': None,
+            })
+
+        items.sort(key=lambda row: (
+            str(row.get('category') or ''),
+            int(row.get('kp_id') or 0),
+            row.get('team_id') is not None,
+            int(row.get('team_id') or 0),
+        ))
+        for row in items:
+            row.pop('saved_row_id', None)
+        return items
+
     async def submit_kp_report(self, app_id: int, items: list, role: str, filled_by_user_id: int | None = None, team_scope=None, *, commit: bool = True):
         # v2.4.3: foreman sends only {kp_id, volume}. Unit, salary, and
         # price are looked up from kp_catalog server-side so the frontend

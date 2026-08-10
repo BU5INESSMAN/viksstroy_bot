@@ -88,11 +88,11 @@
 
 `database/objects_repo.py` — Миксин `ObjectsRepoMixin`. Методы: `get_objects`, `create_object`, `update_object` (с ресурсами по умолчанию), `archive_object`, `restore_object`, `get_kp_catalog`, `get_object_kp_plan`, `add_kp_to_object`.
 
-`database/kp_repo.py` — Миксин `KpRepoMixin`. Методы: `get_kp_dashboard_apps` (распределение по вкладкам), `get_app_kp_items`, `submit_kp_report` (с условным одобрением для foreman+), `review_kp_report`, `update_kp_volumes_only`, `generate_mass_excel` (Excel через pandas/openpyxl).
+`database/kp_repo.py` — Миксин `KpRepoMixin`. Методы: `get_kp_dashboard_apps` (распределение по вкладкам), `get_app_kp_items`, `get_group_kp_items`, `submit_kp_report` (с условным одобрением для foreman+), `review_kp_report`, `update_kp_volumes_only`, `generate_mass_excel` (Excel через pandas/openpyxl). Для объединённого СМР план строится по всем объектам группы, а сохранённые значения читаются отдельно по всем заявкам: работа вторичного объекта не зависит от объекта первичной заявки и не теряется при повторном открытии.
 
 `database/exchange_repo.py` — Миксин `ExchangeRepoMixin` (Stage 5A, биржа техники). Методы создания/ответа/отмены обменов техникой между прорабами и обработки тайм-аутов (`equipment_exchanges`).
 
-`database/hours_repo.py` — Миксин `HoursRepoMixin` (СМР wizard, шаг 1 «Часы»). Методы: `get_app_hours`, `save_app_hours`, `get_teams_for_app`, `get_user_team_ids` (область видимости бригадира). Хранит часы по участникам бригад в `application_hours`.
+`database/hours_repo.py` — Миксин `HoursRepoMixin` (СМР wizard, шаг 1 «Часы»). Методы: `get_app_hours`, `save_app_hours`, `get_teams_for_app`, `get_user_team_ids` (область видимости бригадира). Хранит часы по участникам бригад в `application_hours`. При объединении заявок одинаковые бригады сводятся в одну секцию, а выбранные участники берутся как объединение составов всех заявок группы.
 
 > Примечание (v2.7.1): помимо перечисленных, в `web/routers/` есть ещё роутеры `system`, `exchange`, `support`, `push`, `drivers` — итого 13 (см. `web/api_main.py`). Их эндпоинты здесь не расписаны построчно; полный перечень регистрируется в `api_main.py`.
 

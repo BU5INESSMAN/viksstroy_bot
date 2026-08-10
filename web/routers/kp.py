@@ -233,36 +233,11 @@ async def _guard_adhoc_hours(app_id: int, hours_items: list, role: str) -> list:
 
 @router.get("/api/kp/apps/{app_id}/items")
 async def get_app_kp_items(app_id: int, current_user=Depends(get_current_user)):
-    # Merge-aware: aggregate plan items across every app in the same
-    # SMR merge group so the wizard sees the unified picture.
+    # The merged plan comes from every object while saved rows can live on
+    # the primary application. Read both sets independently so a secondary
+    # object's work cannot disappear on reopen.
     group_ids = await _expand_merge_group(app_id)
-    items: list[dict] = []
-    seen_keys: set = set()
-    for aid in group_ids:
-        batch = await db.get_app_kp_items(aid)
-        for it in batch:
-            # v2.9: key by (kp_id, team_id) so per-brigade rows ("По бригадам",
-            # team_id NOT NULL) are returned SEPARATELY and never summed across
-            # brigades. For common-mode rows (team_id NULL) the key degrades to
-            # one-per-kp_id, preserving the original merge-summing behavior.
-            kp_key = int(it.get('kp_id') or it.get('id') or 0)
-            team_key = it.get('team_id')
-            key = (kp_key, team_key)
-            if key in seen_keys:
-                existing = next(
-                    (x for x in items
-                     if int(x.get('kp_id') or x.get('id') or 0) == kp_key
-                     and x.get('team_id') == team_key),
-                    None,
-                )
-                if existing is not None:
-                    try:
-                        existing['volume'] = float(existing.get('volume') or 0) + float(it.get('volume') or 0)
-                    except (TypeError, ValueError):
-                        pass
-                    continue
-            seen_keys.add(key)
-            items.append(it)
+    items = await db.get_group_kp_items(group_ids)
     role = current_user.get('role', 'worker')
     # Strip financial data for non-office roles (privacy)
     if role not in ('moderator', 'boss', 'superadmin', 'hr'):
@@ -367,16 +342,27 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
                     existing['filled_by_role'] = r.get('filled_by_role') or existing.get('filled_by_role') or ''
                     existing['filled_at'] = r.get('filled_at') or existing.get('filled_at') or ''
 
-    # Union of teams across the group — dedupe by team_id.
-    seen_teams: set[int] = set()
-    teams: list[dict] = []
+    # Union both teams and selected members. The same brigade may be assigned
+    # partially to several merged applications; keeping its first occurrence
+    # used to drop people selected on later objects.
+    team_map: dict[int, dict] = {}
     for aid in group_ids:
         for t in await db.get_teams_for_app(aid):
             tid = int(t.get('id') or 0)
-            if tid in seen_teams:
-                continue
-            seen_teams.add(tid)
-            teams.append(t)
+            if tid not in team_map:
+                team_map[tid] = {**t, 'members': []}
+            target = team_map[tid]
+            seen_members = {int(member['id']) for member in target['members']}
+            for member in t.get('members') or []:
+                if int(member['id']) not in seen_members:
+                    target['members'].append(member)
+                    seen_members.add(int(member['id']))
+    teams = list(team_map.values())
+    for team in teams:
+        team['members'].sort(key=lambda member: (
+            -int(bool(member.get('is_foreman', 0))),
+            str(member.get('fio') or '').casefold(),
+        ))
 
     result = []
     for team in teams:
