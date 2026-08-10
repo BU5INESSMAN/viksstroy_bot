@@ -35,6 +35,7 @@ export default function StepHours({
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(() => new Set());
     const [customOverrides, setCustomOverrides] = useState(() => new Set());
+    const [teamHourInputs, setTeamHourInputs] = useState({});
 
     // v2.7 — ad-hoc worker picker (foreman/office only).
     const canAddAdHoc = ['foreman', 'moderator', 'boss', 'superadmin', 'hr'].includes(userRole);
@@ -165,11 +166,22 @@ export default function StepHours({
         if (readOnly) return;
         const team = teams.find(t => t.team_id === team_id);
         if (!team) return;
-        const numeric = value === '' ? 0 : Number(value);
+        setTeamHourInputs(prev => ({ ...prev, [team_id]: value }));
+        const numeric = value === '' ? null : Number(value);
         setHoursData(prev => {
-            const others = prev.filter(h => h.team_id !== team_id || customOverrides.has(`${team_id}:${h.user_id}`));
-            if (numeric <= 0) {
-                return others.filter(h => customOverrides.has(`${h.team_id}:${h.user_id}`));
+            const others = prev.flatMap(h => {
+                if (h.team_id !== team_id || customOverrides.has(`${team_id}:${h.user_id}`)) {
+                    return [h];
+                }
+                // Clearing the common value must not silently remove a salary
+                // already entered for a participant.
+                if (numeric === null && Number(h.participant_salary || 0) > 0) {
+                    return [{ ...h, hours: 0 }];
+                }
+                return [];
+            });
+            if (numeric === null || !Number.isFinite(numeric)) {
+                return others;
             }
             const additions = (team.members || [])
                 .filter(m => !customOverrides.has(`${team_id}:${m.user_id}`))
@@ -263,18 +275,26 @@ export default function StepHours({
     }, [candidates, candSearch]);
 
     const getTeamLevel = (team) => {
-        // If all non-vacation members share the same non-zero value and have
-        // no individual override, show that as the team-level value.
+        if (Object.prototype.hasOwnProperty.call(teamHourInputs, team.team_id)) {
+            return teamHourInputs[team.team_id];
+        }
+        // If all non-vacation members have the same saved value, show it at
+        // team level. An explicit zero is different from an untouched field.
         const values = (team.members || [])
             .filter(m => (m.status || 'available') === 'available')
             .filter(m => !customOverrides.has(`${team.team_id}:${m.user_id}`))
-            .map(m => hoursMap.get(`${team.team_id}:${m.user_id}`) ?? 0);
+            .map(m => {
+                const key = `${team.team_id}:${m.user_id}`;
+                return hoursMap.has(key) ? hoursMap.get(key) : undefined;
+            });
         if (values.length === 0) return '';
         const first = values[0];
-        return values.every(v => v === first) && first > 0 ? first : '';
+        return first !== undefined && values.every(v => v === first) ? first : '';
     };
 
-    const hasAnyHours = hoursData.some(h => h.hours > 0);
+    const hasHoursEntry = hoursData.some(h =>
+        h.hours !== '' && Number.isFinite(Number(h.hours)) && Number(h.hours) >= 0
+    );
 
     if (loading) {
         return (
@@ -499,14 +519,14 @@ export default function StepHours({
                     <button
                         type="button"
                         onClick={onNext}
-                        disabled={!addendumMode && !hasAnyHours}
+                        disabled={!addendumMode && !hasHoursEntry}
                         className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl transition-colors active:scale-[0.99] flex items-center justify-center gap-2"
                     >
                         Далее — работы <ArrowRight className="w-4 h-4" />
                     </button>
-                    {!addendumMode && !hasAnyHours && (
+                    {!addendumMode && !hasHoursEntry && (
                         <p className="text-xs text-gray-400 text-center mt-2">
-                            Введите хотя бы одного участника с ненулевыми часами
+                            Введите общие часы или часы хотя бы одного участника — значение 0 допустимо
                         </p>
                     )}
                 </div>
