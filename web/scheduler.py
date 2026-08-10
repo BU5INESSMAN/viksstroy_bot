@@ -44,6 +44,18 @@ async def check_and_run_tasks():
         foreman_reminder_time = settings.get('foreman_reminder_time', '')
         remind_on_weekends = settings.get('foreman_reminder_weekends', '0') == '1'
 
+        # Disabling auto-publication is authoritative even for timers created
+        # by an earlier smart-schedule prompt.
+        if not auto_publish_enabled and (
+            settings.get('smart_publish_at') or settings.get('smart_prompt_at')
+        ):
+            await db.conn.execute(
+                "DELETE FROM settings WHERE key IN ('smart_publish_at','smart_prompt_at')"
+            )
+            await db.conn.commit()
+            settings.pop('smart_publish_at', None)
+            settings.pop('smart_prompt_at', None)
+
         # =========================================================================
         # ТРИГГЕР 1: АВТО-ПУБЛИКАЦИЯ НАРЯДОВ В БЕСЕДУ
         # =========================================================================
@@ -204,7 +216,7 @@ async def check_and_run_tasks():
         # ТРИГГЕР 6: АВТО-ПУБЛИКАЦИЯ РАССТАНОВКИ (когда все прорабы утвердили)
         # =========================================================================
         # Проверяем каждую минуту с 12:00 до 22:00, опубликована ли уже расстановка на завтра
-        if 12 <= now.hour <= 22:
+        if auto_publish_enabled and 12 <= now.hour <= 22:
             tomorrow_str = (now + timedelta(days=1)).strftime("%Y-%m-%d")
             schedule_flag_key = f"schedule_published_{tomorrow_str}"
             already_published = False
@@ -273,7 +285,7 @@ async def check_and_run_tasks():
                 "SELECT value FROM settings WHERE key = 'smart_prompt_at'"
             ) as cur:
                 re_prompt_row = await cur.fetchone()
-            if re_prompt_row and re_prompt_row[0]:
+            if auto_publish_enabled and re_prompt_row and re_prompt_row[0]:
                 re_prompt_at = datetime.strptime(re_prompt_row[0], "%Y-%m-%d %H:%M:%S")
                 if now.replace(tzinfo=None) >= re_prompt_at:
                     from services.schedule_helpers import send_smart_schedule_prompt
@@ -296,7 +308,7 @@ async def check_and_run_tasks():
         try:
             async with db.conn.execute("SELECT value FROM settings WHERE key = 'smart_publish_at'") as cur:
                 timer_row = await cur.fetchone()
-            if timer_row and timer_row[0]:
+            if auto_publish_enabled and timer_row and timer_row[0]:
                 publish_at = datetime.strptime(timer_row[0], "%Y-%m-%d %H:%M:%S")
                 if now.replace(tzinfo=None) >= publish_at:
                     from services.notifications import send_schedule_notifications

@@ -40,6 +40,7 @@ def money_value(value, *, field: str = "Сумма") -> Decimal:
 def calculate_smr_totals(plan_rows: list[dict], extra_rows: list[dict], hours_rows: list[dict]) -> dict:
     salary_total = Decimal("0")
     price_total = Decimal("0")
+    participant_salary_total = Decimal("0")
 
     def add_rows(rows, salary_key, price_key):
         nonlocal salary_total, price_total
@@ -54,8 +55,13 @@ def calculate_smr_totals(plan_rows: list[dict], extra_rows: list[dict], hours_ro
         (decimal_value(row.get("hours"), field="Часы", maximum=MAX_HOURS_PER_ROW) for row in hours_rows),
         Decimal("0"),
     )
+    for row in hours_rows:
+        participant_salary_total += money_value(
+            row.get("participant_salary"), field="ЗП участника"
+        )
     return {
         "hours": float(hours.quantize(QUANTITY_STEP, rounding=ROUND_HALF_UP)),
         "salary": float(salary_total.quantize(MONEY_STEP, rounding=ROUND_HALF_UP)),
+        "participant_salary": float(participant_salary_total.quantize(MONEY_STEP, rounding=ROUND_HALF_UP)),
         "price": float(price_total.quantize(MONEY_STEP, rounding=ROUND_HALF_UP)),
     }

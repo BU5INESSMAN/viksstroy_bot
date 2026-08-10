@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { ArrowLeft, Send, Clock, Hammer, Plus, Loader2, Check } from 'lucide-react';
+import { ArrowLeft, Send, Clock, Hammer, Plus, Loader2, Check, WalletCards } from 'lucide-react';
 
 /**
  * Wizard step 3 — review & submit. Loads display metadata (FIO, specialty,
@@ -57,6 +57,9 @@ export default function StepReview({
                 .map(m => ({
                     ...m,
                     hours: selected.get(`${t.team_id}:${m.user_id}`) || 0,
+                    participant_salary: hoursData.find(
+                        h => `${h.team_id}:${h.user_id}` === `${t.team_id}:${m.user_id}`
+                    )?.participant_salary || 0,
                 }));
             if (rows.length > 0) {
                 out.push({ team_id: t.team_id, team_name: t.team_name, members: rows });
@@ -112,6 +115,11 @@ export default function StepReview({
 
     const totalMembers = hoursByTeam.reduce((a, t) => a + t.members.length, 0);
     const totalHours = hoursByTeam.reduce((a, t) => a + t.members.reduce((s, m) => s + Number(m.hours || 0), 0), 0);
+    const totalParticipantSalary = hoursByTeam.reduce(
+        (total, team) => total + team.members.reduce(
+            (sum, member) => sum + Number(member.participant_salary || 0), 0
+        ), 0
+    );
 
     return (
         <div className="space-y-5">
@@ -128,9 +136,16 @@ export default function StepReview({
                     <span className="flex items-center gap-2 text-sm font-bold text-gray-900 dark:text-white">
                         <Clock className="w-4 h-4 text-blue-500" /> Часы
                     </span>
-                    <span className="text-[11px] font-bold text-gray-400">
-                        {totalMembers} чел · {totalHours.toFixed(1)} ч
-                    </span>
+                    <div className="text-right">
+                        <span className="block text-[11px] font-bold text-gray-400">
+                            {totalMembers} чел · {totalHours.toFixed(1)} ч
+                        </span>
+                        {totalParticipantSalary > 0 && (
+                            <span className="block text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
+                                ЗП участникам: {totalParticipantSalary.toLocaleString('ru-RU')} ₽
+                            </span>
+                        )}
+                    </div>
                 </header>
                 {hoursByTeam.length === 0 ? (
                     <p className="text-center text-sm italic text-gray-400 dark:text-gray-500 py-6">
@@ -145,7 +160,7 @@ export default function StepReview({
                                 </div>
                                 <ul className="divide-y divide-gray-50 dark:divide-gray-700/40">
                                     {t.members.map(m => (
-                                        <li key={m.user_id} className="flex items-center gap-3 px-4 py-2">
+                                        <li key={m.user_id} className="flex flex-wrap sm:flex-nowrap items-center gap-3 px-4 py-2">
                                             <span className="flex-1 text-sm text-gray-800 dark:text-gray-100 truncate">
                                                 {m.fio}
                                             </span>
@@ -154,6 +169,10 @@ export default function StepReview({
                                             </span>
                                             <span className="w-16 text-right text-sm font-bold text-gray-900 dark:text-white">
                                                 {Number(m.hours).toFixed(1)} ч
+                                            </span>
+                                            <span className="min-w-[7rem] text-right text-sm font-bold text-emerald-700 dark:text-emerald-400 inline-flex items-center justify-end gap-1">
+                                                <WalletCards className="w-3.5 h-3.5" />
+                                                {Number(m.participant_salary || 0).toLocaleString('ru-RU')} ₽
                                             </span>
                                         </li>
                                     ))}

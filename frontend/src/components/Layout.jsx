@@ -15,7 +15,7 @@ import SessionModal from '../features/layout/components/SessionModal';
 import NotificationsModal from '../features/layout/components/NotificationsModal';
 import OnlineUsersModal from '../features/layout/components/OnlineUsersModal';
 import OnboardingTour from './OnboardingTour';
-import { getFullTourSteps } from '../utils/tourSteps';
+import { getFullTourSteps, getTourReplayKey, getTourStorageKey, TOUR_VERSION } from '../utils/tourSteps';
 import { subscribeToPush } from '../utils/pushSubscription';
 import PWAInstallBanner from './PWAInstallBanner';
 import MaintenanceScreen from './MaintenanceScreen';
@@ -139,14 +139,53 @@ export default function Layout() {
         return () => clearTimeout(timer);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-    // Continuous onboarding tour — show once on first authenticated visit
+    // Account-scoped, role-specific onboarding. The server is authoritative;
+    // localStorage only prevents a flash while the account snapshot loads.
     useEffect(() => {
         if (!tgId || !role || role === 'Гость') return;
-        if (localStorage.getItem('tour_complete')) return;
         if (tourSteps.length === 0) return;
-        const timer = setTimeout(() => setShowTour(true), 1000);
-        return () => clearTimeout(timer);
+        let cancelled = false;
+        let timer;
+
+        const doneKey = getTourStorageKey(tgId, role);
+        const replayKey = getTourReplayKey(tgId, role);
+        const forceReplay = localStorage.getItem(replayKey) === '1';
+        const showAfterDelay = () => {
+            if (!cancelled) timer = setTimeout(() => !cancelled && setShowTour(true), 700);
+        };
+
+        axios.get('/api/users/me').then((response) => {
+            if (cancelled) return;
+            const completed = response.data?.user?.settings?.onboarding_completed_roles || {};
+            const serverDone = String(completed[role] || '') === TOUR_VERSION;
+            const localDone = localStorage.getItem(doneKey) === '1'
+                || localStorage.getItem('tour_complete') === '1';
+            if (serverDone) localStorage.setItem(doneKey, '1');
+            if (!serverDone && localDone && !forceReplay) {
+                localStorage.setItem(doneKey, '1');
+                axios.patch('/api/users/me/settings', {
+                    onboarding_completed_roles: { [role]: TOUR_VERSION },
+                }).catch(() => {});
+            }
+            if (forceReplay || (!serverDone && !localDone)) showAfterDelay();
+        }).catch(() => {
+            const localDone = localStorage.getItem(doneKey) === '1'
+                || localStorage.getItem('tour_complete') === '1';
+            if (forceReplay || !localDone) showAfterDelay();
+        });
+
+        return () => { cancelled = true; clearTimeout(timer); };
     }, [tgId, role, tourSteps.length]);
+
+    const completeTour = () => {
+        setShowTour(false);
+        const doneKey = getTourStorageKey(tgId, role);
+        localStorage.setItem(doneKey, '1');
+        localStorage.removeItem(getTourReplayKey(tgId, role));
+        axios.patch('/api/users/me/settings', {
+            onboarding_completed_roles: { [role]: TOUR_VERSION },
+        }).catch(() => {});
+    };
 
     const toggleTheme = () => setTheme(theme === 'light' ? 'dark' : theme === 'dark' ? 'system' : 'light');
 
@@ -306,11 +345,8 @@ export default function Layout() {
             {showTour && tourSteps.length > 0 && (
                 <OnboardingTour
                     steps={tourSteps}
-                    tourId="complete"
-                    onComplete={() => {
-                        setShowTour(false);
-                        localStorage.setItem('tour_complete', '1');
-                    }}
+                    tourId={`${role}-${TOUR_VERSION}`}
+                    onComplete={completeTour}
                 />
             )}
 

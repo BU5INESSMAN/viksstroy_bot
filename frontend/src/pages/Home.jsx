@@ -20,6 +20,7 @@ import useAppForm from '../features/applications/hooks/useAppForm';
 import useConfirm from '../hooks/useConfirm';
 import { HomeSkeleton } from '../components/ui/PageSkeletons';
 import RoleDashboard from '../features/dashboard/components/RoleDashboard';
+import ActionItemsWidget from '../features/dashboard/components/ActionItemsWidget';
 
 export default function Home() {
     const smartDates = getSmartDates();
@@ -35,6 +36,8 @@ export default function Home() {
     const [debtors, setDebtors] = useState([]);
     const [publishingTomorrow, setPublishingTomorrow] = useState(false);
     const [roleSummary, setRoleSummary] = useState(null);
+    const [actionItems, setActionItems] = useState(null);
+    const [actionItemsLoading, setActionItemsLoading] = useState(false);
     const [isArchiveOpen, setArchiveOpen] = useState(false);
     // Server setting — persistent across devices, hides widget entirely
     const [hideDebtors, setHideDebtors] = useState(false);
@@ -90,6 +93,7 @@ export default function Home() {
             .catch(() => { setActiveApps([]); setLoading(false); });
         if (['moderator', 'boss', 'superadmin'].includes(role)) {
             axios.get('/api/system/debtors').then(res => setDebtors(res.data || [])).catch(() => {});
+            fetchActionItems();
         }
         if (['worker', 'brigadier', 'foreman', 'boss', 'superadmin'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {
@@ -98,6 +102,15 @@ export default function Home() {
                 }
             }).catch(() => {});
         }
+    }
+
+    function fetchActionItems() {
+        if (!['moderator', 'boss', 'superadmin'].includes(role)) return;
+        setActionItemsLoading(true);
+        axios.get('/api/dashboard/action-items')
+            .then((res) => setActionItems(res.data || { total: 0, items: [] }))
+            .catch(() => setActionItems(null))
+            .finally(() => setActionItemsLoading(false));
     }
 
     useEffect(() => { fetchData(); }, [tgId, role]);
@@ -241,6 +254,7 @@ export default function Home() {
     const isHr = role === 'hr';
     const isEmployee = role === 'employee';
     const canArchive = ['moderator', 'boss', 'superadmin'].includes(role);
+    const canSeeActionItems = ['moderator', 'boss', 'superadmin'].includes(role);
 
     // -------------------------------------------------------------------------
     // Render
@@ -271,8 +285,9 @@ export default function Home() {
                 {myTeam && <MyTeamCard myTeam={myTeam} />}
             </div>
 
-            {!isWorkerOrDriver && !isHr && !isEmployee && !hideDebtors && debtors.length > 0 && (
-                <div data-tour="debtors-widget">
+            {canSeeActionItems && (
+                <div className={`grid grid-cols-1 gap-5 ${!hideDebtors && debtors.length > 0 ? 'lg:grid-cols-2' : ''}`}>
+                {!hideDebtors && debtors.length > 0 && <div data-tour="debtors-widget">
                     <AnimatePresence mode="wait" initial={false}>
                         {debtorsHiddenSession ? (
                             <DebtorsRestorePill key="debtors-pill" onRestore={showDebtorsForSession} />
@@ -289,6 +304,8 @@ export default function Home() {
                             </motion.div>
                         )}
                     </AnimatePresence>
+                </div>}
+                <ActionItemsWidget data={actionItems} loading={actionItemsLoading} onRefresh={fetchActionItems} />
                 </div>
             )}
 

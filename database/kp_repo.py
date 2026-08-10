@@ -399,7 +399,7 @@ class KpRepoMixin:
 
         headers = [
             "Заявка", "Дата", "Объект", "Тип", "Бригада", "Работа / сотрудник",
-            "Ед. / специальность", "Объём / часы", "ЗП за ед.", "Сумма ЗП",
+            "Ед. / специальность", "Объём / часы", "ЗП участника", "ЗП за ед.", "Сумма ЗП",
             "Цена за ед.", "Сумма цены", "Доп. отчёт",
         ]
         rows = [headers]
@@ -426,7 +426,7 @@ class KpRepoMixin:
                 salary = float(item.get("current_salary") or 0)
                 price = float(item.get("current_price") or 0)
                 rows.append([app_label, date_target, object_name, "Работа", item.get("team_name") or "",
-                             item.get("name") or "", item.get("unit") or "", volume, salary,
+                             item.get("name") or "", item.get("unit") or "", volume, "", salary,
                              round(volume * salary, 2), price, round(volume * price, 2),
                              "Да" if item.get("is_additional") else "Нет"])
             for item in report.get("extra_works", []):
@@ -434,16 +434,18 @@ class KpRepoMixin:
                 salary = float(item.get("salary") or 0)
                 price = float(item.get("price") or 0)
                 rows.append([app_label, date_target, object_name, "Доп. работа", item.get("team_name") or "",
-                             item.get("name") or "", item.get("unit") or "", volume, salary,
+                             item.get("name") or "", item.get("unit") or "", volume, "", salary,
                              round(volume * salary, 2), price, round(volume * price, 2),
                              "Да" if item.get("is_additional") else "Нет"])
             for item in report.get("hours", []):
                 rows.append([app_label, date_target, object_name, "Часы", item.get("team_name") or "",
                              item.get("fio") or "", item.get("specialty") or "", float(item.get("hours") or 0),
-                             "", "", "", "", "Да" if item.get("is_additional") else "Нет"])
+                             float(item.get("participant_salary") or 0), "", "", "", "",
+                             "Да" if item.get("is_additional") else "Нет"])
             totals = report.get("totals", {})
             rows.append([app_label, date_target, object_name, "ИТОГО", "", "", "",
-                         totals.get("hours", 0), "", totals.get("salary", 0), "",
+                         totals.get("hours", 0), totals.get("participant_salary", 0), "",
+                         totals.get("salary", 0), "",
                          totals.get("price", 0), ""])
 
         if len(rows) == 1:

@@ -5,7 +5,7 @@ import { ChevronRight, ChevronLeft } from 'lucide-react';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export default function OnboardingTour({ steps, tourId, onComplete }) {
+export default function OnboardingTour({ steps, onComplete }) {
   const navigate = useNavigate();
   const [cur, setCur] = useState(0);
   const [rect, setRect] = useState(null);
@@ -62,9 +62,8 @@ export default function OnboardingTour({ steps, tourId, onComplete }) {
 
   const finish = useCallback(() => {
     setVisible(false);
-    try { localStorage.setItem(`tour_${tourId}_done`, '1'); } catch {}
     onComplete?.();
-  }, [tourId, onComplete]);
+  }, [onComplete]);
 
   const goToStep = useCallback((nextIdx) => {
     if (nextIdx < 0 || nextIdx >= steps.length) return;

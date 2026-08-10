@@ -1,3 +1,4 @@
+import { cloneElement, isValidElement } from 'react';
 import { createPortal } from 'react-dom';
 
 /**
@@ -21,5 +22,8 @@ import { createPortal } from 'react-dom';
  */
 export default function ModalPortal({ children }) {
     if (typeof document === 'undefined') return null;
-    return createPortal(children, document.body);
+    const content = isValidElement(children)
+        ? cloneElement(children, { 'data-modal-overlay': 'true' })
+        : children;
+    return createPortal(content, document.body);
 }

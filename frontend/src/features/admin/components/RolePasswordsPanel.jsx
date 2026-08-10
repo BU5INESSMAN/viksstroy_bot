@@ -1,17 +1,24 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { Check, Copy, Eye, EyeOff, KeyRound, Save } from 'lucide-react';
+import { Check, Copy, Eye, EyeOff, KeyRound, RefreshCw } from 'lucide-react';
+import useConfirm from '../../../hooks/useConfirm';
 
 export default function RolePasswordsPanel({ role }) {
     const [items, setItems] = useState([]);
     const [visible, setVisible] = useState({});
     const [saving, setSaving] = useState('');
+    const [originals, setOriginals] = useState({});
+    const { confirm, ConfirmUI } = useConfirm();
 
     useEffect(() => {
         if (role !== 'superadmin') return;
         axios.get('/api/admin/role-passwords')
-            .then((response) => setItems(response.data || []))
+            .then((response) => {
+                const loaded = response.data || [];
+                setItems(loaded);
+                setOriginals(Object.fromEntries(loaded.map((item) => [item.role, item.password])));
+            })
             .catch(() => toast.error('Не удалось загрузить пароли ролей'));
     }, [role]);
 
@@ -33,9 +40,19 @@ export default function RolePasswordsPanel({ role }) {
     };
 
     const save = async (item) => {
+        if ((item.password || '').length < 6) {
+            toast.error('Пароль должен содержать не менее 6 символов');
+            return;
+        }
+        const ok = await confirm(
+            `Заменить общий пароль роли «${item.label}»? Старый пароль перестанет подходить для новых входов.`,
+            { title: 'Подтверждение замены пароля', confirmText: 'Заменить пароль', variant: 'warning' },
+        );
+        if (!ok) return;
         setSaving(item.role);
         try {
             await axios.put(`/api/admin/role-passwords/${item.role}`, { password: item.password });
+            setOriginals((current) => ({ ...current, [item.role]: item.password }));
             toast.success(`Пароль роли «${item.label}» изменён`);
         } catch (error) {
             toast.error(error?.response?.data?.detail || 'Ошибка сохранения');
@@ -45,7 +62,8 @@ export default function RolePasswordsPanel({ role }) {
     };
 
     return (
-        <section id="admin-role-passwords" className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 sm:p-6 shadow-sm">
+        <>
+        <section id="admin-role-passwords" data-tour="admin-role-passwords" className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 p-5 sm:p-6 shadow-sm">
             <div className="flex items-start gap-3 mb-5">
                 <div className="w-10 h-10 rounded-xl bg-violet-50 dark:bg-violet-900/20 flex items-center justify-center">
                     <KeyRound className="w-5 h-5 text-violet-600 dark:text-violet-400" />
@@ -75,12 +93,14 @@ export default function RolePasswordsPanel({ role }) {
                                 </button>
                             </div>
                         </div>
-                        <button type="button" onClick={() => save(item)} disabled={saving === item.role} className="h-11 px-4 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                            {saving === item.role ? <Check className="w-4 h-4" /> : <Save className="w-4 h-4" />} Сохранить
+                        <button type="button" onClick={() => save(item)} disabled={saving === item.role || originals[item.role] === item.password} className="h-11 px-4 rounded-xl bg-violet-600 hover:bg-violet-700 text-white text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                            {saving === item.role ? <Check className="w-4 h-4" /> : <RefreshCw className="w-4 h-4" />} Заменить пароль
                         </button>
                     </div>
                 ))}
             </div>
         </section>
+        {ConfirmUI}
+        </>
     );
 }

@@ -18,6 +18,7 @@ export default function AnimatedModal({ isOpen, onClose, children, className = '
         <AnimatePresence>
             {isOpen && (
                 <motion.div
+                    data-modal-overlay="true"
                     className={`fixed inset-0 w-screen h-[100dvh] z-[9998] bg-black/60 backdrop-blur-sm ${className}`}
                     style={{ top: 0, left: 0, right: 0, bottom: 0 }}
                     initial={prefersReducedMotion ? false : { opacity: 0 }}
@@ -28,7 +29,11 @@ export default function AnimatedModal({ isOpen, onClose, children, className = '
                 >
                     <div
                         className="fixed inset-0 z-[9999] flex min-h-full items-start justify-center p-4 pt-10 pb-24 overflow-y-auto"
-                        style={{ top: 0, left: 0, right: 0, bottom: 0 }}
+                        style={{
+                            top: 0, left: 0, right: 0, bottom: 0,
+                            paddingTop: 'max(2.5rem, calc(env(safe-area-inset-top, 0px) + 0.75rem))',
+                            paddingBottom: 'max(6rem, calc(env(safe-area-inset-bottom, 0px) + 1rem))',
+                        }}
                     >
                         <motion.div
                             initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.95, y: 20 }}

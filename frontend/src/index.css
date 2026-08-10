@@ -63,6 +63,25 @@ html {
   padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
+/* Every modal rendered through ModalPortal respects the iPhone notch /
+   Dynamic Island and the home indicator. Close buttons remain reachable
+   even in standalone PWA mode where 100vh may include unsafe screen areas. */
+@media (max-width: 768px) {
+  [data-modal-overlay="true"],
+  .fixed.inset-0[class*="bg-black/"] {
+    box-sizing: border-box;
+    padding-top: max(1rem, calc(env(safe-area-inset-top, 0px) + 0.75rem)) !important;
+    padding-bottom: max(1rem, calc(env(safe-area-inset-bottom, 0px) + 0.75rem)) !important;
+    scroll-padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+    scroll-padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 0.75rem);
+  }
+
+  [data-modal-overlay="true"] > *,
+  .fixed.inset-0[class*="bg-black/"] > * {
+    max-height: calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 1.5rem);
+  }
+}
+
 /* Rendered through a body portal so animated page wrappers cannot become
    its containing block. This keeps the navigation attached to the visual
    viewport in iOS Safari/PWA while the document scrolls. */

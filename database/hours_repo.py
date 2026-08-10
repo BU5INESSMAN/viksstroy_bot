@@ -14,7 +14,7 @@ Rationale: mirrors the existing pattern used by
 
 from datetime import datetime
 
-from smr_calculations import MAX_HOURS_PER_ROW, SmrNumberError, decimal_value
+from smr_calculations import MAX_HOURS_PER_ROW, SmrNumberError, decimal_value, money_value
 
 
 def _parse_team_ids(team_id_field: str) -> list[int]:
@@ -49,6 +49,7 @@ class HoursRepoMixin:
                 ah.team_id,
                 ah.user_id AS member_id,
                 ah.hours,
+                COALESCE(ah.participant_salary, 0) AS participant_salary,
                 ah.filled_by_user_id,
                 ah.filled_at,
                 COALESCE(ah.is_additional, 0) AS is_additional,
@@ -72,8 +73,19 @@ class HoursRepoMixin:
         async with self.conn.execute(query, (app_id,)) as cur:
             return [dict(r) for r in await cur.fetchall()]
 
-    async def save_app_hours(self, app_id: int, hours_data: list[dict], filled_by_user_id: int):
-        """Upsert hours rows. `hours_data` items: {team_id, user_id, hours}
+    async def save_app_hours(
+        self,
+        app_id: int,
+        hours_data: list[dict],
+        filled_by_user_id: int,
+        *,
+        allow_participant_salary: bool = False,
+    ):
+        """Upsert hours rows. `hours_data` items may include participant salary.
+
+        Only an authorized foreman/office caller may set this value. Other
+        callers preserve any existing salary and cannot overwrite it.
+        Items: {team_id, user_id, hours, participant_salary}
         — where `user_id` is actually team_members.id (see module docstring).
         """
         now = datetime.now().isoformat(timespec='seconds')
@@ -86,6 +98,9 @@ class HoursRepoMixin:
                 ))
             except (KeyError, TypeError, ValueError):
                 raise SmrNumberError('Часы: передано некорректное значение')
+            participant_salary = float(money_value(
+                item.get('participant_salary'), field='ЗП участника'
+            )) if allow_participant_salary else 0.0
             # v2.10: main hours write is_additional=0. ON CONFLICT target now
             # carries the partial-index predicate (WHERE is_additional = 0) so
             # it matches idx_app_hours_unique's partial form; addendum rows
@@ -93,14 +108,22 @@ class HoursRepoMixin:
             await self.conn.execute(
                 """
                 INSERT INTO application_hours
-                    (app_id, team_id, user_id, hours, filled_by_user_id, filled_at, is_additional)
-                VALUES (?, ?, ?, ?, ?, ?, 0)
+                    (app_id, team_id, user_id, hours, participant_salary,
+                     filled_by_user_id, filled_at, is_additional)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
                 ON CONFLICT(app_id, team_id, user_id) WHERE is_additional = 0 DO UPDATE SET
                     hours = excluded.hours,
+                    participant_salary = CASE
+                        WHEN ? THEN excluded.participant_salary
+                        ELSE application_hours.participant_salary
+                    END,
                     filled_by_user_id = excluded.filled_by_user_id,
                     filled_at = excluded.filled_at
                 """,
-                (app_id, team_id, member_id, hours, filled_by_user_id, now),
+                (
+                    app_id, team_id, member_id, hours, participant_salary,
+                    filled_by_user_id, now, int(allow_participant_salary),
+                ),
             )
         await self.conn.commit()
 

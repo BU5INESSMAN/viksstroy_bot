@@ -10,13 +10,13 @@ export default function Resources() {
     const isBrigadier = role === 'brigadier';
     const [searchParams, setSearchParams] = useSearchParams();
     const [activeTab, setActiveTab] = useState(isBrigadier ? 'teams' : (searchParams.get('tab') || 'teams'));
-    const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery, setSearchQuery] = useState(() => searchParams.get('q') || '');
+    const targetTeamId = Number(searchParams.get('team_id') || 0);
 
     useEffect(() => {
         const tab = searchParams.get('tab');
         if (!isBrigadier && tab && ['teams', 'equipment', 'drivers'].includes(tab)) {
             setActiveTab(tab);
-            setSearchParams({}, { replace: true });
         } else if (isBrigadier && tab !== 'teams') {
             setActiveTab('teams');
         }
@@ -86,7 +86,7 @@ export default function Resources() {
             </div>
 
             <div className="animate-in fade-in duration-300">
-                {activeTab === 'teams' && <Teams searchQuery={searchQuery} />}
+                {activeTab === 'teams' && <Teams searchQuery={searchQuery} openTeamId={targetTeamId} />}
                 {activeTab === 'equipment' && <Equipment searchQuery={searchQuery} />}
                 {activeTab === 'drivers' && <Drivers searchQuery={searchQuery} />}
             </div>

@@ -47,7 +47,12 @@ export default function Objects() {
         if (action === 'create' && canCreate) setCreateModalOpen(true);
         if (tab === 'archive') setShowArchived(true);
         if (tab === 'requests') setShowRequests(true);
-        if (action || tab) setSearchParams({}, { replace: true });
+        if (action || tab) {
+            const next = new URLSearchParams(searchParams);
+            next.delete('action');
+            next.delete('tab');
+            setSearchParams(next, { replace: true });
+        }
     }, [searchParams]);
 
     // Edit modal
@@ -182,6 +187,20 @@ export default function Objects() {
             setObjectFiles(filesRes.data || []);
         } catch (e) {}
     };
+
+    useEffect(() => {
+        const targetId = Number(searchParams.get('object_id') || 0);
+        if (loading || !targetId || !canManage) return;
+        const target = objects.find((obj) => Number(obj.id) === targetId);
+        if (!target) return;
+        openEditModal(target, searchParams.get('object_tab') || 'info');
+        const next = new URLSearchParams(searchParams);
+        next.delete('object_id');
+        next.delete('object_tab');
+        setSearchParams(next, { replace: true });
+        // Direct correction links are consumed once after objects load.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [loading, objects, canManage]);
 
     const openStatsModal = async (obj) => {
         setStatsObj(obj);

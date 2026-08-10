@@ -60,6 +60,9 @@ MIGRATIONS_ORDER = [
     # Active MAX accounts and office placeholders historically shared the
     # negative id space. Merge only unique exact-FIO duplicate pairs.
     "m_2026_08_merge_duplicate_max_drivers",
+    # Foreman-entered pay per SMR participant. This remains separate from
+    # the catalog work-rate salary used in financial calculations.
+    "m_2026_08_smr_participant_salary",
 ]
 
 

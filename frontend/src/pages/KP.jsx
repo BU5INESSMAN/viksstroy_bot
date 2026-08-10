@@ -77,6 +77,7 @@ export default function KP() {
 
     const isOffice = ['moderator', 'boss', 'superadmin', 'hr'].includes(role);
     const canViewFinance = ['moderator', 'boss', 'superadmin', 'hr'].includes(role);
+    const canViewParticipantSalary = canViewFinance || role === 'foreman';
     const isForemanOrBrigadier = ['foreman', 'brigadier'].includes(role);
     // v2.10 доп.отчёт: who may create an addendum (backend re-enforces scope).
     const canCreateAddendum = ['foreman', 'brigadier', 'moderator', 'boss', 'superadmin', 'hr'].includes(role);
@@ -377,6 +378,7 @@ export default function KP() {
     };
 
     const totalSalary = smrTotals?.salary ?? 0;
+    const totalParticipantSalary = smrTotals?.participant_salary ?? 0;
     const totalPrice = smrTotals?.price ?? 0;
     const unaccountedReady = isOffice
         ? data.approved.filter(app => !app.smr_accounted_at)
@@ -709,7 +711,14 @@ export default function KP() {
                                                     <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{row.fio || 'Сотрудник'}</p>
                                                     <p className="text-[11px] text-gray-400 truncate">{row.team_name || '—'}{row.is_additional ? ' · добавлено позже' : ''}</p>
                                                 </div>
-                                                <span className="font-bold text-gray-900 dark:text-white whitespace-nowrap">{row.hours} ч</span>
+                                                <div className="text-right whitespace-nowrap">
+                                                    <span className="block font-bold text-gray-900 dark:text-white">{row.hours} ч</span>
+                                                    {canViewParticipantSalary && (
+                                                        <span className="block text-xs font-bold text-emerald-600 dark:text-emerald-400">
+                                                            ЗП: {Number(row.participant_salary || 0).toLocaleString('ru-RU')} ₽
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
                                         ))}
                                     </div>
@@ -731,16 +740,26 @@ export default function KP() {
                         </div>
                         {kpItems.length > 0 && (
                             <div className="p-6 border-t bg-gray-50/50 dark:bg-gray-900/50">
-                                {canViewFinance && (
+                                {(canViewFinance || canViewParticipantSalary) && (
                                     <div className="space-y-2 mb-6">
-                                        <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
-                                            <span className="text-xs font-bold text-gray-400 uppercase">Сумма ЗП:</span>
-                                            <span className="text-xl font-black text-gray-800 dark:text-white">{totalSalary.toLocaleString()} ₽</span>
-                                        </div>
-                                        <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
-                                            <span className="text-xs font-bold text-gray-400 uppercase">Сумма Цена:</span>
-                                            <span className="text-xl font-black text-gray-800 dark:text-white">{totalPrice.toLocaleString()} ₽</span>
-                                        </div>
+                                        {canViewParticipantSalary && (
+                                            <div className="flex justify-between items-center bg-emerald-50/70 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800/50">
+                                                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase">ЗП участникам:</span>
+                                                <span className="text-xl font-black text-emerald-700 dark:text-emerald-400">{totalParticipantSalary.toLocaleString('ru-RU')} ₽</span>
+                                            </div>
+                                        )}
+                                        {canViewFinance && (
+                                            <>
+                                                <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                                                    <span className="text-xs font-bold text-gray-400 uppercase">ЗП по расценкам работ:</span>
+                                                    <span className="text-xl font-black text-gray-800 dark:text-white">{totalSalary.toLocaleString('ru-RU')} ₽</span>
+                                                </div>
+                                                <div className="flex justify-between items-center bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
+                                                    <span className="text-xs font-bold text-gray-400 uppercase">Сумма цены:</span>
+                                                    <span className="text-xl font-black text-gray-800 dark:text-white">{totalPrice.toLocaleString('ru-RU')} ₽</span>
+                                                </div>
+                                            </>
+                                        )}
                                     </div>
                                 )}
                                 <div className="flex gap-3">

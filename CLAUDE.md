@@ -14,3 +14,10 @@ Rules:
 ## Graphify
 To run graphify: `graphify . --obsidian --wiki && graphify claude install`
 See GRAPHIFY.md for full reference.
+
+## Release notifications
+
+- Send update notifications only when the user explicitly requests them for that deployment.
+- Send them to the same MAX group as the schedules, exactly once for `started` and once for `completed`.
+- Keep them short and readable: emoji headings, blank lines, version on its own line, and one bullet per change.
+- Never collapse the release notes into one continuous line.

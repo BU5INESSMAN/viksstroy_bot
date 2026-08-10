@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ModalPortal from './ui/ModalPortal';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -45,9 +46,11 @@ export default function ConfirmModal({
     };
 
     return (
+        <ModalPortal>
         <AnimatePresence>
             {isOpen && (
                 <motion.div
+                    data-modal-overlay="true"
                     className="!fixed !inset-0 !top-0 !left-0 !w-full !h-[100dvh] z-[99990] bg-black/50 m-0 p-4 flex items-start sm:items-center justify-center overflow-y-auto"
                     initial={prefersReducedMotion ? false : { opacity: 0 }}
                     animate={{ opacity: 1 }}
@@ -102,5 +105,6 @@ export default function ConfirmModal({
                 </motion.div>
             )}
         </AnimatePresence>
+        </ModalPortal>
     );
 }

@@ -37,7 +37,8 @@ export default function StepHours({
     const [customOverrides, setCustomOverrides] = useState(() => new Set());
 
     // v2.7 — ad-hoc worker picker (foreman/office only).
-    const canAddAdHoc = ['foreman', 'moderator', 'boss', 'superadmin'].includes(userRole);
+    const canAddAdHoc = ['foreman', 'moderator', 'boss', 'superadmin', 'hr'].includes(userRole);
+    const canEditParticipantSalary = ['foreman', 'moderator', 'boss', 'superadmin', 'hr'].includes(userRole);
     const [showAddWorker, setShowAddWorker] = useState(false);
     const [candidates, setCandidates] = useState([]);
     const [candLoading, setCandLoading] = useState(false);
@@ -64,8 +65,13 @@ export default function StepHours({
                             // row (filled_at present = a deliberate save, incl. a
                             // saved 0) so a reopened report re-shows "0". Never-
                             // saved members (no filled_at) stay blank → no row.
-                            if (m.hours > 0 || m.filled_at) {
-                                seed.push({ team_id: team.team_id, user_id: m.user_id, hours: m.hours });
+                            if (m.hours > 0 || m.participant_salary > 0 || m.filled_at) {
+                                seed.push({
+                                    team_id: team.team_id,
+                                    user_id: m.user_id,
+                                    hours: m.hours,
+                                    participant_salary: m.participant_salary || 0,
+                                });
                             }
                         }
                     }
@@ -94,25 +100,64 @@ export default function StepHours({
         return m;
     }, [hoursData]);
 
+    const salaryMap = useMemo(() => {
+        const m = new Map();
+        for (const h of hoursData) {
+            m.set(`${h.team_id}:${h.user_id}`, h.participant_salary ?? '');
+        }
+        return m;
+    }, [hoursData]);
+
     const setMemberHours = (team_id, user_id, value, isCustom = true) => {
         if (readOnly) return;
         const key = `${team_id}:${user_id}`;
         const numeric = value === '' ? '' : value;
         setHoursData(prev => {
+            const existing = prev.find(h => h.team_id === team_id && h.user_id === user_id);
             const others = prev.filter(h => !(h.team_id === team_id && h.user_id === user_id));
             // v2.10 (D8): three-way split. '' (cleared / never-set) → remove the
             // row; an explicit 0 → KEEP it as a visible 0-hours row so the zero
             // persists and overwrites any prior value on submit; otherwise keep
             // the typed value. Never-touched members never reach here → no row.
-            if (numeric === '') return others;
-            if (Number(numeric) === 0) return [...others, { team_id, user_id, hours: 0 }];
-            return [...others, { team_id, user_id, hours: Number(numeric) }];
+            if (numeric === '') {
+                return Number(existing?.participant_salary || 0) > 0
+                    ? [...others, { ...existing, team_id, user_id, hours: 0 }]
+                    : others;
+            }
+            return [...others, {
+                ...existing,
+                team_id,
+                user_id,
+                hours: Number(numeric),
+                participant_salary: existing?.participant_salary ?? 0,
+            }];
         });
         setCustomOverrides(prev => {
             const next = new Set(prev);
             if (isCustom) next.add(key);
             else next.delete(key);
             return next;
+        });
+    };
+
+    const setMemberSalary = (team_id, user_id, value) => {
+        if (readOnly || !canEditParticipantSalary) return;
+        setHoursData(prev => {
+            const existing = prev.find(h => h.team_id === team_id && h.user_id === user_id);
+            const others = prev.filter(h => !(h.team_id === team_id && h.user_id === user_id));
+            if (value === '') {
+                if (existing && Number(existing.hours || 0) > 0) {
+                    return [...others, { ...existing, participant_salary: 0 }];
+                }
+                return others;
+            }
+            return [...others, {
+                ...existing,
+                team_id,
+                user_id,
+                hours: existing?.hours ?? 0,
+                participant_salary: Number(value),
+            }];
         });
     };
 
@@ -129,7 +174,16 @@ export default function StepHours({
             const additions = (team.members || [])
                 .filter(m => !customOverrides.has(`${team_id}:${m.user_id}`))
                 .filter(m => (m.status || 'available') === 'available')
-                .map(m => ({ team_id, user_id: m.user_id, hours: numeric }));
+                .map(m => {
+                    const existing = prev.find(h => h.team_id === team_id && h.user_id === m.user_id);
+                    return {
+                        ...existing,
+                        team_id,
+                        user_id: m.user_id,
+                        hours: numeric,
+                        participant_salary: existing?.participant_salary ?? 0,
+                    };
+                });
             return [...others, ...additions];
         });
     };
@@ -174,6 +228,7 @@ export default function StepHours({
             status: cand.status || 'available',
             tg_user_id: cand.user_id,
             hours: 0,
+            participant_salary: 0,
         };
         setTeams(prev => {
             const exists = prev.find(t => Number(t.team_id) === Number(teamId));
@@ -365,12 +420,12 @@ export default function StepHours({
                                             return (
                                                 <li
                                                     key={m.user_id}
-                                                    className="flex items-center gap-3 px-4 py-2.5"
+                                                    className="flex flex-wrap sm:flex-nowrap items-center gap-3 px-4 py-2.5"
                                                 >
                                                     <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full flex-shrink-0 ${m.is_foreman ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400' : 'bg-gray-100 dark:bg-gray-700 text-gray-400'}`}>
                                                         {m.is_foreman ? <Crown className="w-3.5 h-3.5" /> : <User className="w-3.5 h-3.5" />}
                                                     </span>
-                                                    <div className="flex-1 min-w-0">
+                                                    <div className="flex-1 min-w-[10rem]">
                                                         <p className="text-sm font-medium text-gray-800 dark:text-gray-100 truncate">
                                                             {m.fio}
                                                         </p>
@@ -393,19 +448,41 @@ export default function StepHours({
                                                             )}
                                                         </p>
                                                     </div>
-                                                    <input
-                                                        type="number"
-                                                        min="0"
-                                                        max="24"
-                                                        step="0.5"
-                                                        disabled={readOnly}
-                                                        value={current}
-                                                        onChange={(e) => setMemberHours(team.team_id, m.user_id, e.target.value, true)}
-                                                        placeholder="0"
-                                                        aria-label={`Часы для ${m.fio}`}
-                                                        className="w-16 p-1.5 text-center text-sm font-bold border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-400"
-                                                    />
-                                                    <span className="text-xs font-semibold text-gray-400 w-6">ч</span>
+                                                    <div className="ml-auto flex items-center gap-2">
+                                                        <label className="flex items-center gap-1" title={`Отработанные часы: ${m.fio}`}>
+                                                            <span className="text-[10px] font-bold text-gray-400 sm:hidden">Часы</span>
+                                                            <input
+                                                                type="number"
+                                                                min="0"
+                                                                max="24"
+                                                                step="0.5"
+                                                                disabled={readOnly}
+                                                                value={current}
+                                                                onChange={(e) => setMemberHours(team.team_id, m.user_id, e.target.value, true)}
+                                                                placeholder="0"
+                                                                aria-label={`Часы для ${m.fio}`}
+                                                                className="w-16 p-1.5 text-center text-sm font-bold border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-400"
+                                                            />
+                                                            <span className="text-xs font-semibold text-gray-400">ч</span>
+                                                        </label>
+                                                        {canEditParticipantSalary && (
+                                                            <label className="flex items-center gap-1" title={`ЗП участника: ${m.fio}`}>
+                                                                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">ЗП</span>
+                                                                <input
+                                                                    type="number"
+                                                                    min="0"
+                                                                    step="0.01"
+                                                                    disabled={readOnly}
+                                                                    value={salaryMap.get(key) ?? ''}
+                                                                    onChange={(e) => setMemberSalary(team.team_id, m.user_id, e.target.value)}
+                                                                    placeholder="0"
+                                                                    aria-label={`ЗП для ${m.fio}`}
+                                                                    className="w-24 p-1.5 text-center text-sm font-bold border border-emerald-200 dark:border-emerald-700 rounded-lg bg-emerald-50/50 dark:bg-emerald-900/10 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                                                                />
+                                                                <span className="text-xs font-semibold text-gray-400">₽</span>
+                                                            </label>
+                                                        )}
+                                                    </div>
                                                 </li>
                                             );
                                         })}

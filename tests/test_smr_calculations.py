@@ -81,7 +81,8 @@ class SmrReadModelTests(unittest.IsolatedAsyncioTestCase):
             );
             CREATE TABLE application_hours (
                 id INTEGER PRIMARY KEY, app_id INTEGER, team_id INTEGER,
-                user_id INTEGER, hours REAL, is_additional INTEGER,
+                user_id INTEGER, hours REAL, participant_salary REAL,
+                is_additional INTEGER,
                 filled_at TEXT, filled_by_user_id INTEGER
             );
             INSERT INTO applications VALUES (1, 'g1'), (2, 'g1');
@@ -95,8 +96,8 @@ class SmrReadModelTests(unittest.IsolatedAsyncioTestCase):
             INSERT INTO application_extra_works VALUES
                 (1, 2, 10, 0, 'Доп. работа', 'м2', 3, 5, 20, 5, 1, '2026-01-02', 100);
             INSERT INTO application_hours VALUES
-                (1, 1, 5, 7, 8, 0, '2026-01-01', 100),
-                (2, 2, 5, 7, 2.5, 1, '2026-01-02', 100);
+                (1, 1, 5, 7, 8, 4000, 0, '2026-01-01', 100),
+                (2, 2, 5, 7, 2.5, 1250, 1, '2026-01-02', 100);
             """
         )
 
@@ -109,8 +110,10 @@ class SmrReadModelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["totals"], {
             "hours": 10.5,
             "salary": 50.0,
+            "participant_salary": 5250.0,
             "price": 200.0,
         })
+        self.assertEqual(report["hours"][0]["participant_salary"], 4000)
         self.assertEqual(report["extra_works"][0]["kp_id"], 10)
         self.assertEqual(report["extra_works"][0]["name"], "Доп. работа")
 

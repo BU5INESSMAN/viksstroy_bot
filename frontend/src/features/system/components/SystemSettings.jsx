@@ -5,9 +5,9 @@ import {
 } from 'lucide-react';
 import { GlassCard, SectionHeader, Toggle } from './UIHelpers';
 
-export default function SystemSettings({ settings, handleSettingChange, saveSettings, role }) {
+export default function SystemSettings({ settings, handleSettingChange, saveSettings, setAutoPublishEnabled, role }) {
     return (
-        <GlassCard className="p-6 sm:p-8">
+        <GlassCard data-tour="admin-system-settings" className="p-6 sm:p-8">
             <SectionHeader icon={Settings} iconColor="text-blue-500 bg-blue-500" title="Настройки автоматизации" />
             <div className="space-y-5">
 
@@ -20,7 +20,11 @@ export default function SystemSettings({ settings, handleSettingChange, saveSett
                             </h3>
                             <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Одобренные заявки автоматически публикуются в беседу в указанное время.</p>
                         </div>
-                        <Toggle name="auto_publish_enabled" checked={settings.auto_publish_enabled} onChange={handleSettingChange} />
+                        <Toggle
+                            name="auto_publish_enabled"
+                            checked={settings.auto_publish_enabled}
+                            onChange={(event) => setAutoPublishEnabled?.(event.target.checked)}
+                        />
                     </div>
                     {settings.auto_publish_enabled && (
                         <input type="time" name="auto_publish_time" value={settings.auto_publish_time} onChange={handleSettingChange}

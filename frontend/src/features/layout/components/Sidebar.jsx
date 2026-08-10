@@ -304,6 +304,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
                                 isActive={location.pathname === '/admin'}
                                 onClick={() => navigate('/admin')}
                                 secondary
+                                dataTour="sidebar-nav-admin"
                             />
                         )}
 

@@ -35,6 +35,7 @@ DEFAULT_USER_SETTINGS = {
     "notify_object_requests": True,
     "notify_exchanges": True,
     "notification_events": {},
+    "onboarding_completed_roles": {},
 }
 
 
@@ -53,5 +54,14 @@ def merge_user_settings(current_json: str, patch: dict) -> str:
     """Merge `patch` into the user's current settings, return JSON string."""
     current = get_user_settings(current_json)
     if patch:
+        patch = dict(patch)
+        if isinstance(patch.get("onboarding_completed_roles"), dict):
+            saved_roles = current.get("onboarding_completed_roles")
+            if not isinstance(saved_roles, dict):
+                saved_roles = {}
+            patch["onboarding_completed_roles"] = {
+                **saved_roles,
+                **patch["onboarding_completed_roles"],
+            }
         current.update(patch)
     return json.dumps(current, ensure_ascii=False)

@@ -248,14 +248,27 @@ async def get_smr_summary(app_id: int, current_user=Depends(get_current_user)):
     result = await get_smr_read_model(db, app_id)
     if not result:
         raise HTTPException(404, "Заявка не найдена")
-    if current_user.get('role') not in ('moderator', 'boss', 'superadmin', 'hr'):
-        result.pop('totals', None)
+    role = current_user.get('role', 'worker')
+    is_office = role in ('moderator', 'boss', 'superadmin', 'hr')
+    can_view_participant_salary = is_office or role == 'foreman'
+    if not is_office:
+        if can_view_participant_salary:
+            totals = result.get('totals') or {}
+            result['totals'] = {
+                'hours': totals.get('hours', 0),
+                'participant_salary': totals.get('participant_salary', 0),
+            }
+        else:
+            result.pop('totals', None)
         for row in result.get('plan_works', []):
             row.pop('current_salary', None)
             row.pop('current_price', None)
         for row in result.get('extra_works', []):
             row.pop('salary', None)
             row.pop('price', None)
+    if not can_view_participant_salary:
+        for row in result.get('hours', []):
+            row.pop('participant_salary', None)
     return result
 
 
@@ -308,6 +321,10 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
             else:
                 try:
                     existing['hours'] = float(existing.get('hours') or 0) + float(r.get('hours') or 0)
+                    existing['participant_salary'] = (
+                        float(existing.get('participant_salary') or 0)
+                        + float(r.get('participant_salary') or 0)
+                    )
                 except (TypeError, ValueError):
                     pass
                 # Prefer latest filled_at metadata
@@ -345,6 +362,7 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
                 'status_until': m.get('status_until') or '',
                 'tg_user_id': m.get('tg_user_id'),
                 'hours': float(saved_row.get('hours') or 0),
+                'participant_salary': float(saved_row.get('participant_salary') or 0),
                 'filled_by_fio': saved_row.get('filled_by_fio') or '',
                 'filled_by_role': saved_row.get('filled_by_role') or '',
                 'filled_at': saved_row.get('filled_at') or '',
@@ -380,6 +398,7 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
             'status_until': row.get('status_until') or '',
             'tg_user_id': row.get('tg_user_id'),
             'hours': float(row.get('hours') or 0),
+            'participant_salary': float(row.get('participant_salary') or 0),
             'filled_by_fio': row.get('filled_by_fio') or '',
             'filled_by_role': row.get('filled_by_role') or '',
             'filled_at': row.get('filled_at') or '',
@@ -407,6 +426,11 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
     if role in ('brigadier', 'worker'):
         my_team_ids = set(await db.get_user_team_ids(current_user['tg_id']))
         result = [t for t in result if int(t['team_id']) in my_team_ids]
+
+    if role not in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'):
+        for team in result:
+            for member in team.get('members') or []:
+                member.pop('participant_salary', None)
 
     return result
 
@@ -473,7 +497,12 @@ async def save_app_hours_endpoint(app_id: int, request: Request, current_user=De
                 filtered.append(it)
         items = filtered
 
-    await db.save_app_hours(app_id, items, tg_id)
+    await db.save_app_hours(
+        app_id,
+        items,
+        tg_id,
+        allow_participant_salary=role in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'),
+    )
     await _reset_smr_accounted(app_id)
     await db.conn.commit()
     await _audit_smr_change(app_id, current_user, "hours_updated", before_snapshot)
@@ -540,7 +569,12 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     if hours_items:
         hours_scope = _compute_write_scope(role, user_team_ids, hours_items)
         await _clear_group_main_rows('application_hours', 'app_id', group_ids, hours_scope)
-        await db.save_app_hours(write_app_id, hours_items, tg_id)
+        await db.save_app_hours(
+            write_app_id,
+            hours_items,
+            tg_id,
+            allow_participant_salary=role in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'),
+        )
 
     # 2. Plan works — D4 team scope + D2/D3 scoped, non-destructive write.
     # Use key-presence (not truthiness) so an explicit empty list clears the
@@ -981,7 +1015,9 @@ async def _insert_additional_extras(app_id: int, items: list, tg_id: int, role: 
     return n
 
 
-async def _insert_additional_hours(app_id: int, items: list, tg_id: int, now: str) -> int:
+async def _insert_additional_hours(
+    app_id: int, items: list, tg_id: int, now: str, *, allow_participant_salary: bool = False
+) -> int:
     """Append hours addendum rows (is_additional=1). PLAIN INSERT (no upsert):
     the partial unique index permits duplicate (app,team,user) when
     is_additional=1, so extra hours for an existing member accumulate."""
@@ -996,13 +1032,17 @@ async def _insert_additional_hours(app_id: int, items: list, tg_id: int, now: st
         except (KeyError, TypeError, ValueError) as exc:
             from smr_calculations import SmrNumberError
             raise SmrNumberError('Часы: передано некорректное значение') from exc
-        if hours <= 0:
+        participant_salary = float(money_value(
+            it.get('participant_salary'), field='ЗП участника'
+        )) if allow_participant_salary else 0.0
+        if hours <= 0 and participant_salary <= 0:
             continue
         await db.conn.execute(
             """INSERT INTO application_hours
-               (app_id, team_id, user_id, hours, filled_by_user_id, filled_at, is_additional)
-               VALUES (?, ?, ?, ?, ?, ?, 1)""",
-            (app_id, team_id, member_id, hours, tg_id, now),
+               (app_id, team_id, user_id, hours, participant_salary,
+                filled_by_user_id, filled_at, is_additional)
+               VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+            (app_id, team_id, member_id, hours, participant_salary, tg_id, now),
         )
         n += 1
     return n
@@ -1067,7 +1107,13 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
     if user_team_ids is not None:
         hours_items = [h for h in hours_items if int(h.get('team_id') or 0) in user_team_ids]
     if hours_items:
-        n_hours = await _insert_additional_hours(write_app_id, hours_items, tg_id, now)
+        n_hours = await _insert_additional_hours(
+            write_app_id,
+            hours_items,
+            tg_id,
+            now,
+            allow_participant_salary=role in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'),
+        )
 
     # Any non-empty addendum means the external office program may be stale.
     if n_works or n_extras or n_hours:
@@ -1130,7 +1176,12 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
         if data.get('hours'):
             hours_scope = _compute_write_scope(role, None, data['hours'])
             await _clear_group_main_rows('application_hours', 'app_id', group_ids, hours_scope)
-            await db.save_app_hours(write_app_id, data['hours'], tg_id)
+            await db.save_app_hours(
+                write_app_id,
+                data['hours'],
+                tg_id,
+                allow_participant_salary=True,
+            )
         if 'works' in data:
             works = data.get('works') or []
             scope = _compute_write_scope(role, None, works)
@@ -1743,9 +1794,14 @@ async def download_smr_report(app_id: int, current_user=Depends(get_current_user
     group_ids = await _expand_merge_group(app_id)
     report_app_id = group_ids[0] if group_ids else app_id
 
-    include_financial = current_user.get('role') in ('moderator', 'boss', 'superadmin', 'hr')
+    role = current_user.get('role', 'worker')
+    include_financial = role in ('moderator', 'boss', 'superadmin', 'hr')
+    include_participant_salary = include_financial or role == 'foreman'
     blob, filename = await generate_smr_excel_bytes(
-        db, report_app_id, include_financial=include_financial
+        db,
+        report_app_id,
+        include_financial=include_financial,
+        include_participant_salary=include_participant_salary,
     )
     headers = {
         "Content-Disposition": (

@@ -21,14 +21,15 @@ const MotionList = motion.ul;
  * Row click → open ProfileModal.
  * Role select (inside the role cell) stops propagation → ConfirmModal → PATCH.
  */
-export default function UsersTable({ users, currentRole, onProfileOpen, onReload }) {
+export default function UsersTable({ users, currentRole, initialFilter = '', onProfileOpen, onReload }) {
     const [search, setSearch] = useState('');
     const [debouncedSearch, setDebouncedSearch] = useState('');
     const [localUsers, setLocalUsers] = useState(users);
-    const [statusFilter, setStatusFilter] = useState('active');
+    const [statusFilter, setStatusFilter] = useState(initialFilter === 'missing-role' ? 'missing-role' : 'active');
     const [banTarget, setBanTarget] = useState(null);
     const [banReason, setBanReason] = useState('');
     const [actionLoading, setActionLoading] = useState(false);
+    const [roleChanging, setRoleChanging] = useState(null);
     const { confirm, ConfirmUI } = useConfirm();
     const canChangeRoles = currentRole === 'superadmin' || currentRole === 'boss';
     const canManageUsers = canChangeRoles;
@@ -40,6 +41,7 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
             active: base.filter((u) => !u.is_blacklisted && !u.is_deleted).length,
             banned: base.filter((u) => u.is_blacklisted).length,
             deleted: base.filter((u) => u.is_deleted).length,
+            'missing-role': base.filter((u) => !String(u.role || '').trim()).length,
         };
     }, [localUsers]);
 
@@ -66,6 +68,7 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
         if (statusFilter === 'active') list = list.filter((u) => !u.is_blacklisted && !u.is_deleted);
         if (statusFilter === 'banned') list = list.filter((u) => u.is_blacklisted);
         if (statusFilter === 'deleted') list = list.filter((u) => u.is_deleted);
+        if (statusFilter === 'missing-role') list = list.filter((u) => !String(u.role || '').trim());
         if (debouncedSearch) {
             list = list.filter((u) => {
                 const fio = (displayFio(u) || '').toLowerCase();
@@ -141,7 +144,7 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
     };
 
     const handleRoleChange = async (user, newRole) => {
-        if (newRole === user.role) return;
+        if (newRole === user.role || roleChanging === user.user_id) return;
         const oldRu = ROLE_NAMES[user.role] || user.role;
         const newRu = ROLE_NAMES[newRole] || newRole;
         const ok = await confirm(
@@ -150,16 +153,17 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
         );
         if (!ok) return;
 
-        // Optimistic
-        setLocalUsers((prev) => prev.map((u) => u.user_id === user.user_id ? { ...u, role: newRole } : u));
+        setRoleChanging(user.user_id);
         try {
-            await axios.patch(`/api/users/${user.user_id}`, { role: newRole });
+            const response = await axios.patch(`/api/users/${user.user_id}`, { role: newRole });
+            const savedRole = response.data?.user?.role || newRole;
+            setLocalUsers((prev) => prev.map((u) => u.user_id === user.user_id ? { ...u, role: savedRole } : u));
             toast.success(`Роль обновлена: ${newRu}`);
-            onReload?.();
+            await onReload?.();
         } catch (e) {
-            // Rollback
-            setLocalUsers((prev) => prev.map((u) => u.user_id === user.user_id ? { ...u, role: user.role } : u));
             toast.error(e?.response?.data?.detail || 'Ошибка изменения роли');
+        } finally {
+            setRoleChanging(null);
         }
     };
 
@@ -201,7 +205,7 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
                 <div className="flex gap-2 overflow-x-auto pb-1 mb-4">
                     {[
                         ['active', 'Активные'], ['banned', 'Заблокированные'],
-                        ['deleted', 'Удалённые'], ['all', 'Все'],
+                        ['deleted', 'Удалённые'], ['missing-role', 'Без роли'], ['all', 'Все'],
                     ].map(([key, label]) => (
                         <button key={key} type="button" onClick={() => setStatusFilter(key)}
                             className={`flex-shrink-0 px-3 py-2 rounded-xl text-xs font-bold border transition-colors ${statusFilter === key ? 'bg-gray-900 text-white border-gray-900 dark:bg-white dark:text-gray-900' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700'}`}>
@@ -236,6 +240,7 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
                                             user={u}
                                             availableRoles={availableRoles}
                                             canChangeRole={canChangeRoles}
+                                            roleChanging={roleChanging === u.user_id}
                                             onRoleChange={(newRole) => handleRoleChange(u, newRole)}
                                             onRowClick={() => onProfileOpen?.(u.user_id)}
                                             canManage={canManageUsers}
@@ -255,6 +260,7 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
                                     user={u}
                                     availableRoles={availableRoles}
                                     canChangeRole={canChangeRoles}
+                                    roleChanging={roleChanging === u.user_id}
                                     onRoleChange={(newRole) => handleRoleChange(u, newRole)}
                                     onOpen={() => onProfileOpen?.(u.user_id)}
                                     canManage={canManageUsers}
@@ -288,7 +294,7 @@ export default function UsersTable({ users, currentRole, onProfileOpen, onReload
 }
 
 /* ───── Desktop row ───── */
-function UserRow({ user, availableRoles, canChangeRole, onRoleChange, onRowClick, canManage, onAction, onCopy }) {
+function UserRow({ user, availableRoles, canChangeRole, roleChanging, onRoleChange, onRowClick, canManage, onAction, onCopy }) {
     const fio = displayFio(user);
 
     return (
@@ -311,7 +317,7 @@ function UserRow({ user, availableRoles, canChangeRole, onRoleChange, onRowClick
                 {user.is_blacklisted === 1 && user.ban_reason && <p className="text-[10px] text-red-500 font-medium mt-1 truncate max-w-xs">{user.ban_reason}</p>}
             </td>
             <td className="px-3 py-3" onClick={(e) => e.stopPropagation()}>
-                <RoleDropdown user={user} availableRoles={availableRoles} canChange={canChangeRole} onChange={onRoleChange} />
+                <RoleDropdown user={user} availableRoles={availableRoles} canChange={canChangeRole} disabled={roleChanging} onChange={onRoleChange} />
             </td>
             <td className="px-3 py-3 text-xs text-gray-600 dark:text-gray-400 truncate">
                 {user.specialty || <span className="text-gray-300 dark:text-gray-600">—</span>}
@@ -327,7 +333,7 @@ function UserRow({ user, availableRoles, canChangeRole, onRoleChange, onRowClick
 }
 
 /* ───── Mobile card ───── */
-function UserCard({ user, availableRoles, canChangeRole, onRoleChange, onOpen, canManage, onAction, onCopy }) {
+function UserCard({ user, availableRoles, canChangeRole, roleChanging, onRoleChange, onOpen, canManage, onAction, onCopy }) {
     return (
         <MotionCard
             whileTap={prefersReducedMotion ? {} : { scale: 0.99 }}
@@ -350,7 +356,7 @@ function UserCard({ user, availableRoles, canChangeRole, onRoleChange, onOpen, c
                 </button>
                 <div className="flex items-center justify-between gap-2 mt-2">
                     <div onClick={(e) => e.stopPropagation()} className="min-w-0">
-                        <RoleDropdown user={user} availableRoles={availableRoles} canChange={canChangeRole} onChange={onRoleChange} compact />
+                        <RoleDropdown user={user} availableRoles={availableRoles} canChange={canChangeRole} disabled={roleChanging} onChange={onRoleChange} compact />
                     </div>
                     <PlatformPills platforms={user.platforms} />
                 </div>
@@ -363,7 +369,7 @@ function UserCard({ user, availableRoles, canChangeRole, onRoleChange, onOpen, c
 }
 
 /* ───── Role dropdown ───── */
-function RoleDropdown({ user, availableRoles, canChange = true, onChange, compact }) {
+function RoleDropdown({ user, availableRoles, canChange = true, disabled = false, onChange, compact }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
@@ -393,8 +399,9 @@ function RoleDropdown({ user, availableRoles, canChange = true, onChange, compac
         <div ref={ref} className="relative">
             <button
                 type="button"
+                disabled={disabled}
                 onClick={() => setOpen((o) => !o)}
-                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wide transition-colors active:scale-[0.97] ${colorClass} ${compact ? '' : ''}`}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-bold uppercase tracking-wide transition-colors active:scale-[0.97] disabled:opacity-50 disabled:cursor-wait ${colorClass} ${compact ? '' : ''}`}
             >
                 <span className="truncate">{ROLE_NAMES[user.role] || user.role}</span>
                 <ChevronDown className="w-3 h-3 flex-shrink-0" />

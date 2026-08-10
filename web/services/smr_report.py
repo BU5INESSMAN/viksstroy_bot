@@ -1,12 +1,13 @@
 """SMR Excel report generator.
 
 Produces a clean multi-sheet .xlsx for a single application with:
-    - "Часы" (hours): brigade | FIO | specialty | hours | filled by
+    - "Часы" (hours): brigade | FIO | specialty | hours | participant pay | filled by
     - "Работы" (plan works): name | unit | volume | filled by
     - "Доп. работы" (extras): same columns (sheet omitted when empty)
 
-No prices, no salaries — just factual entries and authorship. The
-"Заполнил" column uses `application_kp.filled_by_user_id` to resolve
+Catalog prices stay role-gated. Participant pay is an independent optional
+column and never mixes with the catalog work-rate salary. The "Заполнил"
+column uses `application_kp.filled_by_user_id` to resolve
 the submitter's FIO + role.
 """
 
@@ -99,7 +100,13 @@ def _write_header(ws, headers: list[str]):
     ws.freeze_panes = 'A2'
 
 
-async def generate_smr_excel_bytes(db, app_id: int, *, include_financial: bool = False) -> tuple[bytes, str]:
+async def generate_smr_excel_bytes(
+    db,
+    app_id: int,
+    *,
+    include_financial: bool = False,
+    include_participant_salary: bool = False,
+) -> tuple[bytes, str]:
     """Generate the SMR report .xlsx in memory.
     Returns (file_bytes, suggested_filename).
     """
@@ -125,21 +132,35 @@ async def generate_smr_excel_bytes(db, app_id: int, *, include_financial: bool =
     # ─────────────────────── Sheet 1: Часы ───────────────────────
     ws_hours = wb.active
     ws_hours.title = "Часы"
-    _write_header(ws_hours, ["Бригада", "ФИО", "Специальность", "Часы", "Заполнил"])
+    hours_headers = ["Бригада", "ФИО", "Специальность", "Часы"]
+    if include_participant_salary:
+        hours_headers.append("ЗП участника")
+    hours_headers.append("Заполнил")
+    _write_header(ws_hours, hours_headers)
 
     # v2.10: include addendum hours (доп.отчёт) so they count in the report,
     # matching the works/extras sheets which read the tables directly.
     hours_rows = report.get('hours', [])
     r = 2
     for h in hours_rows:
-        if float(h.get('hours') or 0) <= 0:
+        if (
+            float(h.get('hours') or 0) <= 0
+            and float(h.get('participant_salary') or 0) <= 0
+        ):
             continue
         ws_hours.cell(row=r, column=1, value=h.get('team_name') or '').alignment = _LEFT
         ws_hours.cell(row=r, column=2, value=h.get('fio') or '').alignment = _LEFT
         ws_hours.cell(row=r, column=3, value=h.get('specialty') or '').alignment = _LEFT
         ws_hours.cell(row=r, column=4, value=float(h.get('hours') or 0)).alignment = _CENTER
+        col = 5
+        if include_participant_salary:
+            ws_hours.cell(
+                row=r, column=col,
+                value=round(float(h.get('participant_salary') or 0), 2),
+            ).alignment = _CENTER
+            col += 1
         ws_hours.cell(
-            row=r, column=5,
+            row=r, column=col,
             value=_author_label(h.get('filled_by_fio'), h.get('filled_by_role')),
         ).alignment = _LEFT
         r += 1
@@ -231,15 +252,18 @@ async def generate_smr_excel_bytes(db, app_id: int, *, include_financial: bool =
             r += 1
         _autosize(ws_extra)
 
-    if include_financial:
+    if include_financial or include_participant_salary:
         ws_summary = wb.create_sheet("Итоги", 0)
         _write_header(ws_summary, ["Показатель", "Значение"])
         totals = report.get('totals', {})
-        summary_rows = [
-            ("Всего часов", totals.get('hours', 0)),
-            ("Сумма ЗП", totals.get('salary', 0)),
-            ("Сумма цены", totals.get('price', 0)),
-        ]
+        summary_rows = [("Всего часов", totals.get('hours', 0))]
+        if include_participant_salary:
+            summary_rows.append(("ЗП участникам", totals.get('participant_salary', 0)))
+        if include_financial:
+            summary_rows.extend([
+                ("Сумма ЗП по расценкам работ", totals.get('salary', 0)),
+                ("Сумма цены", totals.get('price', 0)),
+            ])
         for row_no, (label, value) in enumerate(summary_rows, start=2):
             ws_summary.cell(row=row_no, column=1, value=label).alignment = _LEFT
             ws_summary.cell(row=row_no, column=2, value=value).alignment = _CENTER

@@ -66,6 +66,7 @@ export default function Review() {
     const [selectedStatus, setSelectedStatus] = useState('');
     const [changingStatus, setChangingStatus] = useState(false);
     const { confirm, prompt, ConfirmUI } = useConfirm();
+    const waitingRef = useRef(null);
     const approvedRef = useRef(null);
     const smartDates = useMemo(() => getSmartDates(), []);
 
@@ -133,8 +134,11 @@ export default function Review() {
     // Handle URL params from sidebar
     useEffect(() => {
         const filter = searchParams.get('filter');
-        if (filter === 'approved' && approvedRef.current) {
-            approvedRef.current.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        const target = filter === 'waiting' ? waitingRef.current
+            : filter === 'approved' ? approvedRef.current
+                : null;
+        if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'start' });
             setSearchParams({}, { replace: true });
         }
     }, [searchParams, reviewApps]);
@@ -300,7 +304,7 @@ export default function Review() {
                 </div>
             </div>
 
-            <div data-tour="review-waiting"><ReviewSection title="Требуют проверки" icon={Clock} colorClass="border-yellow-200 dark:border-yellow-900/30" titleColorClass="text-yellow-700 dark:text-yellow-500" apps={waitingApps} statusType="waiting" renderAppCard={renderAppCard} /></div>
+            <div ref={waitingRef} data-tour="review-waiting"><ReviewSection title="Требуют проверки" icon={Clock} colorClass="border-yellow-200 dark:border-yellow-900/30" titleColorClass="text-yellow-700 dark:text-yellow-500" apps={waitingApps} statusType="waiting" renderAppCard={renderAppCard} /></div>
             <div ref={approvedRef} data-tour="review-approved">
                 <ReviewSection title="Одобрены (ожидают начала)" icon={CheckCircle} colorClass="border-emerald-200 dark:border-emerald-900/30" titleColorClass="text-emerald-700 dark:text-emerald-500" apps={approvedApps} statusType="approved" renderAppCard={renderAppCard} />
             </div>

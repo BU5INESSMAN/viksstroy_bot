@@ -21,12 +21,19 @@ from auth_deps import get_current_user, get_current_user_optional, require_role
 logger = logging.getLogger(__name__)
 from routers.applications import enrich_app_with_members_data
 from services.app_service import enrich_app_with_object_fields
+from services.action_items import collect_action_items
 
 router = APIRouter(tags=["Dashboard"])
 
 # ── Role group deps ──
 _require_office = require_role("superadmin", "boss", "moderator")
 _require_boss_plus = require_role("superadmin", "boss")
+
+
+@router.get("/api/dashboard/action-items")
+async def get_dashboard_action_items(current_user=Depends(_require_office)):
+    """Incomplete data and pending office work with correction routes."""
+    return await collect_action_items(db, current_user.get("role", ""))
 
 
 @router.get("/api/dashboard")
@@ -495,6 +502,11 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
             await db.conn.execute("UPDATE settings SET value = ? WHERE key = ?", (v, k))
             await db.conn.execute("INSERT INTO settings (key, value) SELECT ?, ? WHERE (SELECT Changes() = 0)", (k, v))
 
+        if auto_publish_enabled != '1':
+            await db.conn.execute(
+                "DELETE FROM settings WHERE key IN ('smart_publish_at','smart_prompt_at')"
+            )
+
         await db.conn.commit()
     except Exception as e:
         await db.conn.rollback()
@@ -502,6 +514,30 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
 
     await db.add_log(current_user["tg_id"], current_user.get('fio'), "Обновил системные настройки", target_type='settings')
     return {"status": "ok"}
+
+
+@router.post("/api/settings/auto-publish")
+async def set_auto_publish_enabled(
+    enabled: str = Form("0"),
+    current_user=Depends(_require_boss_plus),
+):
+    """Persist the toggle immediately and cancel stale smart timers."""
+    normalized = "1" if enabled == "1" else "0"
+    await db.conn.execute(
+        "INSERT OR REPLACE INTO settings(key,value) VALUES('auto_publish_enabled',?)",
+        (normalized,),
+    )
+    if normalized == "0":
+        await db.conn.execute(
+            "DELETE FROM settings WHERE key IN ('smart_publish_at','smart_prompt_at')"
+        )
+    await db.conn.commit()
+    await db.add_log(
+        current_user["tg_id"], current_user.get("fio"),
+        "Включил автопубликацию" if normalized == "1" else "Отключил автопубликацию и отменил таймеры",
+        target_type="settings",
+    )
+    return {"status": "ok", "enabled": normalized == "1"}
 
 
 # ── Cron endpoints (internal only — require secret header) ──

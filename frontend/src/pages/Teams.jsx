@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -13,7 +13,7 @@ import { TeamsSkeleton } from '../components/ui/PageSkeletons';
 import ResourceStatsModal from '../components/resources/ResourceStatsModal';
 import { matchesDeepSearch } from '../utils/deepSearch';
 
-export default function Teams({ searchQuery = '' }) {
+export default function Teams({ searchQuery = '', openTeamId = 0 }) {
     const tgId = localStorage.getItem('tg_id') || '0';
     const role = localStorage.getItem('user_role') || 'Гость';
     const { openProfile } = useOutletContext();
@@ -29,6 +29,7 @@ export default function Teams({ searchQuery = '' }) {
     const [copiedLink, setCopiedLink] = useState('');
     const [statsTeam, setStatsTeam] = useState(null);
     const [showOverview, setShowOverview] = useState(false);
+    const openedDirectTeam = useRef(false);
     const { confirm, ConfirmUI } = useConfirm();
 
     const fetchData = () => {
@@ -60,13 +61,24 @@ export default function Teams({ searchQuery = '' }) {
         } catch(e) { toast.error("Ошибка удаления"); }
     };
 
-    const openManageModal = async (teamId) => {
+    const openManageModal = useCallback(async (teamId) => {
         try {
             const res = await axios.get(`/api/teams/${teamId}/details`);
             setManageTeamData(res.data);
             setManageModalOpen(true);
-        } catch (e) { toast.error("Ошибка загрузки бригады"); }
-    };
+        } catch { toast.error("Ошибка загрузки бригады"); }
+    }, []);
+
+    useEffect(() => {
+        if (
+            !openedDirectTeam.current && !loading && openTeamId
+            && teams.some((team) => Number(team.id) === Number(openTeamId))
+        ) {
+            openedDirectTeam.current = true;
+            openManageModal(openTeamId);
+        }
+        // Open only when the direct link first resolves its team.
+    }, [loading, openTeamId, teams, openManageModal]);
 
     const handleAddMember = async (e) => {
         e.preventDefault();

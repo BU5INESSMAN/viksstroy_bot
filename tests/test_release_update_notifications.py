@@ -11,11 +11,17 @@ class ReleaseUpdateNotificationTests(unittest.TestCase):
     def test_message_formats_are_exact(self):
         self.assertEqual(
             _message("started", "2.18.2", "Исправления"),
-            "Началось обновление до версии 2.18.2",
+            "🚀 Началось обновление\n\n"
+            "🏷 Версия: 2.18.2\n"
+            "⏳ Приложение может быть временно недоступно.",
         )
         self.assertEqual(
-            _message("completed", "2.18.2", "Исправления"),
-            "Обновление завершено. Что нового: Исправления",
+            _message("completed", "2.18.2", "Исправления; Улучшения"),
+            "✅ Обновление завершено\n\n"
+            "🏷 Версия: 2.18.2\n\n"
+            "🆕 Что нового:\n"
+            "• Исправления\n"
+            "• Улучшения",
         )
 
     def test_update_notifications_are_opt_in_and_idempotent(self):

@@ -49,11 +49,13 @@ async def get_smr_read_model(db, app_id: int) -> dict:
     async with db.conn.execute(f"""
         SELECT ah.id, ah.app_id application_id, ah.team_id, t.name team_name,
                ah.user_id member_id, tm.fio, tm.position specialty, ah.hours,
+               COALESCE(ah.participant_salary,0) participant_salary,
                COALESCE(ah.is_additional,0) is_additional, ah.filled_at,
                u.fio filled_by_fio, u.role filled_by_role
         FROM application_hours ah LEFT JOIN team_members tm ON tm.id=ah.user_id
         LEFT JOIN teams t ON t.id=ah.team_id LEFT JOIN users u ON u.user_id=ah.filled_by_user_id
-        WHERE ah.app_id IN ({marks}) AND ah.hours>0
+        WHERE ah.app_id IN ({marks})
+          AND (ah.hours>0 OR COALESCE(ah.participant_salary,0)>0)
         ORDER BY ah.app_id, ah.is_additional, t.name, tm.fio, ah.id
     """, tuple(app_ids)) as cur:
         hours = [dict(r) for r in await cur.fetchall()]

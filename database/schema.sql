@@ -347,6 +347,7 @@ CREATE TABLE IF NOT EXISTS application_hours (
     team_id INTEGER NOT NULL,
     user_id INTEGER NOT NULL,
     hours REAL DEFAULT 0,
+    participant_salary REAL DEFAULT 0,
     filled_by_user_id INTEGER,
     filled_at TEXT,
     is_additional INTEGER DEFAULT 0,

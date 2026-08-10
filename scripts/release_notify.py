@@ -8,6 +8,7 @@ import json
 import os
 from pathlib import Path
 import sys
+import re
 
 try:
     from scripts import watchdog
@@ -21,8 +22,24 @@ LOCK_FILE = watchdog.DATA / "release-notifications.lock"
 
 def _message(event: str, version: str, changes: str) -> str:
     if event == "started":
-        return f"Началось обновление до версии {version}"
-    return f"Обновление завершено. Что нового: {changes}"
+        return (
+            "🚀 Началось обновление\n\n"
+            f"🏷 Версия: {version}\n"
+            "⏳ Приложение может быть временно недоступно."
+        )
+    parts = [
+        part.strip().lstrip("•-–— ")
+        for part in re.split(r"[;\n]+", changes or "")
+        if part.strip().lstrip("•-–— ")
+    ]
+    if not parts:
+        parts = ["Исправления и улучшения системы"]
+    change_list = "\n".join(f"• {part}" for part in parts)
+    return (
+        "✅ Обновление завершено\n\n"
+        f"🏷 Версия: {version}\n\n"
+        f"🆕 Что нового:\n{change_list}"
+    )
 
 
 def _read_state() -> dict:
@@ -44,7 +61,7 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--event", choices=("started", "completed"), required=True)
     parser.add_argument("--version", required=True)
-    parser.add_argument("--changes", default="исправления и улучшения системы")
+    parser.add_argument("--changes", default="Исправления и улучшения системы")
     parser.add_argument("--deployment-id", required=True)
     args = parser.parse_args()
 

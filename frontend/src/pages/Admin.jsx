@@ -23,6 +23,7 @@ export default function Admin() {
     const [users, setUsers] = useState([]);
     const [loading, setLoading] = useState(true);
     const [pendingSection, setPendingSection] = useState(() => searchParams.get('section') || '');
+    const [initialUserFilter] = useState(() => searchParams.get('filter') || '');
 
     useEffect(() => {
         const section = searchParams.get('section');
@@ -67,10 +68,14 @@ export default function Admin() {
     const [dmSelectedRoles, setDmSelectedRoles] = useState([]);
     const [dmSelectedUsers, setDmSelectedUsers] = useState([]);
 
-    const fetchUsers = useCallback(() => {
-        axios.get('/api/users')
-            .then((res) => setUsers(res.data || []))
-            .catch(() => {});
+    const fetchUsers = useCallback(async () => {
+        try {
+            const res = await axios.get('/api/users');
+            setUsers(res.data || []);
+            return res.data || [];
+        } catch {
+            return [];
+        }
     }, []);
 
     useEffect(() => {
@@ -105,6 +110,22 @@ export default function Admin() {
     const handleSettingChange = (e) => {
         const { name, value, type, checked } = e.target;
         setSettings((prev) => ({ ...prev, [name]: type === 'checkbox' ? checked : value }));
+    };
+
+    const setAutoPublishEnabled = async (enabled) => {
+        const previous = settings.auto_publish_enabled;
+        setSettings((current) => ({ ...current, auto_publish_enabled: enabled }));
+        try {
+            const form = new URLSearchParams();
+            form.set('enabled', enabled ? '1' : '0');
+            await axios.post('/api/settings/auto-publish', form, {
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            });
+            toast.success(enabled ? 'Автопубликация включена' : 'Автопубликация отключена, отложенные запуски отменены');
+        } catch (error) {
+            setSettings((current) => ({ ...current, auto_publish_enabled: previous }));
+            toast.error(error?.response?.data?.detail || 'Не удалось изменить автопубликацию');
+        }
     };
 
     const saveSettings = async () => {
@@ -214,10 +235,11 @@ export default function Admin() {
             </div>
 
             {/* Users section — new Stage 2 table */}
-            <div id="admin-users">
+            <div id="admin-users" data-tour="admin-users">
                 <UsersTable
                     users={users}
                     currentRole={role}
+                    initialFilter={initialUserFilter}
                     onProfileOpen={(uid) => openProfile(uid)}
                     onReload={fetchUsers}
                 />
@@ -230,6 +252,7 @@ export default function Admin() {
                 settings={settings}
                 handleSettingChange={handleSettingChange}
                 saveSettings={saveSettings}
+                setAutoPublishEnabled={setAutoPublishEnabled}
                 role={role}
             />
 
