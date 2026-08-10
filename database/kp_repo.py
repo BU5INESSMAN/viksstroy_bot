@@ -102,7 +102,7 @@ class KpRepoMixin:
         async with self.conn.execute(query, (app_id, obj_id)) as cur:
             return [dict(row) for row in await cur.fetchall()]
 
-    async def submit_kp_report(self, app_id: int, items: list, role: str, filled_by_user_id: int | None = None, team_scope=None):
+    async def submit_kp_report(self, app_id: int, items: list, role: str, filled_by_user_id: int | None = None, team_scope=None, *, commit: bool = True):
         # v2.4.3: foreman sends only {kp_id, volume}. Unit, salary, and
         # price are looked up from kp_catalog server-side so the frontend
         # never needs pricing data and cannot spoof it.
@@ -192,7 +192,8 @@ class KpRepoMixin:
 
         new_status = 'approved' if role in ['foreman', 'moderator', 'boss', 'superadmin', 'hr'] else 'submitted'
         await self.conn.execute("UPDATE applications SET kp_status = ? WHERE id = ?", (new_status, app_id))
-        await self.conn.commit()
+        if commit:
+            await self.conn.commit()
 
     async def review_kp_report(self, app_id: int, action: str):
         new_status = 'approved' if action == 'approve' else 'rejected'

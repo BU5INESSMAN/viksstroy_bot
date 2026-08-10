@@ -34,6 +34,7 @@ export default function SMRWizard({
     onSubmitted,
     approveMode = false,
     addendumMode = false,
+    editReadyMode = false,
 }) {
     // ─── Wizard state — single source of truth ───
     // Test scenarios for state preservation (Commit 3):
@@ -65,7 +66,8 @@ export default function SMRWizard({
 
     // v2.10: addendum drafts use a separate key so they never collide with
     // the main report's draft for the same application.
-    const draftKey = `${addendumMode ? 'smr-add' : 'smr'}:${appId}`;
+    const draftPrefix = addendumMode ? 'smr-add' : editReadyMode ? 'smr-ready-edit' : 'smr';
+    const draftKey = `${draftPrefix}:${appId}`;
 
     // ───── Silent draft restore ─────
     // Per spec: SMR drafts restore without confirmation — the user is
@@ -134,12 +136,13 @@ export default function SMRWizard({
                 // rows; the backend never deletes, so the main report stays.
                 await axios.post(`/api/kp/apps/${appId}/smr/additional`, payload);
                 toast.success('Доп. отчёт сохранён');
-            } else if (approveMode) {
+            } else if (approveMode || editReadyMode) {
                 await axios.post(`/api/kp/apps/${appId}/smr/review`, {
                     action: 'edit',
+                    ready_edit: editReadyMode,
                     ...payload,
                 });
-                toast.success('Отчёт одобрен');
+                toast.success(editReadyMode ? 'Изменения сохранены' : 'Отчёт одобрен');
             } else {
                 await axios.post(`/api/kp/apps/${appId}/smr/submit`, payload);
                 toast.success(
@@ -171,7 +174,7 @@ export default function SMRWizard({
                     <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 dark:border-gray-700">
                         <div className="min-w-0">
                             <h1 className="text-lg font-bold text-gray-900 dark:text-white flex items-center gap-2 flex-wrap">
-                                {addendumMode ? 'Дополнительный отчёт СМР' : approveMode ? 'Проверка отчёта СМР' : 'Заполнение отчёта СМР'}
+                                {addendumMode ? 'Дополнительный отчёт СМР' : editReadyMode ? 'Редактирование готового СМР' : approveMode ? 'Проверка отчёта СМР' : 'Заполнение отчёта СМР'}
                                 {Array.isArray(app?.merged_with) && app.merged_with.length > 0 && (
                                     <span
                                         className="text-[11px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-500/20 px-2 py-0.5 rounded-full"
@@ -271,6 +274,7 @@ export default function SMRWizard({
                                         onSubmit={submit}
                                         submitting={submitting}
                                         approveMode={approveMode}
+                                        editReadyMode={editReadyMode}
                                         addendumMode={addendumMode}
                                     />
                                 )}

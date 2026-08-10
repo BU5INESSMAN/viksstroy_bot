@@ -14,6 +14,8 @@ const EVENT_LABELS = {
     hours_updated: 'Изменены часы',
     smr_submitted: 'СМР сохранено',
     smr_addendum_created: 'Добавлен доп. отчёт',
+    smr_ready_edited: 'Готовый отчёт отредактирован',
+    smr_report_cleared: 'Готовый отчёт полностью очищен',
     smr_review_edited: 'Правки при проверке',
     smr_accounted: 'Отмечено учтённым',
     smr_unaccounted: 'Снята отметка «Учтено»',

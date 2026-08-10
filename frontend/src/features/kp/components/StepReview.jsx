@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import { ArrowLeft, Send, Clock, Hammer, Plus, Loader2, Check, WalletCards } from 'lucide-react';
+import { ArrowLeft, Send, Clock, Hammer, Plus, Loader2, Check, WalletCards, Save } from 'lucide-react';
 
 /**
  * Wizard step 3 — review & submit. Loads display metadata (FIO, specialty,
@@ -18,6 +18,7 @@ export default function StepReview({
     submitting,
     approveMode = false,
     addendumMode = false,
+    editReadyMode = false,
 }) {
     const [teams, setTeams] = useState([]);
     const [planItems, setPlanItems] = useState([]);
@@ -263,6 +264,8 @@ export default function StepReview({
                         <><Loader2 className="w-4 h-4 animate-spin" /> Отправка…</>
                     ) : addendumMode ? (
                         <><Plus className="w-4 h-4" /> Сохранить доп. отчёт</>
+                    ) : editReadyMode ? (
+                        <><Save className="w-4 h-4" /> Сохранить изменения</>
                     ) : approveMode ? (
                         <><Check className="w-4 h-4" /> Одобрить отчёт</>
                     ) : (

@@ -134,6 +134,40 @@ async def _reset_smr_accounted(app_id: int) -> None:
     )
 
 
+async def _require_smr_report_manager(
+    app_id: int,
+    current_user: dict,
+    *,
+    completed_only: bool = False,
+) -> list[int]:
+    """Authorize destructive/edit access to one logical SMR report."""
+    role = current_user.get('role', 'worker')
+    if role not in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'):
+        raise HTTPException(403, "Редактировать отчёт может только прораб или сотрудник офиса")
+
+    group_ids = await _expand_merge_group(app_id)
+    marks = ','.join('?' * len(group_ids))
+    async with db.conn.execute(
+        f"SELECT id, foreman_id, smr_status, kp_status FROM applications "
+        f"WHERE id IN ({marks})",
+        tuple(group_ids),
+    ) as cur:
+        rows = [dict(row) for row in await cur.fetchall()]
+    if not rows:
+        raise HTTPException(404, "Заявка не найдена")
+    if role == 'foreman' and not any(
+        int(row.get('foreman_id') or 0) == int(current_user.get('tg_id') or 0)
+        for row in rows
+    ):
+        raise HTTPException(403, "Можно редактировать только отчёты своих заявок")
+    if completed_only and not any(
+        row.get('smr_status') == 'approved' or row.get('kp_status') == 'approved'
+        for row in rows
+    ):
+        raise HTTPException(400, "Отчёт ещё не находится в разделе «Готовые»")
+    return group_ids
+
+
 # ──────────────────────────────────────────────────────────────────────
 # v2.7 — ad-hoc worker helpers (Commit 2)
 # ──────────────────────────────────────────────────────────────────────
@@ -1155,30 +1189,90 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
 async def review_smr(app_id: int, request: Request, current_user=Depends(get_current_user)):
     """Foreman reviews a brigadier's SMR submission.
     Body: {action: 'approve' | 'edit', hours?, works?, extra_works?}"""
-    if current_user.get('role') not in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'):
-        raise HTTPException(403, "Только прораб может проверять СМР")
-
     data = await request.json()
     action = data.get('action', 'approve')
+    ready_edit = bool(data.get('ready_edit', False))
     tg_id = current_user['tg_id']
     role = current_user.get('role')
-    group_ids = await _expand_merge_group(app_id)
+    group_ids = await _require_smr_report_manager(
+        app_id, current_user, completed_only=ready_edit
+    )
     write_app_id = group_ids[0] if group_ids else app_id
     before_snapshot = (
         await capture_smr_financial_snapshot(db, app_id)
         if action == 'edit' else {}
     )
 
-    if action == 'edit':
+    if action == 'edit' and ready_edit:
+        # A ready-report edit is an authoritative replacement of the MAIN
+        # report. Additional reports stay intact and can still be cleared by
+        # the dedicated full-clear action. Keep replacement atomic so invalid
+        # input cannot leave a half-erased report.
+        await db.conn.execute("SAVEPOINT edit_completed_smr")
+        try:
+            marks = ','.join('?' * len(group_ids))
+            for table, column in (
+                ('application_hours', 'app_id'),
+                ('application_kp', 'application_id'),
+                ('application_extra_works', 'application_id'),
+            ):
+                await db.conn.execute(
+                    f"DELETE FROM {table} WHERE {column} IN ({marks}) "
+                    f"AND COALESCE(is_additional, 0) = 0",
+                    tuple(group_ids),
+                )
+
+            hours = await _guard_adhoc_hours(app_id, data.get('hours') or [], role)
+            if hours:
+                await db.save_app_hours(
+                    write_app_id,
+                    hours,
+                    tg_id,
+                    allow_participant_salary=True,
+                    commit=False,
+                )
+            works = data.get('works') or []
+            await db.submit_kp_report(
+                write_app_id,
+                works,
+                role,
+                filled_by_user_id=tg_id,
+                team_scope=_compute_write_scope(role, None, works),
+                commit=False,
+            )
+            extras = data.get('extra_works') or []
+            await _save_extra_works_inline(
+                write_app_id,
+                extras,
+                tg_id,
+                role,
+                team_scope=_compute_write_scope(role, None, extras),
+            )
+            await _reset_smr_accounted(app_id)
+            marks = ','.join('?' * len(group_ids))
+            await db.conn.execute(
+                f"UPDATE applications SET smr_status = 'approved', kp_status = 'approved' "
+                f"WHERE id IN ({marks})",
+                tuple(group_ids),
+            )
+            await db.conn.execute("RELEASE SAVEPOINT edit_completed_smr")
+            await db.conn.commit()
+        except Exception:
+            await db.conn.execute("ROLLBACK TO SAVEPOINT edit_completed_smr")
+            await db.conn.execute("RELEASE SAVEPOINT edit_completed_smr")
+            await db.conn.rollback()
+            raise
+    elif action == 'edit':
         # Reviewer is foreman+ (role-gated above), so the write scope is the
         # payload's concrete teams plus the common bucket — non-destructive
         # toward brigades not present in this review payload.
-        if data.get('hours'):
-            hours_scope = _compute_write_scope(role, None, data['hours'])
+        hours = await _guard_adhoc_hours(app_id, data.get('hours') or [], role)
+        if hours:
+            hours_scope = _compute_write_scope(role, None, hours)
             await _clear_group_main_rows('application_hours', 'app_id', group_ids, hours_scope)
             await db.save_app_hours(
                 write_app_id,
-                data['hours'],
+                hours,
                 tg_id,
                 allow_participant_salary=True,
             )
@@ -1194,24 +1288,99 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
             await _save_extra_works_inline(write_app_id, extras, tg_id, role, team_scope=scope)
         await _reset_smr_accounted(app_id)
 
-    marks = ','.join('?' * len(group_ids))
-    await db.conn.execute(
-        f"UPDATE applications SET smr_status = 'approved', kp_status = 'approved' WHERE id IN ({marks})",
-        tuple(group_ids),
-    )
-    await db.conn.commit()
+    if not (action == 'edit' and ready_edit):
+        marks = ','.join('?' * len(group_ids))
+        await db.conn.execute(
+            f"UPDATE applications SET smr_status = 'approved', kp_status = 'approved' WHERE id IN ({marks})",
+            tuple(group_ids),
+        )
+        await db.conn.commit()
     if action == 'edit':
         await _audit_smr_change(
-            app_id, current_user, "smr_review_edited", before_snapshot
+            app_id,
+            current_user,
+            "smr_ready_edited" if ready_edit else "smr_review_edited",
+            before_snapshot,
         )
 
     fio = current_user.get('fio', '')
     await db.add_log(
         tg_id, fio,
-        f"{'Одобрил с правками' if action == 'edit' else 'Одобрил'} СМР по заявке №{app_id}",
+        f"{'Отредактировал готовый' if ready_edit else ('Одобрил с правками' if action == 'edit' else 'Одобрил')} СМР по заявке №{app_id}",
         target_type='smr', target_id=app_id,
     )
     return {"status": "ok"}
+
+
+@router.post("/api/kp/apps/{app_id}/smr/clear")
+async def clear_completed_smr_report(
+    app_id: int,
+    current_user=Depends(get_current_user),
+):
+    """Delete all report rows and return the logical application to «К заполнению».
+
+    The application itself, its merge group and append-only financial history
+    remain intact. Main and additional report rows are both removed.
+    """
+    if db.conn is None:
+        await db.init_db()
+    group_ids = await _require_smr_report_manager(
+        app_id, current_user, completed_only=True
+    )
+    before_snapshot = await capture_smr_financial_snapshot(db, app_id)
+    marks = ','.join('?' * len(group_ids))
+    deleted = {'hours': 0, 'works': 0, 'extra_works': 0}
+
+    await db.conn.execute("SAVEPOINT clear_completed_smr")
+    try:
+        for table, column, key in (
+            ('application_hours', 'app_id', 'hours'),
+            ('application_kp', 'application_id', 'works'),
+            ('application_extra_works', 'application_id', 'extra_works'),
+        ):
+            cursor = await db.conn.execute(
+                f"DELETE FROM {table} WHERE {column} IN ({marks})",
+                tuple(group_ids),
+            )
+            deleted[key] = max(int(cursor.rowcount or 0), 0)
+        await db.conn.execute(
+            f"UPDATE applications SET smr_status = NULL, kp_status = NULL, "
+            f"smr_filled_by_role = NULL, smr_accounted_by = NULL, "
+            f"smr_accounted_at = NULL WHERE id IN ({marks})",
+            tuple(group_ids),
+        )
+        await db.conn.execute("RELEASE SAVEPOINT clear_completed_smr")
+        await db.conn.commit()
+    except Exception:
+        await db.conn.execute("ROLLBACK TO SAVEPOINT clear_completed_smr")
+        await db.conn.execute("RELEASE SAVEPOINT clear_completed_smr")
+        await db.conn.rollback()
+        raise
+
+    await _audit_smr_change(
+        app_id,
+        current_user,
+        "smr_report_cleared",
+        before_snapshot,
+        metadata={"application_ids": group_ids, "deleted": deleted},
+        force=True,
+    )
+    fio = current_user.get('fio', '')
+    app_number = await get_application_number(db, app_id)
+    await db.add_log(
+        current_user['tg_id'],
+        fio,
+        f"Полностью очистил готовый СМР по заявке {app_number}",
+        target_type='smr',
+        target_id=app_id,
+        details=json.dumps({"application_ids": group_ids, "deleted": deleted}, ensure_ascii=False),
+    )
+    return {
+        "status": "ok",
+        "application_ids": group_ids,
+        "deleted": deleted,
+        "moved_to": "to_fill",
+    }
 
 
 @router.post("/api/kp/smr/merge")

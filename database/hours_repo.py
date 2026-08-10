@@ -80,6 +80,7 @@ class HoursRepoMixin:
         filled_by_user_id: int,
         *,
         allow_participant_salary: bool = False,
+        commit: bool = True,
     ):
         """Upsert hours rows. `hours_data` items may include participant salary.
 
@@ -125,7 +126,8 @@ class HoursRepoMixin:
                     filled_by_user_id, now, int(allow_participant_salary),
                 ),
             )
-        await self.conn.commit()
+        if commit:
+            await self.conn.commit()
 
     async def get_teams_for_app(self, app_id: int) -> list[dict]:
         """Return teams assigned to the application with their members.

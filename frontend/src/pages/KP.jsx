@@ -81,6 +81,7 @@ export default function KP() {
     const isForemanOrBrigadier = ['foreman', 'brigadier'].includes(role);
     // v2.10 доп.отчёт: who may create an addendum (backend re-enforces scope).
     const canCreateAddendum = ['foreman', 'brigadier', 'moderator', 'boss', 'superadmin', 'hr'].includes(role);
+    const canManageReadyReport = ['foreman', 'moderator', 'boss', 'superadmin', 'hr'].includes(role);
     // v2.10: workers get READ-ONLY access to the Готовые tab only — no
     // to_fill/pending tabs, no fill/review/addendum affordances.
     const isViewerOnly = role === 'worker';
@@ -119,6 +120,7 @@ export default function KP() {
     // v2.4.5 SMR wizard integration
     const [wizardApp, setWizardApp] = useState(null);
     const [wizardApproveMode, setWizardApproveMode] = useState(false);
+    const [wizardEditReadyMode, setWizardEditReadyMode] = useState(false);
     // v2.10 доп.отчёт: addendum-mode wizard + the app picker that opens it.
     const [wizardAddendumMode, setWizardAddendumMode] = useState(false);
     const [showAddendumPicker, setShowAddendumPicker] = useState(false);
@@ -131,6 +133,7 @@ export default function KP() {
     });
     const [showAccounted, setShowAccounted] = useState(false);
     const [accountingBusy, setAccountingBusy] = useState(false);
+    const [reportActionBusy, setReportActionBusy] = useState(null);
     const [showReconciliation, setShowReconciliation] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
@@ -348,6 +351,32 @@ export default function KP() {
             toast.error(e.response?.data?.detail || 'Не удалось изменить отметку');
         } finally {
             setAccountingBusy(false);
+        }
+    };
+
+    const clearReadyReport = async (app) => {
+        if (reportActionBusy) return;
+        const label = `${formatApplicationNumber(app)} — ${app.object_name || app.obj_name || app.object_address || 'Объект'}`;
+        const confirmed = window.confirm(
+            `Полностью очистить готовый отчёт ${label}?\n\n` +
+            'Будут удалены все часы, основные и дополнительные работы. ' +
+            'Заявка вернётся во вкладку «К заполнению». Отменить действие нельзя.'
+        );
+        if (!confirmed) return;
+        const scrollPosition = window.scrollY;
+        setReportActionBusy(app.id);
+        try {
+            await axios.post(`/api/kp/apps/${app.id}/smr/clear`);
+            toast.success('Отчёт полностью очищен и возвращён к заполнению');
+            setSelectedForExport(prev => prev.filter(id => id !== app.id));
+            await fetchApps({ showLoader: false });
+            requestAnimationFrame(() => {
+                window.scrollTo({ top: scrollPosition, behavior: 'auto' });
+            });
+        } catch (e) {
+            toast.error(e?.response?.data?.detail || 'Не удалось очистить отчёт');
+        } finally {
+            setReportActionBusy(null);
         }
     };
 
@@ -597,14 +626,18 @@ export default function KP() {
                 tab={activeTab}
                 groupMode={groupMode}
                 isOffice={isOffice}
+                canManageReadyReport={canManageReadyReport}
+                reportActionBusy={reportActionBusy}
                 tgId={tgId}
                 selectedForExport={selectedForExport}
                 setSelectedForExport={setSelectedForExport}
                 mergeSelected={mergeSelected}
                 toggleMergeSelect={toggleMergeSelect}
                 onUnmerge={handleUnmerge}
-                onFill={(app) => { setWizardApproveMode(false); setWizardApp(app); }}
-                onReview={(app) => { setWizardApproveMode(true); setWizardApp(app); }}
+                onFill={(app) => { setWizardApproveMode(false); setWizardEditReadyMode(false); setWizardAddendumMode(false); setWizardApp(app); }}
+                onReview={(app) => { setWizardApproveMode(true); setWizardEditReadyMode(false); setWizardAddendumMode(false); setWizardApp(app); }}
+                onEditReady={(app) => { setWizardApproveMode(false); setWizardAddendumMode(false); setWizardEditReadyMode(true); setWizardApp(app); }}
+                onClearReady={clearReadyReport}
                 onView={(app) => openModal(app)}
                 onArchive={async (app) => {
                     if (!window.confirm(`Архивировать СМР: ${app.object_name || app.obj_name || 'Объект'} (${app.date_target})?`)) return;
@@ -873,6 +906,7 @@ export default function KP() {
                                             onClick={() => {
                                                 setShowAddendumPicker(false);
                                                 setWizardApproveMode(false);
+                                                setWizardEditReadyMode(false);
                                                 setWizardAddendumMode(true);
                                                 setWizardApp(app);
                                             }}
@@ -904,7 +938,8 @@ export default function KP() {
                     tgId={tgId}
                     approveMode={wizardApproveMode}
                     addendumMode={wizardAddendumMode}
-                    onClose={() => { setWizardApp(null); setWizardApproveMode(false); setWizardAddendumMode(false); }}
+                    editReadyMode={wizardEditReadyMode}
+                    onClose={() => { setWizardApp(null); setWizardApproveMode(false); setWizardAddendumMode(false); setWizardEditReadyMode(false); }}
                     onSubmitted={() => { fetchApps(); }}
                 />
             )}
@@ -956,6 +991,8 @@ function GroupedSMRList({
     tab,
     groupMode,
     isOffice,
+    canManageReadyReport,
+    reportActionBusy,
     tgId,
     selectedForExport,
     setSelectedForExport,
@@ -969,6 +1006,8 @@ function GroupedSMRList({
     onRemind,
     onDownload,
     onAccounted,
+    onEditReady,
+    onClearReady,
 }) {
     const groups = useMemo(() => groupSMRItems(items, groupMode), [items, groupMode]);
 
@@ -1016,6 +1055,8 @@ function GroupedSMRList({
                                 tab={tab}
                                 groupMode={groupMode}
                                 isOffice={isOffice}
+                                canManageReadyReport={canManageReadyReport}
+                                reportActionBusy={reportActionBusy}
                                 tgId={tgId}
                                 selectedForExport={selectedForExport}
                                 setSelectedForExport={setSelectedForExport}
@@ -1029,6 +1070,8 @@ function GroupedSMRList({
                                 onRemind={onRemind}
                                 onDownload={onDownload}
                                 onAccounted={onAccounted}
+                                onEditReady={onEditReady}
+                                onClearReady={onClearReady}
                             />
                         ))}
                     </ul>
@@ -1039,10 +1082,11 @@ function GroupedSMRList({
 }
 
 function SMRGroupRow({
-    app, tab, groupMode, isOffice, tgId,
+    app, tab, groupMode, isOffice, canManageReadyReport, reportActionBusy, tgId,
     selectedForExport, setSelectedForExport,
     mergeSelected, toggleMergeSelect, onUnmerge,
     onFill, onReview, onView, onArchive, onRemind, onDownload, onAccounted,
+    onEditReady, onClearReady,
 }) {
     const isBrigadierSubmission = app.smr_filled_by_role === 'brigadier';
     const mergedWith = Array.isArray(app.merged_with) ? app.merged_with : [];
@@ -1220,6 +1264,28 @@ function SMRGroupRow({
                         >
                             Открыть
                         </button>
+                        {canManageReadyReport && (
+                            <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); onEditReady?.(app); }}
+                                disabled={Boolean(reportActionBusy)}
+                                title="Редактировать готовый отчёт"
+                                className="text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-lg border border-amber-200 dark:border-amber-800/50 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors active:scale-95 disabled:opacity-50"
+                            >
+                                <Edit3 className="w-3.5 h-3.5" />
+                            </button>
+                        )}
+                        {canManageReadyReport && (
+                            <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); onClearReady?.(app); }}
+                                disabled={Boolean(reportActionBusy)}
+                                title="Полностью очистить отчёт"
+                                className="text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-lg border border-red-200 dark:border-red-800/50 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors active:scale-95 disabled:opacity-50"
+                            >
+                                <Trash2 className={`w-3.5 h-3.5 ${reportActionBusy === app.id ? 'animate-pulse' : ''}`} />
+                            </button>
+                        )}
                         <button
                             onClick={() => onDownload(app)}
                             title="Скачать отчёт"
