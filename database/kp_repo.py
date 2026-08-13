@@ -517,11 +517,18 @@ class KpRepoMixin:
             object_name = meta[1] if meta else ""
             app_label = ", ".join(f"№{x}" for x in logical_ids)
 
+            def row_context(item):
+                return (
+                    item.get("application_label") or app_label,
+                    item.get("object_name") or object_name,
+                )
+
             for item in report.get("plan_works", []):
                 volume = float(item.get("volume") or 0)
                 salary = float(item.get("current_salary") or 0)
                 price = float(item.get("current_price") or 0)
-                rows.append([app_label, date_target, object_name, "Работа", item.get("team_name") or "",
+                item_app, item_object = row_context(item)
+                rows.append([item_app, date_target, item_object, "Работа", item.get("team_name") or "",
                              item.get("name") or "", item.get("unit") or "", volume, "", salary,
                              round(volume * salary, 2), price, round(volume * price, 2),
                              "Да" if item.get("is_additional") else "Нет"])
@@ -529,17 +536,24 @@ class KpRepoMixin:
                 volume = float(item.get("volume") or 0)
                 salary = float(item.get("salary") or 0)
                 price = float(item.get("price") or 0)
-                rows.append([app_label, date_target, object_name, "Доп. работа", item.get("team_name") or "",
+                item_app, item_object = row_context(item)
+                rows.append([item_app, date_target, item_object, "Доп. работа", item.get("team_name") or "",
                              item.get("name") or "", item.get("unit") or "", volume, "", salary,
                              round(volume * salary, 2), price, round(volume * price, 2),
                              "Да" if item.get("is_additional") else "Нет"])
             for item in report.get("hours", []):
-                rows.append([app_label, date_target, object_name, "Часы", item.get("team_name") or "",
+                item_app, item_object = row_context(item)
+                rows.append([item_app, date_target, item_object, "Часы", item.get("team_name") or "",
                              item.get("fio") or "", item.get("specialty") or "", float(item.get("hours") or 0),
                              float(item.get("participant_salary") or 0), "", "", "", "",
                              "Да" if item.get("is_additional") else "Нет"])
             totals = report.get("totals", {})
-            rows.append([app_label, date_target, object_name, "ИТОГО", "", "", "",
+            total_objects = " / ".join(dict.fromkeys(
+                str(context.get("object_name") or "")
+                for context in report.get("applications", [])
+                if context.get("object_name")
+            )) or object_name
+            rows.append([app_label, date_target, total_objects, "ИТОГО", "", "", "",
                          totals.get("hours", 0), totals.get("participant_salary", 0), "",
                          totals.get("salary", 0), "",
                          totals.get("price", 0), ""])

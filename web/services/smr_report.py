@@ -1,8 +1,9 @@
 """SMR Excel report generator.
 
 Produces a clean multi-sheet .xlsx for a single application with:
-    - "Часы" (hours): brigade | FIO | specialty | hours | participant pay | filled by
-    - "Работы" (plan works): name | unit | volume | filled by
+    - "Объекты": every application/object in a merged SMR
+    - "Часы" (hours): object | application | brigade | FIO | hours | filled by
+    - "Работы" (plan works): object | application | name | unit | volume | filled by
     - "Доп. работы" (extras): same columns (sheet omitted when empty)
 
 Catalog prices stay role-gated. Participant pay is an independent optional
@@ -79,6 +80,13 @@ def _author_label(fio: str | None, role: str | None) -> str:
     return f"{fio} ({role_ru})" if role_ru else fio
 
 
+def _row_context(row: dict, app_meta: dict) -> tuple[str, str]:
+    return (
+        str(row.get('object_name') or app_meta.get('object_name') or app_meta.get('object_address') or ''),
+        str(row.get('application_label') or app_meta.get('public_number') or f"№{app_meta.get('id', '')}"),
+    )
+
+
 def _autosize(ws, min_w: int = 12, max_w: int = 60):
     for col_idx, column in enumerate(ws.columns, start=1):
         longest = 0
@@ -129,10 +137,32 @@ async def generate_smr_excel_bytes(
     report = await get_smr_read_model(db, app_id)
     wb = Workbook()
 
+    applications = report.get('applications') or []
+    include_object_context = len(applications) > 1
+    if include_object_context:
+        ws_objects = wb.active
+        ws_objects.title = "Объекты"
+        _write_header(ws_objects, ["Заявка", "Объект", "Адрес", "Дата работ"])
+        for row_no, context in enumerate(applications, start=2):
+            values = (
+                context.get('application_label') or f"№{context.get('id')}",
+                context.get('object_name') or '',
+                context.get('object_address_clean') or context.get('object_address') or '',
+                _format_work_date(context.get('date_target')),
+            )
+            for col, value in enumerate(values, start=1):
+                ws_objects.cell(row=row_no, column=col, value=value).alignment = _LEFT
+        _autosize(ws_objects)
+        ws_hours = wb.create_sheet("Часы")
+    else:
+        ws_hours = wb.active
+        ws_hours.title = "Часы"
+
     # ─────────────────────── Sheet 1: Часы ───────────────────────
-    ws_hours = wb.active
-    ws_hours.title = "Часы"
-    hours_headers = ["Бригада", "ФИО", "Специальность", "Часы"]
+    hours_headers = []
+    if include_object_context:
+        hours_headers.extend(["Объект", "Заявка"])
+    hours_headers.extend(["Бригада", "ФИО", "Специальность", "Часы"])
     if include_participant_salary:
         hours_headers.append("ЗП участника")
     hours_headers.append("Заполнил")
@@ -140,7 +170,10 @@ async def generate_smr_excel_bytes(
 
     # v2.10: include addendum hours (доп.отчёт) so they count in the report,
     # matching the works/extras sheets which read the tables directly.
-    hours_rows = report.get('hours', [])
+    hours_rows = sorted(
+        report.get('hours', []),
+        key=lambda row: (str(row.get('object_name') or ''), str(row.get('team_name') or ''), str(row.get('fio') or '')),
+    )
     r = 2
     for h in hours_rows:
         if (
@@ -148,11 +181,17 @@ async def generate_smr_excel_bytes(
             and float(h.get('participant_salary') or 0) <= 0
         ):
             continue
-        ws_hours.cell(row=r, column=1, value=h.get('team_name') or '').alignment = _LEFT
-        ws_hours.cell(row=r, column=2, value=h.get('fio') or '').alignment = _LEFT
-        ws_hours.cell(row=r, column=3, value=h.get('specialty') or '').alignment = _LEFT
-        ws_hours.cell(row=r, column=4, value=float(h.get('hours') or 0)).alignment = _CENTER
-        col = 5
+        col = 1
+        if include_object_context:
+            object_name, application_label = _row_context(h, app_meta)
+            ws_hours.cell(row=r, column=col, value=object_name).alignment = _LEFT
+            ws_hours.cell(row=r, column=col + 1, value=application_label).alignment = _LEFT
+            col += 2
+        ws_hours.cell(row=r, column=col, value=h.get('team_name') or '').alignment = _LEFT
+        ws_hours.cell(row=r, column=col + 1, value=h.get('fio') or '').alignment = _LEFT
+        ws_hours.cell(row=r, column=col + 2, value=h.get('specialty') or '').alignment = _LEFT
+        ws_hours.cell(row=r, column=col + 3, value=float(h.get('hours') or 0)).alignment = _CENTER
+        col += 4
         if include_participant_salary:
             ws_hours.cell(
                 row=r, column=col,
@@ -171,14 +210,18 @@ async def generate_smr_excel_bytes(
     # ─────────────────────── Sheet 2: Работы ───────────────────────
     # v2.4.3 per-brigade: when any row carries team_id, prepend a "Бригада"
     # column so the distribution across teams is visible in the report.
-    works = report.get('plan_works', [])
+    works = sorted(
+        report.get('plan_works', []),
+        key=lambda row: (str(row.get('object_name') or ''), str(row.get('category') or ''), str(row.get('name') or '')),
+    )
 
     has_teams = any(w.get('team_id') for w in works)
     ws_works = wb.create_sheet("Работы")
+    headers = ["Объект", "Заявка"] if include_object_context else []
     if has_teams:
-        headers = ["Бригада", "Наименование", "Ед.изм", "Объём"]
+        headers.extend(["Бригада", "Наименование", "Ед.изм", "Объём"])
     else:
-        headers = ["Наименование", "Ед.изм", "Объём"]
+        headers.extend(["Наименование", "Ед.изм", "Объём"])
     if include_financial:
         headers.extend(["ЗП за ед.", "Сумма ЗП", "Цена за ед.", "Сумма цены"])
     headers.append("Заполнил")
@@ -187,6 +230,11 @@ async def generate_smr_excel_bytes(
     r = 2
     for w in works:
         col = 1
+        if include_object_context:
+            object_name, application_label = _row_context(w, app_meta)
+            ws_works.cell(row=r, column=col, value=object_name).alignment = _LEFT
+            ws_works.cell(row=r, column=col + 1, value=application_label).alignment = _LEFT
+            col += 2
         if has_teams:
             ws_works.cell(row=r, column=col, value=w.get('team_name') or '—').alignment = _LEFT
             col += 1
@@ -213,15 +261,19 @@ async def generate_smr_excel_bytes(
     _autosize(ws_works)
 
     # ─────────────────────── Sheet 3: Доп. работы (если есть) ───────────────────────
-    extras = report.get('extra_works', [])
+    extras = sorted(
+        report.get('extra_works', []),
+        key=lambda row: (str(row.get('object_name') or ''), str(row.get('name') or '')),
+    )
 
     if extras:
         extras_has_teams = any(e.get('team_id') for e in extras)
         ws_extra = wb.create_sheet("Доп. работы")
+        headers = ["Объект", "Заявка"] if include_object_context else []
         if extras_has_teams:
-            headers = ["Бригада", "Наименование", "Ед.изм", "Объём"]
+            headers.extend(["Бригада", "Наименование", "Ед.изм", "Объём"])
         else:
-            headers = ["Наименование", "Ед.изм", "Объём"]
+            headers.extend(["Наименование", "Ед.изм", "Объём"])
         if include_financial:
             headers.extend(["ЗП за ед.", "Сумма ЗП", "Цена за ед.", "Сумма цены"])
         headers.append("Заполнил")
@@ -229,6 +281,11 @@ async def generate_smr_excel_bytes(
         r = 2
         for e in extras:
             col = 1
+            if include_object_context:
+                object_name, application_label = _row_context(e, app_meta)
+                ws_extra.cell(row=r, column=col, value=object_name).alignment = _LEFT
+                ws_extra.cell(row=r, column=col + 1, value=application_label).alignment = _LEFT
+                col += 2
             if extras_has_teams:
                 ws_extra.cell(row=r, column=col, value=e.get('team_name') or '—').alignment = _LEFT
                 col += 1
@@ -275,8 +332,15 @@ async def generate_smr_excel_bytes(
     buf.seek(0)
     blob = buf.read()
 
+    file_objects = list(dict.fromkeys(
+        str(context.get('object_name') or '').strip() for context in applications
+        if str(context.get('object_name') or '').strip()
+    ))
     filename = _build_report_filename(
-        object_name=app_meta.get('object_name') or app_meta.get('object_address'),
+        object_name=' + '.join(file_objects) if len(file_objects) > 1 else (
+            (file_objects[0] if file_objects else None)
+            or app_meta.get('object_name') or app_meta.get('object_address')
+        ),
         app_id=app_id,
         public_number=app_meta.get('public_number'),
         date_target=app_meta.get('date_target'),
