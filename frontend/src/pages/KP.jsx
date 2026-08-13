@@ -1098,6 +1098,7 @@ function SMRGroupRow({
     const isMerged = mergedWith.length > 0;
     const isMergeSelected = (mergeSelected || []).includes(app.id);
     const isAccounted = Boolean(app.smr_accounted_at);
+    const isBackdated = Boolean(app.is_backdated);
     const objectLabel = app.object_name || app.obj_name || app.object_address || 'Без объекта';
 
     const isRemindMode = tab === 'to_fill' && isOffice && app.foreman_id !== Number(tgId);
@@ -1151,6 +1152,11 @@ function SMRGroupRow({
                             title={`Учтено: ${app.smr_accounted_by_fio || '—'} · ${app.smr_accounted_at || '—'}`}
                         >
                             <CheckCheck className="w-2.5 h-2.5" /> учтено
+                        </span>
+                    )}
+                    {isBackdated && (
+                        <span className="inline-flex text-[9px] font-black uppercase tracking-wide text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
+                            задним числом · только СМР
                         </span>
                     )}
                 </p>

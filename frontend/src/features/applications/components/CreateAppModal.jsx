@@ -14,6 +14,7 @@ import TeamSelector from './TeamSelector';
 import DraftRestorePrompt from '../../../components/ui/DraftRestorePrompt';
 import { useDraft } from '../../../hooks/useDraft';
 import { loadDraft, clearDraft, formatDraftAge } from '../../../utils/draftStorage';
+import { getYesterdayStr } from '../../../utils/dateUtils';
 
 const DRAFT_KEY = 'create-app';
 const hasMeaningfulCreateData = (d) =>
@@ -33,7 +34,7 @@ export default function CreateAppModal({
     checkTeamStatus, checkEquipStatus,
     toggleEquipmentSelection, updateEquipmentTime,
     setDriverForEquipment, clearDriverForEquipment,
-    activeEqCategory, setActiveEqCategory, teamMembers, openProfile, openFreeModal,
+    activeEqCategory, setActiveEqCategory, teamMembers, openProfile,
     tgId
 }) {
     const [exchangeDialog, setExchangeDialog] = useState(null);
@@ -109,6 +110,7 @@ export default function CreateAppModal({
     }, [appForm.date_target, appForm.isViewOnly, fetchAvailability]);
 
     const getEquipState = (eqAvail) => {
+        if (appForm.is_backdated) return 'available';
         if (eqAvail.status === 'repair') return 'repair';
         if (eqAvail.status === 'free') return 'available';
         if (eqAvail.is_in_pending_exchange) return 'in_exchange';
@@ -218,6 +220,7 @@ export default function CreateAppModal({
         { label: 'Завтра', val: smartDates[1].val },
         { label: 'Послезавтра', val: smartDates[2].val },
     ];
+    const yesterday = getYesterdayStr();
 
     return (
         <motion.div
@@ -275,11 +278,29 @@ export default function CreateAppModal({
                                     </div>
                                 ) : (
                                     <>
+                                        {!appForm.id && (
+                                            <div className="mb-3 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/20 p-3.5">
+                                                <label className="flex items-start gap-3 cursor-pointer">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={Boolean(appForm.is_backdated)}
+                                                        disabled={isSubmitting}
+                                                        onChange={(event) => setAppForm((prev) => ({
+                                                            ...prev,
+                                                            is_backdated: event.target.checked,
+                                                            date_target: event.target.checked ? yesterday : smartDates[1].val,
+                                                        }))}
+                                                        className="mt-0.5 w-5 h-5 accent-amber-600"
+                                                    />
+                                                    <span><b className="block text-sm text-amber-900 dark:text-amber-200">За вчера — только для СМР</b><span className="block mt-1 text-xs leading-relaxed text-amber-800 dark:text-amber-300">Дата после создания не меняется. Заявка не публикуется и не попадает в расстановку.</span></span>
+                                                </label>
+                                            </div>
+                                        )}
                                         <div className="grid grid-cols-3 gap-2 mb-3">
                                             {dateChips.map(chip => {
                                                 const active = chip.val === appForm.date_target;
                                                 return (
-                                                    <button key={chip.val} type="button" disabled={isSubmitting}
+                                                    <button key={chip.val} type="button" disabled={isSubmitting || appForm.is_backdated}
                                                         onClick={() => handleFormChange('date_target', chip.val)}
                                                         className={`py-2.5 text-xs font-bold rounded-xl border transition-all disabled:opacity-50 active:scale-95 ${active ? 'bg-blue-600 text-white border-blue-700 shadow-md' : 'bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700'}`}>
                                                         {chip.label}
@@ -288,7 +309,9 @@ export default function CreateAppModal({
                                             })}
                                         </div>
                                         <input type="date" required value={appForm.date_target}
-                                            disabled={isSubmitting}
+                                            min={appForm.is_backdated ? yesterday : smartDates[0].val}
+                                            max={appForm.is_backdated ? yesterday : undefined}
+                                            disabled={isSubmitting || appForm.is_backdated}
                                             onChange={e => handleFormChange('date_target', e.target.value)}
                                             className="w-full border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/50 p-3.5 rounded-xl outline-none font-bold text-gray-800 dark:text-gray-100 shadow-inner disabled:opacity-80 transition-colors focus:ring-2 focus:ring-blue-500 focus:border-transparent" />
                                     </>
@@ -364,10 +387,8 @@ export default function CreateAppModal({
                                 isViewOnly={appForm.isViewOnly}
                                 appForm={appForm}
                                 data={data}
-                                role={role}
                                 openProfile={openProfile}
                                 onCloseModal={() => setGlobalCreateAppOpen(false)}
-                                openFreeModal={openFreeModal}
                             />
                         </div>
 
@@ -405,6 +426,7 @@ export default function CreateAppModal({
                                 clearDriverForEquipment={clearDriverForEquipment}
                                 applicationDate={appForm.date_target}
                                 applicationId={appForm.id}
+                                softConflicts={Boolean(appForm.is_backdated)}
                             />
                         </div>
 

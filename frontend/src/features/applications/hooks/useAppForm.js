@@ -4,6 +4,7 @@ import toast from 'react-hot-toast';
 import useConfirm from '../../../hooks/useConfirm';
 import useEquipDefaultTime from '../../../hooks/useEquipDefaultTime';
 import { clearDraft } from '../../../utils/draftStorage';
+import { getYesterdayStr } from '../../../utils/dateUtils';
 
 const CREATE_APP_DRAFT_KEY = 'create-app';
 
@@ -52,6 +53,7 @@ export default function useAppForm({
         foreman_name: '',
         is_team_freed: 0,
         freed_team_ids: [],
+        is_backdated: false,
     });
 
     const [appForm, setAppForm] = useState(emptyForm());
@@ -95,7 +97,7 @@ export default function useAppForm({
                         // Pre-select only members that aren't already booked
                         // elsewhere on this date. Users can still untick them.
                         const freeIds = uniqueMembers
-                            .filter(m => !m.is_used && !['vacation', 'sick'].includes(m.status))
+                            .filter(m => (appForm.is_backdated || !m.is_used) && !['vacation', 'sick'].includes(m.status))
                             .map(m => m.id);
                         setAppForm(prev => ({ ...prev, members: freeIds }));
                     }
@@ -105,7 +107,7 @@ export default function useAppForm({
             setTeamMembers([]);
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [appForm.team_ids.join(','), appForm.date_target, appForm.id]);
+    }, [appForm.team_ids.join(','), appForm.date_target, appForm.id, appForm.is_backdated]);
 
     // -------------------------------------------------------------------------
     // Basic field helpers
@@ -151,7 +153,7 @@ export default function useAppForm({
         // application on the same date — the picker shows them disabled
         // but a stray click shouldn't bypass that.
         const target = teamMembers.find(m => m.id === id);
-        if (target?.is_used) {
+        if (target?.is_used && !appForm.is_backdated) {
             toast.error(
                 target.used_in_object
                     ? `Уже занят: заявка №${target.used_in_app_id} · ${target.used_in_object}`
@@ -179,7 +181,7 @@ export default function useAppForm({
         const freeIds = teamMembers
             .filter(m =>
                 m.team_id === teamId &&
-                !m.is_used &&
+                (appForm.is_backdated || !m.is_used) &&
                 !['vacation', 'sick'].includes(m.status)
             )
             .map(m => m.id);
@@ -276,6 +278,7 @@ export default function useAppForm({
         //              or every member on this team is already taken),
         //             OR the union of partial picks across all apps
         //             already covers the whole roster.
+        if (appForm.is_backdated) return { state: 'backdated', message: 'Может быть занята в другой заявке за вчера' };
         if (!data.kanban_apps) return { state: 'free' };
         const team = (data.teams || []).find(t => Number(t.id) === Number(team_id));
         const totalMembers = Number(team?.member_count || 0);
@@ -329,6 +332,7 @@ export default function useAppForm({
     };
 
     const checkEquipStatus = (equip) => {
+        if (appForm.is_backdated) return { state: 'backdated', message: 'Допускается повторное использование за вчера' };
         if (equip.status === 'repair') return { state: 'repair', message: 'Техника в ремонте.' };
         if (data.kanban_apps) {
             const appsOnDate = data.kanban_apps.filter(
@@ -472,6 +476,17 @@ export default function useAppForm({
         if (appForm.team_ids.length > 0 && appForm.members.length === 0)
             return toast.error('Выберите хотя бы одного рабочего из бригады!');
 
+        if (appForm.is_backdated) {
+            if (appForm.date_target !== getYesterdayStr()) {
+                return toast.error('Заявку задним числом можно создать только за вчера');
+            }
+            const ok = await confirm(
+                'Эта заявка создаётся задним числом только для СМР. Она не попадёт в расстановку и не будет опубликована. Лучше оформлять несколько объектов в тот же день, освобождая бригаду и технику между выездами. Продолжить?',
+                { title: 'Заявка за вчера', variant: 'warning', confirmText: 'Создать для СМР' },
+            );
+            if (!ok) return;
+        }
+
         // v2.6.1: empty driver slots are now allowed on the foreman path.
         // Moderator will assign them at review. We surface a soft toast
         // so the foreman knows their choice was registered, but submit
@@ -517,6 +532,7 @@ export default function useAppForm({
             fd.append('comment', appForm.comment);
             fd.append('selected_members', appForm.members.join(','));
             fd.append('equipment_data', JSON.stringify(appForm.equipment));
+            fd.append('is_backdated', appForm.is_backdated ? 'true' : 'false');
 
             // v2.6: drivers — only emit pairs for currently-selected equipment.
             const driversPayload = (appForm.equipment || [])
@@ -533,7 +549,9 @@ export default function useAppForm({
                 toast.success('Заявка успешно обновлена!');
             } else {
                 const createRes = await axios.post('/api/applications/create', fd);
-                toast.success('Успешно отправлено на модерацию!');
+                toast.success(appForm.is_backdated
+                    ? 'Заявка за вчера создана и добавлена в СМР'
+                    : 'Успешно отправлено на модерацию!');
                 // Submit-success → drop the create-app draft so the next
                 // open of the modal starts clean. Cancel/X paths skip this.
                 clearDraft(CREATE_APP_DRAFT_KEY);

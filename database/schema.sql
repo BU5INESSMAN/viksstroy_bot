@@ -208,6 +208,9 @@ CREATE TABLE IF NOT EXISTS applications (
     smr_accounted_by INTEGER DEFAULT NULL,
     smr_accounted_at TEXT DEFAULT NULL,
     public_number TEXT,
+    -- Retrospective report-only request created on the following day.
+    is_backdated INTEGER NOT NULL DEFAULT 0,
+    backdated_created_at TEXT DEFAULT NULL,
     FOREIGN KEY (foreman_id) REFERENCES users (user_id),
     FOREIGN KEY (team_id) REFERENCES teams (id),
     FOREIGN KEY (equipment_id) REFERENCES equipment (id)
@@ -293,6 +296,21 @@ CREATE TABLE IF NOT EXISTS application_extra_works (
     FOREIGN KEY (extra_work_id) REFERENCES extra_works_catalog(id),
     FOREIGN KEY (kp_id) REFERENCES kp_catalog(id)
 );
+
+-- Exact release moments for brigade/equipment statistics and audit.
+CREATE TABLE IF NOT EXISTS application_resource_releases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    application_id INTEGER NOT NULL,
+    resource_type TEXT NOT NULL CHECK(resource_type IN ('team', 'equipment')),
+    resource_id INTEGER NOT NULL,
+    released_at TEXT NOT NULL,
+    released_by INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(application_id, resource_type, resource_id),
+    FOREIGN KEY (application_id) REFERENCES applications(id)
+);
+CREATE INDEX IF NOT EXISTS idx_resource_releases_app
+    ON application_resource_releases(application_id, resource_type, resource_id);
 
 -- Глобальный справочник КП (Прайс-лист)
 CREATE TABLE IF NOT EXISTS kp_catalog (

@@ -150,6 +150,10 @@ async def api_drivers_availability(
         pairs = [dict(zip(cols, r)) for r in await cur.fetchall()]
 
     for pair in pairs:
+        if _equipment_is_released(
+            pair.get("equipment_data"), int(pair["equipment_id"])
+        ):
+            continue
         drv_id = int(pair["driver_user_id"])
         if drv_id not in by_uid:
             # Driver might have been soft-deleted (role cleared) since the
@@ -191,6 +195,23 @@ async def api_drivers_availability(
     primary_out = [by_uid[int(d["user_id"])] for d in drivers]
     tail_out = [v for k, v in by_uid.items() if k not in primary_ids]
     return primary_out + tail_out
+
+
+def _equipment_is_released(equipment_data_json, equipment_id: int) -> bool:
+    """A released machine no longer occupies its assigned driver's day."""
+    try:
+        rows = json.loads(equipment_data_json or "[]")
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return False
+    for row in rows if isinstance(rows, list) else []:
+        if not isinstance(row, dict):
+            continue
+        try:
+            if int(row.get("id", -1)) == int(equipment_id):
+                return bool(row.get("is_freed"))
+        except (TypeError, ValueError):
+            continue
+    return False
 
 
 @router.get("/api/drivers/stats/overview")

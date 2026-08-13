@@ -6,6 +6,7 @@ from __future__ import annotations
 EVENTS = {
     # Applications
     "app_new": ("Заявки", "Новая заявка", {"moderator", "boss", "superadmin"}),
+    "app_backdated": ("Заявки", "Заявка за вчера только для СМР", {"foreman", "moderator", "boss", "superadmin"}),
     "app_edited": ("Заявки", "Заявка изменена прорабом", {"moderator", "boss", "superadmin"}),
     "app_edited_by_moderator": ("Заявки", "Модератор изменил мою заявку", {"foreman"}),
     "app_approved": ("Заявки", "Заявка одобрена", {"foreman"}),

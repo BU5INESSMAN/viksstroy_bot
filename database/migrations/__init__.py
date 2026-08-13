@@ -63,6 +63,9 @@ MIGRATIONS_ORDER = [
     # Foreman-entered pay per SMR participant. This remains separate from
     # the catalog work-rate salary used in financial calculations.
     "m_2026_08_smr_participant_salary",
+    # Foreman workflow: exact release time for teams/equipment and
+    # report-only applications created for yesterday.
+    "m_2026_08_backdated_apps_and_resource_releases",
 ]
 
 

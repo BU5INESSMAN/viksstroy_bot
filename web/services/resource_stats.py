@@ -65,9 +65,52 @@ def equipment_duration_hours(row: dict) -> float:
     return round((end - start) / 60, 2)
 
 
+def _released_minutes(released_at, date_target) -> int | None:
+    raw = str(released_at or "").strip()
+    if not raw or not date_target or raw[:10] != str(date_target)[:10]:
+        return None
+    try:
+        time_part = raw.split("T", 1)[1] if "T" in raw else raw.split(" ", 1)[1]
+    except IndexError:
+        return None
+    return _clock_minutes(time_part[:5])
+
+
+def equipment_assignment_hours(row: dict, release_at=None, date_target=None) -> float:
+    start = _clock_minutes(row.get("time_start"))
+    planned_end = _clock_minutes(row.get("time_end"))
+    actual_end = _released_minutes(release_at, date_target)
+    # A manual release is the factual end of the assignment. It may happen
+    # before or after the planned end and therefore deliberately takes
+    # precedence over the schedule.
+    end = actual_end if actual_end is not None else planned_end
+    if start is None or end is None or end <= start:
+        return 0.0
+    return round((end - start) / 60, 2)
+
+
+async def _release_map(db, app_ids: list[int]) -> dict[tuple[int, str, int], str]:
+    if not app_ids:
+        return {}
+    marks = ",".join("?" for _ in app_ids)
+    try:
+        async with db.conn.execute(
+            f"SELECT application_id,resource_type,resource_id,released_at "
+            f"FROM application_resource_releases WHERE application_id IN ({marks})",
+            app_ids,
+        ) as cur:
+            return {
+                (int(row[0]), str(row[1]), int(row[2])): str(row[3] or "")
+                for row in await cur.fetchall()
+            }
+    except Exception:
+        return {}
+
+
 async def _applications(db, *, cutoff: str | None = None, object_id: int | None = None) -> list[dict]:
     sql = (
         "SELECT a.id,a.public_number,a.date_target,a.status,a.foreman_name,"
+        "a.time_start,a.time_end,"
         "a.team_id,a.selected_members,a.equipment_data,a.object_id,"
         "COALESCE(NULLIF(o.name,''),NULLIF(a.object_address,''),'Без объекта') AS object_name "
         "FROM applications a LEFT JOIN objects o ON o.id=a.object_id "
@@ -107,6 +150,7 @@ async def team_stats(
             app_hours = {int(row[0]): float(row[1] or 0) for row in await cur.fetchall()}
 
     assignments: list[dict] = []
+    releases = await _release_map(db, [int(app["id"]) for app in apps])
     for app in apps:
         if int(team_id) not in _csv_ids(app.get("team_id")):
             continue
@@ -116,11 +160,19 @@ async def team_stats(
         # member did not actually participate and must not inflate totals.
         if selected and member_ids and not participants:
             continue
+        release_at = releases.get((int(app["id"]), "team", int(team_id)))
+        assignment_hours = equipment_assignment_hours(
+            {"time_start": app.get("time_start"), "time_end": app.get("time_end")},
+            release_at,
+            app.get("date_target"),
+        )
         assignments.append({
             **app,
             "participant_count": len(participants),
             "is_partial": bool(member_ids and len(participants) < len(member_ids)),
             "labor_hours": round(app_hours.get(int(app["id"]), 0.0), 2),
+            "work_hours": assignment_hours,
+            "released_at": release_at,
         })
 
     objects = sorted({row["object_name"] for row in assignments if row.get("object_name")})
@@ -133,6 +185,7 @@ async def team_stats(
         "partial_assignments": sum(row["is_partial"] for row in assignments),
         "people_assignments": sum(row["participant_count"] for row in assignments),
         "labor_hours": round(sum(row["labor_hours"] for row in assignments), 2),
+        "work_hours": round(sum(row["work_hours"] for row in assignments), 2),
         "top_foremen": foremen.most_common(5),
         "last_app": assignments[0] if assignments else None,
     }
@@ -144,12 +197,18 @@ async def equipment_stats(
 ) -> dict:
     apps = _apps if _apps is not None else await _applications(db, cutoff=_cutoff(period))
     assignments: list[dict] = []
+    releases = await _release_map(db, [int(app["id"]) for app in apps])
     for app in apps:
         entry = next((row for row in _equipment_rows(app.get("equipment_data"))
                       if int(row.get("id") or 0) == int(equipment_id)), None)
         if not entry:
             continue
-        assignments.append({**app, "hours": equipment_duration_hours(entry)})
+        release_at = releases.get((int(app["id"]), "equipment", int(equipment_id)))
+        assignments.append({
+            **app,
+            "hours": equipment_assignment_hours(entry, release_at, app.get("date_target")),
+            "released_at": release_at,
+        })
 
     total_hours = round(sum(row["hours"] for row in assignments), 2)
     period_days = {"week": 7, "month": 30}.get(period)
@@ -276,6 +335,7 @@ async def teams_overview(
             "partial_assignments": stats["partial_assignments"],
             "people_assignments": stats["people_assignments"],
             "labor_hours": stats["labor_hours"],
+            "work_hours": stats["work_hours"],
             "objects_count": len(stats["objects"]),
         })
     return {
@@ -285,6 +345,7 @@ async def teams_overview(
             {"label": "Участников", "value": sum(int(r.get("member_count") or 0) for r in rows)},
             {"label": "Привязано к MAX", "value": sum(int(r.get("linked_count") or 0) for r in rows)},
             {"label": "Часов по СМР", "value": round(sum(float(r.get("labor_hours") or 0) for r in rows), 2)},
+            {"label": "Часов на объектах", "value": round(sum(float(r.get("work_hours") or 0) for r in rows), 2)},
         ],
         "rows": rows,
     }
@@ -393,6 +454,7 @@ async def drivers_overview(db, period: str = "month") -> dict:
 
 async def object_resource_stats(db, object_id: int) -> dict:
     apps = await _applications(db, object_id=object_id)
+    releases = await _release_map(db, [int(app["id"]) for app in apps])
     team_assignments = 0
     partial_teams = 0
     people_assignments = 0
@@ -416,7 +478,12 @@ async def object_resource_stats(db, object_id: int) -> dict:
             partial_teams += int(bool(team_members and len(participants) < len(team_members)))
         for entry in _equipment_rows(app.get("equipment_data")):
             equipment_assignments += 1
-            equipment_hours += equipment_duration_hours(entry)
+            equipment_id = int(entry.get("id") or 0)
+            equipment_hours += equipment_assignment_hours(
+                entry,
+                releases.get((int(app["id"]), "equipment", equipment_id)),
+                app.get("date_target"),
+            )
 
     async with db.conn.execute(
         "SELECT COALESCE(SUM(ah.hours),0) FROM application_hours ah "

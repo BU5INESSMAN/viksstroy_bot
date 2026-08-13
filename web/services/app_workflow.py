@@ -275,29 +275,42 @@ async def free_equipment(app_id: int, tg_id: int):
     if not eq_row: raise HTTPException(404, "Ваша техника не найдена")
     my_eq_id = eq_row[0]
 
-    await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (my_eq_id,))
-
-    async with db.conn.execute("SELECT equipment_data, object_address, foreman_id FROM applications WHERE id = ?",
+    async with db.conn.execute("SELECT equipment_data, object_address, foreman_id,status,date_target FROM applications WHERE id = ?",
                                (app_id,)) as cur:
         app_row = await cur.fetchone()
 
+    if not app_row:
+        raise HTTPException(404, "Заявка не найдена")
+    if app_row[3] not in ("approved", "published", "in_progress"):
+        raise HTTPException(400, "Технику можно освободить только из активной заявки")
+    if str(app_row[4] or "") != datetime.now(TZ_BARNAUL).date().isoformat():
+        raise HTTPException(400, "Технику можно освободить только из заявки на сегодня")
+
+    await db.conn.execute("UPDATE equipment SET status = 'free' WHERE id = ?", (my_eq_id,))
+
     obj_addr = ""
     foreman_id = None
-    if app_row:
-        obj_addr = app_row[1]
-        foreman_id = app_row[2]
+    obj_addr = app_row[1]
+    foreman_id = app_row[2]
     if app_row and app_row[0]:
         eq_data_str = app_row[0]
         try:
             eq_list = json.loads(eq_data_str)
+            released_at = datetime.now(TZ_BARNAUL).isoformat(timespec="seconds")
             for eq in eq_list:
                 if eq['id'] == my_eq_id:
                     eq['is_freed'] = True
+                    eq['released_at'] = released_at
             new_eq_data = json.dumps(eq_list, ensure_ascii=False)
             await db.conn.execute("UPDATE applications SET equipment_data = ? WHERE id = ?", (new_eq_data, app_id))
         except:
             pass
 
+    await db.conn.execute(
+        "INSERT OR IGNORE INTO application_resource_releases "
+        "(application_id,resource_type,resource_id,released_at,released_by) VALUES (?,?,?,?,?)",
+        (app_id, "equipment", my_eq_id, datetime.now(TZ_BARNAUL).isoformat(timespec="seconds"), real_tg_id),
+    )
     await db.conn.commit()
     fio = dict(user).get('fio', '')
     user_role = dict(user).get('role', 'Водитель')
@@ -338,8 +351,10 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
     await ensure_app_columns()
     real_tg_id = await resolve_id(tg_id)
     user = await db.get_user(real_tg_id)
+    if not user or dict(user).get('role') != 'foreman':
+        raise HTTPException(403, "Освобождать бригады может только прораб")
 
-    async with db.conn.execute("SELECT object_address, team_id, freed_team_ids, foreman_id FROM applications WHERE id = ?",
+    async with db.conn.execute("SELECT object_address, team_id, freed_team_ids, foreman_id,status,date_target FROM applications WHERE id = ?",
                                (app_id,)) as cur:
         app_row = await cur.fetchone()
         if not app_row:
@@ -348,6 +363,15 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
         all_team_ids_str = str(app_row[1] or "")
         freed_str = str(app_row[2] or "")
         foreman_id = app_row[3]
+        status = app_row[4]
+        date_target = app_row[5]
+
+    if int(foreman_id or 0) != int(real_tg_id):
+        raise HTTPException(403, "Можно освобождать только бригады из своих заявок")
+    if status not in ("approved", "published", "in_progress"):
+        raise HTTPException(400, "Бригаду можно освободить только из активной заявки")
+    if str(date_target or "") != datetime.now(TZ_BARNAUL).date().isoformat():
+        raise HTTPException(400, "Бригаду можно освободить только из заявки на сегодня")
 
     freed_list = [int(x) for x in freed_str.split(',') if x.strip().isdigit()]
     all_t_ids = [int(x) for x in all_team_ids_str.split(',') if x.strip().isdigit()]
@@ -357,6 +381,8 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
     role_label = ROLE_NAMES.get(user_role, user_role)
 
     if team_id > 0:
+        if team_id not in all_t_ids:
+            raise HTTPException(400, "Выбранная бригада не назначена в эту заявку")
         if team_id not in freed_list:
             freed_list.append(team_id)
         new_freed_str = ",".join(map(str, freed_list))
@@ -365,6 +391,11 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
         if set(all_t_ids).issubset(set(freed_list)) and len(all_t_ids) > 0:
             await db.conn.execute("UPDATE applications SET is_team_freed = 1 WHERE id = ?", (app_id,))
 
+        await db.conn.execute(
+            "INSERT OR IGNORE INTO application_resource_releases "
+            "(application_id,resource_type,resource_id,released_at,released_by) VALUES (?,?,?,?,?)",
+            (app_id, "team", team_id, datetime.now(TZ_BARNAUL).isoformat(timespec="seconds"), real_tg_id),
+        )
         await db.conn.commit()
 
         async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
@@ -391,6 +422,12 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
     else:
         await db.conn.execute("UPDATE applications SET is_team_freed = 1, freed_team_ids = ? WHERE id = ?",
                               (all_team_ids_str, app_id))
+        released_at = datetime.now(TZ_BARNAUL).isoformat(timespec="seconds")
+        await db.conn.executemany(
+            "INSERT OR IGNORE INTO application_resource_releases "
+            "(application_id,resource_type,resource_id,released_at,released_by) VALUES (?,?,?,?,?)",
+            [(app_id, "team", tid, released_at, real_tg_id) for tid in all_t_ids],
+        )
         await db.conn.commit()
         await db.add_log(real_tg_id, fio, f"Освободил все бригады ({obj_addr})" if obj_addr else f"Освободил все бригады в заявке №{app_id}", target_type='application', target_id=app_id)
 
@@ -408,6 +445,191 @@ async def free_team(app_id: int, tg_id: int, team_id: int):
                 logger.error(f"Free all teams notification error: {e}")
 
         asyncio.create_task(_send_free_all_teams_notification())
+
+
+def _positive_ids(raw: str) -> list[int]:
+    result = []
+    for part in str(raw or "").split(","):
+        try:
+            value = int(part.strip())
+        except (TypeError, ValueError):
+            continue
+        if value > 0 and value not in result:
+            result.append(value)
+    return result
+
+
+async def release_resources(
+    app_id: int,
+    tg_id: int,
+    *,
+    team_ids: str = "",
+    equipment_ids: str = "",
+) -> dict:
+    """Release selected teams/equipment with one exact timestamp.
+
+    This is deliberately foreman-owned at the router boundary. The service
+    still verifies application ownership so a direct request cannot release
+    resources belonging to another foreman.
+    """
+    from fastapi import HTTPException
+    from database_deps import TZ_BARNAUL
+    from services.app_service import ensure_app_columns
+
+    await ensure_app_columns()
+    real_tg_id = await resolve_id(tg_id)
+    user = await db.get_user(real_tg_id)
+    if not user or dict(user).get("role") != "foreman":
+        raise HTTPException(403, "Освобождать ресурсы может только прораб")
+    requested_teams = set(_positive_ids(team_ids))
+    requested_equipment = set(_positive_ids(equipment_ids))
+    if not requested_teams and not requested_equipment:
+        raise HTTPException(400, "Выберите хотя бы одну бригаду или единицу техники")
+
+    async with db.conn.execute(
+        "SELECT foreman_id,public_number,object_address,team_id,freed_team_ids,"
+        "is_team_freed,equipment_data,status,date_target "
+        "FROM applications WHERE id=?",
+        (int(app_id),),
+    ) as cur:
+        row = await cur.fetchone()
+    if not row:
+        raise HTTPException(404, "Заявка не найдена")
+    if int(row[0] or 0) != int(real_tg_id):
+        raise HTTPException(403, "Можно освобождать ресурсы только в своих заявках")
+    if row[7] not in ("approved", "published", "in_progress"):
+        raise HTTPException(400, "Ресурсы можно освободить только из активной заявки")
+    if str(row[8] or "") != datetime.now(TZ_BARNAUL).date().isoformat():
+        raise HTTPException(400, "Освобождать ресурсы можно только в заявке на сегодня")
+
+    assigned_teams = set(_positive_ids(row[3]))
+    already_freed_teams = set(_positive_ids(row[4]))
+    invalid_teams = requested_teams - assigned_teams
+    if invalid_teams:
+        raise HTTPException(400, "В заявке нет одной из выбранных бригад")
+
+    try:
+        equipment = json.loads(row[6] or "[]")
+    except (TypeError, ValueError, json.JSONDecodeError):
+        equipment = []
+    equipment = [item for item in equipment if isinstance(item, dict)]
+    equipment_by_id = {
+        int(item.get("id")): item for item in equipment
+        if str(item.get("id") or "").isdigit()
+    }
+    invalid_equipment = requested_equipment - set(equipment_by_id)
+    if invalid_equipment:
+        raise HTTPException(400, "В заявке нет одной из выбранных единиц техники")
+
+    released_teams = sorted(requested_teams - already_freed_teams)
+    released_equipment = []
+    released_at = datetime.now(TZ_BARNAUL).isoformat(timespec="seconds")
+    for equipment_id in sorted(requested_equipment):
+        item = equipment_by_id[equipment_id]
+        if item.get("is_freed"):
+            continue
+        item["is_freed"] = True
+        item["released_at"] = released_at
+        released_equipment.append(equipment_id)
+
+    if not released_teams and not released_equipment:
+        raise HTTPException(400, "Все выбранные ресурсы уже освобождены")
+
+    next_freed_teams = already_freed_teams | set(released_teams)
+    all_teams_freed = bool(assigned_teams) and assigned_teams.issubset(next_freed_teams)
+    try:
+        await db.conn.execute("SAVEPOINT mass_resource_release")
+        await db.conn.execute(
+            "UPDATE applications SET freed_team_ids=?,is_team_freed=?,equipment_data=? WHERE id=?",
+            (
+                ",".join(map(str, sorted(next_freed_teams))),
+                1 if all_teams_freed else 0,
+                json.dumps(equipment, ensure_ascii=False),
+                int(app_id),
+            ),
+        )
+        for resource_type, ids in (
+            ("team", released_teams), ("equipment", released_equipment),
+        ):
+            await db.conn.executemany(
+                "INSERT OR IGNORE INTO application_resource_releases "
+                "(application_id,resource_type,resource_id,released_at,released_by) "
+                "VALUES (?,?,?,?,?)",
+                [
+                    (int(app_id), resource_type, int(resource_id), released_at, real_tg_id)
+                    for resource_id in ids
+                ],
+            )
+        if released_equipment:
+            marks = ",".join("?" for _ in released_equipment)
+            await db.conn.execute(
+                f"UPDATE equipment SET status='free' WHERE id IN ({marks})",
+                released_equipment,
+            )
+        await db.conn.execute("RELEASE SAVEPOINT mass_resource_release")
+        await db.conn.commit()
+    except Exception:
+        await db.conn.execute("ROLLBACK TO SAVEPOINT mass_resource_release")
+        await db.conn.execute("RELEASE SAVEPOINT mass_resource_release")
+        raise
+
+    fio = dict(user).get("fio", "Прораб") if user else "Прораб"
+    team_names_by_id = {}
+    if released_teams:
+        marks = ",".join("?" for _ in released_teams)
+        async with db.conn.execute(
+            f"SELECT id,name FROM teams WHERE id IN ({marks})", released_teams
+        ) as cur:
+            team_names_by_id = {int(item[0]): item[1] for item in await cur.fetchall()}
+    team_names = [
+        team_names_by_id.get(team_id) or f"Бригада #{team_id}"
+        for team_id in released_teams
+    ]
+    equipment_names = [
+        equipment_by_id[equipment_id].get("name") or f"Техника #{equipment_id}"
+        for equipment_id in released_equipment
+    ]
+    details = []
+    if team_names:
+        details.append("👷 Бригады: " + ", ".join(team_names))
+    if equipment_names:
+        details.append("🚜 Техника: " + ", ".join(equipment_names))
+    app_number = display_application_number(app_id, row[1])
+    await db.add_log(
+        real_tg_id, fio,
+        f"Массово освободил ресурсы заявки {app_number} ({row[2] or 'без объекта'})",
+        target_type="application", target_id=app_id,
+        details=json.dumps({
+            "action": "mass_resource_release", "released_at": released_at,
+            "team_ids": released_teams, "equipment_ids": released_equipment,
+        }, ensure_ascii=False),
+    )
+
+    async def _notify():
+        try:
+            await notify_users(
+                ["moderator", "boss", "superadmin"],
+                f"🟢 <b>Ресурсы освобождены · {app_number}</b>\n"
+                f"👤 {fio}\n📍 {row[2] or 'Объект не указан'}\n"
+                + "\n".join(details)
+                + f"\n🕒 {datetime.now(TZ_BARNAUL).strftime('%H:%M')}",
+                "dashboard", category="orders", event_key="resource_released",
+            )
+        except Exception as exc:
+            logger.error("Mass release notification error: %s", exc)
+
+    asyncio.create_task(_notify())
+    return {
+        "released_at": released_at,
+        "teams": [
+            {"id": value, "name": team_names_by_id.get(value) or f"Бригада #{value}"}
+            for value in released_teams
+        ],
+        "equipment": [
+            {"id": value, "name": equipment_by_id[value].get("name") or f"Техника #{value}"}
+            for value in released_equipment
+        ],
+    }
 
 
 async def archive_application(app_id: int, tg_id: int):

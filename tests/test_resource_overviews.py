@@ -39,7 +39,8 @@ class ResourceOverviewTests(unittest.IsolatedAsyncioTestCase):
                 id INTEGER PRIMARY KEY, public_number TEXT, date_target TEXT,
                 status TEXT, foreman_name TEXT, team_id TEXT,
                 selected_members TEXT, equipment_data TEXT, object_id INTEGER,
-                object_address TEXT, is_archived INTEGER DEFAULT 0
+                object_address TEXT, is_archived INTEGER DEFAULT 0,
+                time_start TEXT, time_end TEXT
             );
             CREATE TABLE application_hours(
                 app_id INTEGER, team_id INTEGER, user_id INTEGER, hours REAL
@@ -52,6 +53,10 @@ class ResourceOverviewTests(unittest.IsolatedAsyncioTestCase):
             CREATE TABLE application_drivers(
                 application_id INTEGER, equipment_id INTEGER, driver_user_id INTEGER
             );
+            CREATE TABLE application_resource_releases(
+                application_id INTEGER, resource_type TEXT, resource_id INTEGER,
+                released_at TEXT
+            );
 
             INSERT INTO objects VALUES(1, 'Объект Север');
             INSERT INTO teams VALUES(1, 'Бригада Один');
@@ -62,7 +67,7 @@ class ResourceOverviewTests(unittest.IsolatedAsyncioTestCase):
             INSERT INTO applications VALUES(
                 10, 'З-010826-01', '2026-08-01', 'completed', 'Прораб',
                 '1', '1', '[{"id":7,"time_start":"08:00","time_end":"12:30"}]',
-                1, '', 0
+                1, '', 0, '08:00', '17:00'
             );
             INSERT INTO application_hours VALUES(10, 1, 1, 4.5);
             INSERT INTO equipment VALUES(7, 'Экскаватор', 'Спецтехника', 'free', 'А001АА22', -500, 1);

@@ -17,6 +17,7 @@ function rowView(kind, row) {
             `${row.assignments || 0} выездов`,
             `${row.partial_assignments || 0} частичных`,
             `${row.labor_hours || 0} ч СМР`,
+            `${row.work_hours || 0} ч на объектах`,
         ],
         members: row.members || [],
     };

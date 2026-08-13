@@ -1644,6 +1644,7 @@ async def get_smr_list(current_user=Depends(get_current_user)):
                a.smr_status, a.smr_group_id, a.smr_filled_by_role,
                a.smr_accounted_by, a.smr_accounted_at,
                a.created_at,
+               a.is_backdated, a.backdated_created_at,
                o.name AS object_name, o.address AS object_clean_address,
                accountant.fio AS smr_accounted_by_fio
         FROM applications a

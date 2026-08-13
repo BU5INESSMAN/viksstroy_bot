@@ -21,6 +21,7 @@ import useConfirm from '../hooks/useConfirm';
 import { HomeSkeleton } from '../components/ui/PageSkeletons';
 import RoleDashboard from '../features/dashboard/components/RoleDashboard';
 import ActionItemsWidget from '../features/dashboard/components/ActionItemsWidget';
+import ForemanReleasePanel from '../features/applications/components/ForemanReleasePanel';
 
 export default function Home() {
     const smartDates = getSmartDates();
@@ -271,13 +272,20 @@ export default function Home() {
                 onCreateApplication={() => setGlobalCreateAppOpen(true)}
             />
 
+            {role === 'foreman' && (
+                <ForemanReleasePanel
+                    applications={activeApps.filter((app) => app.date_target === todayYYYYMMDD && Number(app.foreman_id) === Number(tgId))}
+                    teams={data.teams || []}
+                    onReleased={fetchData}
+                />
+            )}
+
             <div className="space-y-6" data-tour="active-apps-card">
                 {['worker', 'driver', 'foreman'].includes(role) && (
                     <ActiveApplicationsCard
                         todayApps={todayApps}
                         upcomingApps={upcomingApps}
                         role={role}
-                        tgId={tgId}
                         openProfile={openProfile}
                         openFreeModal={openFreeModal}
                     />
@@ -390,7 +398,6 @@ export default function Home() {
                     setActiveEqCategory={setActiveEqCategory}
                     teamMembers={teamMembers}
                     openProfile={openProfile}
-                    openFreeModal={openFreeModal}
                     tgId={tgId}
                 />
             )}

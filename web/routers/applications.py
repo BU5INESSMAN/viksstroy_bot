@@ -28,7 +28,7 @@ from application_numbers import display_application_number
 from services.app_workflow import (
     review_application, send_review_notifications,
     change_application_status, send_status_change_notification,
-    publish_applications, free_equipment, free_team,
+    publish_applications, free_equipment, free_team, release_resources,
     archive_application, unarchive_application, remind_foreman_smr, send_remind_notification,
 )
 from schedule_generator import publish_schedule_to_group
@@ -75,8 +75,19 @@ async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
                      equipment_data: str = Form(""), object_id: int = Form(0),
                      driver_assignments: str = Form(""),
                      force_assign: bool = Form(False),
+                     is_backdated: bool = Form(False),
                      current_user=Depends(_require_creator)):
     tg_id = current_user["tg_id"]
+    today = datetime.now(TZ_BARNAUL).date()
+    yesterday = today - timedelta(days=1)
+    try:
+        target_date = datetime.strptime(date_target, "%Y-%m-%d").date()
+    except ValueError:
+        raise HTTPException(400, "Некорректная дата заявки")
+    if is_backdated and target_date != yesterday:
+        raise HTTPException(400, "Заявку задним числом можно создать только за вчера")
+    if not is_backdated and target_date < today:
+        raise HTTPException(400, "Прошедшую дату можно выбрать только в режиме «За вчера — только СМР»")
     # v2.6.1: force_assign is the office-only override flag. Foreman
     # callers may send it accidentally (e.g. stale client) — silently
     # drop it instead of 400-ing, since the picker hard-block already
@@ -88,12 +99,36 @@ async def create_app(team_id: str = Form("0"), date_target: str = Form(...),
         driver_assignments=driver_assignments,
         current_user=current_user,
         force_assign=force_assign,
+        is_backdated=is_backdated,
     )
     now = datetime.now(TZ_BARNAUL).strftime("%H:%M:%S")
-    asyncio.create_task(notify_users(["moderator", "boss", "superadmin"],
-                       f"📝 <b>Новая заявка {public_number}</b>\n👤 Создал: {fio}\n📍 Объект: {object_address}\n📅 Дата работ: {date_target}\n🕒 Время: {now}",
-                       "review", category="orders", event_key="app_new"))
-    return {"status": "ok", "id": new_app_id, "public_number": public_number}
+    if is_backdated:
+        date_label = target_date.strftime("%d.%m.%Y")
+        notification = (
+            f"🕘 <b>Заявка задним числом {public_number}</b>\n"
+            f"👤 Создал: {fio}\n📍 Объект: {object_address}\n"
+            f"📅 Дата работ: {date_label}\n📋 Только для отчёта СМР, без публикации\n"
+            f"🕒 Создана: {now}"
+        )
+        path = "kp"
+        event_key = "app_backdated"
+    else:
+        date_label = target_date.strftime("%d.%m.%Y")
+        notification = (
+            f"📝 <b>Новая заявка {public_number}</b>\n👤 Создал: {fio}\n"
+            f"📍 Объект: {object_address}\n📅 Дата работ: {date_label}\n🕒 Время: {now}"
+        )
+        path = "review"
+        event_key = "app_new"
+    asyncio.create_task(notify_users(
+        ["moderator", "boss", "superadmin"], notification, path,
+        extra_tg_ids=[tg_id] if is_backdated else None,
+        category="orders", event_key=event_key,
+    ))
+    return {
+        "status": "ok", "id": new_app_id, "public_number": public_number,
+        "is_backdated": is_backdated, "publishable": not is_backdated,
+    }
 
 
 @router.post("/api/applications/{app_id}/update")
@@ -481,9 +516,26 @@ async def free_app_equipment(app_id: int, current_user=Depends(get_current_user)
 
 
 @router.post("/api/applications/{app_id}/free_team")
-async def free_app_team(app_id: int, team_id: int = Form(0), current_user=Depends(get_current_user)):
+async def free_app_team(app_id: int, team_id: int = Form(0), current_user=Depends(require_role("foreman"))):
     await free_team(app_id, current_user["tg_id"], team_id)
     return {"status": "ok"}
+
+
+@router.post("/api/applications/{app_id}/release_resources")
+async def release_app_resources(
+    app_id: int,
+    team_ids: str = Form(""),
+    equipment_ids: str = Form(""),
+    current_user=Depends(require_role("foreman")),
+):
+    """Mass release selected resources from the foreman's own application."""
+    released = await release_resources(
+        app_id,
+        current_user["tg_id"],
+        team_ids=team_ids,
+        equipment_ids=equipment_ids,
+    )
+    return {"status": "ok", **released}
 
 
 @router.post("/api/applications/publish_schedule")

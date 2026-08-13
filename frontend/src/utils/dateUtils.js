@@ -38,3 +38,5 @@ export const getSmartDates = () => {
 export const getTodayStr = () => formatLocalDate(new Date());
 
 export const getTomorrowStr = () => formatLocalDate(new Date(Date.now() + 86400000));
+
+export const getYesterdayStr = () => formatLocalDate(new Date(Date.now() - 86400000));

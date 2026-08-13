@@ -170,12 +170,11 @@ class AppsRepoMixin:
         # Fetch ALL applications for the target date where status != 'rejected'
         query = """
                 SELECT a.id, a.team_id, a.equipment_data, o.name as obj_name, a.object_address, a.foreman_name,
-                       a.selected_members
+                       a.selected_members, a.freed_team_ids, a.is_team_freed
                 FROM applications a
                          LEFT JOIN objects o ON a.object_id = o.id
                 WHERE a.date_target = ?
                   AND a.status NOT IN ('rejected', 'cancelled')
-                  AND a.is_team_freed = 0
                 """
         params = [date_target]
         if exclude_app_id:
@@ -224,6 +223,11 @@ class AppsRepoMixin:
             obj_name = app[3] or app[4] or "Неизвестный объект"
             foreman_name = app[5] or ""
             existing_members = _members_set(app[6] if len(app) > 6 else "")
+            freed_teams = {
+                part.strip() for part in str(app[7] or "").split(",")
+                if part.strip()
+            }
+            all_teams_freed = bool(app[8])
 
             # Team conflict check — v2.4.3: partial-brigade aware.
             # If both apps list specific members, only block on actual
@@ -233,6 +237,8 @@ class AppsRepoMixin:
                 app_team_list = [t.strip() for t in app_team.split(',') if t.strip() and t.strip() != '0']
                 for t in target_teams:
                     if t not in app_team_list:
+                        continue
+                    if all_teams_freed or t in freed_teams:
                         continue
                     both_selected = bool(new_members) and bool(existing_members)
                     if both_selected:

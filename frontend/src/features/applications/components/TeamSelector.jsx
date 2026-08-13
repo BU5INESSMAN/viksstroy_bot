@@ -19,10 +19,8 @@ export default function TeamSelector({
     isViewOnly,
     appForm,
     data,
-    role,
     openProfile,
     onCloseModal,
-    openFreeModal,
 }) {
     if (isViewOnly) {
         return (
@@ -63,11 +61,6 @@ export default function TeamSelector({
                                     </div>
                                 ) : <p className="text-xs text-gray-500 italic bg-white dark:bg-gray-800 p-3 rounded-xl border border-dashed border-gray-200 dark:border-gray-700">Нет выбранных рабочих</p>}
 
-                                {!isThisFreed && ['foreman', 'boss', 'superadmin', 'moderator'].includes(role) && (appForm.status === 'published' || appForm.status === 'in_progress') && (
-                                    <button type="button" disabled={isSubmitting} onClick={() => openFreeModal('specific_team', { app: appForm, teamId })} className="mt-5 w-full text-xs font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 py-3.5 rounded-xl transition-all border border-emerald-200 dark:border-emerald-800/50 flex justify-center items-center gap-2 shadow-sm active:scale-[0.98]">
-                                        <CheckCircle className="w-4 h-4" /> Освободить эту бригаду
-                                    </button>
-                                )}
                             </div>
                         );
                     })
@@ -110,6 +103,9 @@ export default function TeamSelector({
                                 част.
                             </span>
                         );
+                    } else if (st.state === 'backdated') {
+                        btnStyles = 'bg-amber-50 border-amber-300 text-amber-800 dark:bg-amber-900/20 dark:border-amber-700/50 dark:text-amber-300 hover:bg-amber-100';
+                        badge = <span className="text-[10px] font-bold bg-amber-200/70 dark:bg-amber-500/30 px-1.5 py-0.5 rounded-md">можно повторно</span>;
                     }
 
                     return (
@@ -165,10 +161,11 @@ export default function TeamSelector({
                                         const isUsed = m.is_used === true;
                                         const isUnavailable = m.status === 'vacation' || m.status === 'sick';
                                         const statusLabel = m.status === 'vacation' ? 'Отп' : m.status === 'sick' ? 'Бол' : '';
-                                        const disabled = isSubmitting || isUnavailable || isUsed;
+                                        const allowUsed = appForm?.is_backdated === true;
+                                        const disabled = isSubmitting || isUnavailable || (isUsed && !allowUsed);
 
                                         let btnCls;
-                                        if (isUsed) {
+                                        if (isUsed && !allowUsed) {
                                             btnCls = 'opacity-60 cursor-not-allowed bg-red-50/60 dark:bg-red-900/10 text-gray-500 dark:text-gray-400 border-red-200/70 dark:border-red-800/40';
                                         } else if (isUnavailable) {
                                             btnCls = 'opacity-40 cursor-not-allowed bg-gray-50 dark:bg-gray-800/50 text-gray-400 border-gray-200 dark:border-gray-700';
@@ -179,7 +176,7 @@ export default function TeamSelector({
                                         }
 
                                         let marker;
-                                        if (isUsed) {
+                                        if (isUsed && !allowUsed) {
                                             marker = <Ban className="w-4 h-4 text-red-400" />;
                                         } else if (isUnavailable) {
                                             marker = <div className="w-4 h-4 border-2 border-current rounded-full opacity-30" />;
@@ -204,10 +201,10 @@ export default function TeamSelector({
                                                             ? `${m.status === 'vacation' ? 'Отпуск' : 'Больничный'}${m.status_until ? ' до ' + m.status_until : ''}`
                                                             : ''
                                                 }
-                                                className={`px-3.5 py-2 disabled:opacity-60 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${isUsed ? '' : 'hover:shadow-md'} ${btnCls}`}
+                                                className={`px-3.5 py-2 disabled:opacity-60 text-sm font-bold rounded-xl border transition-all flex items-center gap-2 active:scale-95 ${isUsed && !allowUsed ? '' : 'hover:shadow-md'} ${btnCls}`}
                                             >
                                                 {marker}
-                                                <span className={isUsed ? 'line-through decoration-red-400/70' : ''}>
+                                                <span className={isUsed && !allowUsed ? 'line-through decoration-red-400/70' : ''}>
                                                     {m.fio}
                                                 </span>
                                                 {m.is_foreman && (
@@ -215,12 +212,17 @@ export default function TeamSelector({
                                                         Бр
                                                     </span>
                                                 )}
-                                                {isUsed && (
+                                                {isUsed && !allowUsed && (
                                                     <span
                                                         className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-red-100 dark:bg-red-500/20 text-red-600 dark:text-red-300 whitespace-nowrap"
                                                         title={m.used_in_object ? `Заявка №${m.used_in_app_id} · ${m.used_in_object}` : ''}
                                                     >
                                                         Занят · №{m.used_in_app_id}
+                                                    </span>
+                                                )}
+                                                {isUsed && allowUsed && (
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-bold bg-amber-100 dark:bg-amber-500/20 text-amber-700 dark:text-amber-300 whitespace-nowrap">
+                                                        Уже был на другом объекте
                                                     </span>
                                                 )}
                                                 {!isUsed && isUnavailable && (

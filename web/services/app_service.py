@@ -17,6 +17,22 @@ async def ensure_app_columns():
         await db.conn.execute("ALTER TABLE applications ADD COLUMN freed_team_ids TEXT DEFAULT ''")
     except:
         pass
+    try:
+        await db.conn.execute("ALTER TABLE applications ADD COLUMN is_backdated INTEGER NOT NULL DEFAULT 0")
+    except:
+        pass
+    try:
+        await db.conn.execute("ALTER TABLE applications ADD COLUMN backdated_created_at TEXT DEFAULT NULL")
+    except:
+        pass
+    await db.conn.execute(
+        "CREATE TABLE IF NOT EXISTS application_resource_releases ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT, application_id INTEGER NOT NULL, "
+        "resource_type TEXT NOT NULL, resource_id INTEGER NOT NULL, "
+        "released_at TEXT NOT NULL, released_by INTEGER NOT NULL, "
+        "created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, "
+        "UNIQUE(application_id,resource_type,resource_id))"
+    )
     await db.conn.commit()
 
 
@@ -319,6 +335,15 @@ async def _check_driver_overlap(
 
         ns, ne = new_slots[eq_id]
         for ex in existing:
+            existing_equipment = next(
+                (
+                    item for item in _equipment_snapshot(ex.get("equipment_data") or "")
+                    if int(item.get("id") or 0) == int(ex["equipment_id"])
+                ),
+                None,
+            )
+            if existing_equipment and existing_equipment.get("is_freed"):
+                continue
             ex_ts, ex_te = _slot_for_equipment_in_payload(
                 ex.get("equipment_data") or "", int(ex["equipment_id"]),
             )
@@ -639,7 +664,8 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
                              selected_members, equipment_data, object_id,
                              driver_assignments: str = "",
                              current_user: dict | None = None,
-                             force_assign: bool = False):
+                             force_assign: bool = False,
+                             is_backdated: bool = False):
     """Create a new application. Returns (app_id, real_tg_id, fio) or raises.
 
     v2.6.1: ``current_user`` + ``force_assign`` are forwarded to the
@@ -653,19 +679,23 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
     user = await db.get_user(real_tg_id)
     fio = dict(user).get('fio', 'Web-Пользователь') if user else "Web-Пользователь"
 
-    occupied = await db.check_resource_availability(
-        date_target, object_id, team_id, equipment_data,
-        selected_members=selected_members,
-    )
-    if occupied:
-        raise HTTPException(409, "Ошибка создания наряда:\n" + "\n".join(occupied))
+    # A report-only request for yesterday intentionally describes work that
+    # already happened, possibly after the same resources worked elsewhere.
+    # It must not be blocked by today's allocation checker.
+    if not is_backdated:
+        occupied = await db.check_resource_availability(
+            date_target, object_id, team_id, equipment_data,
+            selected_members=selected_members,
+        )
+        if occupied:
+            raise HTTPException(409, "Ошибка создания наряда:\n" + "\n".join(occupied))
 
     # v2.6 commit 3: defense-in-depth driver-overlap check. The FE
     # DriverPickerModal already hard-blocks at picker time using the
     # availability endpoint; this server-side check guards against
     # stale-cache races and direct API callers (curl / scripts).
     assignments = _parse_driver_assignments(driver_assignments)
-    if assignments:
+    if assignments and not is_backdated:
         await _check_driver_overlap(
             date_target, assignments, equipment_data,
             exclude_app_id=None,  # creating new app — no self to exclude
@@ -673,21 +703,75 @@ async def create_application(tg_id, team_id, date_target, object_address, commen
             force_assign=force_assign,
         )
 
+    initial_status = "completed" if is_backdated else "waiting"
+    team_ids = [part.strip() for part in str(team_id or "").split(",") if part.strip().isdigit() and int(part.strip()) > 0]
+    freed_team_ids = ",".join(team_ids) if is_backdated else ""
+    normalized_equipment = equipment_data
+    if is_backdated:
+        try:
+            equipment_rows = json.loads(equipment_data or "[]")
+            if isinstance(equipment_rows, list):
+                for item in equipment_rows:
+                    if isinstance(item, dict):
+                        item["is_freed"] = True
+                normalized_equipment = json.dumps(equipment_rows, ensure_ascii=False)
+        except (TypeError, ValueError, json.JSONDecodeError):
+            normalized_equipment = equipment_data
+
+    # Retrospective mode relaxes allocation conflicts, not personnel
+    # absence. A person who was on vacation/sick yesterday must not be
+    # silently added merely because the report is entered today.
+    if is_backdated and selected_members:
+        member_ids = [
+            int(part.strip()) for part in str(selected_members).split(",")
+            if part.strip().isdigit() and int(part.strip()) > 0
+        ]
+        if member_ids:
+            marks = ",".join("?" for _ in member_ids)
+            async with db.conn.execute(
+                f"SELECT fio,status,status_from,status_until FROM team_members "
+                f"WHERE id IN ({marks}) AND status IN ('vacation','sick') "
+                "AND (status_from IS NULL OR status_from='' OR status_from<=?) "
+                "AND (status_until IS NULL OR status_until='' OR status_until>=?)",
+                (*member_ids, date_target, date_target),
+            ) as cur:
+                unavailable = await cur.fetchall()
+            if unavailable:
+                names = ", ".join(str(row[0] or "Сотрудник") for row in unavailable)
+                raise HTTPException(409, f"На дату работ недоступны: {names}")
+
+    from database_deps import TZ_BARNAUL
+    created_at = datetime.now(TZ_BARNAUL)
     cursor = await db.conn.execute(
-        "INSERT INTO applications (foreman_id, foreman_name, team_id, object_id, date_target, object_address, time_start, time_end, comment, status, selected_members, equipment_data, is_team_freed, freed_team_ids) VALUES (?, ?, ?, ?, ?, ?, '08', '17', ?, 'waiting', ?, ?, 0, '')",
-        (real_tg_id, fio, team_id, object_id, date_target, object_address, comment, selected_members, equipment_data))
+        "INSERT INTO applications "
+        "(foreman_id, foreman_name, team_id, object_id, date_target, object_address, "
+        " time_start, time_end, comment, status, selected_members, equipment_data, "
+        " is_team_freed, freed_team_ids, is_published, completed_at, is_backdated, backdated_created_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, '08', '17', ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)",
+        (
+            real_tg_id, fio, team_id, object_id, date_target, object_address,
+            comment, initial_status, selected_members, normalized_equipment,
+            1 if is_backdated and team_ids else 0, freed_team_ids,
+            created_at.isoformat(timespec="seconds") if is_backdated else None,
+            1 if is_backdated else 0,
+            created_at.isoformat(timespec="seconds") if is_backdated else None,
+        ),
+    )
     new_app_id = cursor.lastrowid
     from application_numbers import allocate_application_number
-    from database_deps import TZ_BARNAUL
     public_number = await allocate_application_number(
-        db, new_app_id, datetime.now(TZ_BARNAUL)
+        db, new_app_id, created_at
     )
-    await db.conn.commit()
+    try:
+        if assignments:
+            await _apply_driver_assignments(new_app_id, assignments, commit=False)
+        await db.conn.commit()
+    except Exception:
+        await db.conn.rollback()
+        raise
 
-    if assignments:
-        await _apply_driver_assignments(new_app_id, assignments)
-
-    await db.add_log(real_tg_id, fio, f"Создал заявку {public_number} на {object_address} ({date_target})", target_type='application', target_id=new_app_id)
+    action = "Создал заявку задним числом только для СМР" if is_backdated else "Создал заявку"
+    await db.add_log(real_tg_id, fio, f"{action} {public_number} на {object_address} ({date_target})", target_type='application', target_id=new_app_id)
     return new_app_id, real_tg_id, fio, public_number
 
 

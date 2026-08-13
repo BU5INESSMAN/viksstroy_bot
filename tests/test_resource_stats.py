@@ -30,19 +30,24 @@ class ResourceStatisticsTest(unittest.IsolatedAsyncioTestCase):
                 id INTEGER PRIMARY KEY, public_number TEXT, date_target TEXT,
                 status TEXT, foreman_name TEXT, team_id TEXT,
                 selected_members TEXT, equipment_data TEXT, object_id INTEGER,
-                object_address TEXT, is_archived INTEGER DEFAULT 0
+                object_address TEXT, is_archived INTEGER DEFAULT 0,
+                time_start TEXT, time_end TEXT
             );
             CREATE TABLE application_hours(app_id INTEGER, team_id INTEGER, hours REAL);
+            CREATE TABLE application_resource_releases(
+                application_id INTEGER, resource_type TEXT, resource_id INTEGER,
+                released_at TEXT
+            );
 
             INSERT INTO objects VALUES (1, 'Объект А'), (2, 'Объект Б');
             INSERT INTO team_members VALUES (10, 1), (11, 1);
             INSERT INTO applications VALUES
                 (1, 'З-010826-01', '2026-08-01', 'completed', 'Прораб', '1', '10',
-                 '[{"id":5,"time_start":"08:00","time_end":"10:00"}]', 1, '', 0),
+                 '[{"id":5,"time_start":"08:00","time_end":"10:00"}]', 1, '', 0, '08:00', '17:00'),
                 (2, 'З-010826-02', '2026-08-01', 'approved', 'Прораб', '1', '11',
-                 '[{"id":5,"time_start":"13","time_end":"18"}]', 2, '', 0),
+                 '[{"id":5,"time_start":"13","time_end":"18"}]', 2, '', 0, '08:00', '17:00'),
                 (3, 'З-020826-01', '2026-08-02', 'cancelled', 'Прораб', '1', '10,11',
-                 '[{"id":5,"time_start":"08","time_end":"18"}]', 1, '', 0);
+                 '[{"id":5,"time_start":"08","time_end":"18"}]', 1, '', 0, '08:00', '17:00');
             INSERT INTO application_hours VALUES (1, 1, 4), (2, 1, 6), (3, 1, 99);
             """
         )
@@ -65,6 +70,27 @@ class ResourceStatisticsTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stats["work_days"], 1)
         self.assertEqual(stats["work_hours"], 7)
         self.assertEqual(stats["objects"], ["Объект А", "Объект Б"])
+
+    async def test_release_time_shortens_equipment_and_team_shift(self):
+        await self.db.conn.execute(
+            "INSERT INTO application_resource_releases VALUES (2,'equipment',5,'2026-08-01T15:30:00')"
+        )
+        await self.db.conn.execute(
+            "INSERT INTO application_resource_releases VALUES (1,'team',1,'2026-08-01T12:30:00')"
+        )
+        await self.db.conn.commit()
+        equipment = await equipment_stats(self.db, 5, "all")
+        team = await team_stats(self.db, 1, "all")
+        self.assertEqual(equipment["work_hours"], 4.5)
+        self.assertEqual(team["work_hours"], 13.5)
+
+    async def test_release_after_planned_end_counts_actual_work_until_release(self):
+        await self.db.conn.execute(
+            "INSERT INTO application_resource_releases VALUES (1,'equipment',5,'2026-08-01T12:30:00')"
+        )
+        await self.db.conn.commit()
+        stats = await equipment_stats(self.db, 5, "all")
+        self.assertEqual(stats["work_hours"], 9.5)
 
     async def test_object_resource_summary_uses_partial_allocation(self):
         stats = await object_resource_stats(self.db, 1)

@@ -22,6 +22,7 @@ export default function TeamStatsModal({ isOpen, onClose, team, tgId }) {
                         partialAssignments: d.partial_assignments || 0,
                         peopleAssignments: d.people_assignments || 0,
                         laborHours: d.labor_hours || 0,
+                        workHours: d.work_hours || 0,
                         topForemen: d.top_foremen || [],
                         lastApp: d.last_app || null,
                     });
@@ -110,6 +111,10 @@ export default function TeamStatsModal({ isOpen, onClose, team, tgId }) {
                                     <div className="bg-cyan-50 dark:bg-cyan-900/20 rounded-xl p-3.5 border border-cyan-100 dark:border-cyan-800/30">
                                         <p className="text-2xl font-extrabold text-cyan-600 dark:text-cyan-400">{stats.laborHours}</p>
                                         <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Часов по СМР</p>
+                                    </div>
+                                    <div className="bg-emerald-50 dark:bg-emerald-900/20 rounded-xl p-3.5 border border-emerald-100 dark:border-emerald-800/30">
+                                        <p className="text-2xl font-extrabold text-emerald-600 dark:text-emerald-400">{stats.workHours}</p>
+                                        <p className="text-[11px] text-gray-500 dark:text-gray-400 font-medium">Часов на объектах</p>
                                     </div>
                                 </div>
 

@@ -14,7 +14,7 @@ import {
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-function AppCard({ a, role, tgId, openProfile, openFreeModal }) {
+function AppCard({ a, role, openProfile, openFreeModal }) {
     let activeEquipList = [];
     if (a.equipment_data) { try { activeEquipList = JSON.parse(a.equipment_data) || []; } catch(e){} }
 
@@ -87,11 +87,6 @@ function AppCard({ a, role, tgId, openProfile, openFreeModal }) {
                                     </span>
                                 )}
                             </div>
-                            {!isFreed && ['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && (
-                                <button onClick={() => openFreeModal('specific_team', { app: a, teamId: tId })} className="text-[10px] uppercase font-bold tracking-wider text-emerald-600 dark:text-emerald-400 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:hover:bg-emerald-900/40 px-2.5 py-1 rounded-lg transition-colors border border-emerald-200 dark:border-emerald-800/50 flex items-center justify-center gap-1 w-full sm:w-auto active:scale-95">
-                                    <CheckCircle className="w-3 h-3" /> Освободить
-                                </button>
-                            )}
                         </div>
                     );
                 }) : (
@@ -110,12 +105,7 @@ function AppCard({ a, role, tgId, openProfile, openFreeModal }) {
                     <CheckCircle className="w-5 h-5" /> Вы свободны
                 </div>
             )}
-            {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed !== 1 && teamIds.length > 1 && (
-                <button onClick={() => openFreeModal('team', a)} className="w-full bg-emerald-500 hover:bg-emerald-600 text-white py-3 rounded-xl font-bold shadow-sm hover:shadow-md transition-all active:scale-[0.98] flex items-center justify-center gap-2">
-                    <CheckCircle className="w-5 h-5" /> Освободить ВСЕ бригады
-                </button>
-            )}
-            {['foreman', 'boss', 'superadmin'].includes(role) && a.foreman_id === Number(tgId) && a.is_team_freed === 1 && teamIds.length > 0 && (
+            {role === 'foreman' && a.is_team_freed === 1 && teamIds.length > 0 && (
                 <div className="w-full flex items-center justify-center gap-2 text-emerald-600 dark:text-emerald-400 py-3 font-bold bg-emerald-50 dark:bg-emerald-900/20 rounded-xl border border-emerald-200 dark:border-emerald-800/50">
                     <CheckCircle className="w-5 h-5" /> Все бригады свободны
                 </div>
@@ -124,7 +114,7 @@ function AppCard({ a, role, tgId, openProfile, openFreeModal }) {
     );
 }
 
-export default function ActiveApplicationsCard({ todayApps, upcomingApps, role, tgId, openProfile, openFreeModal }) {
+export default function ActiveApplicationsCard({ todayApps, upcomingApps, role, openProfile, openFreeModal }) {
     const [tab, setTab] = useState('today');
     const [collapsed, setCollapsed] = useState(() => localStorage.getItem('myAppsCollapsed') === 'true');
     const apps = tab === 'today' ? todayApps : upcomingApps;
@@ -209,7 +199,7 @@ export default function ActiveApplicationsCard({ todayApps, upcomingApps, role, 
                     {apps.length > 0 ? (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             {apps.map(a => (
-                                <AppCard key={a.id} a={a} role={role} tgId={tgId} openProfile={openProfile} openFreeModal={openFreeModal} />
+                                <AppCard key={a.id} a={a} role={role} openProfile={openProfile} openFreeModal={openFreeModal} />
                             ))}
                         </div>
                     ) : (
