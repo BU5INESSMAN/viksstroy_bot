@@ -398,8 +398,13 @@ export default function KP() {
         fd.append('file', file);
         setIsSubmitting(true);
         try {
-            await axios.post('/api/kp/catalog/upload', fd);
-            toast.success("Справочник успешно обновлен!");
+            const response = await axios.post('/api/kp/catalog/upload', fd);
+            const imported = response.data?.import || {};
+            toast.success(
+                `Справочник обновлён: ${imported.rows ?? response.data?.rows ?? 0} работ. ` +
+                'Использованы D — название, E — цена СМР, G — единица, H — ЗП.',
+                { duration: 7000 },
+            );
             fetchApps();
         } catch (e) { toast.error(e.response?.data?.detail || "Ошибка загрузки файла"); }
         setIsSubmitting(false);

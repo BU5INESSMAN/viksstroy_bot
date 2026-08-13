@@ -346,14 +346,23 @@ class KpRepoMixin:
     async def import_kp_from_excel(self, file_path: str):
         """Универсальный парсер Excel/CSV для обновления базы КП.
         Uses UPSERT by (category, name) to preserve existing IDs —
-        critical because object_kp_plan and application_kp reference kp_catalog.id."""
+        critical because object_kp_plan and application_kp reference kp_catalog.id.
+
+        The source workbook contains many private calculation columns. The
+        import contract intentionally reads only D/E/G/H:
+          D = work/category name, E = customer SMR price,
+          G = unit, H = salary rate.
+        Everything else is ignored and can contain arbitrary formulas/text.
+        """
         try:
-            if file_path.endswith('.csv'):
+            source_sheet = "CSV"
+            if file_path.lower().endswith('.csv'):
                 df = pd.read_csv(file_path, header=None, dtype=str).fillna("")
             else:
                 book = pd.ExcelFile(file_path)
-                sheet = "СМР" if "СМР" in book.sheet_names else book.sheet_names[0]
-                df = pd.read_excel(book, sheet_name=sheet, header=None, dtype=str).fillna("")
+                normalized_sheets = {str(name).strip().casefold(): name for name in book.sheet_names}
+                source_sheet = normalized_sheets.get("смр", book.sheet_names[0])
+                df = pd.read_excel(book, sheet_name=source_sheet, header=None, dtype=str).fillna("")
 
             # Build lookup of existing entries: (category, name) -> id
             existing = {}
@@ -375,18 +384,50 @@ class KpRepoMixin:
                     return ''
                 return s
 
-            # v2.4.3 Column mapping for sheet "СМР":
-            #   A (0) = coefficient, B (1) = multiplier (unused),
-            #   C (2) = base price,  D (3) = work name,
-            #   E (4) = price w/VAT, F (5) = old salary,
-            #   G (6) = unit (шт/м/м2/…), H (7) = new salary.
-            # Category rows: value in D, no value in G. Work rows: both.
+            # Authoritative mapping. Do not infer financial values from C/F:
+            # those columns are internal calculations and may be blank/text.
+            columns = {'name': 3, 'price': 4, 'unit': 6, 'salary': 7}
+            if df.shape[1] <= max(columns.values()):
+                self.last_kp_import_report = {
+                    "ok": False, "rows": 0,
+                    "errors": [
+                        "на листе СМР отсутствуют обязательные колонки D, E, G или H"
+                    ],
+                    "sheet": source_sheet,
+                    "columns": {"name": "D", "price": "E", "unit": "G", "salary": "H"},
+                }
+                return False
+
+            def _header_text(value):
+                text = _clean(value).casefold().replace('ё', 'е')
+                return ' '.join(text.replace('\n', ' ').split())
+
+            # The heading row can move; locate it semantically in the first
+            # 30 rows while keeping the business columns fixed to D/E/G/H.
+            header_index = None
+            for idx in range(min(len(df), 30)):
+                name_header = _header_text(df.iloc[idx, columns['name']])
+                price_header = _header_text(df.iloc[idx, columns['price']])
+                salary_header = _header_text(df.iloc[idx, columns['salary']])
+                if (
+                    ('наименован' in name_header or 'назван' in name_header)
+                    and ('цен' in price_header or 'стоимост' in price_header or 'кп' in price_header)
+                    and ('зп' in salary_header or 'зарплат' in salary_header)
+                ):
+                    header_index = idx
+                    break
+
             def _num(s):
                 if not s:
                     return None
                 try:
                     from decimal import Decimal
-                    value = Decimal(s.replace('\xa0', '').replace(' ', '').replace(',', '.'))
+                    normalized = str(s).strip().casefold()
+                    for token in ('руб.', 'руб', '₽'):
+                        normalized = normalized.replace(token, '')
+                    value = Decimal(
+                        normalized.replace('\xa0', '').replace(' ', '').replace(',', '.')
+                    )
                     if not value.is_finite() or value < 0:
                         return None
                     return float(value)
@@ -398,28 +439,33 @@ class KpRepoMixin:
             validation_errors = []
             seen_keys = set()
             for index, row in df.iterrows():
-                if index < 2: continue
+                if header_index is not None and index <= header_index:
+                    continue
+                if header_index is None and index < 2:
+                    continue
 
-                col_name = _clean(row[3])
-                col_unit = _clean(row[6]) if len(row) > 6 else ''
-                col_price = _clean(row[2])
-                col_old_salary = _clean(row[5]) if len(row) > 5 else ''
-                col_salary = _clean(row[7]) if len(row) > 7 else ''
-                col_coef = _clean(row[0])
+                col_name = _clean(row[columns['name']])
+                col_price = _clean(row[columns['price']])
+                col_unit = _clean(row[columns['unit']])
+                col_salary = _clean(row[columns['salary']])
 
-                # If the stray "nan"/"None" leaked in, _clean already
-                # normalized to ''. Guard against numeric-looking unit
-                # strings (defensive — the correct column should be text).
+                # A numeric value in G cannot be a unit. Report it for a work
+                # row instead of silently consuming a neighbouring column.
                 if col_unit and col_unit.replace('.', '', 1).replace(',', '', 1).isdigit():
-                    col_unit = ''
+                    validation_errors.append(
+                        f"строка {index + 1} «{col_name or 'без названия'}»: "
+                        "единица измерения в колонке G должна быть текстом"
+                    )
+                    continue
 
-                # Category row: has a name but no unit.
+                # Category rows have D but no G. E/H may legitimately contain
+                # private section-level calculations, so both are ignored.
                 if col_name and not col_unit:
                     current_category = col_name
                     continue
 
-                # A work-looking row must be complete. C is the customer
-                # price, H is the salary rate; prices are never synthesized.
+                # A work row is defined only by D + G. Its financial values
+                # come only from E + H; all other workbook columns are ignored.
                 salary = _num(col_salary)
                 if not col_name or not col_unit:
                     continue
@@ -427,13 +473,10 @@ class KpRepoMixin:
                 price = _num(col_price)
                 if salary is None or price is None:
                     validation_errors.append(
-                        f"строка {index + 1} «{col_name}»: цена (C) и расценка ЗП (H) должны быть числами не меньше нуля"
+                        f"строка {index + 1} «{col_name}»: цена СМР (E) и расценка ЗП (H) "
+                        "должны быть числами не меньше нуля"
                     )
                     continue
-                coef = _num(col_coef) or 0.0
-                old_salary = _num(col_old_salary)
-                if old_salary is None:
-                    old_salary = salary
 
                 key = (current_category, col_name)
                 if key in seen_keys:
@@ -442,14 +485,18 @@ class KpRepoMixin:
                     )
                     continue
                 seen_keys.add(key)
-                parsed_rows.append((key, col_unit, coef, salary, price, old_salary))
+                parsed_rows.append((key, col_unit, 0.0, salary, price, salary))
 
             if not parsed_rows:
                 validation_errors.append("в файле не найдено ни одной корректной работы")
             if validation_errors:
                 self.last_kp_import_report = {
                     "ok": False, "rows": 0, "errors": validation_errors[:20],
-                    "price_source": "лист СМР, колонка C",
+                    "sheet": source_sheet,
+                    "header_row": (header_index + 1) if header_index is not None else None,
+                    "columns": {"name": "D", "price": "E", "unit": "G", "salary": "H"},
+                    "ignored_columns": "A-C, F и I до конца листа",
+                    "price_source": "лист СМР, колонка E",
                     "salary_source": "лист СМР, колонка H",
                 }
                 logging.error("Ошибка проверки каталога: %s", "; ".join(validation_errors[:5]))
@@ -472,7 +519,11 @@ class KpRepoMixin:
             await self.conn.commit()
             self.last_kp_import_report = {
                 "ok": True, "rows": len(parsed_rows), "errors": [],
-                "price_source": "лист СМР, колонка C",
+                "sheet": source_sheet,
+                "header_row": (header_index + 1) if header_index is not None else None,
+                "columns": {"name": "D", "price": "E", "unit": "G", "salary": "H"},
+                "ignored_columns": "A-C, F и I до конца листа",
+                "price_source": "лист СМР, колонка E",
                 "salary_source": "лист СМР, колонка H",
             }
             logging.info(f"Справочник КП обновлен из файла: {file_path}")

@@ -2184,9 +2184,9 @@ async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_
     require_superadmin to require_office (moderator/boss/superadmin).
     Compensating control: every import is audit-logged with structured
     JSON meta in ``logs.details`` — {filename, size_bytes, rows_count,
-    role, action} — under target_type='kp_catalog'. The audit row is
-    written only on the success path; a failed import (parser error)
-    raises before reaching add_log.
+    role, action} — under target_type='kp_catalog'. Both successful and
+    failed attempts are logged; failed files are removed after diagnostics
+    have been recorded.
     """
     if not file.filename.lower().endswith(('.xlsx', '.csv')):
         raise HTTPException(400, "Допустимы только файлы .xlsx или .csv")
@@ -2202,6 +2202,23 @@ async def upload_kp_catalog(file: UploadFile = File(...), current_user=Depends(_
     if not success:
         report = getattr(db, "last_kp_import_report", {}) or {}
         errors = report.get("errors") or ["Проверьте структуру колонок"]
+        try:
+            await db.add_log(
+                current_user["tg_id"], current_user.get("fio", "Система"),
+                f"Ошибка загрузки справочника КП: {file.filename}",
+                target_type="kp_catalog", target_id=0,
+                details=json.dumps({
+                    "action": "kp_catalog_upload_failed",
+                    "role": current_user.get("role", ""),
+                    "source_filename": file.filename,
+                    "saved_filename": os.path.basename(new_path),
+                    "size_bytes": size_bytes,
+                    "errors": errors[:20],
+                    "import": report,
+                }, ensure_ascii=False),
+            )
+        except Exception:
+            logging.exception("Не удалось записать ошибку импорта справочника КП")
         try:
             os.remove(new_path)
         except OSError:
