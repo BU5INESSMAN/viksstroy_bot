@@ -2,6 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import { ArrowLeft, Send, Clock, Hammer, Plus, Loader2, Check, WalletCards, Save } from 'lucide-react';
 
+const sourceId = (value, fallback = 0) => Number(
+    value?.source_application_id || value?.application_id || fallback || 0
+);
+const memberKey = (source, team, member) => `${Number(source)}:${Number(team)}:${Number(member)}`;
+const workKey = (source, kp) => `${Number(source)}:${Number(kp)}`;
+
 /**
  * Wizard step 3 — review & submit. Loads display metadata (FIO, specialty,
  * work names, units) so the user sees the final summary as it will appear
@@ -46,7 +52,9 @@ export default function StepReview({
     // Hours: group by team, only include members with hours in current draft
     const hoursByTeam = useMemo(() => {
         const selected = new Map();
-        for (const h of hoursData) selected.set(`${h.team_id}:${h.user_id}`, h.hours);
+        for (const h of hoursData) {
+            selected.set(memberKey(sourceId(h, appId), h.team_id, h.user_id), h.hours);
+        }
 
         const out = [];
         for (const t of teams) {
@@ -54,20 +62,26 @@ export default function StepReview({
                 // v2.10 (D8): include members PRESENT in the payload (incl. an
                 // explicit 0) — not just hours>0 — so a deliberately-zeroed
                 // member still shows in the review summary.
-                .filter(m => selected.has(`${t.team_id}:${m.user_id}`))
+                .filter(m => selected.has(memberKey(sourceId(t, appId), t.team_id, m.user_id)))
                 .map(m => ({
                     ...m,
-                    hours: selected.get(`${t.team_id}:${m.user_id}`) || 0,
+                    hours: selected.get(memberKey(sourceId(t, appId), t.team_id, m.user_id)) || 0,
                     participant_salary: hoursData.find(
-                        h => `${h.team_id}:${h.user_id}` === `${t.team_id}:${m.user_id}`
+                        h => memberKey(sourceId(h, appId), h.team_id, h.user_id)
+                            === memberKey(sourceId(t, appId), t.team_id, m.user_id)
                     )?.participant_salary || 0,
                 }));
             if (rows.length > 0) {
-                out.push({ team_id: t.team_id, team_name: t.team_name, members: rows });
+                out.push({
+                    source_application_id: sourceId(t, appId),
+                    object_name: t.object_name || `Объект ${sourceId(t, appId)}`,
+                    application_label: t.application_label || `№${sourceId(t, appId)}`,
+                    team_id: t.team_id, team_name: t.team_name, members: rows,
+                });
             }
         }
         return out;
-    }, [teams, hoursData]);
+    }, [teams, hoursData, appId]);
 
     const worksView = useMemo(() => {
         // v2.9: worksData may carry several per-brigade entries per kp_id, and
@@ -77,23 +91,42 @@ export default function StepReview({
         // entry per kp_id) is unchanged: sum == the single value.
         const byId = new Map();
         for (const w of worksData) {
-            const k = Number(w.kp_id);
+            const k = workKey(sourceId(w, appId), w.kp_id);
             byId.set(k, (byId.get(k) || 0) + Number(w.volume || 0));
         }
         const seen = new Set();
         return planItems
             .filter(i => {
-                const k = Number(i.kp_id);
+                const k = workKey(sourceId(i, appId), i.kp_id);
                 if (!byId.has(k) || seen.has(k)) return false;
                 seen.add(k);
                 return true;
             })
             .map(i => ({
                 name: i.name,
+                source_application_id: sourceId(i, appId),
+                object_name: i.object_name || `Объект ${sourceId(i, appId)}`,
                 unit: i.unit || '',
-                volume: byId.get(Number(i.kp_id)),
+                volume: byId.get(workKey(sourceId(i, appId), i.kp_id)),
             }));
-    }, [planItems, worksData]);
+    }, [planItems, worksData, appId]);
+
+    const objectNames = useMemo(() => {
+        const names = new Map();
+        for (const row of planItems) {
+            names.set(sourceId(row, appId), row.object_name);
+        }
+        for (const row of teams) {
+            names.set(sourceId(row, appId), row.object_name);
+        }
+        const appRows = [app, ...(Array.isArray(app?.merged_with) ? app.merged_with : [])];
+        for (const row of appRows) {
+            const source = Number(row?.id || 0);
+            if (!source) continue;
+            names.set(source, row.object_name || row.obj_name || row.object_address || names.get(source));
+        }
+        return names;
+    }, [planItems, teams, app, appId]);
 
     const extraView = useMemo(() => {
         const catalogMap = new Map();
@@ -103,12 +136,15 @@ export default function StepReview({
             .map(e => {
                 const c = e.kp_id ? catalogMap.get(Number(e.kp_id)) : null;
                 return {
+                    source_application_id: sourceId(e, appId),
+                    object_name: objectNames.get(sourceId(e, appId))
+                        || `Объект ${sourceId(e, appId)}`,
                     name: e.name || c?.name || '',
                     unit: e.unit || c?.unit || '',
                     volume: Number(e.volume),
                 };
             });
-    }, [extraWorksData, catalog]);
+    }, [extraWorksData, catalog, objectNames, appId]);
 
     if (loading) {
         return <div className="text-center py-12 text-gray-400 dark:text-gray-500">Загрузка…</div>;
@@ -155,9 +191,9 @@ export default function StepReview({
                 ) : (
                     <div className="divide-y divide-gray-100 dark:divide-gray-700/60">
                         {hoursByTeam.map(t => (
-                            <div key={t.team_id}>
+                            <div key={`${t.source_application_id}:${t.team_id}`}>
                                 <div className="px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-500 bg-gray-50/60 dark:bg-gray-900/30">
-                                    {t.team_name}
+                                    {t.object_name} · {t.team_name}
                                 </div>
                                 <ul className="divide-y divide-gray-50 dark:divide-gray-700/40">
                                     {t.members.map(m => (
@@ -200,7 +236,10 @@ export default function StepReview({
                     <ul className="divide-y divide-gray-100 dark:divide-gray-700/60">
                         {worksView.map((w, i) => (
                             <li key={i} className="flex items-center gap-3 px-4 py-2">
-                                <span className="flex-1 text-sm text-gray-800 dark:text-gray-100 truncate">{w.name}</span>
+                                <span className="flex-1 min-w-0">
+                                    <span className="block text-[10px] font-bold uppercase text-blue-600 dark:text-blue-400 truncate">{w.object_name}</span>
+                                    <span className="block text-sm text-gray-800 dark:text-gray-100 truncate">{w.name}</span>
+                                </span>
                                 <span className="min-w-[2.5rem] text-xs font-semibold text-gray-500 dark:text-gray-400">{w.unit}</span>
                                 <span className="w-16 text-right text-sm font-bold text-gray-900 dark:text-white">{w.volume}</span>
                             </li>
@@ -221,7 +260,10 @@ export default function StepReview({
                     <ul className="divide-y divide-amber-100 dark:divide-amber-900/30">
                         {extraView.map((w, i) => (
                             <li key={i} className="flex items-center gap-3 px-4 py-2 bg-white dark:bg-gray-800">
-                                <span className="flex-1 text-sm text-gray-800 dark:text-gray-100 truncate">{w.name}</span>
+                                <span className="flex-1 min-w-0">
+                                    <span className="block text-[10px] font-bold uppercase text-blue-600 dark:text-blue-400 truncate">{w.object_name}</span>
+                                    <span className="block text-sm text-gray-800 dark:text-gray-100 truncate">{w.name}</span>
+                                </span>
                                 <span className="min-w-[2.5rem] text-xs font-semibold text-gray-500 dark:text-gray-400">{w.unit}</span>
                                 <span className="w-16 text-right text-sm font-bold text-gray-900 dark:text-white">{w.volume}</span>
                             </li>

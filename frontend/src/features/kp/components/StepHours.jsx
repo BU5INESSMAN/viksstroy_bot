@@ -7,6 +7,9 @@ import { ChevronDown, User, Crown, ArrowRight, UserPlus, X, Search } from 'lucid
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const EASE = [0.23, 1, 0.32, 1];
+const sourceId = (value, fallback = 0) => Number(value?.source_application_id || fallback || 0);
+const sectionKey = (source, team) => `${Number(source || 0)}:${Number(team || 0)}`;
+const memberKey = (source, team, member) => `${sectionKey(source, team)}:${Number(member || 0)}`;
 
 const STATUS_BADGES = {
     vacation: { label: 'Отп', cls: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400' },
@@ -68,6 +71,7 @@ export default function StepHours({
                             // saved members (no filled_at) stay blank → no row.
                             if (m.hours > 0 || m.participant_salary > 0 || m.filled_at) {
                                 seed.push({
+                                    source_application_id: sourceId(team, appId),
                                     team_id: team.team_id,
                                     user_id: m.user_id,
                                     hours: m.hours,
@@ -80,7 +84,7 @@ export default function StepHours({
                 }
 
                 // Default: expand all teams
-                setExpanded(new Set(data.map(t => t.team_id)));
+                setExpanded(new Set(data.map(t => sectionKey(sourceId(t, appId), t.team_id))));
             })
             .catch(() => toast.error('Не удалось загрузить бригады'))
             .finally(() => { if (alive) setLoading(false); });
@@ -97,36 +101,45 @@ export default function StepHours({
 
     const hoursMap = useMemo(() => {
         const m = new Map();
-        for (const h of hoursData) m.set(`${h.team_id}:${h.user_id}`, h.hours);
+        for (const h of hoursData) {
+            m.set(memberKey(sourceId(h, appId), h.team_id, h.user_id), h.hours);
+        }
         return m;
-    }, [hoursData]);
+    }, [hoursData, appId]);
 
     const salaryMap = useMemo(() => {
         const m = new Map();
         for (const h of hoursData) {
-            m.set(`${h.team_id}:${h.user_id}`, h.participant_salary ?? '');
+            m.set(memberKey(sourceId(h, appId), h.team_id, h.user_id), h.participant_salary ?? '');
         }
         return m;
-    }, [hoursData]);
+    }, [hoursData, appId]);
 
-    const setMemberHours = (team_id, user_id, value, isCustom = true) => {
+    const setMemberHours = (source_application_id, team_id, user_id, value, isCustom = true) => {
         if (readOnly) return;
-        const key = `${team_id}:${user_id}`;
+        const key = memberKey(source_application_id, team_id, user_id);
         const numeric = value === '' ? '' : value;
         setHoursData(prev => {
-            const existing = prev.find(h => h.team_id === team_id && h.user_id === user_id);
-            const others = prev.filter(h => !(h.team_id === team_id && h.user_id === user_id));
+            const existing = prev.find(h =>
+                sourceId(h, appId) === Number(source_application_id)
+                && h.team_id === team_id && h.user_id === user_id
+            );
+            const others = prev.filter(h => !(
+                sourceId(h, appId) === Number(source_application_id)
+                && h.team_id === team_id && h.user_id === user_id
+            ));
             // v2.10 (D8): three-way split. '' (cleared / never-set) → remove the
             // row; an explicit 0 → KEEP it as a visible 0-hours row so the zero
             // persists and overwrites any prior value on submit; otherwise keep
             // the typed value. Never-touched members never reach here → no row.
             if (numeric === '') {
                 return Number(existing?.participant_salary || 0) > 0
-                    ? [...others, { ...existing, team_id, user_id, hours: 0 }]
+                    ? [...others, { ...existing, source_application_id, team_id, user_id, hours: 0 }]
                     : others;
             }
             return [...others, {
                 ...existing,
+                source_application_id,
                 team_id,
                 user_id,
                 hours: Number(numeric),
@@ -141,11 +154,17 @@ export default function StepHours({
         });
     };
 
-    const setMemberSalary = (team_id, user_id, value) => {
+    const setMemberSalary = (source_application_id, team_id, user_id, value) => {
         if (readOnly || !canEditParticipantSalary) return;
         setHoursData(prev => {
-            const existing = prev.find(h => h.team_id === team_id && h.user_id === user_id);
-            const others = prev.filter(h => !(h.team_id === team_id && h.user_id === user_id));
+            const existing = prev.find(h =>
+                sourceId(h, appId) === Number(source_application_id)
+                && h.team_id === team_id && h.user_id === user_id
+            );
+            const others = prev.filter(h => !(
+                sourceId(h, appId) === Number(source_application_id)
+                && h.team_id === team_id && h.user_id === user_id
+            ));
             if (value === '') {
                 if (existing && Number(existing.hours || 0) > 0) {
                     return [...others, { ...existing, participant_salary: 0 }];
@@ -154,6 +173,7 @@ export default function StepHours({
             }
             return [...others, {
                 ...existing,
+                source_application_id,
                 team_id,
                 user_id,
                 hours: existing?.hours ?? 0,
@@ -162,15 +182,20 @@ export default function StepHours({
         });
     };
 
-    const setTeamHours = (team_id, value) => {
+    const setTeamHours = (source_application_id, team_id, value) => {
         if (readOnly) return;
-        const team = teams.find(t => t.team_id === team_id);
+        const team = teams.find(t =>
+            t.team_id === team_id && sourceId(t, appId) === Number(source_application_id)
+        );
         if (!team) return;
-        setTeamHourInputs(prev => ({ ...prev, [team_id]: value }));
+        const currentSection = sectionKey(source_application_id, team_id);
+        setTeamHourInputs(prev => ({ ...prev, [currentSection]: value }));
         const numeric = value === '' ? null : Number(value);
         setHoursData(prev => {
             const others = prev.flatMap(h => {
-                if (h.team_id !== team_id || customOverrides.has(`${team_id}:${h.user_id}`)) {
+                if (h.team_id !== team_id
+                    || sourceId(h, appId) !== Number(source_application_id)
+                    || customOverrides.has(memberKey(source_application_id, team_id, h.user_id))) {
                     return [h];
                 }
                 // Clearing the common value must not silently remove a salary
@@ -184,12 +209,16 @@ export default function StepHours({
                 return others;
             }
             const additions = (team.members || [])
-                .filter(m => !customOverrides.has(`${team_id}:${m.user_id}`))
+                .filter(m => !customOverrides.has(memberKey(source_application_id, team_id, m.user_id)))
                 .filter(m => (m.status || 'available') === 'available')
                 .map(m => {
-                    const existing = prev.find(h => h.team_id === team_id && h.user_id === m.user_id);
+                    const existing = prev.find(h =>
+                        sourceId(h, appId) === Number(source_application_id)
+                        && h.team_id === team_id && h.user_id === m.user_id
+                    );
                     return {
                         ...existing,
+                        source_application_id,
                         team_id,
                         user_id: m.user_id,
                         hours: numeric,
@@ -200,10 +229,11 @@ export default function StepHours({
         });
     };
 
-    const toggleExpand = (team_id) => {
+    const toggleExpand = (source_application_id, team_id) => {
+        const key = sectionKey(source_application_id, team_id);
         setExpanded(prev => {
             const next = new Set(prev);
-            if (next.has(team_id)) next.delete(team_id); else next.add(team_id);
+            if (next.has(key)) next.delete(key); else next.add(key);
             return next;
         });
     };
@@ -230,6 +260,7 @@ export default function StepHours({
 
     const addAdHocWorker = (cand) => {
         const teamId = cand.team_id;
+        const targetSource = Number(appId);
         const newMember = {
             user_id: cand.member_id,
             member_id: cand.member_id,
@@ -243,16 +274,25 @@ export default function StepHours({
             participant_salary: 0,
         };
         setTeams(prev => {
-            const exists = prev.find(t => Number(t.team_id) === Number(teamId));
+            const exists = prev.find(t =>
+                Number(t.team_id) === Number(teamId)
+                && sourceId(t, appId) === targetSource
+            );
             if (exists) {
                 if ((exists.members || []).some(m => Number(m.user_id) === Number(cand.member_id))) {
                     return prev;
                 }
-                return prev.map(t => Number(t.team_id) === Number(teamId)
+                return prev.map(t => (
+                    Number(t.team_id) === Number(teamId)
+                    && sourceId(t, appId) === targetSource
+                )
                     ? { ...t, members: [...(t.members || []), newMember] }
                     : t);
             }
             return [...prev, {
+                section_id: sectionKey(targetSource, teamId),
+                source_application_id: targetSource,
+                object_name: prev.find(t => sourceId(t, appId) === targetSource)?.object_name || `Объект ${targetSource}`,
                 team_id: teamId,
                 team_name: cand.team_name || `Бригада ${teamId}`,
                 team_icon: cand.team_icon || '',
@@ -260,7 +300,7 @@ export default function StepHours({
                 members: [newMember],
             }];
         });
-        setExpanded(prev => new Set(prev).add(teamId));
+        setExpanded(prev => new Set(prev).add(sectionKey(targetSource, teamId)));
         setCandidates(prev => prev.filter(c => Number(c.member_id) !== Number(cand.member_id)));
         toast.success(`${cand.fio} добавлен`);
         setShowAddWorker(false);
@@ -275,16 +315,18 @@ export default function StepHours({
     }, [candidates, candSearch]);
 
     const getTeamLevel = (team) => {
-        if (Object.prototype.hasOwnProperty.call(teamHourInputs, team.team_id)) {
-            return teamHourInputs[team.team_id];
+        const source = sourceId(team, appId);
+        const currentSection = sectionKey(source, team.team_id);
+        if (Object.prototype.hasOwnProperty.call(teamHourInputs, currentSection)) {
+            return teamHourInputs[currentSection];
         }
         // If all non-vacation members have the same saved value, show it at
         // team level. An explicit zero is different from an untouched field.
         const values = (team.members || [])
             .filter(m => (m.status || 'available') === 'available')
-            .filter(m => !customOverrides.has(`${team.team_id}:${m.user_id}`))
+            .filter(m => !customOverrides.has(memberKey(source, team.team_id, m.user_id)))
             .map(m => {
-                const key = `${team.team_id}:${m.user_id}`;
+                const key = memberKey(source, team.team_id, m.user_id);
                 return hoursMap.has(key) ? hoursMap.get(key) : undefined;
             });
         if (values.length === 0) return '';
@@ -371,18 +413,20 @@ export default function StepHours({
             )}
 
             {visibleTeams.map(team => {
-                const isOpen = expanded.has(team.team_id);
+                const source = sourceId(team, appId);
+                const currentSection = sectionKey(source, team.team_id);
+                const isOpen = expanded.has(currentSection);
                 const teamValue = getTeamLevel(team);
                 return (
                     <div
-                        key={team.team_id}
+                        key={currentSection}
                         className="border border-gray-200 dark:border-gray-700 rounded-2xl bg-white dark:bg-gray-800 overflow-hidden"
                     >
                         {/* Team header */}
                         <div className="flex items-center gap-3 px-4 py-3 bg-gray-50 dark:bg-gray-900/40">
                             <button
                                 type="button"
-                                onClick={() => toggleExpand(team.team_id)}
+                                onClick={() => toggleExpand(source, team.team_id)}
                                 className="flex items-center gap-2 flex-1 text-left hover:opacity-80 transition-opacity"
                             >
                                 <motion.span
@@ -394,6 +438,9 @@ export default function StepHours({
                                 </motion.span>
                                 <span className="font-bold text-sm text-gray-900 dark:text-white truncate">
                                     {team.team_name}
+                                </span>
+                                <span className="text-[10px] font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 rounded truncate max-w-[12rem]">
+                                    {team.object_name || `Объект ${source}`}
                                 </span>
                                 {team.is_virtual && (
                                     <span className="text-[10px] font-bold text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30 px-1.5 py-0.5 rounded" title="Бригады не было в заявке">
@@ -411,7 +458,7 @@ export default function StepHours({
                                 step="0.5"
                                 disabled={readOnly}
                                 value={teamValue}
-                                onChange={(e) => setTeamHours(team.team_id, e.target.value)}
+                                onChange={(e) => setTeamHours(source, team.team_id, e.target.value)}
                                 placeholder="ч"
                                 aria-label="Часы для всей бригады"
                                 className="w-20 p-2 text-center font-bold border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -431,7 +478,7 @@ export default function StepHours({
                                 >
                                     <ul className="divide-y divide-gray-100 dark:divide-gray-700/60">
                                         {(team.members || []).map(m => {
-                                            const key = `${team.team_id}:${m.user_id}`;
+                                            const key = memberKey(source, team.team_id, m.user_id);
                                             const currentRaw = hoursMap.get(key);
                                             const current = currentRaw === undefined ? '' : currentRaw;
                                             const status = m.status || 'available';
@@ -478,7 +525,7 @@ export default function StepHours({
                                                                 step="0.5"
                                                                 disabled={readOnly}
                                                                 value={current}
-                                                                onChange={(e) => setMemberHours(team.team_id, m.user_id, e.target.value, true)}
+                                                                onChange={(e) => setMemberHours(source, team.team_id, m.user_id, e.target.value, true)}
                                                                 placeholder="0"
                                                                 aria-label={`Часы для ${m.fio}`}
                                                                 className="w-16 p-1.5 text-center text-sm font-bold border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-400"
@@ -494,7 +541,7 @@ export default function StepHours({
                                                                     step="0.01"
                                                                     disabled={readOnly}
                                                                     value={salaryMap.get(key) ?? ''}
-                                                                    onChange={(e) => setMemberSalary(team.team_id, m.user_id, e.target.value)}
+                                                                    onChange={(e) => setMemberSalary(source, team.team_id, m.user_id, e.target.value)}
                                                                     placeholder="0"
                                                                     aria-label={`ЗП для ${m.fio}`}
                                                                     className="w-24 p-1.5 text-center text-sm font-bold border border-emerald-200 dark:border-emerald-700 rounded-lg bg-emerald-50/50 dark:bg-emerald-900/10 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-emerald-400"

@@ -242,6 +242,7 @@ export default function SMRWizard({
                                 {step === 'works' && (
                                     <StepWorks
                                         appId={appId}
+                                        app={app}
                                         tgId={tgId}
                                         userRole={userRole}
                                         worksData={worksData}

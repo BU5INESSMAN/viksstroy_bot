@@ -28,7 +28,6 @@ export default function ForemanReleasePanel({ applications, teams, onReleased })
     const [selectedAppId, setSelectedAppId] = useState(null);
     const [teamIds, setTeamIds] = useState([]);
     const [equipmentIds, setEquipmentIds] = useState([]);
-    const [confirmation, setConfirmation] = useState('');
     const [busy, setBusy] = useState(false);
 
     const teamMap = useMemo(() => Object.fromEntries((teams || []).map((team) => [Number(team.id), team.name])), [teams]);
@@ -48,10 +47,10 @@ export default function ForemanReleasePanel({ applications, teams, onReleased })
 
     const toggle = (setter, list, value) => setter(list.includes(value) ? list.filter((id) => id !== value) : [...list, value]);
     const close = () => {
-        setOpen(false); setSelectedAppId(null); setTeamIds([]); setEquipmentIds([]); setConfirmation('');
+        setOpen(false); setSelectedAppId(null); setTeamIds([]); setEquipmentIds([]);
     };
     const pickApp = (app) => {
-        setSelectedAppId(app.id); setTeamIds([]); setEquipmentIds([]); setConfirmation('');
+        setSelectedAppId(app.id); setTeamIds([]); setEquipmentIds([]);
     };
     const selectAll = () => {
         setTeamIds(selectedApp?.availableTeams.map((item) => item.id) || []);
@@ -93,13 +92,13 @@ export default function ForemanReleasePanel({ applications, teams, onReleased })
             </section>
 
             {open && (
-                <div className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-sm p-4 flex items-start justify-center overflow-y-auto">
-                    <div className="w-full max-w-xl mt-[max(1rem,env(safe-area-inset-top))] mb-24 rounded-3xl bg-white dark:bg-gray-800 shadow-2xl overflow-hidden">
-                        <div className="sticky top-0 z-10 flex items-center justify-between gap-3 p-5 border-b border-gray-100 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur">
+                <div className="fixed inset-0 z-[130] bg-black/60 backdrop-blur-sm p-3 sm:p-4 flex items-center sm:items-start justify-center overflow-hidden">
+                    <div className="w-full max-w-xl sm:mt-4 rounded-3xl bg-white dark:bg-gray-800 shadow-2xl overflow-hidden max-h-full flex flex-col">
+                        <div className="flex-shrink-0 flex items-center justify-between gap-3 p-5 border-b border-gray-100 dark:border-gray-700 bg-white/95 dark:bg-gray-800/95 backdrop-blur">
                             <div><h3 className="font-black text-lg dark:text-white">Освобождение ресурсов</h3><p className="text-xs text-gray-500 mt-1">Выберите заявку, затем несколько бригад и единиц техники</p></div>
                             <button type="button" onClick={close} className="w-11 h-11 rounded-xl flex items-center justify-center bg-gray-100 dark:bg-gray-700" aria-label="Закрыть"><X className="w-5 h-5" /></button>
                         </div>
-                        <div className="p-5 space-y-5">
+                        <div className="flex-1 min-h-0 overflow-y-auto p-5 space-y-5 overscroll-contain">
                             <div className="space-y-2">
                                 {candidates.map((app) => (
                                     <button key={app.id} type="button" onClick={() => pickApp(app)} className={`w-full text-left p-4 rounded-2xl border transition ${Number(app.id) === Number(selectedAppId) ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/20 ring-2 ring-emerald-500/20' : 'border-gray-200 dark:border-gray-700 hover:border-emerald-300'}`}>
@@ -115,12 +114,16 @@ export default function ForemanReleasePanel({ applications, teams, onReleased })
                                     <div className="flex items-center justify-between gap-2"><h4 className="font-bold dark:text-white">Что освободить</h4><button type="button" onClick={selectAll} className="text-xs font-bold text-emerald-700 dark:text-emerald-400 px-3 py-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">Выбрать всё</button></div>
                                     {selectedApp.availableTeams.length > 0 && <div className="space-y-2"><p className="text-xs uppercase tracking-wider font-bold text-gray-400 flex items-center gap-1"><Users className="w-4 h-4" /> Бригады</p>{selectedApp.availableTeams.map((item) => <label key={item.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-900/30 cursor-pointer"><input type="checkbox" checked={teamIds.includes(item.id)} onChange={() => toggle(setTeamIds, teamIds, item.id)} className="w-5 h-5 accent-emerald-600" /><span className="font-semibold text-sm dark:text-white">{item.name}</span></label>)}</div>}
                                     {selectedApp.availableEquipment.length > 0 && <div className="space-y-2"><p className="text-xs uppercase tracking-wider font-bold text-gray-400 flex items-center gap-1"><Truck className="w-4 h-4" /> Техника</p>{selectedApp.availableEquipment.map((item) => <label key={item.id} className="flex items-center gap-3 p-3 rounded-xl bg-gray-50 dark:bg-gray-900/30 cursor-pointer"><input type="checkbox" checked={equipmentIds.includes(item.id)} onChange={() => toggle(setEquipmentIds, equipmentIds, item.id)} className="w-5 h-5 accent-emerald-600" /><span className="font-semibold text-sm dark:text-white">{item.name}</span></label>)}</div>}
-                                    <div className="rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50 dark:bg-amber-900/20 p-4 text-sm text-amber-900 dark:text-amber-200"><b>Подтверждение:</b> выбранные ресурсы сразу станут свободными. Отработанное время считается от начала заявки до текущего момента.</div>
-                                    <input value={confirmation} onChange={(event) => setConfirmation(event.target.value)} placeholder="Введите ОСВОБОДИТЬ" className="w-full p-3.5 rounded-xl border-2 border-gray-200 dark:border-gray-600 dark:bg-gray-900 dark:text-white text-center uppercase font-black tracking-wider" />
-                                    <button type="button" disabled={busy || !count || confirmation.trim().toLowerCase() !== 'освободить'} onClick={submit} className="w-full min-h-[3.25rem] py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black disabled:opacity-50 disabled:cursor-not-allowed">{busy ? 'Освобождаем…' : `Освободить выбранные (${count})`}</button>
                                 </>
                             )}
                         </div>
+                        {selectedApp && (
+                            <div className="flex-shrink-0 border-t border-gray-100 dark:border-gray-700 bg-white dark:bg-gray-800 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-[0_-10px_24px_-16px_rgba(0,0,0,0.45)]">
+                                <button type="button" disabled={busy || !count} onClick={submit} className="w-full min-h-[3.5rem] py-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.99] transition">
+                                    {busy ? 'Освобождаем…' : `Освободить (${count})`}
+                                </button>
+                            </div>
+                        )}
                     </div>
                 </div>
             )}

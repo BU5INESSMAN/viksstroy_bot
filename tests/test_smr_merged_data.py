@@ -12,6 +12,18 @@ class _MergedRepo(KpRepoMixin):
         self.conn = conn
 
 
+def test_payload_rows_are_partitioned_by_source_application():
+    rows = [
+        {'source_application_id': 235, 'kp_id': 1},
+        {'source_application_id': 236, 'kp_id': 1},
+        {'source_application_id': 999, 'kp_id': 2},
+        {'kp_id': 3},
+    ]
+    grouped = kp._rows_by_source_application(rows, [235, 236])
+    assert [row['kp_id'] for row in grouped[235]] == [1, 2, 3]
+    assert [row['kp_id'] for row in grouped[236]] == [1]
+
+
 def test_merged_works_include_secondary_object_and_primary_saved_value():
     async def scenario():
         conn = await aiosqlite.connect(":memory:")
@@ -37,26 +49,33 @@ def test_merged_works_include_secondary_object_and_primary_saved_value():
             INSERT INTO kp_catalog VALUES
                 (145943, 'А', 'Работа первого объекта', 'м', 10, 20),
                 (146084, 'Б', 'Работа второго объекта', 'м', 30, 40),
-                (146085, 'Б', 'Незаполненная работа второго объекта', 'шт', 50, 60);
+                (146085, 'Б', 'Незаполненная работа второго объекта', 'шт', 50, 60),
+                (150000, 'В', 'Одинаковая работа двух объектов', 'м', 70, 80);
             INSERT INTO object_kp_plan VALUES
-                (30, 145943), (34, 146084), (34, 146085);
+                (30, 145943), (34, 146084), (34, 146085),
+                (30, 150000), (34, 150000), (34, 150000);
             INSERT INTO teams VALUES (5, 'Бригада 5');
             INSERT INTO users VALUES (100, 'Прораб', 'foreman');
             -- A work unique to object 34 is intentionally stored on the
             -- primary application 235, as the production merged writer does.
             INSERT INTO application_kp VALUES
                 (1, 235, 145943, 1.5, 10, 20, 5, 100, '2026-08-10T10:00:00', 0),
-                (2, 235, 146084, 12.4, 30, 40, 5, 100, '2026-08-10T10:01:00', 0);
+                (2, 235, 146084, 12.4, 30, 40, 5, 100, '2026-08-10T10:01:00', 0),
+                (3, 235, 150000, 2, 70, 80, 5, 100, '2026-08-10T10:02:00', 0),
+                (4, 236, 150000, 3, 70, 80, 5, 100, '2026-08-10T10:03:00', 0);
             """
         )
         try:
             rows = await _MergedRepo(conn).get_group_kp_items([235, 236])
             by_id = {int(row['kp_id']): row for row in rows}
-            assert set(by_id) == {145943, 146084, 146085}
+            assert set(by_id) == {145943, 146084, 146085, 150000}
             assert by_id[146084]['volume'] == 12.4
             assert by_id[146084]['team_id'] == 5
             assert by_id[146084]['filled_by_fio'] == 'Прораб'
             assert by_id[146085]['volume'] == 0
+            shared = [row for row in rows if int(row['kp_id']) == 150000]
+            assert [row['source_application_id'] for row in shared] == [235, 236]
+            assert [row['volume'] for row in shared] == [2, 3]
         finally:
             await conn.close()
 
@@ -83,7 +102,7 @@ class _HoursDb:
         ]}]
 
 
-def test_merged_hours_union_selected_members_of_same_team():
+def test_merged_hours_keep_same_team_separate_by_source_application():
     async def scenario():
         conn = await aiosqlite.connect(":memory:")
         conn.row_factory = aiosqlite.Row
@@ -104,9 +123,11 @@ def test_merged_hours_union_selected_members_of_same_team():
                     1,
                     current_user={'tg_id': 100, 'role': 'foreman'},
                 )
-            assert len(result) == 1
-            assert result[0]['team_id'] == 5
-            assert [member['member_id'] for member in result[0]['members']] == [17, 18, 19, 20]
+            assert len(result) == 2
+            assert [section['source_application_id'] for section in result] == [1, 2]
+            assert [section['team_id'] for section in result] == [5, 5]
+            assert [member['member_id'] for member in result[0]['members']] == [17, 18]
+            assert [member['member_id'] for member in result[1]['members']] == [19, 20]
         finally:
             await conn.close()
 

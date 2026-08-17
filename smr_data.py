@@ -94,13 +94,18 @@ def _attach_row_context(rows: list[dict], contexts: list[dict], row_kind: str) -
             else:
                 matches = team_matches
 
-        # A row stored on a non-primary application predates consolidation
-        # and carries useful ownership. A primary row remains ambiguous.
+        # New merged reports keep each row on its source application. Legacy
+        # consolidated rows can still be restored through a unique roster or
+        # KP-plan match. If several objects genuinely match, use the physical
+        # application instead of joining names with a slash: one report row
+        # must have one owner and must never duplicate its amount/hours.
         stored_id = int(row.get('application_id') or 0)
-        if not matches and stored_id in by_id and stored_id != primary_id:
+        if len(matches) > 1 and stored_id in by_id:
+            matches = [by_id[stored_id]]
+        elif not matches and stored_id in by_id:
             matches = [by_id[stored_id]]
         if not matches:
-            matches = contexts
+            matches = [by_id[primary_id]]
 
         unique: list[dict] = []
         seen: set[int] = set()
@@ -109,13 +114,12 @@ def _attach_row_context(rows: list[dict], contexts: list[dict], row_kind: str) -
             if context_id not in seen:
                 unique.append(context)
                 seen.add(context_id)
-        row['source_application_ids'] = [int(context['id']) for context in unique]
-        row['application_label'] = ' / '.join(str(context['application_label']) for context in unique)
-        row['object_name'] = ' / '.join(str(context['object_name']) for context in unique)
-        row['object_address'] = ' / '.join(
-            str(context.get('object_address_clean') or '') for context in unique
-            if context.get('object_address_clean')
-        )
+        owner = unique[0]
+        row['source_application_ids'] = [int(owner['id'])]
+        row['source_application_id'] = int(owner['id'])
+        row['application_label'] = str(owner['application_label'])
+        row['object_name'] = str(owner['object_name'])
+        row['object_address'] = str(owner.get('object_address_clean') or '')
 
 
 async def logical_smr_app_ids(db, app_id: int) -> list[int]:

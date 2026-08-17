@@ -115,19 +115,72 @@ class KpRepoMixin:
             return []
         marks = ",".join("?" * len(ids))
 
+        async with self.conn.execute("PRAGMA table_info(applications)") as cur:
+            app_columns = {str(row[1]) for row in await cur.fetchall()}
+        async with self.conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='objects'"
+        ) as cur:
+            has_objects = await cur.fetchone() is not None
+        public_expr = "a.public_number" if 'public_number' in app_columns else "NULL"
+        if has_objects and 'object_address' in app_columns:
+            object_expr = (
+                "COALESCE(NULLIF(o.name, ''), NULLIF(a.object_address, ''), "
+                "'Объект ' || a.id)"
+            )
+            object_join = "LEFT JOIN objects o ON o.id = a.object_id"
+        elif has_objects:
+            object_expr = "COALESCE(NULLIF(o.name, ''), 'Объект ' || a.id)"
+            object_join = "LEFT JOIN objects o ON o.id = a.object_id"
+        elif 'object_address' in app_columns:
+            object_expr = "COALESCE(NULLIF(a.object_address, ''), 'Объект ' || a.id)"
+            object_join = ""
+        else:
+            object_expr = "'Объект ' || a.id"
+            object_join = ""
+
         async with self.conn.execute(
             f"""
-            SELECT DISTINCT k.id AS kp_id, k.category, k.name, k.unit,
-                            k.salary, k.price
+            SELECT DISTINCT a.id AS source_application_id,
+                   {public_expr} AS application_label,
+                   {object_expr} AS object_name,
+                   k.id AS kp_id, k.category, k.name, k.unit,
+                   k.salary, k.price
             FROM applications a
             JOIN object_kp_plan okp ON okp.object_id = a.object_id
             JOIN kp_catalog k ON k.id = okp.kp_id
+            {object_join}
             WHERE a.id IN ({marks})
-            ORDER BY k.category, k.id
+            ORDER BY a.id, k.category, k.id
             """,
             tuple(ids),
         ) as cur:
             plan_rows = [dict(row) for row in await cur.fetchall()]
+
+        app_meta: dict[int, dict] = {}
+        for row in plan_rows:
+            app_meta[int(row['source_application_id'])] = {
+                'source_application_id': int(row['source_application_id']),
+                'application_label': row.get('application_label') or f"№{row['source_application_id']}",
+                'object_name': row.get('object_name') or f"Объект {row['source_application_id']}",
+            }
+        # An object may have no KP plan but can still own saved extra/common
+        # rows. Load metadata for every member of the merge group.
+        async with self.conn.execute(
+            f"""
+            SELECT a.id AS source_application_id,
+                   {public_expr} AS application_label,
+                   {object_expr} AS object_name
+            FROM applications a
+            {object_join}
+            WHERE a.id IN ({marks})
+            """,
+            tuple(ids),
+        ) as cur:
+            for row in await cur.fetchall():
+                item = dict(row)
+                source_id = int(item['source_application_id'])
+                item['application_label'] = item.get('application_label') or f'№{source_id}'
+                app_meta[source_id] = item
 
         async with self.conn.execute(
             f"""
@@ -151,9 +204,30 @@ class KpRepoMixin:
         ) as cur:
             saved_rows = [dict(row) for row in await cur.fetchall()]
 
-        saved_by_key: dict[tuple[int, int | None], dict] = {}
+        plan_sources: dict[int, set[int]] = {}
+        for row in plan_rows:
+            plan_sources.setdefault(int(row['kp_id']), set()).add(
+                int(row['source_application_id'])
+            )
+
+        saved_by_key: dict[tuple[int, int, int | None], dict] = {}
         for row in saved_rows:
+            stored_id = int(row.get('application_id') or ids[0])
+            candidates = plan_sources.get(int(row['kp_id']), set())
+            # New reports are stored directly on their source application.
+            # For old consolidated reports, a work that belongs to exactly
+            # one object can still be restored to that object safely.
+            if stored_id in candidates or len(candidates) != 1:
+                source_id = stored_id
+            else:
+                source_id = next(iter(candidates))
+            row.update(app_meta.get(source_id, {
+                'source_application_id': source_id,
+                'application_label': f'№{source_id}',
+                'object_name': f'Объект {source_id}',
+            }))
             key = (
+                source_id,
                 int(row['kp_id']),
                 int(row['team_id']) if row.get('team_id') is not None else None,
             )
@@ -169,10 +243,11 @@ class KpRepoMixin:
                 existing.update(row)
                 existing['volume'] = total_volume
 
-        saved_kp_ids = {key[0] for key in saved_by_key}
+        saved_plan_keys = {(key[0], key[1]) for key in saved_by_key}
         items = list(saved_by_key.values())
         for row in plan_rows:
-            if int(row['kp_id']) in saved_kp_ids:
+            plan_key = (int(row['source_application_id']), int(row['kp_id']))
+            if plan_key in saved_plan_keys:
                 continue
             items.append({
                 **row,
@@ -188,6 +263,7 @@ class KpRepoMixin:
             })
 
         items.sort(key=lambda row: (
+            int(row.get('source_application_id') or 0),
             str(row.get('category') or ''),
             int(row.get('kp_id') or 0),
             row.get('team_id') is not None,

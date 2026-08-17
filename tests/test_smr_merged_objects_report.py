@@ -152,3 +152,45 @@ def test_excel_lists_both_objects_and_separates_rows():
         }
 
     asyncio.run(scenario())
+
+
+def test_same_person_and_work_on_two_objects_are_not_joined_with_slash():
+    import asyncio
+
+    async def scenario():
+        database = _database()
+        database.conn.raw.executescript(
+            """
+            UPDATE applications SET selected_members='17,21' WHERE id=235;
+            UPDATE applications SET selected_members='19,21' WHERE id=236;
+            INSERT INTO team_members VALUES (21, 'Общий сотрудник', 'Монтажник');
+            INSERT INTO kp_catalog VALUES (150000, 'Общее', 'Одинаковая работа', 'м');
+            INSERT INTO object_kp_plan VALUES (30, 150000), (34, 150000);
+            INSERT INTO application_kp VALUES
+                (3, 235, 150000, 2, 'м', 10, 20, 5, 0, '2026-08-10', 100),
+                (4, 236, 150000, 3, 'м', 10, 20, 5, 0, '2026-08-10', 100);
+            INSERT INTO application_hours VALUES
+                (3, 235, 5, 21, 4, 0, 0, '2026-08-10', 100),
+                (4, 236, 5, 21, 5, 0, 0, '2026-08-10', 100);
+            """
+        )
+        report = await get_smr_read_model(database, 235)
+        shared_works = [row for row in report['plan_works'] if row['kp_id'] == 150000]
+        shared_hours = [row for row in report['hours'] if row['member_id'] == 21]
+        assert [row['application_id'] for row in shared_works] == [235, 236]
+        assert [row['object_name'] for row in shared_works] == [
+            'Ливневая канализация', 'Водопровод',
+        ]
+        assert [row['hours'] for row in shared_hours] == [4, 5]
+        assert [row['object_name'] for row in shared_hours] == [
+            'Ливневая канализация', 'Водопровод',
+        ]
+        assert all('/' not in row['object_name'] for row in shared_works + shared_hours)
+        assert report['totals'] == {
+            'hours': 24.0,
+            'salary': 437.0,
+            'participant_salary': 0.0,
+            'price': 626.0,
+        }
+
+    asyncio.run(scenario())

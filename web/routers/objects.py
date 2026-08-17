@@ -733,12 +733,18 @@ async def api_get_app_extra_works(app_id: int, include_additional: bool = False,
     marks = ','.join('?' * len(app_ids))
     async with db.conn.execute(f"""
         SELECT aew.*,
+               aew.application_id AS source_application_id,
+               a.public_number AS application_label,
+               COALESCE(NULLIF(o.name, ''), NULLIF(a.object_address, ''),
+                        'Объект ' || a.id) AS object_name,
                ewc.name as catalog_name,
                ewc.unit as catalog_unit,
                kc.name as kp_catalog_name,
                kc.unit as kp_catalog_unit,
                COALESCE(NULLIF(TRIM(aew.unit), ''), kc.unit, ewc.unit, '') as display_unit
         FROM application_extra_works aew
+        JOIN applications a ON a.id = aew.application_id
+        LEFT JOIN objects o ON o.id = a.object_id
         LEFT JOIN extra_works_catalog ewc ON aew.extra_work_id = ewc.id
         LEFT JOIN kp_catalog kc ON aew.kp_id = kc.id
         WHERE aew.application_id IN ({marks}){add_filter}

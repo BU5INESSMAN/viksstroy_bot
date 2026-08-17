@@ -291,9 +291,9 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
     Pre-fills with any previously saved hours. Brigadier sees all teams on
     the application; restriction on WRITE is enforced on POST.
 
-    Merge-aware: when the app is part of an SMR merge group the response
-    is the union of teams from every app in the group (deduped by
-    team_id). Previously-saved hours are aggregated per (team, member).
+    Merge-aware: when the app is part of an SMR merge group, every source
+    application/object gets its own team section. The same brigade or member
+    may therefore appear more than once without mixing hours between objects.
     """
     if db.conn is None:
         await db.init_db()
@@ -318,59 +318,71 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
 
     group_ids = await _expand_merge_group(app_id)
 
-    # Aggregate saved hours across all apps in the group. Later values
-    # win the metadata race (filled_by_fio etc.) — sum the hours.
-    by_key: dict[tuple, dict] = {}
+    # Read saved hours from every source application. Rows are keyed by the
+    # physical source application so equal brigades/members on different
+    # objects remain independent.
+    marks = ','.join('?' * len(group_ids))
+    try:
+        async with db.conn.execute(
+            f"""
+            SELECT a.id, a.public_number,
+                   COALESCE(NULLIF(o.name, ''), NULLIF(a.object_address, ''),
+                            'Объект ' || a.id) AS object_name
+            FROM applications a
+            LEFT JOIN objects o ON o.id = a.object_id
+            WHERE a.id IN ({marks})
+            ORDER BY a.id
+            """,
+            tuple(group_ids),
+        ) as cur:
+            app_meta = {int(row['id']): dict(row) for row in await cur.fetchall()}
+    except Exception:
+        app_meta = {
+            int(aid): {'id': int(aid), 'public_number': None, 'object_name': f'Объект {aid}'}
+            for aid in group_ids
+        }
+
+    app_teams: dict[int, list[dict]] = {}
+    roster_owners: dict[tuple[int, int], list[int]] = {}
     for aid in group_ids:
-        for r in await db.get_app_hours(aid):
-            key = (int(r['team_id']), int(r['member_id']))
+        app_teams[aid] = await db.get_teams_for_app(aid)
+        for team in app_teams[aid]:
+            tid = int(team.get('id') or 0)
+            for member in team.get('members') or []:
+                roster_owners.setdefault((tid, int(member['id'])), []).append(aid)
+
+    by_key: dict[tuple[int, int, int], dict] = {}
+    for stored_aid in group_ids:
+        for r in await db.get_app_hours(stored_aid):
+            tid = int(r['team_id'])
+            mid = int(r['member_id'])
+            owners = roster_owners.get((tid, mid), [])
+            source_aid = owners[0] if len(owners) == 1 else stored_aid
+            key = (source_aid, tid, mid)
             existing = by_key.get(key)
             if existing is None:
                 by_key[key] = dict(r)
             else:
-                try:
-                    existing['hours'] = float(existing.get('hours') or 0) + float(r.get('hours') or 0)
-                    existing['participant_salary'] = (
-                        float(existing.get('participant_salary') or 0)
-                        + float(r.get('participant_salary') or 0)
-                    )
-                except (TypeError, ValueError):
-                    pass
-                # Prefer latest filled_at metadata
+                existing['hours'] = float(existing.get('hours') or 0) + float(r.get('hours') or 0)
+                existing['participant_salary'] = (
+                    float(existing.get('participant_salary') or 0)
+                    + float(r.get('participant_salary') or 0)
+                )
                 if (r.get('filled_at') or '') > (existing.get('filled_at') or ''):
-                    existing['filled_by_fio'] = r.get('filled_by_fio') or existing.get('filled_by_fio') or ''
-                    existing['filled_by_role'] = r.get('filled_by_role') or existing.get('filled_by_role') or ''
-                    existing['filled_at'] = r.get('filled_at') or existing.get('filled_at') or ''
+                    for field in ('filled_by_fio', 'filled_by_role', 'filled_at'):
+                        existing[field] = r.get(field) or existing.get(field) or ''
 
-    # Union both teams and selected members. The same brigade may be assigned
-    # partially to several merged applications; keeping its first occurrence
-    # used to drop people selected on later objects.
-    team_map: dict[int, dict] = {}
-    for aid in group_ids:
-        for t in await db.get_teams_for_app(aid):
-            tid = int(t.get('id') or 0)
-            if tid not in team_map:
-                team_map[tid] = {**t, 'members': []}
-            target = team_map[tid]
-            seen_members = {int(member['id']) for member in target['members']}
-            for member in t.get('members') or []:
-                if int(member['id']) not in seen_members:
-                    target['members'].append(member)
-                    seen_members.add(int(member['id']))
-    teams = list(team_map.values())
-    for team in teams:
-        team['members'].sort(key=lambda member: (
-            -int(bool(member.get('is_foreman', 0))),
-            str(member.get('fio') or '').casefold(),
-        ))
-
+    # Build a separate team section for every source application/object. This
+    # intentionally keeps repeated brigades and people as separate report rows.
     result = []
-    for team in teams:
-        members_out = []
-        for m in team['members']:
-            key = (int(team['id']), int(m['id']))
-            saved_row = by_key.get(key, {})
-            members_out.append({
+    for aid in group_ids:
+        meta = app_meta.get(aid, {})
+        for team in app_teams.get(aid, []):
+            members_out = []
+            for m in team['members']:
+                key = (aid, int(team['id']), int(m['id']))
+                saved_row = by_key.get(key, {})
+                members_out.append({
                 'user_id': m['id'],          # team_members.id — used as "user_id" on write
                 'member_id': m['id'],         # explicit alias for clarity on the frontend
                 'fio': m.get('fio', ''),
@@ -386,14 +398,18 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
                 'filled_by_fio': saved_row.get('filled_by_fio') or '',
                 'filled_by_role': saved_row.get('filled_by_role') or '',
                 'filled_at': saved_row.get('filled_at') or '',
+                })
+            result.append({
+                'section_id': f"{aid}:{team['id']}",
+                'source_application_id': aid,
+                'application_label': meta.get('public_number') or f'№{aid}',
+                'object_name': meta.get('object_name') or f'Объект {aid}',
+                'team_id': team['id'],
+                'team_name': team['name'],
+                'team_icon': team.get('icon') or '',
+                'is_virtual': False,
+                'members': members_out,
             })
-        result.append({
-            'team_id': team['id'],
-            'team_name': team['name'],
-            'team_icon': team.get('icon') or '',
-            'is_virtual': False,
-            'members': members_out,
-        })
 
     # v2.7 — surface previously-saved AD-HOC workers. These are
     # application_hours rows whose (team_id, member_id) is NOT part of the
@@ -401,10 +417,15 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
     # are reconstructed here so re-opening the wizard shows them; they are
     # NEVER written into applications.team_id/selected_members, so an ad-hoc
     # worker gains no visibility into the SMR (spec decision 2c).
-    covered = {(int(t['team_id']), int(m['member_id'])) for t in result for m in t['members']}
-    result_by_team = {int(t['team_id']): t for t in result}
-    for (tid, mid), row in by_key.items():
-        if (tid, mid) in covered:
+    covered = {
+        (int(t['source_application_id']), int(t['team_id']), int(m['member_id']))
+        for t in result for m in t['members']
+    }
+    result_by_team = {
+        (int(t['source_application_id']), int(t['team_id'])): t for t in result
+    }
+    for (source_aid, tid, mid), row in by_key.items():
+        if (source_aid, tid, mid) in covered:
             continue
         member_entry = {
             'user_id': mid,
@@ -423,13 +444,17 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
             'filled_by_role': row.get('filled_by_role') or '',
             'filled_at': row.get('filled_at') or '',
         }
-        existing_team = result_by_team.get(tid)
+        existing_team = result_by_team.get((source_aid, tid))
         if existing_team is not None:
             # Ad-hoc worker attached to a brigade already on the application.
             existing_team['members'].append(member_entry)
         else:
             # Brigade not on the application → virtual brigade with one worker.
             virt = {
+                'section_id': f'{source_aid}:{tid}',
+                'source_application_id': source_aid,
+                'application_label': app_meta.get(source_aid, {}).get('public_number') or f'№{source_aid}',
+                'object_name': app_meta.get(source_aid, {}).get('object_name') or f'Объект {source_aid}',
                 'team_id': tid,
                 'team_name': row.get('team_name') or f'Бригада {tid}',
                 'team_icon': row.get('team_icon') or '',
@@ -437,7 +462,7 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
                 'members': [member_entry],
             }
             result.append(virt)
-            result_by_team[tid] = virt
+            result_by_team[(source_aid, tid)] = virt
 
     # v2.7 — brigadier/worker scope: only their own brigade(s) are returned.
     # Other brigades on the application are not sent over the wire, so the
@@ -568,7 +593,6 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     if app_id not in group_ids:
         group_ids.append(app_id)
     group_ids = sorted(set(group_ids))
-    write_app_id = group_ids[0]
 
     # Brigadier scope: filter hours to their own teams (v2.7 hard block —
     # an unattached brigadier cannot submit SMR at all).
@@ -589,12 +613,13 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
     if hours_items:
         hours_scope = _compute_write_scope(role, user_team_ids, hours_items)
         await _clear_group_main_rows('application_hours', 'app_id', group_ids, hours_scope)
-        await db.save_app_hours(
-            write_app_id,
-            hours_items,
-            tg_id,
-            allow_participant_salary=role in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'),
-        )
+        for source_id, source_rows in _rows_by_source_application(hours_items, group_ids).items():
+            await db.save_app_hours(
+                source_id,
+                source_rows,
+                tg_id,
+                allow_participant_salary=role in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'),
+            )
 
     # 2. Plan works — D4 team scope + D2/D3 scoped, non-destructive write.
     # Use key-presence (not truthiness) so an explicit empty list clears the
@@ -607,7 +632,11 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
             works = [w for w in works if int(w.get('team_id') or 0) in user_team_ids]
         scope = _compute_write_scope(role, user_team_ids, works)
         await _clear_group_main_rows('application_kp', 'application_id', group_ids, scope)
-        await db.submit_kp_report(write_app_id, works, role, filled_by_user_id=tg_id, team_scope=scope)
+        for source_id, source_rows in _rows_by_source_application(works, group_ids).items():
+            await db.submit_kp_report(
+                source_id, source_rows, role,
+                filled_by_user_id=tg_id, team_scope=scope,
+            )
 
     # 3. Extra works — same D4 scope + scoped, non-destructive delete.
     if 'extra_works' in data:
@@ -616,7 +645,10 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
             extras = [e for e in extras if int(e.get('team_id') or 0) in user_team_ids]
         scope = _compute_write_scope(role, user_team_ids, extras)
         await _clear_group_main_rows('application_extra_works', 'application_id', group_ids, scope)
-        await _save_extra_works_inline(write_app_id, extras, tg_id, role, team_scope=scope)
+        for source_id, source_rows in _rows_by_source_application(extras, group_ids).items():
+            await _save_extra_works_inline(
+                source_id, source_rows, tg_id, role, team_scope=scope,
+            )
 
     # 4. Group + status — cascade to every app in the merge group so a
     # single wizard pass marks them all pending/approved together.
@@ -724,12 +756,32 @@ def _compute_write_scope(role, user_team_ids, items):
     return concrete, True
 
 
+def _rows_by_source_application(items: list, group_ids: list[int]) -> dict[int, list]:
+    """Split wizard payload rows by their original application/object.
+
+    Older clients do not send ``source_application_id``; they safely fall
+    back to the group's primary application. Values outside the current merge
+    group are ignored as ownership hints and cannot write into another report.
+    """
+    valid = {int(value) for value in group_ids}
+    fallback = min(valid) if valid else 0
+    grouped: dict[int, list] = {}
+    for item in items or []:
+        try:
+            requested = int(item.get('source_application_id') or 0)
+        except (TypeError, ValueError):
+            requested = 0
+        source_id = requested if requested in valid else fallback
+        grouped.setdefault(source_id, []).append(item)
+    return grouped
+
+
 async def _clear_group_main_rows(table: str, app_column: str, group_ids: list[int], team_scope) -> None:
     """Clear an authoritative main-report scope across a merge group.
 
-    Replacements are written to the primary application. Clearing all group
-    members first prevents old secondary rows from being added a second time
-    on the next merged read.
+    Replacement rows are then written back to their source applications.
+    Clearing every group member first also removes legacy consolidated rows
+    and prevents them from being counted twice on the next merged read.
     """
     if not group_ids:
         return
@@ -1106,19 +1158,19 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
     now = _dt.now().isoformat(timespec='seconds')
     n_works = n_extras = n_hours = 0
     group_ids = await _expand_merge_group(app_id)
-    write_app_id = group_ids[0] if group_ids else app_id
-
     works = data.get('works') or []
     if user_team_ids is not None:
         works = [w for w in works if int(w.get('team_id') or 0) in user_team_ids]
     if works:
-        n_works = await _insert_additional_kp(write_app_id, works, tg_id, now)
+        for source_id, source_rows in _rows_by_source_application(works, group_ids).items():
+            n_works += await _insert_additional_kp(source_id, source_rows, tg_id, now)
 
     extras = data.get('extra_works') or []
     if user_team_ids is not None:
         extras = [e for e in extras if int(e.get('team_id') or 0) in user_team_ids]
     if extras:
-        n_extras = await _insert_additional_extras(write_app_id, extras, tg_id, role, now)
+        for source_id, source_rows in _rows_by_source_application(extras, group_ids).items():
+            n_extras += await _insert_additional_extras(source_id, source_rows, tg_id, role, now)
 
     hours_items = data.get('hours') or []
     # Same ad-hoc guard as the main submit: a brigadier cannot inject a
@@ -1127,13 +1179,14 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
     if user_team_ids is not None:
         hours_items = [h for h in hours_items if int(h.get('team_id') or 0) in user_team_ids]
     if hours_items:
-        n_hours = await _insert_additional_hours(
-            write_app_id,
-            hours_items,
-            tg_id,
-            now,
-            allow_participant_salary=role in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'),
-        )
+        for source_id, source_rows in _rows_by_source_application(hours_items, group_ids).items():
+            n_hours += await _insert_additional_hours(
+                source_id,
+                source_rows,
+                tg_id,
+                now,
+                allow_participant_salary=role in ('foreman', 'moderator', 'boss', 'superadmin', 'hr'),
+            )
 
     # Any non-empty addendum means the external office program may be stale.
     if n_works or n_extras or n_hours:
@@ -1183,7 +1236,6 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
     group_ids = await _require_smr_report_manager(
         app_id, current_user, completed_only=ready_edit
     )
-    write_app_id = group_ids[0] if group_ids else app_id
     before_snapshot = (
         await capture_smr_financial_snapshot(db, app_id)
         if action == 'edit' else {}
@@ -1210,30 +1262,35 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
 
             hours = await _guard_adhoc_hours(app_id, data.get('hours') or [], role)
             if hours:
-                await db.save_app_hours(
-                    write_app_id,
-                    hours,
-                    tg_id,
-                    allow_participant_salary=True,
+                for source_id, source_rows in _rows_by_source_application(hours, group_ids).items():
+                    await db.save_app_hours(
+                        source_id,
+                        source_rows,
+                        tg_id,
+                        allow_participant_salary=True,
+                        commit=False,
+                    )
+            works = data.get('works') or []
+            works_scope = _compute_write_scope(role, None, works)
+            for source_id, source_rows in _rows_by_source_application(works, group_ids).items():
+                await db.submit_kp_report(
+                    source_id,
+                    source_rows,
+                    role,
+                    filled_by_user_id=tg_id,
+                    team_scope=works_scope,
                     commit=False,
                 )
-            works = data.get('works') or []
-            await db.submit_kp_report(
-                write_app_id,
-                works,
-                role,
-                filled_by_user_id=tg_id,
-                team_scope=_compute_write_scope(role, None, works),
-                commit=False,
-            )
             extras = data.get('extra_works') or []
-            await _save_extra_works_inline(
-                write_app_id,
-                extras,
-                tg_id,
-                role,
-                team_scope=_compute_write_scope(role, None, extras),
-            )
+            extras_scope = _compute_write_scope(role, None, extras)
+            for source_id, source_rows in _rows_by_source_application(extras, group_ids).items():
+                await _save_extra_works_inline(
+                    source_id,
+                    source_rows,
+                    tg_id,
+                    role,
+                    team_scope=extras_scope,
+                )
             await _reset_smr_accounted(app_id)
             marks = ','.join('?' * len(group_ids))
             await db.conn.execute(
@@ -1256,22 +1313,30 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
         if hours:
             hours_scope = _compute_write_scope(role, None, hours)
             await _clear_group_main_rows('application_hours', 'app_id', group_ids, hours_scope)
-            await db.save_app_hours(
-                write_app_id,
-                hours,
-                tg_id,
-                allow_participant_salary=True,
-            )
+            for source_id, source_rows in _rows_by_source_application(hours, group_ids).items():
+                await db.save_app_hours(
+                    source_id,
+                    source_rows,
+                    tg_id,
+                    allow_participant_salary=True,
+                )
         if 'works' in data:
             works = data.get('works') or []
             scope = _compute_write_scope(role, None, works)
             await _clear_group_main_rows('application_kp', 'application_id', group_ids, scope)
-            await db.submit_kp_report(write_app_id, works, role, filled_by_user_id=tg_id, team_scope=scope)
+            for source_id, source_rows in _rows_by_source_application(works, group_ids).items():
+                await db.submit_kp_report(
+                    source_id, source_rows, role,
+                    filled_by_user_id=tg_id, team_scope=scope,
+                )
         if 'extra_works' in data:
             extras = data.get('extra_works') or []
             scope = _compute_write_scope(role, None, extras)
             await _clear_group_main_rows('application_extra_works', 'application_id', group_ids, scope)
-            await _save_extra_works_inline(write_app_id, extras, tg_id, role, team_scope=scope)
+            for source_id, source_rows in _rows_by_source_application(extras, group_ids).items():
+                await _save_extra_works_inline(
+                    source_id, source_rows, tg_id, role, team_scope=scope,
+                )
         await _reset_smr_accounted(app_id)
 
     if not (action == 'edit' and ready_edit):

@@ -6,6 +6,16 @@ import { IconUsersGroup } from '@tabler/icons-react';
 import { getIconComponent, TEAM_ICONS, DEFAULT_TEAM_ICON } from '../../../utils/iconConfig';
 import ExtraWorksPicker, { genRowId } from './ExtraWorksPicker';
 
+const sourceId = (value, fallback = 0) => Number(
+    value?.source_application_id || value?.application_id || fallback || 0
+);
+const sectionKey = (source, team) => `${Number(source || 0)}:${Number(team || 0)}`;
+const workKey = (source, kp) => `${Number(source || 0)}:${Number(kp || 0)}`;
+const parseSectionKey = (value, fallbackSource) => {
+    const parts = String(value).split(':').map(Number);
+    return parts.length > 1 ? parts : [Number(fallbackSource || 0), parts[0]];
+};
+
 /**
  * Wizard step 2 — plan works (from object_kp_plan via /api/kp/apps/{id}/items)
  * + extra works picker. v2.4.3: adds a "Общие работы | По бригадам" toggle
@@ -17,6 +27,7 @@ import ExtraWorksPicker, { genRowId } from './ExtraWorksPicker';
  */
 export default function StepWorks({
     appId,
+    app,
     tgId,
     userRole,
     worksData,
@@ -68,13 +79,20 @@ export default function StepWorks({
                 // v2.9: the server now returns one row per (kp_id, team_id).
                 // Build a DISTINCT catalog (one row per kp_id) for rendering;
                 // per-brigade volumes live in worksByTeam[team_id][kp_id].
-                const raw = itemsRes.data || [];
+                const raw = (itemsRes.data || []).map(i => ({
+                    ...i,
+                    source_application_id: sourceId(i, appId),
+                }));
+                const rawExtras = (extraRes.data || []).map(e => ({
+                    ...e,
+                    source_application_id: sourceId(e, appId),
+                }));
                 // v2.9.4: per-brigade mode must also engage when only the EXTRA
                 // works carry a team_id — e.g. no-KP objects (empty
                 // object_kp_plan) where /items returns nothing but the brigadier
                 // filled extras under their brigade. Without this, hasTeamRows
                 // stayed false and extraByTeam was never seeded from the server.
-                const extraHasTeam = (extraRes.data || []).some(
+                const extraHasTeam = rawExtras.some(
                     e => e.team_id !== null && e.team_id !== undefined && String(e.team_id) !== '0'
                 );
                 const hasTeamRows = raw.some(i => i.team_id !== null && i.team_id !== undefined) || extraHasTeam;
@@ -82,9 +100,13 @@ export default function StepWorks({
                 const seenKp = new Set();
                 const items = [];
                 for (const i of raw) {
-                    if (seenKp.has(i.kp_id)) continue;
-                    seenKp.add(i.kp_id);
+                    const key = workKey(i.source_application_id, i.kp_id);
+                    if (seenKp.has(key)) continue;
+                    seenKp.add(key);
                     items.push({
+                        source_application_id: i.source_application_id,
+                        object_name: i.object_name || `Объект ${i.source_application_id}`,
+                        application_label: i.application_label || `№${i.source_application_id}`,
                         kp_id: i.kp_id,
                         name: i.name,
                         category: i.category,
@@ -106,7 +128,8 @@ export default function StepWorks({
                         team_name: i.team_name || '',
                         is_additional: i.is_additional,
                     })));
-                    setRefExtras((extraRes.data || []).filter(e => Number(e.volume) > 0).map(e => ({
+                    setRefExtras(rawExtras.filter(e => Number(e.volume) > 0).map(e => ({
+                        source_application_id: e.source_application_id,
                         name: e.custom_name || e.kp_catalog_name || e.catalog_name || '',
                         unit: e.display_unit || e.kp_catalog_unit || e.catalog_unit || 'шт',
                         volume: e.volume,
@@ -128,19 +151,22 @@ export default function StepWorks({
                             const tid = i.team_id;
                             if (tid === null || tid === undefined) continue;
                             if (!(Number(i.volume) > 0)) continue;
-                            if (!seededWorks[tid]) seededWorks[tid] = {};
-                            seededWorks[tid][i.kp_id] = Number(i.volume);
+                            const key = sectionKey(i.source_application_id, tid);
+                            if (!seededWorks[key]) seededWorks[key] = {};
+                            seededWorks[key][i.kp_id] = Number(i.volume);
                         }
                         if (Object.keys(seededWorks).length > 0) setWorksByTeam(seededWorks);
                     }
                     if (Object.keys(extraByTeam).length === 0) {
                         const seededExtra = {};
-                        for (const ew of (extraRes.data || [])) {
+                        for (const ew of rawExtras) {
                             const tid = ew.team_id;
                             if (tid === null || tid === undefined) continue;
                             if (!(Number(ew.volume) > 0)) continue;
-                            if (!seededExtra[tid]) seededExtra[tid] = [];
-                            seededExtra[tid].push({
+                            const key = sectionKey(ew.source_application_id, tid);
+                            if (!seededExtra[key]) seededExtra[key] = [];
+                            seededExtra[key].push({
+                                source_application_id: ew.source_application_id,
                                 rid: genRowId(),
                                 kp_id: ew.kp_id || 0,
                                 extra_work_id: ew.extra_work_id || 0,
@@ -164,14 +190,19 @@ export default function StepWorks({
                     if (ownsCommon && commonWorks.length === 0) {
                         const cw = raw
                             .filter(i => (i.team_id === null || i.team_id === undefined) && Number(i.volume) > 0)
-                            .map(i => ({ kp_id: i.kp_id, volume: Number(i.volume) }));
+                            .map(i => ({
+                                source_application_id: i.source_application_id,
+                                kp_id: i.kp_id,
+                                volume: Number(i.volume),
+                            }));
                         if (cw.length > 0) setCommonWorks?.(cw);
                     }
                     if (ownsCommon && commonExtras.length === 0) {
-                        const ce = (extraRes.data || [])
+                        const ce = rawExtras
                             .filter(e => (e.team_id === null || e.team_id === undefined) && Number(e.volume) > 0)
                             .map(e => ({
                                 rid: genRowId(),
+                                source_application_id: e.source_application_id,
                                 kp_id: e.kp_id || 0,
                                 extra_work_id: e.extra_work_id || 0,
                                 name: e.custom_name || e.kp_catalog_name || e.catalog_name || '',
@@ -185,7 +216,11 @@ export default function StepWorks({
                     // Common mode: seed flat worksData from server (unchanged).
                     setWorksData(items
                         .filter(i => Number(i.volume) > 0)
-                        .map(i => ({ kp_id: i.kp_id, volume: i.volume }))
+                        .map(i => ({
+                            source_application_id: i.source_application_id,
+                            kp_id: i.kp_id,
+                            volume: i.volume,
+                        }))
                     );
                 }
 
@@ -194,8 +229,9 @@ export default function StepWorks({
                 // extraByTeam before submit in per-brigade mode. Skipped in
                 // addendum mode so the picker starts empty (new rows only).
                 if (!addendumMode && extraWorksData.length === 0) {
-                    setExtraWorksData((extraRes.data || []).map(ew => ({
+                    setExtraWorksData(rawExtras.map(ew => ({
                         rid: genRowId(),
+                        source_application_id: ew.source_application_id,
                         kp_id: ew.kp_id || 0,
                         extra_work_id: ew.extra_work_id || 0,
                         name: ew.custom_name || ew.kp_catalog_name || ew.catalog_name || '',
@@ -238,30 +274,35 @@ export default function StepWorks({
     // ───── Common mode helpers ─────
     const worksMap = useMemo(() => {
         const m = new Map();
-        for (const w of worksData) m.set(w.kp_id, w.volume);
+        for (const w of worksData) {
+            m.set(workKey(sourceId(w, appId), w.kp_id), w.volume);
+        }
         return m;
-    }, [worksData]);
+    }, [worksData, appId]);
 
-    const setWorkVolume = (kp_id, value) => {
+    const setWorkVolume = (source_application_id, kp_id, value) => {
         if (readOnly) return;
         setWorksData(prev => {
-            const others = prev.filter(w => w.kp_id !== kp_id);
+            const others = prev.filter(w => !(
+                sourceId(w, appId) === Number(source_application_id) && w.kp_id === kp_id
+            ));
             if (value === '' || Number(value) <= 0) return others;
-            return [...others, { kp_id, volume: Number(value) }];
+            return [...others, { source_application_id, kp_id, volume: Number(value) }];
         });
     };
 
     // ───── Per-brigade helpers ─────
-    const setTeamWorkVolume = (team_id, kp_id, value) => {
+    const setTeamWorkVolume = (source_application_id, team_id, kp_id, value) => {
         if (readOnly) return;
+        const key = sectionKey(source_application_id, team_id);
         setWorksByTeam(prev => {
-            const teamMap = { ...(prev[team_id] || {}) };
+            const teamMap = { ...(prev[key] || {}) };
             if (value === '' || Number(value) <= 0) {
                 delete teamMap[kp_id];
             } else {
                 teamMap[kp_id] = Number(value);
             }
-            return { ...prev, [team_id]: teamMap };
+            return { ...prev, [key]: teamMap };
         });
     };
 
@@ -271,14 +312,19 @@ export default function StepWorks({
         if (!next) {
             // per-brigade → common: sum by kp_id
             const sums = {};
-            for (const tw of Object.values(worksByTeam)) {
+            for (const [section, tw] of Object.entries(worksByTeam)) {
+                const [source] = parseSectionKey(section, appId);
                 for (const [kp_id, v] of Object.entries(tw)) {
-                    sums[kp_id] = (sums[kp_id] || 0) + Number(v);
+                    const key = workKey(source, kp_id);
+                    sums[key] = (sums[key] || 0) + Number(v);
                 }
             }
             const flat = Object.entries(sums)
                 .filter(([, v]) => v > 0)
-                .map(([kp_id, v]) => ({ kp_id: Number(kp_id), volume: v }));
+                .map(([key, v]) => {
+                    const [source_application_id, kp_id] = key.split(':').map(Number);
+                    return { source_application_id, kp_id, volume: v };
+                });
             setWorksData(flat);
         }
         setPerBrigade(next);
@@ -287,29 +333,37 @@ export default function StepWorks({
     // Aggregated totals for display
     const aggregatedTotals = useMemo(() => {
         const sums = {};
-        for (const tw of Object.values(worksByTeam)) {
+        for (const [section, tw] of Object.entries(worksByTeam)) {
+            const [source] = parseSectionKey(section, appId);
             for (const [kp_id, v] of Object.entries(tw)) {
-                sums[kp_id] = (sums[kp_id] || 0) + Number(v);
+                const key = workKey(source, kp_id);
+                sums[key] = (sums[key] || 0) + Number(v);
             }
         }
         return planItems
-            .filter(it => sums[it.kp_id] > 0)
+            .filter(it => sums[workKey(it.source_application_id, it.kp_id)] > 0)
             .map(it => ({
+                source_application_id: it.source_application_id,
+                object_name: it.object_name,
                 kp_id: it.kp_id,
                 name: it.name,
                 unit: it.unit,
-                total: sums[it.kp_id],
+                total: sums[workKey(it.source_application_id, it.kp_id)],
             }));
-    }, [worksByTeam, planItems]);
+    }, [worksByTeam, planItems, appId]);
 
     // Flatten per-brigade state into worksData on Next.
     const handleNext = () => {
         if (perBrigade) {
             const flat = [];
-            for (const [team_id, tw] of Object.entries(worksByTeam)) {
+            for (const [section, tw] of Object.entries(worksByTeam)) {
+                const [source_application_id, team_id] = parseSectionKey(section, appId);
                 for (const [kp_id, v] of Object.entries(tw)) {
                     if (Number(v) > 0) {
-                        flat.push({ kp_id: Number(kp_id), volume: Number(v), team_id: Number(team_id) });
+                        flat.push({
+                            source_application_id,
+                            kp_id: Number(kp_id), volume: Number(v), team_id,
+                        });
                     }
                 }
             }
@@ -317,16 +371,21 @@ export default function StepWorks({
             // foreman/office submit re-inserts them instead of wiping them.
             for (const cw of (commonWorks || [])) {
                 if (Number(cw.volume) > 0) {
-                    flat.push({ kp_id: Number(cw.kp_id), volume: Number(cw.volume), team_id: null });
+                    flat.push({
+                        ...cw,
+                        source_application_id: sourceId(cw, appId),
+                        kp_id: Number(cw.kp_id), volume: Number(cw.volume), team_id: null,
+                    });
                 }
             }
             setWorksData(flat);
 
             const flatExtras = [];
-            for (const [team_id, items] of Object.entries(extraByTeam)) {
+            for (const [section, items] of Object.entries(extraByTeam)) {
+                const [source_application_id, team_id] = parseSectionKey(section, appId);
                 for (const it of items || []) {
                     if (Number(it.volume) > 0) {
-                        flatExtras.push({ ...it, team_id: Number(team_id) });
+                        flatExtras.push({ ...it, source_application_id, team_id });
                     }
                 }
             }
@@ -334,7 +393,11 @@ export default function StepWorks({
             // SAME array that overwrites extraWorksData so they are not discarded.
             for (const ce of (commonExtras || [])) {
                 if (Number(ce.volume) > 0) {
-                    flatExtras.push({ ...ce, team_id: null });
+                    flatExtras.push({
+                        ...ce,
+                        source_application_id: sourceId(ce, appId),
+                        team_id: null,
+                    });
                 }
             }
             setExtraWorksData(flatExtras);
@@ -342,36 +405,80 @@ export default function StepWorks({
         onNext?.();
     };
 
-    const groupedByCategory = useMemo(() => {
-        const out = {};
+    const objectSections = useMemo(() => {
+        const sections = new Map();
         for (const item of planItems) {
-            const cat = item.category || 'Без категории';
-            if (!out[cat]) out[cat] = [];
-            out[cat].push(item);
+            const source = sourceId(item, appId);
+            if (!sections.has(source)) {
+                sections.set(source, {
+                    source_application_id: source,
+                    object_name: item.object_name || `Объект ${source}`,
+                    application_label: item.application_label || `№${source}`,
+                    items: [],
+                });
+            }
+            sections.get(source).items.push(item);
         }
-        return out;
-    }, [planItems]);
+        for (const team of teams || []) {
+            const source = sourceId(team, appId);
+            if (!sections.has(source)) {
+                sections.set(source, {
+                    source_application_id: source,
+                    object_name: team.object_name || `Объект ${source}`,
+                    application_label: team.application_label || `№${source}`,
+                    items: [],
+                });
+            }
+        }
+        const appSections = [
+            {
+                id: Number(app?.id || appId),
+                object_name: app?.object_name || app?.obj_name || app?.object_address,
+                application_label: app?.public_number || app?.application_number,
+            },
+            ...(Array.isArray(app?.merged_with) ? app.merged_with : []),
+        ];
+        for (const entry of appSections) {
+            const source = Number(entry?.id || 0);
+            if (!source || sections.has(source)) continue;
+            sections.set(source, {
+                source_application_id: source,
+                object_name: entry.object_name || entry.obj_name || entry.object_address || `Объект ${source}`,
+                application_label: entry.public_number || entry.application_label || `№${source}`,
+                items: [],
+            });
+        }
+        return [...sections.values()].sort(
+            (a, b) => a.source_application_id - b.source_application_id
+        );
+    }, [planItems, teams, appId, app]);
 
     if (loading) {
         return <div className="text-center py-12 text-gray-400 dark:text-gray-500">Загрузка…</div>;
     }
 
     // Reusable plan-list renderer. onVolume(kp_id, value) does the write.
-    const renderPlanList = (getValue, onVolume) => (
-        Object.keys(groupedByCategory).length === 0 ? (
+    const renderPlanList = (sourceItems, getValue, onVolume) => {
+        const sourceGroups = {};
+        for (const item of sourceItems) {
+            const category = item.category || 'Без категории';
+            if (!sourceGroups[category]) sourceGroups[category] = [];
+            sourceGroups[category].push(item);
+        }
+        return Object.keys(sourceGroups).length === 0 ? (
             <div className="text-center text-sm text-gray-400 italic py-6 border border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
                 План СМР не назначен для объекта
             </div>
         ) : (
             <div className="border border-gray-200 dark:border-gray-700 rounded-2xl overflow-hidden bg-white dark:bg-gray-800">
-                {Object.entries(groupedByCategory).map(([cat, items]) => (
+                {Object.entries(sourceGroups).map(([cat, items]) => (
                     <div key={cat}>
                         <div className="bg-gray-50 dark:bg-gray-900/50 px-4 py-2 text-[10px] font-bold uppercase tracking-wider text-gray-500">
                             {cat}
                         </div>
                         <ul className="divide-y divide-gray-100 dark:divide-gray-700/60">
                             {items.map(it => (
-                                <li key={it.kp_id} className="flex items-center gap-3 px-4 py-2.5">
+                                <li key={workKey(it.source_application_id, it.kp_id)} className="flex items-center gap-3 px-4 py-2.5">
                                     <span className="flex-1 text-sm text-gray-800 dark:text-gray-100 truncate">
                                         {it.name}
                                     </span>
@@ -394,8 +501,8 @@ export default function StepWorks({
                     </div>
                 ))}
             </div>
-        )
-    );
+        );
+    };
 
     return (
         <div className="space-y-5">
@@ -480,37 +587,74 @@ export default function StepWorks({
 
             {/* Common mode */}
             {!perBrigade && (
-                <>
-                    {renderPlanList((kp_id) => worksMap.get(kp_id), setWorkVolume)}
-                    <ExtraWorksPicker
-                        catalog={catalog}
-                        selected={extraWorksData}
-                        onChange={setExtraWorksData}
-                        disabled={readOnly}
-                        defaultOpen={extraWorksData.length > 0}
-                    />
-                </>
+                <div className="space-y-6">
+                    {objectSections.map(section => {
+                        const source = section.source_application_id;
+                        const selectedExtras = extraWorksData.filter(
+                            item => sourceId(item, appId) === source
+                        );
+                        return (
+                            <section key={source} className="space-y-3 rounded-2xl border-2 border-blue-100 dark:border-blue-900/50 p-3">
+                                <header>
+                                    <p className="text-base font-bold text-gray-900 dark:text-white">
+                                        {section.object_name}
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                        {section.application_label}
+                                    </p>
+                                </header>
+                                {renderPlanList(
+                                    section.items,
+                                    (kp_id) => worksMap.get(workKey(source, kp_id)),
+                                    (kp_id, value) => setWorkVolume(source, kp_id, value),
+                                )}
+                                <ExtraWorksPicker
+                                    catalog={catalog}
+                                    selected={selectedExtras}
+                                    onChange={(items) => setExtraWorksData(prev => [
+                                        ...prev.filter(item => sourceId(item, appId) !== source),
+                                        ...items.map(item => ({ ...item, source_application_id: source })),
+                                    ])}
+                                    disabled={readOnly}
+                                    defaultOpen={selectedExtras.length > 0}
+                                />
+                            </section>
+                        );
+                    })}
+                </div>
             )}
 
             {/* Per-brigade mode */}
             {perBrigade && teams.length > 0 && (
                 <div className="space-y-6">
                     {teams.map(team => {
+                        const source = sourceId(team, appId);
+                        const currentSection = sectionKey(source, team.team_id);
+                        const sourcePlan = planItems.filter(
+                            item => sourceId(item, appId) === source
+                        );
                         const TeamIcon = getIconComponent(team.icon || DEFAULT_TEAM_ICON, TEAM_ICONS) || IconUsersGroup;
                         return (
-                            <div key={team.team_id} className="space-y-3">
+                            <div key={currentSection} className="space-y-3 rounded-2xl border-2 border-blue-100 dark:border-blue-900/50 p-3">
                                 <div className="flex items-center gap-2 text-base font-bold text-gray-900 dark:text-white">
                                     <TeamIcon className="w-5 h-5 text-indigo-500 flex-shrink-0" stroke={2} />
-                                    <span className="truncate">{team.team_name}</span>
+                                    <span className="truncate">{team.object_name || `Объект ${source}`} · {team.team_name}</span>
                                 </div>
                                 {renderPlanList(
-                                    (kp_id) => (worksByTeam[team.team_id] || {})[kp_id] ?? '',
-                                    (kp_id, value) => setTeamWorkVolume(team.team_id, kp_id, value),
+                                    sourcePlan,
+                                    (kp_id) => (worksByTeam[currentSection] || {})[kp_id] ?? '',
+                                    (kp_id, value) => setTeamWorkVolume(source, team.team_id, kp_id, value),
                                 )}
                                 <ExtraWorksPicker
                                     catalog={catalog}
-                                    selected={extraByTeam[team.team_id] || []}
-                                    onChange={(items) => setExtraByTeam(prev => ({ ...prev, [team.team_id]: items }))}
+                                    selected={extraByTeam[currentSection] || []}
+                                    onChange={(items) => setExtraByTeam(prev => ({
+                                        ...prev,
+                                        [currentSection]: items.map(item => ({
+                                            ...item,
+                                            source_application_id: source,
+                                        })),
+                                    }))}
                                     disabled={readOnly}
                                 />
                             </div>
@@ -525,8 +669,8 @@ export default function StepWorks({
                             </h3>
                             <ul className="divide-y divide-gray-100 dark:divide-gray-700/60">
                                 {aggregatedTotals.map((t) => (
-                                    <li key={t.kp_id} className="flex justify-between py-1.5 text-sm">
-                                        <span className="text-gray-700 dark:text-gray-300 truncate mr-3">{t.name}</span>
+                                    <li key={workKey(t.source_application_id, t.kp_id)} className="flex justify-between py-1.5 text-sm">
+                                        <span className="text-gray-700 dark:text-gray-300 truncate mr-3">{t.object_name} · {t.name}</span>
                                         <span className="font-semibold text-gray-900 dark:text-white whitespace-nowrap">
                                             {t.total} {t.unit || ''}
                                         </span>
