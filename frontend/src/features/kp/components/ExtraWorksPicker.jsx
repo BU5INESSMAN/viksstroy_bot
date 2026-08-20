@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Plus, Search, Check, Trash2 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
+import { genRowId } from '../utils/rowId';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -17,15 +18,6 @@ const expandTransition = prefersReducedMotion
 // rewrote them all and removing one removed all (the "1.77777 on every row"
 // production bug, D1). Exported so every seed site (StepWorks, KP.jsx) can
 // stamp a row with the same kind of id the picker uses internally.
-let _ridSeq = 0;
-export function genRowId() {
-    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-        return crypto.randomUUID();
-    }
-    _ridSeq += 1;
-    return `rid_${Date.now()}_${_ridSeq}`;
-}
-
 /**
  * Collapsible category-based picker for extra works. Data source is the
  * global KP catalog (/api/kp/catalog); selected items each carry a

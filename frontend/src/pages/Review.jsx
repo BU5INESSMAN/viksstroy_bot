@@ -8,7 +8,7 @@ import {
     XCircle, Search, Undo, ChevronDown, ChevronUp, User, X
 } from 'lucide-react';
 
-import { getTodayStr, getSmartDates } from '../utils/dateUtils';
+import { getSmartDates } from '../utils/dateUtils';
 import { formatApplicationNumber } from '../utils/applicationNumber';
 import useConfirm from '../hooks/useConfirm';
 import ScheduleModal from '../features/applications/components/ScheduleModal';
@@ -22,7 +22,7 @@ import {
     EQUIPMENT_ICONS, DEFAULT_EQUIPMENT_ICON,
 } from '../utils/iconConfig';
 
-const ReviewSection = ({ title, icon: Icon, colorClass, titleColorClass, apps, statusType, renderAppCard }) => {
+const ReviewSection = ({ title, icon: _Icon, colorClass, titleColorClass, apps, statusType, renderAppCard }) => {
     const [showAll, setShowAll] = useState(false);
     const displayedApps = showAll ? apps : apps.slice(0, 10);
 
@@ -31,7 +31,7 @@ const ReviewSection = ({ title, icon: Icon, colorClass, titleColorClass, apps, s
     return (
         <div className={`bg-gray-50/80 dark:bg-gray-800/40 rounded-3xl p-5 border ${colorClass} transition-all duration-300 shadow-sm`}>
             <h3 className={`font-bold mb-4 flex items-center text-lg ${titleColorClass}`}>
-                <Icon className="w-6 h-6 mr-2" /> {title}
+                <_Icon className="w-6 h-6 mr-2" /> {title}
                 <span className="ml-2 bg-white/60 dark:bg-black/20 text-gray-800 dark:text-white text-xs px-2.5 py-0.5 rounded-full shadow-sm">{apps.length}</span>
             </h3>
             <div className="space-y-4">
@@ -141,7 +141,7 @@ export default function Review() {
             target.scrollIntoView({ behavior: 'smooth', block: 'start' });
             setSearchParams({}, { replace: true });
         }
-    }, [searchParams, reviewApps]);
+    }, [searchParams, reviewApps, setSearchParams]);
 
     const handleReviewAction = async (status) => {
         let reason = '';
@@ -176,8 +176,6 @@ export default function Review() {
     };
 
     const isModOrBoss = ['moderator', 'boss', 'superadmin'].includes(role);
-
-    const todayYYYYMMDD = getTodayStr();
 
     const waitingApps = reviewApps.filter(a => a.status === 'waiting');
     const approvedApps = reviewApps.filter(a => a.status === 'approved');

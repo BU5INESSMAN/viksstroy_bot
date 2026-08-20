@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import StepHours from './StepHours';
 import StepWorks from './StepWorks';
@@ -88,7 +88,7 @@ export default function SMRWizard({
         if (Array.isArray(d.commonExtras)) setCommonExtras(d.commonExtras);
         if (d.step === 'hours' || d.step === 'works' || d.step === 'review') setStep(d.step);
         setDraftSavedAt(found.savedAt);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+
     }, [draftKey]);
 
     // Autosave whole wizard state under one key (debounced).

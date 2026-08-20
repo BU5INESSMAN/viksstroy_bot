@@ -11,7 +11,6 @@ import { formatApplicationNumber } from '../../../utils/applicationNumber';
 import ModalPortal from '../../../components/ui/ModalPortal';
 
 export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
-    const tgId = localStorage.getItem('tg_id') || '0';
     const [apps, setApps] = useState([]);
     const [loading, setLoading] = useState(false);
     const [dateFrom, setDateFrom] = useState('');
@@ -58,9 +57,11 @@ export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
         }
     };
 
+    // Reload only when the modal opens; date filters are applied by the explicit
+    // "Найти" action and must not trigger a request on every keystroke.
     useEffect(() => {
         if (isOpen) fetchArchive();
-    }, [isOpen]);
+    }, [isOpen]); // eslint-disable-line react-hooks/exhaustive-deps
 
     if (!isOpen) return null;
 
@@ -140,8 +141,6 @@ export default function ArchiveModal({ isOpen, onClose, onDataChanged }) {
                                             {grouped[date].map(a => {
                                                 let equipList = [];
                                                 try { equipList = JSON.parse(a.equipment_data || '[]'); } catch(e) {}
-                                                const teamIds = a.team_id && a.team_id !== '0' ? String(a.team_id).split(',').map(Number) : [];
-
                                                 return (
                                                     <div key={a.id} className="bg-white dark:bg-gray-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700 text-sm">
                                                         <div className="text-[10px] font-black tracking-wide text-purple-600 dark:text-purple-400 mb-1">{formatApplicationNumber(a)}</div>

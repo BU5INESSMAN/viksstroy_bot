@@ -17,7 +17,7 @@ function formatDateRu(dateStr) {
     return `${d.getDate()} ${MONTHS_RU[d.getMonth()]} ${d.getFullYear()} (${DAYS_RU[d.getDay()]})`;
 }
 
-export default function ScheduleModal({ isOpen, onClose, tgId }) {
+export default function ScheduleModal({ isOpen, onClose }) {
     const [dateBlocks, setDateBlocks] = useState([]);
     const [loading, setLoading] = useState(false);
     const [selectedDate, setSelectedDate] = useState(null);
@@ -63,7 +63,7 @@ export default function ScheduleModal({ isOpen, onClose, tgId }) {
                 ? '/api/system/send_schedule_group'
                 : '/api/system/send_schedule_self';
 
-            const res = await axios.post(endpoint, fd);
+            await axios.post(endpoint, fd);
 
             if (target === 'group') {
                 toast.success('Расстановка отправляется в группу...');

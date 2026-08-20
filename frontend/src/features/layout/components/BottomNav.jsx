@@ -6,7 +6,7 @@ import {
     MapPin, FileText, Menu, X, BookOpen, Rocket, MessageCircle, Users,
     Sun, Moon, Monitor
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -163,7 +163,7 @@ export default function BottomNav({ role, canCreateApp, openProfile, setGlobalCr
     ), document.body);
 }
 
-function MenuRow({ icon: Icon, color, label, onClick }) {
+function MenuRow({ icon: _Icon, color, label, onClick }) {
     const colorMap = {
         blue: 'bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400',
         indigo: 'bg-indigo-100 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400',
@@ -173,14 +173,14 @@ function MenuRow({ icon: Icon, color, label, onClick }) {
     return (
         <button onClick={onClick} className="w-full flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors font-semibold text-sm text-gray-800 dark:text-white border border-gray-100 dark:border-gray-700 active:scale-[0.98]">
             <div className={`p-1.5 rounded-lg ${colorMap[color] || colorMap.blue}`}>
-                <Icon className="w-4 h-4" />
+            <_Icon className="w-4 h-4" />
             </div>
             {label}
         </button>
     );
 }
 
-function GridItem({ icon: Icon, color, label, onClick }) {
+function GridItem({ icon: _Icon, color, label, onClick }) {
     const colorMap = {
         blue: 'text-blue-500',
         indigo: 'text-indigo-500',
@@ -189,13 +189,13 @@ function GridItem({ icon: Icon, color, label, onClick }) {
     };
     return (
         <button onClick={onClick} className="flex flex-col items-center justify-center gap-1.5 py-3.5 bg-gray-50 dark:bg-gray-700/50 rounded-xl hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors border border-gray-100 dark:border-gray-700 active:scale-[0.97]">
-            <Icon className={`w-5 h-5 ${colorMap[color] || colorMap.gray}`} />
+            <_Icon className={`w-5 h-5 ${colorMap[color] || colorMap.gray}`} />
             <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">{label}</span>
         </button>
     );
 }
 
-function NavBtn({ icon: Icon, label, path, current, onClick, dataTour }) {
+function NavBtn({ icon: _Icon, label, path, current, onClick, dataTour }) {
     const isActive = current === path;
     return (
         <button
@@ -207,7 +207,7 @@ function NavBtn({ icon: Icon, label, path, current, onClick, dataTour }) {
                 animate={prefersReducedMotion ? {} : { scale: isActive ? 1.08 : 1 }}
                 transition={{ type: 'spring', duration: 0.25, bounce: 0.15 }}
             >
-                <Icon className="w-7 h-7" strokeWidth={isActive ? 2.6 : 2.1} />
+            <_Icon className="w-7 h-7" strokeWidth={isActive ? 2.6 : 2.1} />
             </motion.div>
             <span className="hidden sm:block text-[11px] font-extrabold uppercase tracking-wide">{label}</span>
             {/* Active-route dot — centered under the icon */}

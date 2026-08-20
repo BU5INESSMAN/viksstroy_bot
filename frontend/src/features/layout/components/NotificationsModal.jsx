@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { X, Bell, CheckCheck, ChevronLeft, ExternalLink, Clock3 } from 'lucide-react';
 import axios from 'axios';
 import ModalPortal from '../../../components/ui/ModalPortal';

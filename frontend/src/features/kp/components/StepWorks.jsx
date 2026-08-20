@@ -4,7 +4,8 @@ import toast from 'react-hot-toast';
 import { AlertTriangle, ArrowLeft, ArrowRight, Users } from 'lucide-react';
 import { IconUsersGroup } from '@tabler/icons-react';
 import { getIconComponent, TEAM_ICONS, DEFAULT_TEAM_ICON } from '../../../utils/iconConfig';
-import ExtraWorksPicker, { genRowId } from './ExtraWorksPicker';
+import ExtraWorksPicker from './ExtraWorksPicker';
+import { genRowId } from '../utils/rowId';
 
 const sourceId = (value, fallback = 0) => Number(
     value?.source_application_id || value?.application_id || fallback || 0

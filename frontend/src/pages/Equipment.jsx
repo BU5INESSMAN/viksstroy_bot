@@ -78,6 +78,8 @@ export default function Equipment({ searchQuery = '' }) {
         } catch (e) { setLoading(false); }
     };
 
+    // Initial page load; later refreshes are explicit after mutations.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { fetchData(); }, []);
 
     const handleCreateEquip = async (e) => {
@@ -121,15 +123,6 @@ export default function Equipment({ searchQuery = '' }) {
                 toast.error('Ошибка массовой загрузки');
             }
         }
-    };
-
-    const handleDeleteEquip = async (id) => {
-        const ok = await confirm("Удалить эту технику из базы?", { title: "Удаление техники", confirmText: "Удалить" });
-        if (!ok) return;
-        try {
-            await axios.post(`/api/equipment/${id}/delete`);
-            fetchData();
-        } catch (e) { toast.error("Ошибка удаления"); }
     };
 
     const handleEquipStatusChange = async (id, newStatus) => {

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { X, UserCheck, Palmtree, Thermometer } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -12,7 +12,7 @@ const STATUS_OPTIONS = [
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-export default function MemberStatusModal({ isOpen, onClose, member, tgId, onSaved }) {
+export default function MemberStatusModal({ isOpen, onClose, member, onSaved }) {
     const [status, setStatus] = useState('available');
     const [dateFrom, setDateFrom] = useState('');
     const [dateUntil, setDateUntil] = useState('');

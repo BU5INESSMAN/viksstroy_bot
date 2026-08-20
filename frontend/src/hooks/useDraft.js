@@ -14,10 +14,15 @@ import { saveDraft, clearDraft } from '../utils/draftStorage';
 export function useDraft(formKey, data, options = {}) {
     const { debounceMs = 800, enabled = true, shouldSave } = options;
     const timerRef = useRef(null);
+    const shouldSaveRef = useRef(shouldSave);
+
+    useEffect(() => {
+        shouldSaveRef.current = shouldSave;
+    }, [shouldSave]);
 
     useEffect(() => {
         if (!enabled) return undefined;
-        if (shouldSave && !shouldSave(data)) return undefined;
+        if (shouldSaveRef.current && !shouldSaveRef.current(data)) return undefined;
         if (timerRef.current) clearTimeout(timerRef.current);
         timerRef.current = setTimeout(() => {
             saveDraft(formKey, data);

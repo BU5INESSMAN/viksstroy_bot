@@ -1,4 +1,3 @@
-import { motion } from 'framer-motion';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -25,7 +24,7 @@ export default function IconPicker({ value, onChange, icons, columns = 5, classN
 
     return (
         <div className={`grid ${gridClass} gap-2 ${className}`}>
-            {entries.map(([key, { component: Icon, label }]) => {
+            {entries.map(([key, { component: _Icon, label }]) => {
                 const selected = value === key;
                 return (
                     <motion.button
@@ -40,7 +39,7 @@ export default function IconPicker({ value, onChange, icons, columns = 5, classN
                                 : 'bg-gray-50 dark:bg-white/[0.04] border-transparent hover:bg-gray-100 dark:hover:bg-white/[0.08]'}`}
                         title={label}
                     >
-                        <Icon
+                        <_Icon
                             className={`w-5 h-5 ${selected ? 'text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-300'}`}
                             stroke={selected ? 2.4 : 2}
                         />

@@ -22,7 +22,6 @@ const NOTIFICATION_TYPES = [
 ];
 
 export default function NotificationTesting({
-    tgId,
     testPlatform,
     setTestPlatform,
     testNotification,

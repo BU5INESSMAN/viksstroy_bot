@@ -7,12 +7,12 @@ import GlassCardShared from '../../../components/ui/GlassCard';
 export const GlassCard = GlassCardShared;
 
 // SectionHeader
-export function SectionHeader({ icon: Icon, iconColor, title, subtitle }) {
+export function SectionHeader({ icon: _Icon, iconColor, title, subtitle }) {
     return (
         <div className="mb-5">
             <h2 className="text-lg font-bold flex items-center gap-2.5 text-gray-800 dark:text-gray-100">
                 <div className={`p-2 rounded-xl ${iconColor} bg-opacity-10 dark:bg-opacity-20`}>
-                    <Icon className="w-5 h-5" />
+                <_Icon className="w-5 h-5" />
                 </div>
                 {title}
             </h2>

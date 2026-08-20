@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { X, Search, Star, Clock, ChevronDown, User, Trash2, Plus, AlertTriangle } from 'lucide-react';
 import { EQUIPMENT_ICONS, getIconComponent, DEFAULT_EQUIPMENT_ICON } from '../../../utils/iconConfig';
 import { displayFio } from '../../../utils/fioFormat';
@@ -62,9 +62,9 @@ export default function DriverPickerModal({
     // category names. Defaults to the current equipment's category once
     // it's known.
     const [newOpen, setNewOpen] = useState(false);
-    const [newLast, setNewLast] = useState('');
-    const [newFirst, setNewFirst] = useState('');
-    const [newMiddle, setNewMiddle] = useState('');
+    const [, setNewLast] = useState('');
+    const [, setNewFirst] = useState('');
+    const [, setNewMiddle] = useState('');
     const [newCats, setNewCats] = useState(new Set());
     const [creating, setCreating] = useState(false);
 

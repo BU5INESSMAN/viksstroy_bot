@@ -247,12 +247,12 @@ async def get_team_details(
         params: list = [date]
         q = (
             "SELECT a.id, a.team_id, a.selected_members, "
-            "       COALESCE(o.name, a.object_address, '') AS obj_name "
+            "       COALESCE(o.name, a.object_address, '') AS obj_name, "
+            "       a.freed_team_ids, a.is_team_freed "
             "FROM applications a "
             "LEFT JOIN objects o ON o.id = a.object_id "
             "WHERE a.date_target = ? "
             "  AND a.status NOT IN ('rejected', 'cancelled', 'archived') "
-            "  AND (a.is_team_freed = 0 OR a.is_team_freed IS NULL)"
         )
         if exclude_app_id:
             q += " AND a.id != ?"
@@ -274,6 +274,16 @@ async def get_team_details(
                 if p.strip().isdigit()
             }
             if team_id not in team_ids_on_other:
+                continue
+
+            # A mass release can free one team while the same application
+            # continues with another.  ``is_team_freed`` only describes the
+            # all-teams case, so the per-team CSV must be honoured as well.
+            freed_team_ids = {
+                int(p) for p in str(r[4] or "").split(",")
+                if p.strip().isdigit()
+            }
+            if bool(r[5]) or team_id in freed_team_ids:
                 continue
 
             # Parse selected_members — empty = whole-team semantics.

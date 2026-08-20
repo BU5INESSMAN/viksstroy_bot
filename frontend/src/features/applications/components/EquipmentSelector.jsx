@@ -110,7 +110,6 @@ export default function EquipmentSelector({
                                 .filter(e => e.category === activeEqCategory)
                                 .map(eqA => {
                                     const isSelected = selectedEquipment.some(eq => eq.id === eqA.id);
-                                    const displayName = makeDisplayName(eqA);
                                     const state = getEquipState(eqA);
                                     const busySlots = eqA.busy_slots || [];
                                     const freeSlots = eqA.free_slots || [];

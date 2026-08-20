@@ -47,7 +47,7 @@ export default function UsersTable({ users, currentRole, initialFilter = '', onP
 
     useEffect(() => {
         // Server reloads are authoritative after an optimistic role update.
-        // eslint-disable-next-line react-hooks/set-state-in-effect
+
         setLocalUsers(users);
     }, [users]);
 

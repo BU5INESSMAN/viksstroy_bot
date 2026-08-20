@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { X, BarChart3, MapPin, TrendingUp } from 'lucide-react';
 import axios from 'axios';
 

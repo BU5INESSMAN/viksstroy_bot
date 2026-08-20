@@ -3,7 +3,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { X, MessageSquarePlus, Send } from 'lucide-react';
 
-export default function ObjectRequestModal({ onClose, onSubmitted, tgId }) {
+export default function ObjectRequestModal({ onClose, onSubmitted }) {
     const [requestForm, setRequestForm] = useState({ name: '', address: '', comment: '' });
 
     const handleSubmit = async (e) => {

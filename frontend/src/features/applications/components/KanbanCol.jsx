@@ -4,7 +4,6 @@ import {
     ChevronDown, ChevronUp, HardHat, CheckCircle, Search, Archive
 } from 'lucide-react';
 import { IconUsersGroup, IconTruck } from '@tabler/icons-react';
-import { motion } from 'framer-motion';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 import {
     getIconComponent,
@@ -17,7 +16,7 @@ const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia(
 const staggerContainer = { animate: { transition: { staggerChildren: 0.04 } } };
 const staggerItem = { initial: { opacity: 0, y: 8 }, animate: { opacity: 1, y: 0 } };
 
-export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen, toggleOpen, onAppClick, canArchive, onArchive, teams = [] }) {
+export default function KanbanCol({ title, icon: _Icon, colorClass, apps, isOpen, toggleOpen, onAppClick, canArchive, onArchive, teams = [] }) {
     const teamIconMap = useMemo(() => {
         const m = {};
         for (const t of teams) m[t.id] = t.icon || '';
@@ -30,7 +29,7 @@ export default function KanbanCol({ title, icon: Icon, colorClass, apps, isOpen,
         <div className="flex flex-col bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden transition-all duration-300">
             <button onClick={toggleOpen} className={`p-4 flex justify-between items-center w-full text-left font-bold ${colorClass} transition-colors lg:cursor-default outline-none`}>
                 <span className="flex items-center gap-2">
-                    <Icon className="w-5 h-5" />
+                <_Icon className="w-5 h-5" />
                     {title}
                     <span className="ml-1 bg-white/60 dark:bg-black/20 text-gray-800 dark:text-white text-xs px-2.5 py-0.5 rounded-full font-bold">{apps.length}</span>
                 </span>

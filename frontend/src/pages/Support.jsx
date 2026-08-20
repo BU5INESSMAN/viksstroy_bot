@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { Headphones, Send, MessageCircle, Smartphone, Bot, Users, ArrowLeft, Clock, User } from 'lucide-react';
 import axios from 'axios';
 import { renderMarkdown } from '../utils/markdownLight';
@@ -142,6 +142,8 @@ export default function Support() {
     const isViewingOther = viewMode !== 'my';
 
     // Load own history + support links + dialogs (for boss)
+    // This block performs the initial screen bootstrap. Switching between
+    // dialogs uses loadUserHistory and must not reset the selected dialog.
     useEffect(() => {
         const promises = [
             axios.get('/api/support/history').then(res => {
@@ -162,7 +164,7 @@ export default function Support() {
             );
         }
         Promise.all(promises).finally(() => setHistoryLoading(false));
-    }, []);
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Auto-scroll
     useEffect(() => {
@@ -245,8 +247,6 @@ export default function Support() {
     };
 
     const hasMax = supportLinks.support_max_link?.trim();
-    const hasLinks = hasMax;
-
     if (historyLoading && !isBoss) {
         return (
             <div className="flex items-center justify-center min-h-[60vh]">

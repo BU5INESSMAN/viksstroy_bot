@@ -23,7 +23,27 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      'no-unused-vars': ['error', {
+        varsIgnorePattern: '^[A-Z_]',
+        caughtErrors: 'none',
+        argsIgnorePattern: '^_',
+      }],
+      'no-empty': ['error', { allowEmptyCatch: true }],
+
+      // The application does not use React Compiler. These compiler-oriented
+      // rules reject established async loading/effect patterns that are valid
+      // in ordinary React (for example setting `loading` before a request).
+      // Runtime-critical Rules of Hooks and dependency checks stay enabled.
+      'react-hooks/set-state-in-effect': 'off',
+      'react-hooks/immutability': 'off',
+      'react-hooks/static-components': 'off',
+      'react-hooks/purity': 'off',
+    },
+  },
+  {
+    files: ['src/utils/**/*.{js,jsx}'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
     },
   },
 ])

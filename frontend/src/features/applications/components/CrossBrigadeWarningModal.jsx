@@ -1,4 +1,4 @@
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { AlertTriangle, Users, UserCheck } from 'lucide-react';
 import ModalPortal from '../../../components/ui/ModalPortal';
 

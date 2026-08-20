@@ -8,7 +8,7 @@ import { EQUIPMENT_ICONS, getIconComponent, DEFAULT_EQUIPMENT_ICON } from '../..
 
 export default function EquipmentCard({
     eq, canManageEquipment, canDeleteEquipment, isOffice,
-    openProfile, handleUnlinkEquipment, generateInvite,
+    openProfile, generateInvite,
     handleEquipStatusChange, onEdit, onStats, onSetDefaultDriver,
 }) {
     const [showMenu, setShowMenu] = useState(false);

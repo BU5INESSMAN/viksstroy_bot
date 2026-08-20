@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { motion } from 'framer-motion';
 import { X, Check } from 'lucide-react';
 
 // v2.8: mirrors the brigade-member status control (MemberStatusModal) —

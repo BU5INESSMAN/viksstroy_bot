@@ -2,7 +2,6 @@ import { useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { AlertTriangle, Bell, Loader2, X } from 'lucide-react';
-import { motion } from 'framer-motion';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 
 const prefersReducedMotion = typeof window !== 'undefined'
@@ -16,7 +15,7 @@ const prefersReducedMotion = typeof window !== 'undefined'
  * @param {array}    props.debtors   - array of debtor groups from /api/system/debtors
  * @param {string}   props.tgId      - current user's Telegram ID
  */
-export default function DebtorsWidget({ debtors, tgId, onHide }) {
+export default function DebtorsWidget({ debtors, onHide }) {
     const [remindingForeman, setRemindingForeman] = useState(null);
 
     const totalDebtorSMR = debtors.reduce((sum, g) => sum + g.smrs.length, 0);

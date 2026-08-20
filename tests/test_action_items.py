@@ -92,7 +92,9 @@ class ActionItemsTests(unittest.TestCase):
             INSERT INTO applications VALUES(3,'completed',0,'g-3',0,'approved','approved',NULL);
             INSERT INTO object_requests VALUES(1,'pending');
             INSERT INTO teams VALUES(7,'Монтажники');
+            INSERT INTO teams VALUES(8,'Отделочники');
             INSERT INTO team_members VALUES(1,7,'',0,NULL);
+            INSERT INTO team_members VALUES(2,8,'Рабочий',0,NULL);
             INSERT INTO objects VALUES(9,'Склад','',0);
             INSERT INTO equipment VALUES(11,'Кран','','',NULL,1);
             INSERT INTO users VALUES(20,'',0,0,1);
@@ -107,9 +109,12 @@ class ActionItemsTests(unittest.TestCase):
         self.assertIn("smr-pending", by_id)
         self.assertIn("smr-unaccounted", by_id)
         self.assertIn("object-requests", by_id)
-        self.assertEqual(by_id["team-7"]["url"], "/resources?tab=teams&team_id=7")
-        self.assertEqual(by_id["object-9"]["url"], "/objects?object_id=9&object_tab=kp")
-        self.assertIn("equipment-11", by_id)
+        self.assertEqual(by_id["team-7-no-brigadier"]["url"], "/resources?tab=teams&team_id=7")
+        self.assertEqual(by_id["object-9-plan"]["url"], "/objects?object_id=9&object_tab=kp")
+        self.assertIn("equipment-11-category", by_id)
+        self.assertEqual(by_id["team-7-max"]["issue_title"], "Не привязан аккаунт MAX")
+        self.assertIn("личные уведомления", by_id["team-7-max"]["description"])
+        self.assertLess(result["groups"], len(result["items"]))
         self.assertIn("users-no-role", by_id)
         self.assertIn("drivers-no-category", by_id)
         self.assertIn("drivers-no-max", by_id)

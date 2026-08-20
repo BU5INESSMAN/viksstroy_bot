@@ -53,7 +53,7 @@ export default function Objects() {
             next.delete('tab');
             setSearchParams(next, { replace: true });
         }
-    }, [searchParams]);
+    }, [searchParams, canCreate, setSearchParams]);
 
     // Edit modal
     const [isEditModalOpen, setEditModalOpen] = useState(false);
@@ -87,6 +87,8 @@ export default function Objects() {
         setLoading(false);
     };
 
+    // Archive mode is the only automatic reload trigger; mutations refresh explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { fetchObjects(); }, [showArchived]);
 
     useEffect(() => {
@@ -95,7 +97,7 @@ export default function Objects() {
                 .then(res => setObjectRequests(res.data || []))
                 .catch(() => {});
         }
-    }, []);
+    }, [isOffice]);
 
     // Request approval: open create modal with pre-filled data
     const [approveRequest, setApproveRequest] = useState(null);
@@ -120,21 +122,6 @@ export default function Objects() {
     const handleRequestApproved = (reqId) => {
         setObjectRequests(prev => prev.filter(r => r.id !== reqId));
         setApproveRequest(null);
-    };
-
-    const handleUploadPdf = async (objId, e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const fd = new FormData();
-        fd.append('file', file);
-        try {
-            await axios.post(`/api/objects/${objId}/upload_pdf`, fd);
-            toast.success('Смета загружена!');
-            fetchObjects();
-        } catch (err) {
-            toast.error(err.response?.data?.detail || 'Ошибка загрузки');
-        }
-        e.target.value = '';
     };
 
     const handleArchiveToggle = async (objId, isCurrentlyArchived) => {

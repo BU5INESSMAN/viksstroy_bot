@@ -3,7 +3,7 @@ import {
     Calendar, MapPin, Users, Truck, HardHat, Flag,
     ClipboardList, CheckCircle, Clock, ChevronDown
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 import { IconTruck } from '@tabler/icons-react';
 import {

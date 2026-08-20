@@ -28,7 +28,7 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
     const [iconKey, setIconKey] = useState(manageTeamData?.icon || null);
     const [iconPickerOpen, setIconPickerOpen] = useState(false);
 
-    useEffect(() => { setIconKey(manageTeamData?.icon || null); }, [manageTeamData?.id]);
+    useEffect(() => { setIconKey(manageTeamData?.icon || null); }, [manageTeamData?.id, manageTeamData?.icon]);
 
     if (!isManageModalOpen || !manageTeamData) return null;
 

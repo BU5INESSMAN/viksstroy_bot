@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { ChevronDown, User, Crown, ArrowRight, UserPlus, X, Search } from 'lucide-react';
 
 const prefersReducedMotion = typeof window !== 'undefined'

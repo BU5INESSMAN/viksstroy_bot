@@ -24,6 +24,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from application_numbers import display_application_number
+from smr_calculations import calculate_smr_totals
 
 
 _HEADER_FILL = PatternFill(start_color="F3F4F6", end_color="F3F4F6", fill_type="solid")
@@ -66,11 +67,13 @@ def _format_work_date(value: str | None) -> str:
 def _build_report_filename(
     *, object_name: str | None, app_id: int,
     public_number: str | None, date_target: str | None,
+    team_name: str | None = None,
 ) -> str:
     obj_name = _sanitize_filename(object_name or f"Объект {app_id}")
     app_number = _sanitize_filename(display_application_number(app_id, public_number))
     work_date = _format_work_date(date_target)
-    return f"{obj_name} - {app_number} - {work_date}.xlsx"
+    team_suffix = f" - {_sanitize_filename(team_name)}" if team_name else ""
+    return f"{obj_name} - {app_number} - {work_date}{team_suffix}.xlsx"
 
 
 def _author_label(fio: str | None, role: str | None) -> str:
@@ -114,6 +117,8 @@ async def generate_smr_excel_bytes(
     *,
     include_financial: bool = False,
     include_participant_salary: bool = False,
+    team_id: int | None = None,
+    team_name: str | None = None,
 ) -> tuple[bytes, str]:
     """Generate the SMR report .xlsx in memory.
     Returns (file_bytes, suggested_filename).
@@ -135,6 +140,42 @@ async def generate_smr_excel_bytes(
     from smr_data import get_smr_read_model
 
     report = await get_smr_read_model(db, app_id)
+    if team_id is not None:
+        target_team_id = int(team_id)
+
+        def belongs_to_team(item: dict) -> bool:
+            try:
+                return int(item.get('team_id') or 0) == target_team_id
+            except (TypeError, ValueError):
+                return target_team_id == 0
+
+        report = {**report}
+        report['hours'] = [row for row in report.get('hours', []) if belongs_to_team(row)]
+        report['plan_works'] = [row for row in report.get('plan_works', []) if belongs_to_team(row)]
+        report['extra_works'] = [row for row in report.get('extra_works', []) if belongs_to_team(row)]
+
+        source_application_ids = set()
+        for key in ('hours', 'plan_works', 'extra_works'):
+            for row in report.get(key, []):
+                try:
+                    source_id = int(row.get('source_application_id') or row.get('application_id') or 0)
+                except (TypeError, ValueError):
+                    continue
+                if source_id > 0:
+                    source_application_ids.add(source_id)
+        if source_application_ids:
+            filtered_contexts = []
+            for context in report.get('applications', []):
+                try:
+                    context_id = int(context.get('id') or 0)
+                except (TypeError, ValueError):
+                    continue
+                if context_id in source_application_ids:
+                    filtered_contexts.append(context)
+            report['applications'] = filtered_contexts
+        report['totals'] = calculate_smr_totals(
+            report['plan_works'], report['extra_works'], report['hours']
+        )
     wb = Workbook()
 
     applications = report.get('applications') or []
@@ -344,9 +385,71 @@ async def generate_smr_excel_bytes(
         app_id=app_id,
         public_number=app_meta.get('public_number'),
         date_target=app_meta.get('date_target'),
+        team_name=team_name,
     )
 
     return blob, filename
+
+
+def get_smr_report_targets(report: dict) -> list[tuple[int, str]]:
+    """List the separate workbook targets contained in a logical SMR."""
+    rows = [
+        *report.get('hours', []),
+        *report.get('plan_works', []),
+        *report.get('extra_works', []),
+    ]
+    teams: dict[int, str] = {}
+    has_unassigned = False
+    for row in rows:
+        try:
+            row_team_id = int(row.get('team_id') or 0)
+        except (TypeError, ValueError):
+            row_team_id = 0
+        if row_team_id > 0:
+            teams.setdefault(
+                row_team_id,
+                str(row.get('team_name') or f'Бригада {row_team_id}'),
+            )
+        else:
+            has_unassigned = True
+
+    targets = sorted(teams.items(), key=lambda item: (item[1].casefold(), item[0]))
+    if has_unassigned or not targets:
+        targets.append((0, 'Общие работы'))
+    return targets
+
+
+async def generate_smr_report_files(
+    db,
+    app_id: int,
+    *,
+    include_financial: bool = False,
+    include_participant_salary: bool = False,
+) -> list[tuple[bytes, str]]:
+    """Return one Excel workbook for every brigade in a logical SMR.
+
+    A merged SMR remains convenient: one brigade receives one workbook even
+    when it worked on several source objects.  The workbook keeps the object
+    and application columns, so those rows stay visibly separated.  Legacy
+    work rows without a brigade tag are never duplicated between brigades;
+    they are exported once into an explicit ``Общие работы`` workbook.
+    """
+    from smr_data import get_smr_read_model
+
+    report = await get_smr_read_model(db, app_id)
+    targets = get_smr_report_targets(report)
+
+    files = []
+    for target_team_id, target_team_name in targets:
+        files.append(await generate_smr_excel_bytes(
+            db,
+            app_id,
+            include_financial=include_financial,
+            include_participant_salary=include_participant_salary,
+            team_id=target_team_id,
+            team_name=target_team_name,
+        ))
+    return files
 
 
 async def generate_smr_excel_to_disk(db, app_id: int, dest_dir: Path | None = None) -> Path:

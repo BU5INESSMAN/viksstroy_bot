@@ -17,7 +17,7 @@ const STATUS_LABELS = {
  * @param {function} [props.onExchange] - If provided, called with { requested_equip_id, offered_equip_id, offeredEquipData }
  *   instead of sending API request. Used for deferred exchange during app creation.
  */
-export default function ExchangeDialog({ info, equipment, appEquipment, appId, tgId, dateTarget, onClose, onExchange }) {
+export default function ExchangeDialog({ info, equipment, appEquipment, appId, dateTarget, onClose, onExchange }) {
     const [offeredEquipId, setOfferedEquipId] = useState(null);
     const [sending, setSending] = useState(false);
     const [availableOffer, setAvailableOffer] = useState([]);

@@ -26,7 +26,8 @@ async def _scalar(db, sql: str, params=()) -> int:
 
 
 def _item(item_id: str, title: str, description: str, url: str, *,
-          count: int = 1, severity: str = "warning", kind: str = "data") -> dict:
+          count: int = 1, severity: str = "warning", kind: str = "data",
+          issue_key: str | None = None, issue_title: str | None = None) -> dict:
     return {
         "id": item_id,
         "kind": kind,
@@ -35,6 +36,8 @@ def _item(item_id: str, title: str, description: str, url: str, *,
         "description": description,
         "count": max(1, int(count or 1)),
         "url": url,
+        "issue_key": issue_key or item_id,
+        "issue_title": issue_title or title,
     }
 
 
@@ -114,30 +117,38 @@ async def collect_action_items(db, role: str) -> dict:
                 GROUP BY t.id,t.name ORDER BY t.name""",
         )
         for team in rows:
-            problems: list[str] = []
-            issue_count = 0
+            team_id = int(team["id"])
+            team_title = f"Бригада «{team.get('name') or team_id}»"
+            url = f"/resources?tab=teams&team_id={team_id}"
             if not int(team.get("member_count") or 0):
-                problems.append("нет участников")
-                issue_count += 1
+                items.append(_item(
+                    f"team-{team_id}-empty", team_title,
+                    "Добавьте участников в состав бригады.", url,
+                    severity="critical", kind="team",
+                    issue_key="team-empty", issue_title="В бригаде нет участников",
+                ))
             if not int(team.get("brigadiers") or 0):
-                problems.append("не назначен бригадир")
-                issue_count += 1
+                items.append(_item(
+                    f"team-{team_id}-no-brigadier", team_title,
+                    "Назначьте одного из участников бригадиром.", url,
+                    severity="critical", kind="team",
+                    issue_key="team-no-brigadier", issue_title="Не назначен бригадир",
+                ))
             missing_positions = int(team.get("missing_positions") or 0)
             if missing_positions:
-                problems.append(f"без должности: {missing_positions}")
-                issue_count += missing_positions
+                items.append(_item(
+                    f"team-{team_id}-positions", team_title,
+                    f"Не указана должность у сотрудников: {missing_positions}.", url,
+                    count=missing_positions, kind="team",
+                    issue_key="team-missing-position", issue_title="Не указана должность",
+                ))
             unlinked = int(team.get("unlinked") or 0)
             if unlinked:
-                problems.append(f"без MAX: {unlinked}")
-                issue_count += unlinked
-            if problems:
-                team_id = int(team["id"])
                 items.append(_item(
-                    f"team-{team_id}", f"Бригада «{team.get('name') or team_id}»",
-                    "; ".join(problems).capitalize() + ".",
-                    f"/resources?tab=teams&team_id={team_id}", count=issue_count,
-                    severity="critical" if not int(team.get("brigadiers") or 0) else "warning",
-                    kind="team",
+                    f"team-{team_id}-max", team_title,
+                    f"Не привязан аккаунт MAX у сотрудников: {unlinked}. Им недоступны личные уведомления и вход через MAX.",
+                    url, count=unlinked, kind="team",
+                    issue_key="team-max-unlinked", issue_title="Не привязан аккаунт MAX",
                 ))
 
     async def objects() -> None:
@@ -148,18 +159,21 @@ async def collect_action_items(db, role: str) -> dict:
                  FROM objects o WHERE COALESCE(o.is_archived,0)=0 ORDER BY o.name""",
         )
         for obj in rows:
-            problems: list[str] = []
+            object_id = int(obj["id"])
+            object_title = f"Объект «{obj.get('name') or object_id}»"
             if not str(obj.get("address") or "").strip():
-                problems.append("не указан адрес")
-            if not int(obj.get("has_plan") or 0):
-                problems.append("не заполнен план СМР")
-            if problems:
-                object_id = int(obj["id"])
-                tab = "kp" if not int(obj.get("has_plan") or 0) else "info"
                 items.append(_item(
-                    f"object-{object_id}", f"Объект «{obj.get('name') or object_id}»",
-                    "; ".join(problems).capitalize() + ".",
-                    f"/objects?object_id={object_id}&object_tab={tab}", count=len(problems), kind="object",
+                    f"object-{object_id}-address", object_title,
+                    "Укажите адрес объекта.",
+                    f"/objects?object_id={object_id}&object_tab=info", kind="object",
+                    issue_key="object-no-address", issue_title="Не указан адрес объекта",
+                ))
+            if not int(obj.get("has_plan") or 0):
+                items.append(_item(
+                    f"object-{object_id}-plan", object_title,
+                    "Заполните план работ СМР.",
+                    f"/objects?object_id={object_id}&object_tab=kp", kind="object",
+                    issue_key="object-no-plan", issue_title="Не заполнен план СМР",
                 ))
 
     async def equipment() -> None:
@@ -169,24 +183,23 @@ async def collect_action_items(db, role: str) -> dict:
             "WHERE COALESCE(is_active,1)=1 ORDER BY category,name",
         )
         for equipment in rows:
-            problems: list[str] = []
-            if not str(equipment.get("name") or "").strip():
-                problems.append("нет названия")
-            if not str(equipment.get("category") or "").strip():
-                problems.append("нет категории")
-            if not str(equipment.get("license_plate") or "").strip():
-                problems.append("нет госномера")
-            if equipment.get("default_driver_user_id") is None:
-                problems.append("не назначен водитель")
-            if problems:
-                equipment_id = int(equipment["id"])
-                search = quote(str(equipment.get("name") or equipment_id))
-                items.append(_item(
-                    f"equipment-{equipment_id}",
-                    f"Техника «{equipment.get('name') or f'#{equipment_id}'}»",
-                    "; ".join(problems).capitalize() + ".",
-                    f"/resources?tab=equipment&q={search}", count=len(problems), kind="equipment",
-                ))
+            equipment_id = int(equipment["id"])
+            equipment_title = f"Техника «{equipment.get('name') or f'#{equipment_id}'}»"
+            search = quote(str(equipment.get("name") or equipment_id))
+            url = f"/resources?tab=equipment&q={search}"
+            problems = (
+                (not str(equipment.get("name") or "").strip(), "name", "Нет названия техники", "Укажите название техники."),
+                (not str(equipment.get("category") or "").strip(), "category", "Не указана категория техники", "Выберите категорию техники."),
+                (not str(equipment.get("license_plate") or "").strip(), "plate", "Не указан госномер", "Укажите государственный номер техники."),
+                (equipment.get("default_driver_user_id") is None, "driver", "Не назначен водитель", "Назначьте водителя по умолчанию."),
+            )
+            for present, key, issue_title, description in problems:
+                if present:
+                    items.append(_item(
+                        f"equipment-{equipment_id}-{key}", equipment_title,
+                        description, url, kind="equipment",
+                        issue_key=f"equipment-{key}", issue_title=issue_title,
+                    ))
 
     async def users() -> None:
         if role in {"boss", "superadmin"}:
@@ -251,6 +264,6 @@ async def collect_action_items(db, role: str) -> dict:
     ))
     return {
         "total": sum(int(item["count"]) for item in items),
-        "groups": len(items),
+        "groups": len({item["issue_key"] for item in items}),
         "items": items,
     }

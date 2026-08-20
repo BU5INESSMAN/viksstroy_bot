@@ -1,4 +1,4 @@
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useOutletContext, useSearchParams, Navigate } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
@@ -31,7 +31,7 @@ export default function Admin() {
             setPendingSection(section);
             setSearchParams({}, { replace: true });
         }
-    }, [searchParams]);
+    }, [searchParams, setSearchParams]);
 
     useEffect(() => {
         if (pendingSection && users.length > 0) {
@@ -185,7 +185,7 @@ export default function Admin() {
             setServerLogs(res.data.lines || []);
         } catch { setServerLogs(['[Ошибка загрузки логов]']); }
         setServerLogsLoading(false);
-    }, [tgId]);
+    }, []);
 
     const sendBroadcastGroup = async () => {
         if (!broadcastText.trim()) return;

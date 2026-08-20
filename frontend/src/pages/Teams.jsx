@@ -38,6 +38,8 @@ export default function Teams({ searchQuery = '', openTeamId = 0 }) {
             .then(res => { setTeams(role === 'brigadier' ? (res.data || []) : (res.data.teams || [])); setLoading(false); })
             .catch(() => { setLoading(false); });
     };
+    // Role changes select a different endpoint; mutations refresh explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { fetchData(); }, [role]);
 
     const handleCreateTeam = async (e) => {

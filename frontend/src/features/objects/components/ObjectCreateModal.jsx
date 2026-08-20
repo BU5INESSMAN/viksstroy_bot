@@ -19,7 +19,6 @@ import ModalPortal from '../../../components/ui/ModalPortal';
  *   onRequestApproved?: (reqId) => void — callback after request approval
  */
 export default function ObjectCreateModal({ onClose, onCreated, requestData, onRequestApproved }) {
-    const tgId = localStorage.getItem('tg_id') || '0';
     const isRequestMode = !!requestData;
 
     const [newObj, setNewObj] = useState({

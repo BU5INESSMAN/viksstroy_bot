@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import {
     Home, MapPin, Briefcase, ClipboardList, FileText,
     Settings as SettingsIcon, ShieldAlert, User, BookOpen, Rocket,
@@ -356,7 +356,7 @@ export default function Sidebar({ role, openProfile, setGlobalCreateAppOpen, the
 }
 
 /* ───── Nav item ───── */
-function NavItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, accent, installAccent, hasSubItems, isOpen, onToggle, dataTour }) {
+function NavItem({ icon: _Icon, label, collapsed, isActive, onClick, secondary, accent, installAccent, hasSubItems, isOpen, onToggle, dataTour }) {
     const base = accent
         ? 'bg-blue-600 text-white hover:bg-blue-700'
         : isActive
@@ -381,7 +381,7 @@ function NavItem({ icon: Icon, label, collapsed, isActive, onClick, secondary, a
                     transition={prefersReducedMotion ? { duration: 0 } : { type: 'spring', duration: 0.3, bounce: 0.15 }}
                 />
             )}
-            <Icon className={`w-5 h-5 flex-shrink-0 ${isActive && !accent ? 'stroke-[2.5]' : ''} ${iconAccent}`} />
+            <_Icon className={`w-5 h-5 flex-shrink-0 ${isActive && !accent ? 'stroke-[2.5]' : ''} ${iconAccent}`} />
             <AnimatePresence>
                 {!collapsed && (
                     <motion.span

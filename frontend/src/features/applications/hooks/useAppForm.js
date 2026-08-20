@@ -284,7 +284,8 @@ export default function useAppForm({
         const totalMembers = Number(team?.member_count || 0);
         const appsOnDate = data.kanban_apps.filter(
             a => a.date_target === appForm.date_target &&
-                !['rejected', 'cancelled', 'completed'].includes(a.status)
+                !['rejected', 'cancelled', 'completed'].includes(a.status) &&
+                !a.is_team_freed
         );
 
         const pickedAcrossApps = new Set();
@@ -295,6 +296,13 @@ export default function useAppForm({
             if (appForm.id === a.id) continue;
             const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
             if (!tIds.includes(Number(team_id))) continue;
+            const freedTeamIds = new Set(
+                String(a.freed_team_ids || '')
+                    .split(',')
+                    .map(Number)
+                    .filter(Number.isFinite)
+            );
+            if (freedTeamIds.has(Number(team_id))) continue;
 
             const tp = a.teams_partial || {};
             const isPartial = tp[team_id] === true || tp[String(team_id)] === true;
@@ -342,7 +350,7 @@ export default function useAppForm({
             for (const a of appsOnDate) {
                 try {
                     const eqList = JSON.parse(a.equipment_data || '[]');
-                    if (eqList.some(eqq => eqq.id === equip.id) && appForm.id !== a.id)
+                    if (eqList.some(eqq => eqq.id === equip.id && !eqq.is_freed) && appForm.id !== a.id)
                         return { state: 'busy', message: `Занята на объекте:\n📍 ${a.object_address}` };
                 } catch (e) {}
             }

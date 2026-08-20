@@ -3,17 +3,19 @@ import { useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
-    FileText, CheckCircle, Search, X, MapPin,
+    FileText, FileSpreadsheet, CheckCircle, Search, X, MapPin,
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive,
     Calendar as CalendarIcon, Link2, Link2Off, Eye, EyeOff, CheckCheck, Undo2, Clock, Scale
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
 import TabBadge from '../components/ui/TabBadge';
-import ExtraWorksPicker, { genRowId } from '../features/kp/components/ExtraWorksPicker';
+import ExtraWorksPicker from '../features/kp/components/ExtraWorksPicker';
+import { genRowId } from '../features/kp/utils/rowId';
 import SMRWizard from '../features/kp/components/SMRWizard';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
 import SMRReconciliationModal from '../features/kp/components/SMRReconciliationModal';
+import SMRFilesModal from '../features/kp/components/SMRFilesModal';
 import { formatApplicationNumber } from '../utils/applicationNumber';
 import { matchesDeepSearch } from '../utils/deepSearch';
 
@@ -103,9 +105,10 @@ export default function KP() {
             setActiveTab(tab);
             setSearchParams({}, { replace: true });
         }
-    }, [searchParams]);
+    }, [searchParams, isViewerOnly, setSearchParams]);
 
     const [modalApp, setModalApp] = useState(null);
+    const [filesModalApp, setFilesModalApp] = useState(null);
     const [kpItems, setKpItems] = useState([]);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [selectedForExport, setSelectedForExport] = useState([]);
@@ -132,6 +135,7 @@ export default function KP() {
         return ['foreman', 'object', 'date'].includes(saved) ? saved : 'object';
     });
     const [showAccounted, setShowAccounted] = useState(false);
+    const [showIncompleteReady, setShowIncompleteReady] = useState(false);
     const [accountingBusy, setAccountingBusy] = useState(false);
     const [reportActionBusy, setReportActionBusy] = useState(null);
     const [showReconciliation, setShowReconciliation] = useState(false);
@@ -175,6 +179,8 @@ export default function KP() {
         } catch { setArchivedApps([]); }
     };
 
+    // Reload for an account change; mutations call fetchApps explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { fetchApps(); }, [tgId]);
 
     // Clear merge selection whenever the tab changes away from to_fill
@@ -304,30 +310,38 @@ export default function KP() {
         setIsSubmitting(false);
     };
 
-    // v2.4.6: bulk download uses the NEW /smr/download endpoint per app,
-    // so every file follows the clean format (Часы / Работы / Доп. работы)
-    // with no salary or price columns. The old /api/kp/export endpoint
-    // still exists for legacy callers but is no longer used here.
+    // Batch export keeps every brigade workbook as a standalone file.
     const handleExportReport = async (appIds) => {
         if (!appIds?.length) return;
         setIsSubmitting(true);
-        let ok = 0;
+        let downloaded = 0;
+        let expected = 0;
         for (const id of appIds) {
             try {
-                const res = await axios.get(`/api/kp/apps/${id}/smr/download`, { responseType: 'blob' });
-                const name = parseFilenameFromCD(res.headers?.['content-disposition'], `smr_${id}.xlsx`);
-                const url = window.URL.createObjectURL(new Blob([res.data]));
-                const link = document.createElement('a');
-                link.href = url;
-                link.setAttribute('download', name);
-                document.body.appendChild(link); link.click(); link.remove();
-                window.URL.revokeObjectURL(url);
-                ok += 1;
+                const manifest = await axios.get(`/api/kp/apps/${id}/smr/files`);
+                const files = manifest.data?.files || [];
+                expected += files.length;
+                for (const file of files) {
+                    try {
+                        const res = await axios.get(file.download_url, { responseType: 'blob' });
+                        const name = parseFilenameFromCD(
+                            res.headers?.['content-disposition'],
+                            `СМР - ${file.team_name || id}.xlsx`,
+                        );
+                        const url = window.URL.createObjectURL(new Blob([res.data]));
+                        const link = document.createElement('a');
+                        link.href = url;
+                        link.setAttribute('download', name);
+                        document.body.appendChild(link); link.click(); link.remove();
+                        window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+                        downloaded += 1;
+                    } catch { /* continue with the remaining files */ }
+                }
             } catch { /* keep going; show aggregate result below */ }
         }
-        if (ok === appIds.length) toast.success(`Скачано отчётов: ${ok}`);
-        else if (ok > 0) toast.success(`Скачано: ${ok} из ${appIds.length}`);
-        else toast.error('Не удалось скачать отчёты');
+        if (expected > 0 && downloaded === expected) toast.success(`Скачано файлов: ${downloaded}`);
+        else if (downloaded > 0) toast.success(`Скачано файлов: ${downloaded} из ${expected}`);
+        else toast.error('Не удалось скачать файлы');
         setIsSubmitting(false);
     };
 
@@ -414,15 +428,24 @@ export default function KP() {
     const totalSalary = smrTotals?.salary ?? 0;
     const totalParticipantSalary = smrTotals?.participant_salary ?? 0;
     const totalPrice = smrTotals?.price ?? 0;
-    const unaccountedReady = isOffice
-        ? data.approved.filter(app => !app.smr_accounted_at)
+    const completeReady = isOffice
+        ? data.approved.filter(app => app.smr_is_complete !== false)
         : data.approved;
-    const accountedReady = isOffice
-        ? data.approved.filter(app => Boolean(app.smr_accounted_at))
+    const incompleteReady = isOffice
+        ? data.approved.filter(app => app.smr_is_complete === false)
         : [];
-    const visibleReady = showAccounted
+    const unaccountedReady = isOffice
+        ? completeReady.filter(app => !app.smr_accounted_at)
+        : completeReady;
+    const accountedReady = isOffice
+        ? completeReady.filter(app => Boolean(app.smr_accounted_at))
+        : [];
+    const normalVisibleReady = showAccounted
         ? [...unaccountedReady, ...accountedReady]
         : unaccountedReady;
+    const visibleReady = showIncompleteReady
+        ? [...normalVisibleReady, ...incompleteReady]
+        : normalVisibleReady;
     const activeItems = activeTab === 'approved' ? visibleReady : (data[activeTab] || []);
     const searchedItems = activeItems.filter((app) => matchesDeepSearch([
         app.search_text,
@@ -434,12 +457,13 @@ export default function KP() {
         app.object_address,
         app.date_target,
         app.smr_accounted_at ? 'учтено учтенный' : 'не учтено',
+        app.smr_is_complete === false ? 'неполный не заполнено полностью' : 'полный заполнено полностью',
     ], searchQuery));
     const selectedUnaccounted = selectedForExport.filter(id =>
         unaccountedReady.some(app => app.id === id)
     );
     const selectedAccounted = selectedForExport.filter(id =>
-        accountedReady.some(app => app.id === id)
+        data.approved.some(app => app.id === id && Boolean(app.smr_accounted_at))
     );
 
     if (!['superadmin', 'boss', 'moderator', 'hr', 'foreman', 'brigadier', 'worker'].includes(role)) {
@@ -532,22 +556,44 @@ export default function KP() {
                     ))}
                 </div>
 
-                {activeTab === 'approved' && isOffice && accountedReady.length > 0 && (
-                    <button
-                        onClick={() => {
-                            if (showAccounted) {
-                                const accountedIds = new Set(accountedReady.map(app => app.id));
-                                setSelectedForExport(prev => prev.filter(id => !accountedIds.has(id)));
-                            }
-                            setShowAccounted(prev => !prev);
-                        }}
-                        className="self-start sm:self-auto min-h-10 inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50"
-                    >
-                        {showAccounted
-                            ? <EyeOff className="w-4 h-4" />
-                            : <Eye className="w-4 h-4" />}
-                        {showAccounted ? 'Скрыть учтённые' : `Показать учтённые (${accountedReady.length})`}
-                    </button>
+                {activeTab === 'approved' && isOffice && (
+                    <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+                        {incompleteReady.length > 0 && (
+                            <label className="min-h-10 inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-amber-800 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800/50 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={showIncompleteReady}
+                                    onChange={(event) => {
+                                        const checked = event.target.checked;
+                                        if (!checked) {
+                                            const incompleteIds = new Set(incompleteReady.map(app => app.id));
+                                            setSelectedForExport(prev => prev.filter(id => !incompleteIds.has(id)));
+                                        }
+                                        setShowIncompleteReady(checked);
+                                    }}
+                                    className="w-4 h-4 rounded text-amber-600"
+                                />
+                                Показать неполные ({incompleteReady.length})
+                            </label>
+                        )}
+                        {accountedReady.length > 0 && (
+                            <button
+                                onClick={() => {
+                                    if (showAccounted) {
+                                        const accountedIds = new Set(accountedReady.map(app => app.id));
+                                        setSelectedForExport(prev => prev.filter(id => !accountedIds.has(id)));
+                                    }
+                                    setShowAccounted(prev => !prev);
+                                }}
+                                className="min-h-10 inline-flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-900/20 border border-violet-200 dark:border-violet-800/50"
+                            >
+                                {showAccounted
+                                    ? <EyeOff className="w-4 h-4" />
+                                    : <Eye className="w-4 h-4" />}
+                                {showAccounted ? 'Скрыть учтённые' : `Показать учтённые (${accountedReady.length})`}
+                            </button>
+                        )}
+                    </div>
                 )}
             </div>
 
@@ -660,18 +706,7 @@ export default function KP() {
                         toast.success('Напоминание отправлено прорабу!');
                     } catch (e) { toast.error(e.response?.data?.detail || 'Ошибка отправки'); }
                 }}
-                onDownload={async (app) => {
-                    try {
-                        const res = await axios.get(`/api/kp/apps/${app.id}/smr/download`, { responseType: 'blob' });
-                        const name = parseFilenameFromCD(res.headers?.['content-disposition'], `smr_${app.id}.xlsx`);
-                        const url = window.URL.createObjectURL(new Blob([res.data]));
-                        const link = document.createElement('a');
-                        link.href = url;
-                        link.setAttribute('download', name);
-                        document.body.appendChild(link); link.click(); link.remove();
-                        window.URL.revokeObjectURL(url);
-                    } catch { toast.error('Не удалось скачать отчёт'); }
-                }}
+                onDownload={(app) => setFilesModalApp(app)}
                 onAccounted={(app, accounted) => setAccounted([app.id], accounted)}
             />
 
@@ -685,6 +720,10 @@ export default function KP() {
                         if (app) openModal(app);
                     }}
                 />
+            )}
+
+            {filesModalApp && (
+                <SMRFilesModal app={filesModalApp} onClose={() => setFilesModalApp(null)} />
             )}
 
             {modalApp && (
@@ -1098,6 +1137,7 @@ function SMRGroupRow({
     const isMerged = mergedWith.length > 0;
     const isMergeSelected = (mergeSelected || []).includes(app.id);
     const isAccounted = Boolean(app.smr_accounted_at);
+    const isComplete = app.smr_is_complete !== false;
     const isBackdated = Boolean(app.is_backdated);
     const objectLabel = app.object_name || app.obj_name || app.object_address || 'Без объекта';
 
@@ -1154,6 +1194,14 @@ function SMRGroupRow({
                             <CheckCheck className="w-2.5 h-2.5" /> учтено
                         </span>
                     )}
+                    {!isComplete && tab === 'approved' && (
+                        <span
+                            className="text-[10px] font-extrabold text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 px-2 py-0.5 rounded-full inline-flex items-center gap-1"
+                            title={`Не заполнено разделов: ${app.smr_missing_sections || 1}`}
+                        >
+                            <AlertTriangle className="w-3 h-3" /> заполнено не полностью
+                        </span>
+                    )}
                     {isBackdated && (
                         <span className="inline-flex text-[9px] font-black uppercase tracking-wide text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
                             задним числом · только СМР
@@ -1205,7 +1253,7 @@ function SMRGroupRow({
             </div>
 
             <div className="flex items-center justify-end gap-1.5 flex-wrap flex-shrink-0">
-                {tab === 'approved' && isOffice && (
+                {tab === 'approved' && isOffice && (isComplete || isAccounted) && (
                     <button
                         type="button"
                         onClick={(e) => {
@@ -1218,7 +1266,7 @@ function SMRGroupRow({
                                 ? 'text-violet-600 bg-violet-50 hover:bg-violet-100 dark:text-violet-300 dark:bg-violet-900/20'
                                 : 'text-gray-400 hover:text-violet-600 hover:bg-violet-50 dark:hover:bg-violet-900/20'
                         }`}
-                        title={isAccounted ? 'Снять отметку «Учтено»' : 'Учесть'}
+                        title={isAccounted ? 'Снять отметку «Учтено»' : 'Учесть полностью заполненный отчёт'}
                     >
                         {isAccounted
                             ? <Undo2 className="w-3.5 h-3.5" />
@@ -1299,10 +1347,10 @@ function SMRGroupRow({
                         )}
                         <button
                             onClick={() => onDownload(app)}
-                            title="Скачать отчёт"
+                            title="Открыть файлы отчёта"
                             className="text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-lg border border-blue-200 dark:border-blue-800/50 hover:bg-blue-100 dark:hover:bg-blue-900/40 transition-colors active:scale-95"
                         >
-                            <Download className="w-3.5 h-3.5" />
+                            <FileSpreadsheet className="w-3.5 h-3.5" />
                         </button>
                     </>
                 )}

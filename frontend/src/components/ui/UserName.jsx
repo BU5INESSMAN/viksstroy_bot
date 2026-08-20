@@ -7,7 +7,7 @@ import { displayFio } from '../../utils/fioFormat';
  *   <UserName user={user} />
  *   <UserName user={user} fallback="—" className="font-bold" />
  */
-export default function UserName({ user, fallback = '', className = '', as: Tag = 'span' }) {
+export default function UserName({ user, fallback = '', className = '', as: _Tag = 'span' }) {
     const name = displayFio(user) || fallback;
-    return <Tag className={className}>{name}</Tag>;
+    return <_Tag className={className}>{name}</_Tag>;
 }

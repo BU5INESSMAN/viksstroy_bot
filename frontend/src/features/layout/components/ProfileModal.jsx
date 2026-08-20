@@ -12,7 +12,6 @@ import { logoutAndRedirect } from '../../../utils/tokenStorage';
 import { unsubscribeFromPush } from '../../../utils/pushSubscription';
 import { displayFio } from '../../../utils/fioFormat';
 import { ROLE_NAMES as roleNames } from '../../../utils/roleConfig';
-import { motion } from 'framer-motion';
 import ModalPortal from '../../../components/ui/ModalPortal';
 
 const prefersReducedMotion = typeof window !== 'undefined'
@@ -25,9 +24,8 @@ const prefersReducedMotion = typeof window !== 'undefined'
  * removed in favor of a link row → /settings. Uses PATCH /api/users/{id}
  * to send only a diff of changed fields.
  */
-export default function ProfileModal({ profileData, setProfileData, editProfile, setEditProfile, setProfileModalOpen, canEditUsers, isMyProfile }) {
+export default function ProfileModal({ profileData, setProfileData, editProfile, setProfileModalOpen, canEditUsers, isMyProfile }) {
     const navigate = useNavigate();
-    const tgId = localStorage.getItem('tg_id');
     const [linkCode, setLinkCode] = useState('');
     const [showLinkSearch, setShowLinkSearch] = useState(false);
     const [linkSearchQuery, setLinkSearchQuery] = useState('');

@@ -194,3 +194,48 @@ def test_same_person_and_work_on_two_objects_are_not_joined_with_slash():
         }
 
     asyncio.run(scenario())
+
+
+def test_report_bundle_has_one_workbook_per_brigade_for_merged_smr():
+    import asyncio
+
+    async def scenario():
+        database = _database()
+        database.conn.raw.executescript(
+            """
+            INSERT INTO teams VALUES (6, 'Бригада 6');
+            UPDATE applications SET team_id='6' WHERE id=236;
+            UPDATE application_kp SET team_id=6 WHERE id=2;
+            UPDATE application_hours SET team_id=6 WHERE id=2;
+            """
+        )
+        files = await smr_report.generate_smr_report_files(database, 235)
+        assert len(files) == 2
+        report = await get_smr_read_model(database, 235)
+        assert smr_report.get_smr_report_targets(report) == [
+            (5, 'Бригада 5'),
+            (6, 'Бригада 6'),
+        ]
+
+        by_name = {filename: load_workbook(BytesIO(blob), data_only=True) for blob, filename in files}
+        brigade_5_name = next(name for name in by_name if 'Бригада 5' in name)
+        brigade_6_name = next(name for name in by_name if 'Бригада 6' in name)
+        brigade_5 = by_name[brigade_5_name]
+        brigade_6 = by_name[brigade_6_name]
+
+        def value_under(workbook, sheet_name, heading):
+            sheet = workbook[sheet_name]
+            column = next(
+                index for index in range(1, sheet.max_column + 1)
+                if sheet.cell(1, index).value == heading
+            )
+            return sheet.cell(2, column).value
+
+        assert value_under(brigade_5, 'Часы', 'ФИО') == 'Рабочий первого объекта'
+        assert value_under(brigade_6, 'Часы', 'ФИО') == 'Рабочий второго объекта'
+        assert value_under(brigade_5, 'Работы', 'Наименование') == 'Шурфление'
+        assert value_under(brigade_6, 'Работы', 'Наименование') == 'Протаскивание трубы'
+        assert brigade_5['Часы'].max_row == 2
+        assert brigade_6['Часы'].max_row == 2
+
+    asyncio.run(scenario())

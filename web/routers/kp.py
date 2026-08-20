@@ -13,6 +13,7 @@ from database_deps import db
 from auth_deps import get_current_user, require_role
 from urllib.parse import quote
 from services.notifications import notify_users
+from services.smr_completeness import get_smr_completeness
 from application_numbers import get_application_number
 from smr_calculations import (
     MAX_HOURS_PER_ROW,
@@ -1749,6 +1750,12 @@ async def get_smr_list(current_user=Depends(get_current_user)):
                 return True
         return False
     apps = [a for a in apps if _has_brigade(a)]
+    completeness = await get_smr_completeness(db, [int(app["id"]) for app in apps])
+    for app in apps:
+        status = completeness.get(int(app["id"]), {})
+        app["smr_is_complete"] = bool(status.get("is_complete"))
+        app["smr_missing_sections"] = int(status.get("missing_sections") or 0)
+        app["smr_missing_members"] = int(status.get("missing_members") or 0)
     await _attach_smr_search_text(apps)
 
     to_fill: list[dict] = []
@@ -1943,6 +1950,18 @@ async def set_smr_accounted(request: Request, current_user=Depends(_require_offi
         )
 
     if accounted:
+        completeness = await get_smr_completeness(db, app_ids)
+        incomplete = [
+            app_id for app_id in app_ids
+            if not completeness.get(app_id, {}).get("is_complete")
+        ]
+        if incomplete:
+            raise HTTPException(
+                400,
+                "Нельзя учесть неполный СМР. Сначала заполните отчёт по всем бригадам.",
+            )
+
+    if accounted:
         await db.conn.execute(
             f"UPDATE applications SET smr_accounted_by = ?, "
             f"smr_accounted_at = datetime('now', 'localtime') "
@@ -1991,9 +2010,99 @@ async def set_smr_accounted(request: Request, current_user=Depends(_require_offi
     return {"status": "ok", "updated": len(app_ids), "accounted": accounted}
 
 
+@router.get("/api/kp/apps/{app_id}/smr/files")
+async def list_smr_report_files(app_id: int, current_user=Depends(get_current_user)):
+    """Return general report information and its separate brigade files."""
+    from smr_data import get_smr_read_model
+    from services.smr_report import get_smr_report_targets
+
+    if db.conn is None:
+        await db.init_db()
+    group_ids = await _expand_merge_group(app_id)
+    if not group_ids:
+        raise HTTPException(404, "Заявка не найдена")
+    report_app_id = min(group_ids)
+    report = await get_smr_read_model(db, report_app_id)
+    contexts = report.get("applications") or []
+    context_by_id = {int(context["id"]): context for context in contexts}
+    report_rows = [
+        *report.get("hours", []),
+        *report.get("plan_works", []),
+        *report.get("extra_works", []),
+    ]
+
+    files = []
+    for target_team_id, target_team_name in get_smr_report_targets(report):
+        source_ids = set()
+        for row in report_rows:
+            try:
+                row_team_id = int(row.get("team_id") or 0)
+            except (TypeError, ValueError):
+                row_team_id = 0
+            if row_team_id != target_team_id:
+                continue
+            try:
+                source_id = int(row.get("source_application_id") or row.get("application_id") or 0)
+            except (TypeError, ValueError):
+                source_id = 0
+            if source_id > 0:
+                source_ids.add(source_id)
+        file_contexts = [context_by_id[value] for value in sorted(source_ids) if value in context_by_id]
+        if not file_contexts:
+            file_contexts = contexts
+        files.append({
+            "team_id": target_team_id,
+            "team_name": target_team_name,
+            "objects": list(dict.fromkeys(
+                str(context.get("object_name") or context.get("object_address") or "Объект")
+                for context in file_contexts
+            )),
+            "download_url": f"/api/kp/apps/{report_app_id}/smr/download?team_id={target_team_id}",
+        })
+
+    async with db.conn.execute(
+        "SELECT foreman_name,smr_accounted_at FROM applications WHERE id=?",
+        (report_app_id,),
+    ) as cur:
+        app_row = await cur.fetchone()
+    completeness = await get_smr_completeness(db, group_ids)
+    status = completeness.get(report_app_id, {})
+    async with db.conn.execute(
+        f"SELECT COUNT(*) FROM applications WHERE id IN ({','.join('?' * len(group_ids))}) "
+        "AND smr_accounted_at IS NOT NULL",
+        tuple(group_ids),
+    ) as cur:
+        accounted_count = int((await cur.fetchone())[0] or 0)
+    return {
+        "application_id": report_app_id,
+        "application_number": await get_application_number(db, report_app_id),
+        "foreman_name": app_row[0] if app_row else "",
+        "dates": list(dict.fromkeys(
+            str(context.get("date_target") or "") for context in contexts
+            if context.get("date_target")
+        )),
+        "objects": [
+            {
+                "application_label": context.get("application_label") or f"№{context.get('id')}",
+                "name": context.get("object_name") or context.get("object_address") or "Объект",
+                "address": context.get("object_address_clean") or context.get("object_address") or "",
+            }
+            for context in contexts
+        ],
+        "is_complete": bool(status.get("is_complete")),
+        "missing_sections": int(status.get("missing_sections") or 0),
+        "is_accounted": accounted_count == len(group_ids),
+        "files": files,
+    }
+
+
 @router.get("/api/kp/apps/{app_id}/smr/download")
-async def download_smr_report(app_id: int, current_user=Depends(get_current_user)):
-    """Download the SMR report as an .xlsx — hours + works + extras, no pricing.
+async def download_smr_report(
+    app_id: int,
+    team_id: int | None = None,
+    current_user=Depends(get_current_user),
+):
+    """Download one brigade's standalone .xlsx report.
     Access: any authenticated user who can see the application on the
     KP page (same scope as /api/kp/smr/list).
 
@@ -2001,7 +2110,8 @@ async def download_smr_report(app_id: int, current_user=Depends(get_current_user
     app. When someone downloads the report for a secondary app we
     transparently redirect to the primary so the file isn't empty.
     """
-    from services.smr_report import generate_smr_excel_bytes
+    from smr_data import get_smr_read_model
+    from services.smr_report import generate_smr_excel_bytes, get_smr_report_targets
 
     if db.conn is None:
         await db.init_db()
@@ -2018,11 +2128,24 @@ async def download_smr_report(app_id: int, current_user=Depends(get_current_user
     role = current_user.get('role', 'worker')
     include_financial = role in ('moderator', 'boss', 'superadmin', 'hr')
     include_participant_salary = include_financial or role == 'foreman'
+    report = await get_smr_read_model(db, report_app_id)
+    targets = get_smr_report_targets(report)
+    if team_id is None:
+        if len(targets) != 1:
+            raise HTTPException(400, "Выберите файл конкретной бригады")
+        team_id, team_name = targets[0]
+    else:
+        matching = [target for target in targets if target[0] == int(team_id)]
+        if not matching:
+            raise HTTPException(404, "Файл этой бригады не найден")
+        team_id, team_name = matching[0]
     blob, filename = await generate_smr_excel_bytes(
         db,
         report_app_id,
         include_financial=include_financial,
         include_participant_salary=include_participant_salary,
+        team_id=team_id,
+        team_name=team_name,
     )
     headers = {
         "Content-Disposition": (

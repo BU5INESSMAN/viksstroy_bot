@@ -5,7 +5,6 @@ import {
     X, User, ChevronLeft, ChevronRight, Image, Crown
 } from 'lucide-react';
 import { getStatusBadge } from '../../../utils/statusConfig';
-import { motion } from 'framer-motion';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 import { formatApplicationNumber } from '../../../utils/applicationNumber';
 import { IconTruck } from '@tabler/icons-react';
@@ -78,16 +77,6 @@ function PhotoSlider({ photos }) {
 }
 
 /* ─── Helpers ─── */
-function buildObjectDisplay(objName, objAddress) {
-    const name = objName?.trim() || null;
-    const addr = objAddress?.trim() || null;
-
-    if (name && addr && name !== addr) return `${name} (${addr})`;
-    if (name) return name;
-    if (addr) return addr;
-    return 'Объект не указан';
-}
-
 function formatTime(start, end) {
     const s = start ?? '08';
     const e = end ?? '17';

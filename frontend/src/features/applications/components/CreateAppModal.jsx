@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { motion } from 'framer-motion';
 import ExchangeDialog from './ExchangeDialog';
 import ObjectSelector from './ObjectSelector';
 import EquipmentSelector from './EquipmentSelector';
@@ -31,7 +30,7 @@ export default function CreateAppModal({
     handleObjectSelect,
     smartDates, objectsList, data, role,
     toggleTeamSelection, toggleAppMember, selectAllFreeInTeam,
-    checkTeamStatus, checkEquipStatus,
+    checkTeamStatus,
     toggleEquipmentSelection, updateEquipmentTime,
     setDriverForEquipment, clearDriverForEquipment,
     activeEqCategory, setActiveEqCategory, teamMembers, openProfile,
@@ -197,7 +196,7 @@ export default function CreateAppModal({
     };
 
     // Deferred exchange: save intent, do NOT add occupied equipment to the list
-    const handleDeferredExchange = ({ requested_equip_id, offered_equip_id, offeredEquipData }) => {
+    const handleDeferredExchange = ({ requested_equip_id, offered_equip_id }) => {
         const reqEquip = data.equipment?.find(eq => eq.id === requested_equip_id);
         const reqEquipName = reqEquip
             ? `${reqEquip.name} [${reqEquip.license_plate || 'нет г.н.'}]`

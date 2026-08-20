@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence } from 'framer-motion';
 import { ClipboardList, Clock, CheckCircle, HardHat, Flag, Archive, Send, Loader2 } from 'lucide-react';
 import { getSmartDates, getTodayStr } from '../utils/dateUtils';
 import KanbanCol from '../features/applications/components/KanbanCol';
@@ -114,6 +114,8 @@ export default function Home() {
             .finally(() => setActionItemsLoading(false));
     }
 
+    // Dashboard data is reloaded when the current account or role changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     useEffect(() => { fetchData(); }, [tgId, role]);
 
     // User settings → hide_smr_debtors toggle
@@ -127,7 +129,7 @@ export default function Home() {
         if (isGlobalCreateAppOpen) {
             axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(() => {});
         }
-    }, [isGlobalCreateAppOpen]);
+    }, [isGlobalCreateAppOpen, tgId]);
 
     const publishTomorrow = async () => {
         const tomorrow = new Date();
@@ -192,13 +194,6 @@ export default function Home() {
     };
 
     const openAppModalFromKanban = (app) => setViewApp(app);
-
-    const handleEditFromView = (app) => {
-        setViewApp(null);
-        setEditApp(app);
-        axios.get(`/api/objects/active?tg_id=${tgId}`).then(res => setObjectsList(res.data)).catch(() => {});
-        setEditModalOpen(true);
-    };
 
     const openFreeModal = (type, dataPayload) => {
         if (type === 'specific_team') {

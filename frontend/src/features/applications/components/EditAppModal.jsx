@@ -6,7 +6,6 @@ import {
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import axios from 'axios';
-import { motion } from 'framer-motion';
 import ExchangeDialog from './ExchangeDialog';
 import ObjectSelector from './ObjectSelector';
 import EquipmentSelector from './EquipmentSelector';
@@ -52,7 +51,7 @@ const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia(
  *     editor — leaving slots empty would just bounce the app back.
  */
 export default function EditAppModal({
-    app, onClose, onSaved, data, objectsList, smartDates, role, tgId, openProfile,
+    app, onClose, onSaved, data, objectsList, smartDates, tgId, openProfile,
     mode = 'owner-edit',
 }) {
     const isReviewEdit = mode === 'review-edit';
@@ -191,7 +190,7 @@ export default function EditAppModal({
         } else {
             setTeamMembers([]);
         }
-    }, [form.team_ids.join(','), form.date_target, form.id]);
+    }, [form.team_ids, form.date_target, form.id]);
 
     const handleFormChange = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
 
@@ -204,7 +203,9 @@ export default function EditAppModal({
         const team = (data.teams || []).find(t => Number(t.id) === Number(team_id));
         const totalMembers = Number(team?.member_count || 0);
         const appsOnDate = data.kanban_apps.filter(a =>
-            a.date_target === form.date_target && !['rejected', 'cancelled', 'completed'].includes(a.status)
+            a.date_target === form.date_target &&
+            !['rejected', 'cancelled', 'completed'].includes(a.status) &&
+            !a.is_team_freed
         );
 
         const pickedAcrossApps = new Set();
@@ -215,6 +216,13 @@ export default function EditAppModal({
             if (form.id === a.id) continue;
             const tIds = a.team_id ? String(a.team_id).split(',').map(Number) : [];
             if (!tIds.includes(Number(team_id))) continue;
+            const freedTeamIds = new Set(
+                String(a.freed_team_ids || '')
+                    .split(',')
+                    .map(Number)
+                    .filter(Number.isFinite)
+            );
+            if (freedTeamIds.has(Number(team_id))) continue;
 
             const tp = a.teams_partial || {};
             const isPartial = tp[team_id] === true || tp[String(team_id)] === true;
