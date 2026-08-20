@@ -64,10 +64,11 @@ class ActionItemsTests(unittest.TestCase):
             CREATE TABLE applications(
                 id INTEGER PRIMARY KEY, status TEXT, is_archived INTEGER,
                 smr_group_id TEXT, kp_archived INTEGER, smr_status TEXT,
-                kp_status TEXT, smr_accounted_at TEXT
+                kp_status TEXT, smr_accounted_at TEXT, foreman_id INTEGER,
+                team_id TEXT
             );
             CREATE TABLE object_requests(id INTEGER PRIMARY KEY, status TEXT);
-            CREATE TABLE teams(id INTEGER PRIMARY KEY, name TEXT);
+            CREATE TABLE teams(id INTEGER PRIMARY KEY, name TEXT, creator_id INTEGER);
             CREATE TABLE team_members(
                 id INTEGER PRIMARY KEY, team_id INTEGER, position TEXT,
                 is_foreman INTEGER, tg_user_id INTEGER
@@ -87,14 +88,16 @@ class ActionItemsTests(unittest.TestCase):
             CREATE TABLE driver_categories(user_id INTEGER, category TEXT);
             CREATE TABLE settings(key TEXT PRIMARY KEY, value TEXT);
 
-            INSERT INTO applications VALUES(1,'waiting',0,'',0,'','',NULL);
-            INSERT INTO applications VALUES(2,'completed',0,'g-2',0,'pending_review','submitted',NULL);
-            INSERT INTO applications VALUES(3,'completed',0,'g-3',0,'approved','approved',NULL);
+            INSERT INTO applications VALUES(1,'waiting',0,'',0,'','',NULL,99,'');
+            INSERT INTO applications VALUES(2,'completed',0,'g-2',0,'pending_review','submitted',NULL,42,'7');
+            INSERT INTO applications VALUES(3,'completed',0,'g-3',0,'approved','approved',NULL,99,'8');
+            INSERT INTO applications VALUES(4,'completed',0,'g-4',0,'','none',NULL,42,'7');
             INSERT INTO object_requests VALUES(1,'pending');
-            INSERT INTO teams VALUES(7,'Монтажники');
-            INSERT INTO teams VALUES(8,'Отделочники');
-            INSERT INTO team_members VALUES(1,7,'',0,NULL);
+            INSERT INTO teams VALUES(7,'Монтажники',42);
+            INSERT INTO teams VALUES(8,'Отделочники',99);
+            INSERT INTO team_members VALUES(1,7,'',0,77);
             INSERT INTO team_members VALUES(2,8,'Рабочий',0,NULL);
+            INSERT INTO team_members VALUES(3,7,'Рабочий',0,NULL);
             INSERT INTO objects VALUES(9,'Склад','',0);
             INSERT INTO equipment VALUES(11,'Кран','','',NULL,1);
             INSERT INTO users VALUES(20,'',0,0,1);
@@ -112,7 +115,7 @@ class ActionItemsTests(unittest.TestCase):
         self.assertEqual(by_id["team-7-no-brigadier"]["url"], "/resources?tab=teams&team_id=7")
         self.assertEqual(by_id["object-9-plan"]["url"], "/objects?object_id=9&object_tab=kp")
         self.assertIn("equipment-11-category", by_id)
-        self.assertEqual(by_id["team-7-max"]["issue_title"], "Не привязан аккаунт MAX")
+        self.assertEqual(by_id["team-7-max"]["issue_title"], "Рабочие не привязали аккаунт")
         self.assertIn("личные уведомления", by_id["team-7-max"]["description"])
         self.assertLess(result["groups"], len(result["items"]))
         self.assertIn("users-no-role", by_id)
@@ -124,6 +127,44 @@ class ActionItemsTests(unittest.TestCase):
         self.assertNotIn(
             "users-no-role", {item["id"] for item in moderator_result["items"]}
         )
+
+        hr_ids = {
+            item["id"] for item in asyncio.run(collect_action_items(db, "hr", 500))["items"]
+        }
+        self.assertIn("smr-pending", hr_ids)
+        self.assertIn("smr-unaccounted", hr_ids)
+        self.assertIn("drivers-no-category", hr_ids)
+        self.assertIn("team-8-no-brigadier", hr_ids)
+        self.assertNotIn("applications-waiting", hr_ids)
+        self.assertNotIn("object-requests", hr_ids)
+        self.assertNotIn("object-9-plan", hr_ids)
+        self.assertNotIn("equipment-11-category", hr_ids)
+
+        foreman_ids = {
+            item["id"] for item in asyncio.run(collect_action_items(db, "foreman", 42))["items"]
+        }
+        self.assertIn("smr-pending", foreman_ids)
+        self.assertIn("smr-to-fill", foreman_ids)
+        self.assertIn("team-7-no-brigadier", foreman_ids)
+        self.assertNotIn("team-8-no-brigadier", foreman_ids)
+        self.assertNotIn("applications-waiting", foreman_ids)
+        self.assertNotIn("drivers-no-category", foreman_ids)
+
+        brigadier_result = asyncio.run(collect_action_items(db, "brigadier", 77))
+        self.assertEqual(
+            {item["id"] for item in brigadier_result["items"]},
+            {"smr-to-fill", "team-7-max"},
+        )
+        brigadier_by_id = {item["id"]: item for item in brigadier_result["items"]}
+        self.assertEqual(brigadier_by_id["smr-to-fill"]["count"], 1)
+        self.assertEqual(brigadier_by_id["team-7-max"]["count"], 1)
+        self.assertNotIn("team-8-max", brigadier_by_id)
+        self.assertNotIn("team-7-no-brigadier", brigadier_by_id)
+
+        for passive_role in ("worker", "driver", "employee"):
+            result = asyncio.run(collect_action_items(db, passive_role, 77))
+            self.assertEqual(result["items"], [])
+            self.assertEqual(result["role"], passive_role)
 
     def test_onboarding_completion_is_merged_per_role(self):
         first = merge_user_settings(

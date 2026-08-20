@@ -94,8 +94,8 @@ export default function Home() {
             .catch(() => { setActiveApps([]); setLoading(false); });
         if (['moderator', 'boss', 'superadmin'].includes(role)) {
             axios.get('/api/system/debtors').then(res => setDebtors(res.data || [])).catch(() => {});
-            fetchActionItems();
         }
+        fetchActionItems();
         if (['worker', 'brigadier', 'foreman', 'boss', 'superadmin'].includes(role)) {
             axios.get(`/api/users/${tgId}/profile`).then(res => {
                 if (res.data?.profile?.team_id) {
@@ -106,7 +106,6 @@ export default function Home() {
     }
 
     function fetchActionItems() {
-        if (!['moderator', 'boss', 'superadmin'].includes(role)) return;
         setActionItemsLoading(true);
         axios.get('/api/dashboard/action-items')
             .then((res) => setActionItems(res.data || { total: 0, items: [] }))
@@ -250,7 +249,7 @@ export default function Home() {
     const isHr = role === 'hr';
     const isEmployee = role === 'employee';
     const canArchive = ['moderator', 'boss', 'superadmin'].includes(role);
-    const canSeeActionItems = ['moderator', 'boss', 'superadmin'].includes(role);
+    const canSeeActionItems = true;
 
     // -------------------------------------------------------------------------
     // Render

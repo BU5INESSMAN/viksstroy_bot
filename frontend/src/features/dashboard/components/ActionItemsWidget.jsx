@@ -43,7 +43,7 @@ export default function ActionItemsWidget({ data, loading, onRefresh }) {
                             <span className="min-w-6 h-6 px-1.5 rounded-full bg-red-500 text-white text-[11px] flex items-center justify-center">{data.total}</span>
                         )}
                     </h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Незаполненные данные и ожидающие действия</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Только задачи, которые доступны вашей роли</p>
                 </div>
                 <button type="button" onClick={onRefresh} className="w-11 h-11 rounded-xl flex items-center justify-center bg-gray-50 dark:bg-gray-700 text-gray-500 hover:text-blue-600" aria-label="Обновить список проблем">
                     <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
@@ -55,8 +55,8 @@ export default function ActionItemsWidget({ data, loading, onRefresh }) {
             ) : items.length === 0 ? (
                 <div className="p-8 text-center">
                     <CheckCircle2 className="w-10 h-10 mx-auto text-emerald-500 mb-2" />
-                    <p className="font-bold text-emerald-700 dark:text-emerald-400">Всё заполнено</p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Ожидающих действий сейчас нет</p>
+                    <p className="font-bold text-emerald-700 dark:text-emerald-400">Доступных задач нет</p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Всё, что относится к вашей роли, сейчас в порядке</p>
                 </div>
             ) : (
                 <div className="max-h-[28rem] overflow-y-auto p-3 space-y-2 custom-scrollbar">

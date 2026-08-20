@@ -131,6 +131,7 @@ export default function Teams({ searchQuery = '', openTeamId = 0 }) {
     };
 
     const canManage = ['hr', 'foreman', 'moderator', 'boss', 'superadmin'].includes(role);
+    const canInvite = canManage || role === 'brigadier';
     const canDeleteTeam = ['moderator', 'boss', 'superadmin'].includes(role);
     const visibleTeams = teams.filter((team) => matchesDeepSearch([
         team.name,
@@ -174,7 +175,7 @@ export default function Teams({ searchQuery = '', openTeamId = 0 }) {
                 shows the new icon) AND re-opens the manage modal with fresh
                 data. Previously only the modal was refreshed — the list
                 behind it kept the stale icon. */}
-            <ManageTeamModal isManageModalOpen={isManageModalOpen} setManageModalOpen={setManageModalOpen} manageTeamData={manageTeamData} canManage={canManage} generateInvite={generateInvite} newMember={newMember} setNewMember={setNewMember} handleAddMember={handleAddMember} toggleForeman={toggleForeman} handleUnlinkMember={handleUnlinkMember} deleteMember={deleteMember} openProfile={openProfile} tgId={tgId} onRefresh={() => { fetchData(); if (manageTeamData) openManageModal(manageTeamData.id); }} />
+            <ManageTeamModal isManageModalOpen={isManageModalOpen} setManageModalOpen={setManageModalOpen} manageTeamData={manageTeamData} canManage={canManage} canInvite={canInvite} generateInvite={generateInvite} newMember={newMember} setNewMember={setNewMember} handleAddMember={handleAddMember} toggleForeman={toggleForeman} handleUnlinkMember={handleUnlinkMember} deleteMember={deleteMember} openProfile={openProfile} tgId={tgId} onRefresh={() => { fetchData(); if (manageTeamData) openManageModal(manageTeamData.id); }} />
 
             <TeamInviteModal inviteInfo={inviteInfo} setInviteInfo={setInviteInfo} copiedLink={copiedLink} setCopiedLink={setCopiedLink} />
             <TeamStatsModal isOpen={!!statsTeam} onClose={() => setStatsTeam(null)} team={statsTeam} tgId={tgId} />

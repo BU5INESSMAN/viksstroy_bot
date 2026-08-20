@@ -46,7 +46,7 @@ const ALL_STEPS = [
   { target: 'active-apps-card', title: 'Ваши заявки', description: 'Текущие назначения на сегодня и завтра.', position: 'bottom', page: '/dashboard', roles: FIELD },
   { target: 'kanban-board', title: 'Канбан-доска', description: 'Заявки по статусам: модерация, одобрено, в работе, завершено.', position: 'top', page: '/dashboard', roles: FOREMAN_PLUS },
   { target: 'debtors-widget', title: 'Должники СМР', description: 'Прорабы с незакрытыми отчётами.', position: 'bottom', page: '/dashboard', roles: OFFICE },
-  { target: 'action-items-widget', title: 'Требует внимания', description: 'Ошибки заполнения и ожидающие действия. Нажатие сразу открывает место исправления.', position: 'bottom', page: '/dashboard', roles: OFFICE },
+  { target: 'action-items-widget', title: 'Требует внимания', description: 'Здесь только задачи, которые может исправить ваша роль. Нажатие сразу открывает нужный раздел.', position: 'bottom', page: '/dashboard', roles: ALL_ROLES },
 
   // === ОБЪЕКТЫ ===
   { target: 'sidebar-nav-objects', title: 'Объекты', description: 'Строительные объекты и площадки. Перейдём.', position: 'right', navigate: '/objects', roles: OBJECT_ROLES, desktopOnly: true },

@@ -31,9 +31,13 @@ _require_boss_plus = require_role("superadmin", "boss")
 
 
 @router.get("/api/dashboard/action-items")
-async def get_dashboard_action_items(current_user=Depends(_require_office)):
-    """Incomplete data and pending office work with correction routes."""
-    return await collect_action_items(db, current_user.get("role", ""))
+async def get_dashboard_action_items(current_user=Depends(get_current_user)):
+    """Incomplete data and pending work filtered by the caller's permissions."""
+    return await collect_action_items(
+        db,
+        current_user.get("role", ""),
+        current_user.get("tg_id"),
+    )
 
 
 @router.get("/api/dashboard")

@@ -11,6 +11,11 @@ from services.role_passwords import get_role_passwords
 logger = logging.getLogger(__name__)
 
 SEVERITY_ORDER = {"critical": 0, "warning": 1, "info": 2}
+OFFICE_ROLES = {"moderator", "boss", "superadmin"}
+SMR_REVIEW_ROLES = OFFICE_ROLES | {"hr"}
+TEAM_ACTION_ROLES = OFFICE_ROLES | {"hr", "foreman", "brigadier"}
+DRIVER_MANAGER_ROLES = OFFICE_ROLES | {"hr"}
+ADMIN_USER_ROLES = {"boss", "superadmin"}
 
 
 async def _rows(db, sql: str, params=()) -> list[dict]:
@@ -41,12 +46,14 @@ def _item(item_id: str, title: str, description: str, url: str, *,
     }
 
 
-async def collect_action_items(db, role: str) -> dict:
-    """Return every known office action with a direct correction route.
+async def collect_action_items(db, role: str, user_id: int | None = None) -> dict:
+    """Return only actions the current role can actually correct.
 
     Collectors are isolated so one legacy/missing column cannot hide all the
     other issues from the dashboard during a rolling database upgrade.
     """
+    role = (role or "").strip().lower()
+    user_id = int(user_id or 0)
     items: list[dict] = []
 
     async def safely(name: str, collector) -> None:
@@ -56,25 +63,35 @@ async def collect_action_items(db, role: str) -> dict:
             logger.warning("action-items collector %s failed: %s", name, exc)
 
     async def workflow() -> None:
-        waiting = await _scalar(
-            db,
-            "SELECT COUNT(*) FROM applications WHERE status='waiting' "
-            "AND COALESCE(is_archived,0)=0",
-        )
-        if waiting:
-            items.append(_item(
-                "applications-waiting", "Заявки ждут проверки",
-                "Откройте новые заявки и примите решение.",
-                "/review?filter=waiting", count=waiting, severity="critical", kind="workflow",
-            ))
+        if role in OFFICE_ROLES:
+            waiting = await _scalar(
+                db,
+                "SELECT COUNT(*) FROM applications WHERE status='waiting' "
+                "AND COALESCE(is_archived,0)=0",
+            )
+            if waiting:
+                items.append(_item(
+                    "applications-waiting", "Заявки ждут проверки",
+                    "Откройте новые заявки и примите решение.",
+                    "/review?filter=waiting", count=waiting, severity="critical", kind="workflow",
+                ))
 
-        pending_smr = await _scalar(
-            db,
-            "SELECT COUNT(DISTINCT CASE WHEN COALESCE(smr_group_id,'')!='' "
-            "THEN smr_group_id ELSE 'app:' || id END) FROM applications "
-            "WHERE COALESCE(kp_archived,0)=0 "
-            "AND (smr_status='pending_review' OR kp_status='submitted')",
-        )
+        pending_params = ()
+        pending_scope = ""
+        if role == "foreman":
+            pending_scope = " AND foreman_id=?"
+            pending_params = (user_id,)
+        pending_smr = 0
+        if role in SMR_REVIEW_ROLES or role == "foreman":
+            pending_smr = await _scalar(
+                db,
+                "SELECT COUNT(DISTINCT CASE WHEN COALESCE(smr_group_id,'')!='' "
+                "THEN smr_group_id ELSE 'app:' || id END) FROM applications "
+                "WHERE COALESCE(kp_archived,0)=0 "
+                "AND (smr_status='pending_review' OR kp_status='submitted')"
+                + pending_scope,
+                pending_params,
+            )
         if pending_smr:
             items.append(_item(
                 "smr-pending", "СМР ждут проверки",
@@ -82,13 +99,15 @@ async def collect_action_items(db, role: str) -> dict:
                 "/kp?tab=pending_review", count=pending_smr, severity="critical", kind="workflow",
             ))
 
-        unaccounted = await _scalar(
-            db,
-            "SELECT COUNT(DISTINCT CASE WHEN COALESCE(smr_group_id,'')!='' "
-            "THEN smr_group_id ELSE 'app:' || id END) FROM applications "
-            "WHERE COALESCE(kp_archived,0)=0 AND smr_accounted_at IS NULL "
-            "AND (smr_status='approved' OR kp_status='approved')",
-        )
+        unaccounted = 0
+        if role in SMR_REVIEW_ROLES:
+            unaccounted = await _scalar(
+                db,
+                "SELECT COUNT(DISTINCT CASE WHEN COALESCE(smr_group_id,'')!='' "
+                "THEN smr_group_id ELSE 'app:' || id END) FROM applications "
+                "WHERE COALESCE(kp_archived,0)=0 AND smr_accounted_at IS NULL "
+                "AND (smr_status='approved' OR kp_status='approved')",
+            )
         if unaccounted:
             items.append(_item(
                 "smr-unaccounted", "Готовые СМР не учтены",
@@ -96,38 +115,90 @@ async def collect_action_items(db, role: str) -> dict:
                 "/kp?tab=approved", count=unaccounted, kind="workflow",
             ))
 
-        requests = await _scalar(
-            db, "SELECT COUNT(*) FROM object_requests WHERE status='pending'",
-        )
-        if requests:
+        if role in OFFICE_ROLES:
+            requests = await _scalar(
+                db, "SELECT COUNT(*) FROM object_requests WHERE status='pending'",
+            )
+            if requests:
+                items.append(_item(
+                    "object-requests", "Запросы на создание объектов",
+                    "Прорабы ожидают решения по новым объектам.",
+                    "/objects?tab=requests", count=requests, severity="critical", kind="workflow",
+                ))
+
+        to_fill = 0
+        if role == "foreman":
+            to_fill = await _scalar(
+                db,
+                "SELECT COUNT(DISTINCT CASE WHEN COALESCE(smr_group_id,'')!='' "
+                "THEN smr_group_id ELSE 'app:' || id END) FROM applications "
+                "WHERE foreman_id=? AND COALESCE(kp_archived,0)=0 "
+                "AND status IN ('approved','published','in_progress','completed') "
+                "AND COALESCE(smr_status,'') NOT IN ('approved','pending_review') "
+                "AND COALESCE(kp_status,'none') NOT IN ('approved','submitted')",
+                (user_id,),
+            )
+        elif role == "brigadier":
+            to_fill = await _scalar(
+                db,
+                "SELECT COUNT(DISTINCT CASE WHEN COALESCE(a.smr_group_id,'')!='' "
+                "THEN a.smr_group_id ELSE 'app:' || a.id END) FROM applications a "
+                "WHERE COALESCE(a.kp_archived,0)=0 "
+                "AND a.status IN ('approved','published','in_progress','completed') "
+                "AND COALESCE(a.smr_status,'') NOT IN ('approved','pending_review') "
+                "AND COALESCE(a.kp_status,'none') NOT IN ('approved','submitted') "
+                "AND EXISTS(SELECT 1 FROM team_members own_tm WHERE own_tm.tg_user_id=? "
+                "AND (','||REPLACE(COALESCE(a.team_id,''),' ','')||',') "
+                "LIKE '%,'||own_tm.team_id||',%')",
+                (user_id,),
+            )
+        if to_fill:
             items.append(_item(
-                "object-requests", "Запросы на создание объектов",
-                "Прорабы ожидают решения по новым объектам.",
-                "/objects?tab=requests", count=requests, severity="critical", kind="workflow",
+                "smr-to-fill", "СМР нужно заполнить",
+                "Откройте свои отчёты и заполните часы и выполненные работы.",
+                "/kp?tab=to_fill", count=to_fill, severity="critical", kind="workflow",
             ))
 
     async def teams() -> None:
+        if role not in TEAM_ACTION_ROLES:
+            return
+        scope_sql = ""
+        scope_params = ()
+        if role == "foreman":
+            scope_sql = (
+                " WHERE (t.creator_id=? OR EXISTS(SELECT 1 FROM team_members own_tm "
+                "WHERE own_tm.team_id=t.id AND own_tm.tg_user_id=?))"
+            )
+            scope_params = (user_id, user_id)
+        elif role == "brigadier":
+            scope_sql = (
+                " WHERE EXISTS(SELECT 1 FROM team_members own_tm "
+                "WHERE own_tm.team_id=t.id AND own_tm.tg_user_id=?)"
+            )
+            scope_params = (user_id,)
         rows = await _rows(
             db,
             """SELECT t.id,t.name,COUNT(tm.id) AS member_count,
                       SUM(CASE WHEN tm.is_foreman=1 THEN 1 ELSE 0 END) AS brigadiers,
                       SUM(CASE WHEN tm.id IS NOT NULL AND TRIM(COALESCE(tm.position,''))='' THEN 1 ELSE 0 END) AS missing_positions,
                       SUM(CASE WHEN tm.id IS NOT NULL AND tm.tg_user_id IS NULL THEN 1 ELSE 0 END) AS unlinked
-                 FROM teams t LEFT JOIN team_members tm ON tm.team_id=t.id
-                GROUP BY t.id,t.name ORDER BY t.name""",
+                 FROM teams t LEFT JOIN team_members tm ON tm.team_id=t.id"""
+            + scope_sql
+            + " GROUP BY t.id,t.name ORDER BY t.name",
+            scope_params,
         )
         for team in rows:
             team_id = int(team["id"])
             team_title = f"Бригада «{team.get('name') or team_id}»"
             url = f"/resources?tab=teams&team_id={team_id}"
-            if not int(team.get("member_count") or 0):
+            if role != "brigadier" and not int(team.get("member_count") or 0):
                 items.append(_item(
                     f"team-{team_id}-empty", team_title,
                     "Добавьте участников в состав бригады.", url,
                     severity="critical", kind="team",
                     issue_key="team-empty", issue_title="В бригаде нет участников",
                 ))
-            if not int(team.get("brigadiers") or 0):
+            if role != "brigadier" and not int(team.get("brigadiers") or 0):
                 items.append(_item(
                     f"team-{team_id}-no-brigadier", team_title,
                     "Назначьте одного из участников бригадиром.", url,
@@ -135,7 +206,7 @@ async def collect_action_items(db, role: str) -> dict:
                     issue_key="team-no-brigadier", issue_title="Не назначен бригадир",
                 ))
             missing_positions = int(team.get("missing_positions") or 0)
-            if missing_positions:
+            if role != "brigadier" and missing_positions:
                 items.append(_item(
                     f"team-{team_id}-positions", team_title,
                     f"Не указана должность у сотрудников: {missing_positions}.", url,
@@ -144,14 +215,22 @@ async def collect_action_items(db, role: str) -> dict:
                 ))
             unlinked = int(team.get("unlinked") or 0)
             if unlinked:
+                description = (
+                    f"Рабочие без привязанного аккаунта MAX: {unlinked}. "
+                    "Создайте ссылку-приглашение и передайте её им."
+                    if role == "brigadier"
+                    else f"Не привязан аккаунт MAX у сотрудников: {unlinked}. "
+                    "Им недоступны личные уведомления и вход через MAX."
+                )
                 items.append(_item(
                     f"team-{team_id}-max", team_title,
-                    f"Не привязан аккаунт MAX у сотрудников: {unlinked}. Им недоступны личные уведомления и вход через MAX.",
-                    url, count=unlinked, kind="team",
-                    issue_key="team-max-unlinked", issue_title="Не привязан аккаунт MAX",
+                    description, url, count=unlinked, kind="team",
+                    issue_key="team-max-unlinked", issue_title="Рабочие не привязали аккаунт",
                 ))
 
     async def objects() -> None:
+        if role not in OFFICE_ROLES:
+            return
         rows = await _rows(
             db,
             """SELECT o.id,o.name,o.address,
@@ -177,6 +256,8 @@ async def collect_action_items(db, role: str) -> dict:
                 ))
 
     async def equipment() -> None:
+        if role not in OFFICE_ROLES:
+            return
         rows = await _rows(
             db,
             "SELECT id,name,category,license_plate,default_driver_user_id FROM equipment "
@@ -202,7 +283,7 @@ async def collect_action_items(db, role: str) -> dict:
                     ))
 
     async def users() -> None:
-        if role in {"boss", "superadmin"}:
+        if role in ADMIN_USER_ROLES:
             missing_roles = await _scalar(
                 db,
                 "SELECT COUNT(*) FROM users WHERE TRIM(COALESCE(role,''))='' "
@@ -215,6 +296,9 @@ async def collect_action_items(db, role: str) -> dict:
                     "/admin?section=users&filter=missing-role", count=missing_roles,
                     severity="critical", kind="user",
                 ))
+
+        if role not in DRIVER_MANAGER_ROLES:
+            return
 
         drivers_without_category = await _scalar(
             db,
@@ -263,6 +347,7 @@ async def collect_action_items(db, role: str) -> dict:
         SEVERITY_ORDER.get(item["severity"], 9), item["title"].casefold(), item["id"],
     ))
     return {
+        "role": role,
         "total": sum(int(item["count"]) for item in items),
         "groups": len({item["issue_key"] for item in items}),
         "items": items,

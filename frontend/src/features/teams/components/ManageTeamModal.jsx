@@ -22,7 +22,7 @@ const formatShortDate = (dateStr) => {
     } catch { return dateStr; }
 };
 
-export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen, manageTeamData, canManage, generateInvite, newMember, setNewMember, handleAddMember, toggleForeman, handleUnlinkMember, deleteMember, openProfile, tgId, onRefresh }) {
+export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen, manageTeamData, canManage, canInvite, generateInvite, newMember, setNewMember, handleAddMember, toggleForeman, handleUnlinkMember, deleteMember, openProfile, tgId, onRefresh }) {
     const [statusMember, setStatusMember] = useState(null);
     const [editMember, setEditMember] = useState(null);
     const [iconKey, setIconKey] = useState(manageTeamData?.icon || null);
@@ -169,7 +169,7 @@ export default function ManageTeamModal({ isManageModalOpen, setManageModalOpen,
                             </div>
                         )}
 
-                        {canManage && (
+                        {canInvite && (
                             <div className="bg-gradient-to-br from-indigo-50 to-blue-50 dark:from-indigo-900/20 dark:to-blue-900/10 p-5 rounded-2xl border border-indigo-100 dark:border-indigo-800/30 shadow-inner">
                                 <h4 className="font-bold text-indigo-800 dark:text-indigo-300 mb-2 flex items-center gap-2">
                                     <Link className="w-5 h-5" /> Пригласить рабочих
