@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
     Home, ClipboardList, Briefcase, Settings as SettingsIcon, ShieldAlert, User, Plus,
     MapPin, FileText, Menu, X, BookOpen, Rocket, MessageCircle, Users,
     Sun, Moon, Monitor
 } from 'lucide-react';
-import { AnimatePresence } from 'framer-motion';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 

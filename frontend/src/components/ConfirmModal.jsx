@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import ModalPortal from './ui/ModalPortal';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;

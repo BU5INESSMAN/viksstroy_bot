@@ -1,4 +1,5 @@
 import { useState, useMemo } from 'react';
+import { motion } from 'framer-motion';
 import {
     Calendar, MapPin, Users, Truck,
     ChevronDown, ChevronUp, HardHat, CheckCircle, Search, Archive

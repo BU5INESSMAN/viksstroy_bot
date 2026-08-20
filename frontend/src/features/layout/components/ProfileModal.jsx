@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import {
     User, X, Camera, Trash2, Unplug, ShieldCheck,

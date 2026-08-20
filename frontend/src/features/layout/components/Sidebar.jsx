@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     Home, MapPin, Briefcase, ClipboardList, FileText,
     Settings as SettingsIcon, ShieldAlert, User, BookOpen, Rocket,

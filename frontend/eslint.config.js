@@ -24,7 +24,11 @@ export default defineConfig([
     },
     rules: {
       'no-unused-vars': ['error', {
-        varsIgnorePattern: '^[A-Z_]',
+        // Core ESLint does not count JSX namespace usage such as
+        // <motion.div> as a variable reference. `motion` is nevertheless
+        // required at runtime; a dedicated regression test verifies that
+        // every such component imports it.
+        varsIgnorePattern: '^(motion|[A-Z_])',
         caughtErrors: 'none',
         argsIgnorePattern: '^_',
       }],

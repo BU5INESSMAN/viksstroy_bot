@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X } from 'lucide-react';
 import InstallInstructions from './InstallInstructions';
 import {

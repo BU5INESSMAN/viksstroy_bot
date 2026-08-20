@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, Users } from 'lucide-react';
 import axios from 'axios';
 import ModalPortal from '../../../components/ui/ModalPortal';

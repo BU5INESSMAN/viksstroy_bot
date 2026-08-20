@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { createPortal } from 'react-dom';
+import { motion } from 'framer-motion';
 import {
     Calendar, MapPin, Users, Truck, MessageSquare,
     ClipboardList, HardHat, X, RefreshCw

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Plus, Search, Check, Trash2 } from 'lucide-react';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { genRowId } from '../utils/rowId';
 
 const prefersReducedMotion = typeof window !== 'undefined'

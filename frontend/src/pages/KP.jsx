@@ -7,7 +7,7 @@ import {
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive,
     Calendar as CalendarIcon, Link2, Link2Off, Eye, EyeOff, CheckCheck, Undo2, Clock, Scale
 } from 'lucide-react';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
 import TabBadge from '../components/ui/TabBadge';
 import ExtraWorksPicker from '../features/kp/components/ExtraWorksPicker';

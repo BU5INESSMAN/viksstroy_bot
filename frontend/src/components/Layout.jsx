@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { useLocation, useNavigate, Outlet } from 'react-router-dom';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { motion } from 'framer-motion';
 
 const prefersReducedMotion = typeof window !== 'undefined' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 import { ShieldCheck } from 'lucide-react';

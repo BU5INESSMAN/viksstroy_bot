@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { X, UserCheck, Palmtree, Thermometer } from 'lucide-react';
 import axios from 'axios';
 import toast from 'react-hot-toast';

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { motion } from 'framer-motion';
 import { Search, GitCommit, Tag, ChevronDown, ChevronUp } from 'lucide-react';
 import GlassCard from '../components/ui/GlassCard';
 
@@ -28,7 +29,16 @@ const versionColor = (v) => {
 
 const CHANGELOG = [
     {
-        version: '2.20.2', date: '2026-08-20', title: 'Файлы СМР по бригадам и контроль полноты', current: true,
+        version: '2.20.3', date: '2026-08-20', title: 'Исправление запуска мобильного приложения', current: true,
+        commits: 1,
+        changes: [
+            { type: 'fix', text: 'Исправлен аварийный экран «Не удалось открыть приложение», появившийся после версии 2.20.2.' },
+            { type: 'fix', text: 'Восстановлены обязательные импорты анимаций в стартовом экране и остальных затронутых компонентах.' },
+            { type: 'refactor', text: 'Добавлена автоматическая проверка, которая не позволит выпустить сборку с такой ошибкой повторно.' },
+        ],
+    },
+    {
+        version: '2.20.2', date: '2026-08-20', title: 'Файлы СМР по бригадам и контроль полноты', current: false,
         commits: 1,
         changes: [
             { type: 'feat', text: 'Вместо прямого скачивания открывается карточка отчёта с прорабом, датой, объектами, статусом заполнения и отдельными файлами каждой бригады.' },

@@ -1,4 +1,5 @@
 import { Eye } from 'lucide-react';
+import { motion } from 'framer-motion';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;

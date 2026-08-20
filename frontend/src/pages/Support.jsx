@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Headphones, Send, MessageCircle, Smartphone, Bot, Users, ArrowLeft, Clock, User } from 'lucide-react';
 import axios from 'axios';
 import { renderMarkdown } from '../utils/markdownLight';

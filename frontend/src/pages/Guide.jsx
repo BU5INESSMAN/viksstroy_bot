@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
     KeyRound, UserCircle, ClipboardList, Truck, Calendar, LayoutGrid,
     Settings, Smartphone, Search, BellRing, Link2, Users, MapPin,

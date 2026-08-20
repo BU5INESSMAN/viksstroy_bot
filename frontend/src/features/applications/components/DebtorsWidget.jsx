@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
+import { motion } from 'framer-motion';
 import { AlertTriangle, Bell, Loader2, X } from 'lucide-react';
 import ObjectDisplay from '../../../components/ui/ObjectDisplay';
 

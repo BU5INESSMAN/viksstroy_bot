@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react';
+import { motion } from 'framer-motion';
 import ModalPortal from './ui/ModalPortal';
 
 const prefersReducedMotion = typeof window !== 'undefined'
