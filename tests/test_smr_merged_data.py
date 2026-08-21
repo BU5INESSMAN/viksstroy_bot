@@ -24,6 +24,55 @@ def test_payload_rows_are_partitioned_by_source_application():
     assert [row['kp_id'] for row in grouped[236]] == [1]
 
 
+def test_single_brigade_extra_work_is_saved_with_team_and_replaced_cleanly():
+    async def scenario():
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+        await conn.executescript(
+            """
+            CREATE TABLE applications (id INTEGER PRIMARY KEY, team_id TEXT);
+            CREATE TABLE kp_catalog (
+                id INTEGER PRIMARY KEY, name TEXT, unit TEXT,
+                salary REAL, price REAL
+            );
+            CREATE TABLE extra_works_catalog (
+                id INTEGER PRIMARY KEY, name TEXT, unit TEXT,
+                salary REAL, price REAL
+            );
+            CREATE TABLE application_extra_works (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id INTEGER, extra_work_id INTEGER, kp_id INTEGER,
+                custom_name TEXT, unit TEXT, volume REAL, salary REAL,
+                price REAL, filled_by_user_id INTEGER, filled_at TEXT,
+                team_id INTEGER, is_additional INTEGER DEFAULT 0
+            );
+            INSERT INTO applications VALUES (235, '5');
+            INSERT INTO kp_catalog VALUES (10, 'Газорезка', 'ч', 100, 200);
+            """
+        )
+        old_db = kp.db
+        kp.db = type("Db", (), {"conn": conn})()
+        try:
+            for volume in (2, 3):
+                await kp._save_extra_works_inline(
+                    235,
+                    [{"kp_id": 10, "volume": volume}],
+                    100,
+                    "foreman",
+                    team_scope=(set(), True),
+                )
+            async with conn.execute(
+                "SELECT team_id, volume FROM application_extra_works"
+            ) as cur:
+                rows = await cur.fetchall()
+            assert [(row[0], row[1]) for row in rows] == [(5, 3.0)]
+        finally:
+            kp.db = old_db
+            await conn.close()
+
+    asyncio.run(scenario())
+
+
 def test_merged_works_include_secondary_object_and_primary_saved_value():
     async def scenario():
         conn = await aiosqlite.connect(":memory:")

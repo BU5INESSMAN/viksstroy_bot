@@ -119,6 +119,7 @@ async def generate_smr_excel_bytes(
     include_participant_salary: bool = False,
     team_id: int | None = None,
     team_name: str | None = None,
+    include_unassigned_for_team: bool = False,
 ) -> tuple[bytes, str]:
     """Generate the SMR report .xlsx in memory.
     Returns (file_bytes, suggested_filename).
@@ -145,14 +146,35 @@ async def generate_smr_excel_bytes(
 
         def belongs_to_team(item: dict) -> bool:
             try:
-                return int(item.get('team_id') or 0) == target_team_id
+                item_team_id = int(item.get('team_id') or 0)
             except (TypeError, ValueError):
-                return target_team_id == 0
+                item_team_id = 0
+            return item_team_id == target_team_id or (
+                include_unassigned_for_team and item_team_id == 0
+            )
+
+        def normalize_legacy_team(item: dict) -> dict:
+            if not include_unassigned_for_team or item.get('team_id'):
+                return item
+            return {
+                **item,
+                'team_id': target_team_id,
+                'team_name': team_name or f'Бригада {target_team_id}',
+            }
 
         report = {**report}
-        report['hours'] = [row for row in report.get('hours', []) if belongs_to_team(row)]
-        report['plan_works'] = [row for row in report.get('plan_works', []) if belongs_to_team(row)]
-        report['extra_works'] = [row for row in report.get('extra_works', []) if belongs_to_team(row)]
+        report['hours'] = [
+            normalize_legacy_team(row)
+            for row in report.get('hours', []) if belongs_to_team(row)
+        ]
+        report['plan_works'] = [
+            normalize_legacy_team(row)
+            for row in report.get('plan_works', []) if belongs_to_team(row)
+        ]
+        report['extra_works'] = [
+            normalize_legacy_team(row)
+            for row in report.get('extra_works', []) if belongs_to_team(row)
+        ]
 
         source_application_ids = set()
         for key in ('hours', 'plan_works', 'extra_works'):
@@ -392,14 +414,17 @@ async def generate_smr_excel_bytes(
 
 
 def get_smr_report_targets(report: dict) -> list[tuple[int, str]]:
-    """List the separate workbook targets contained in a logical SMR."""
+    """List concrete brigade workbook targets contained in a logical SMR.
+
+    Rows without a brigade belong to the general workbook. They no longer
+    create a misleading standalone ``Общие работы`` brigade file.
+    """
     rows = [
         *report.get('hours', []),
         *report.get('plan_works', []),
         *report.get('extra_works', []),
     ]
     teams: dict[int, str] = {}
-    has_unassigned = False
     for row in rows:
         try:
             row_team_id = int(row.get('team_id') or 0)
@@ -410,13 +435,7 @@ def get_smr_report_targets(report: dict) -> list[tuple[int, str]]:
                 row_team_id,
                 str(row.get('team_name') or f'Бригада {row_team_id}'),
             )
-        else:
-            has_unassigned = True
-
-    targets = sorted(teams.items(), key=lambda item: (item[1].casefold(), item[0]))
-    if has_unassigned or not targets:
-        targets.append((0, 'Общие работы'))
-    return targets
+    return sorted(teams.items(), key=lambda item: (item[1].casefold(), item[0]))
 
 
 async def generate_smr_report_files(
@@ -426,20 +445,28 @@ async def generate_smr_report_files(
     include_financial: bool = False,
     include_participant_salary: bool = False,
 ) -> list[tuple[bytes, str]]:
-    """Return one Excel workbook for every brigade in a logical SMR.
+    """Return the general workbook followed by one workbook per brigade.
 
-    A merged SMR remains convenient: one brigade receives one workbook even
-    when it worked on several source objects.  The workbook keeps the object
-    and application columns, so those rows stay visibly separated.  Legacy
-    work rows without a brigade tag are never duplicated between brigades;
-    they are exported once into an explicit ``Общие работы`` workbook.
+    The general workbook preserves the original all-in-one report. A merged
+    SMR remains convenient: one brigade also receives one workbook even when
+    it worked on several source objects. When there is exactly one brigade,
+    legacy rows without a brigade tag can be attributed safely and are also
+    included in that brigade file. With several brigades such rows stay only
+    in the general workbook instead of being guessed or duplicated.
     """
     from smr_data import get_smr_read_model
 
     report = await get_smr_read_model(db, app_id)
     targets = get_smr_report_targets(report)
 
-    files = []
+    files = [await generate_smr_excel_bytes(
+        db,
+        app_id,
+        include_financial=include_financial,
+        include_participant_salary=include_participant_salary,
+        team_name='Общий отчёт',
+    )]
+    include_unassigned = len(targets) == 1
     for target_team_id, target_team_name in targets:
         files.append(await generate_smr_excel_bytes(
             db,
@@ -448,6 +475,7 @@ async def generate_smr_report_files(
             include_participant_salary=include_participant_salary,
             team_id=target_team_id,
             team_name=target_team_name,
+            include_unassigned_for_team=include_unassigned,
         ))
     return files
 

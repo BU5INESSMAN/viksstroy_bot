@@ -233,6 +233,7 @@ export default function StepWorks({
                     setExtraWorksData(rawExtras.map(ew => ({
                         rid: genRowId(),
                         source_application_id: ew.source_application_id,
+                        team_id: ew.team_id ?? null,
                         kp_id: ew.kp_id || 0,
                         extra_work_id: ew.extra_work_id || 0,
                         name: ew.custom_name || ew.kp_catalog_name || ew.catalog_name || '',
@@ -591,8 +592,12 @@ export default function StepWorks({
                 <div className="space-y-6">
                     {objectSections.map(section => {
                         const source = section.source_application_id;
-                        const selectedExtras = extraWorksData.filter(
+                        const sectionTeams = (teams || []).filter(
+                            team => sourceId(team, appId) === source
+                        );
+                        const unassignedExtras = extraWorksData.filter(
                             item => sourceId(item, appId) === source
+                                && !Number(item.team_id || 0)
                         );
                         return (
                             <section key={source} className="space-y-3 rounded-2xl border-2 border-blue-100 dark:border-blue-900/50 p-3">
@@ -609,16 +614,105 @@ export default function StepWorks({
                                     (kp_id) => worksMap.get(workKey(source, kp_id)),
                                     (kp_id, value) => setWorkVolume(source, kp_id, value),
                                 )}
-                                <ExtraWorksPicker
-                                    catalog={catalog}
-                                    selected={selectedExtras}
-                                    onChange={(items) => setExtraWorksData(prev => [
-                                        ...prev.filter(item => sourceId(item, appId) !== source),
-                                        ...items.map(item => ({ ...item, source_application_id: source })),
-                                    ])}
-                                    disabled={readOnly}
-                                    defaultOpen={selectedExtras.length > 0}
-                                />
+                                {sectionTeams.length > 0 ? (
+                                    <div className="space-y-3 rounded-xl border border-indigo-100 dark:border-indigo-900/50 bg-indigo-50/40 dark:bg-indigo-950/10 p-3">
+                                        <div>
+                                            <p className="text-sm font-bold text-gray-900 dark:text-white">Дополнительные работы по бригадам</p>
+                                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                                                Каждая доп. работа попадёт в файл выбранной бригады.
+                                            </p>
+                                        </div>
+                                        {sectionTeams.map(team => {
+                                            const teamId = Number(team.team_id);
+                                            const selected = extraWorksData.filter(
+                                                item => sourceId(item, appId) === source
+                                                    && (
+                                                        Number(item.team_id || 0) === teamId
+                                                        || (sectionTeams.length === 1 && !Number(item.team_id || 0))
+                                                    )
+                                            );
+                                            return (
+                                                <div key={sectionKey(source, teamId)} className="rounded-xl bg-white/80 dark:bg-gray-800/70 border border-gray-100 dark:border-gray-700 p-3">
+                                                    <p className="text-xs font-black uppercase tracking-wide text-indigo-600 dark:text-indigo-300 mb-2">
+                                                        {team.team_name || `Бригада ${teamId}`}
+                                                    </p>
+                                                    <ExtraWorksPicker
+                                                        catalog={catalog}
+                                                        selected={selected}
+                                                        onChange={(items) => setExtraWorksData(prev => [
+                                                            ...prev.filter(item => !(
+                                                                sourceId(item, appId) === source
+                                                                && (
+                                                                    Number(item.team_id || 0) === teamId
+                                                                    || (sectionTeams.length === 1 && !Number(item.team_id || 0))
+                                                                )
+                                                            )),
+                                                            ...items.map(item => ({
+                                                                ...item,
+                                                                source_application_id: source,
+                                                                team_id: teamId,
+                                                            })),
+                                                        ])}
+                                                        disabled={readOnly}
+                                                        defaultOpen={selected.length > 0}
+                                                    />
+                                                </div>
+                                            );
+                                        })}
+                                        {unassignedExtras.length > 0 && sectionTeams.length > 1 && (
+                                            <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-200">
+                                                <p className="font-bold">Старые доп. работы без бригады: {unassignedExtras.length}</p>
+                                                <p className="mt-1">Назначьте каждую строку нужной бригаде. До назначения она останется только в общем отчёте.</p>
+                                                <div className="space-y-2 mt-3">
+                                                    {unassignedExtras.map((extra, extraIndex) => (
+                                                        <div key={extra.rid || `${extra.kp_id}:${extra.extra_work_id}:${extraIndex}`} className="rounded-lg bg-white/80 dark:bg-gray-800/70 border border-amber-100 dark:border-amber-800/70 p-2">
+                                                            <p className="font-semibold text-gray-800 dark:text-gray-100 mb-1.5">
+                                                                {extra.name || 'Дополнительная работа'} · {extra.volume} {extra.unit || ''}
+                                                            </p>
+                                                            <select
+                                                                value=""
+                                                                disabled={readOnly}
+                                                                onChange={(event) => {
+                                                                    const nextTeamId = Number(event.target.value || 0);
+                                                                    if (!nextTeamId) return;
+                                                                    setExtraWorksData(prev => prev.map(item => (
+                                                                        item === extra || (extra.rid && item.rid === extra.rid)
+                                                                            ? { ...item, team_id: nextTeamId }
+                                                                            : item
+                                                                    )));
+                                                                }}
+                                                                className="w-full rounded-lg border border-amber-200 dark:border-amber-700 bg-white dark:bg-gray-900 px-2.5 py-2 text-xs font-semibold text-gray-800 dark:text-gray-100 disabled:opacity-60"
+                                                                aria-label={`Назначить бригаду для ${extra.name || 'дополнительной работы'}`}
+                                                            >
+                                                                <option value="">Выбрать бригаду…</option>
+                                                                {sectionTeams.map(team => (
+                                                                    <option key={team.team_id} value={team.team_id}>
+                                                                        {team.team_name || `Бригада ${team.team_id}`}
+                                                                    </option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    <ExtraWorksPicker
+                                        catalog={catalog}
+                                        selected={unassignedExtras}
+                                        onChange={(items) => setExtraWorksData(prev => [
+                                            ...prev.filter(item => sourceId(item, appId) !== source),
+                                            ...items.map(item => ({
+                                                ...item,
+                                                source_application_id: source,
+                                                team_id: null,
+                                            })),
+                                        ])}
+                                        disabled={readOnly}
+                                        defaultOpen={unassignedExtras.length > 0}
+                                    />
+                                )}
                             </section>
                         );
                     })}

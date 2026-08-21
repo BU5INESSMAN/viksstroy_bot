@@ -55,7 +55,7 @@ export default function SMRFilesModal({ app, onClose }) {
 
     const downloadFile = async (file, index, quiet = false) => {
         const response = await axios.get(file.download_url, { responseType: 'blob' });
-        saveBlob(response, `СМР - ${file.team_name || `Бригада ${index + 1}`}.xlsx`);
+        saveBlob(response, `СМР - ${file.team_name || `Файл ${index + 1}`}.xlsx`);
         if (!quiet) toast.success(`Скачан файл: ${file.team_name}`);
     };
 
@@ -122,7 +122,11 @@ export default function SMRFilesModal({ app, onClose }) {
                                         <InfoLine icon={HardHat} label="Прораб" value={info.foreman_name || 'Не указан'} />
                                         <InfoLine icon={Calendar} label="Дата работ" value={(info.dates || []).map(formatDate).join(', ') || 'Не указана'} />
                                         <InfoLine icon={MapPin} label="Объекты" value={(info.objects || []).map((item) => item.name).join(', ') || 'Не указаны'} wide />
-                                        <InfoLine icon={Users} label="Файлы" value={`${info.files?.length || 0} по бригадам`} />
+                                        <InfoLine
+                                            icon={Users}
+                                            label="Файлы"
+                                            value={`1 общий + ${Math.max((info.files?.length || 1) - 1, 0)} по бригадам`}
+                                        />
                                         <div className={`rounded-2xl border p-3 flex items-center gap-2 ${info.is_complete ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20' : 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20'}`}>
                                             {info.is_complete
                                                 ? <CheckCircle2 className="w-4 h-4 text-emerald-600" />
@@ -137,13 +141,15 @@ export default function SMRFilesModal({ app, onClose }) {
                                         <p className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2">Файлы отчёта</p>
                                         <div className="space-y-2">
                                             {(info.files || []).map((file, index) => (
-                                                <div key={`${file.team_id}:${index}`} className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/20 p-3 flex items-center gap-3">
+                                                <div key={`${file.kind || 'brigade'}:${file.team_id}:${index}`} className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/20 p-3 flex items-center gap-3">
                                                     <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
                                                         <FileSpreadsheet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                                                     </div>
                                                     <div className="min-w-0 flex-1">
                                                         <p className="font-bold text-sm text-gray-900 dark:text-white break-words">{file.team_name}</p>
-                                                        <p className="text-xs text-gray-500 dark:text-gray-400 break-words">Excel · {(file.objects || []).join(', ') || 'СМР'}</p>
+                                                        <p className="text-xs text-gray-500 dark:text-gray-400 break-words">
+                                                            Excel · {file.kind === 'general' ? 'все бригады' : 'отдельная бригада'} · {(file.objects || []).join(', ') || 'СМР'}
+                                                        </p>
                                                     </div>
                                                     <button
                                                         type="button"

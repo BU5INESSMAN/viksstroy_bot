@@ -777,6 +777,44 @@ def _rows_by_source_application(items: list, group_ids: list[int]) -> dict[int, 
     return grouped
 
 
+async def _single_application_team_id(app_id: int) -> int | None:
+    """Return the application's brigade when that association is unambiguous."""
+    async with db.conn.execute(
+        "SELECT team_id FROM applications WHERE id = ?", (app_id,)
+    ) as cur:
+        row = await cur.fetchone()
+    team_ids = {
+        int(value.strip())
+        for value in str(row[0] if row else '').split(',')
+        if value.strip().isdigit() and int(value.strip()) > 0
+    }
+    if len(team_ids) == 1:
+        return next(iter(team_ids))
+    if team_ids:
+        return None
+
+    # Some legacy applications did not retain the brigade CSV, while their
+    # already saved hours/works still identify one concrete brigade.
+    try:
+        async with db.conn.execute(
+            """
+            SELECT team_id FROM application_hours
+            WHERE app_id = ? AND team_id IS NOT NULL
+            UNION
+            SELECT team_id FROM application_kp
+            WHERE application_id = ? AND team_id IS NOT NULL
+            """,
+            (app_id, app_id),
+        ) as cur:
+            persisted_team_ids = {
+                int(value[0]) for value in await cur.fetchall()
+                if value[0] and int(value[0]) > 0
+            }
+    except Exception:
+        persisted_team_ids = set()
+    return next(iter(persisted_team_ids)) if len(persisted_team_ids) == 1 else None
+
+
 async def _clear_group_main_rows(table: str, app_column: str, group_ids: list[int], team_scope) -> None:
     """Clear an authoritative main-report scope across a merge group.
 
@@ -807,6 +845,25 @@ async def _save_extra_works_inline(app_id: int, items: list, tg_id: int, role: s
     so the wizard's unified submit can batch everything in one call."""
     from datetime import datetime as _dt
     import json as _json
+
+    # Older clients and the former single-brigade common form omitted
+    # ``team_id``. When the application has exactly one brigade there is no
+    # ambiguity: persist the real association instead of creating a detached
+    # "common" extra-work row.
+    inferred_team_id = await _single_application_team_id(app_id)
+    had_unscoped_rows = False
+    if inferred_team_id is not None:
+        for item in items:
+            try:
+                item_team_id = int(item.get('team_id') or 0)
+            except (TypeError, ValueError):
+                item_team_id = 0
+            if item_team_id == 0:
+                item['team_id'] = inferred_team_id
+                had_unscoped_rows = True
+        if team_scope is not None and had_unscoped_rows:
+            concrete, include_common = team_scope
+            team_scope = ({*concrete, inferred_team_id}, include_common)
 
     # Batch-load kp_catalog entries for the referenced ids
     kp_ids = []
@@ -995,6 +1052,7 @@ async def _insert_additional_kp(app_id: int, items: list, tg_id: int, now: str) 
 
 async def _insert_additional_extras(app_id: int, items: list, tg_id: int, role: str, now: str) -> int:
     """Append extra-work addendum rows (is_additional=1). No DELETE."""
+    inferred_team_id = await _single_application_team_id(app_id)
     kp_ids = []
     for it in items:
         try:
@@ -1077,6 +1135,8 @@ async def _insert_additional_extras(app_id: int, items: list, tg_id: int, role: 
                 team_id = None
         except (TypeError, ValueError):
             team_id = None
+        if team_id is None:
+            team_id = inferred_team_id
         await db.conn.execute(
             """INSERT INTO application_extra_works
                (application_id, extra_work_id, kp_id, custom_name, unit, volume,
@@ -2031,15 +2091,29 @@ async def list_smr_report_files(app_id: int, current_user=Depends(get_current_us
         *report.get("extra_works", []),
     ]
 
-    files = []
-    for target_team_id, target_team_name in get_smr_report_targets(report):
+    targets = get_smr_report_targets(report)
+    all_objects = list(dict.fromkeys(
+        str(context.get("object_name") or context.get("object_address") or "Объект")
+        for context in contexts
+    ))
+    files = [{
+        "kind": "general",
+        "team_id": None,
+        "team_name": "Общий отчёт",
+        "objects": all_objects,
+        "download_url": f"/api/kp/apps/{report_app_id}/smr/download?scope=general",
+    }]
+    include_unassigned = len(targets) == 1
+    for target_team_id, target_team_name in targets:
         source_ids = set()
         for row in report_rows:
             try:
                 row_team_id = int(row.get("team_id") or 0)
             except (TypeError, ValueError):
                 row_team_id = 0
-            if row_team_id != target_team_id:
+            if row_team_id != target_team_id and not (
+                include_unassigned and row_team_id == 0
+            ):
                 continue
             try:
                 source_id = int(row.get("source_application_id") or row.get("application_id") or 0)
@@ -2051,6 +2125,7 @@ async def list_smr_report_files(app_id: int, current_user=Depends(get_current_us
         if not file_contexts:
             file_contexts = contexts
         files.append({
+            "kind": "brigade",
             "team_id": target_team_id,
             "team_name": target_team_name,
             "objects": list(dict.fromkeys(
@@ -2100,9 +2175,10 @@ async def list_smr_report_files(app_id: int, current_user=Depends(get_current_us
 async def download_smr_report(
     app_id: int,
     team_id: int | None = None,
+    scope: str = "team",
     current_user=Depends(get_current_user),
 ):
-    """Download one brigade's standalone .xlsx report.
+    """Download the general report or one brigade's standalone .xlsx.
     Access: any authenticated user who can see the application on the
     KP page (same scope as /api/kp/smr/list).
 
@@ -2130,22 +2206,31 @@ async def download_smr_report(
     include_participant_salary = include_financial or role == 'foreman'
     report = await get_smr_read_model(db, report_app_id)
     targets = get_smr_report_targets(report)
-    if team_id is None:
+    if scope == "general":
+        selected_team_id = None
+        team_name = "Общий отчёт"
+        include_unassigned = False
+    elif scope != "team":
+        raise HTTPException(400, "Неизвестный тип файла отчёта")
+    elif team_id is None:
         if len(targets) != 1:
             raise HTTPException(400, "Выберите файл конкретной бригады")
-        team_id, team_name = targets[0]
+        selected_team_id, team_name = targets[0]
+        include_unassigned = True
     else:
         matching = [target for target in targets if target[0] == int(team_id)]
         if not matching:
             raise HTTPException(404, "Файл этой бригады не найден")
-        team_id, team_name = matching[0]
+        selected_team_id, team_name = matching[0]
+        include_unassigned = len(targets) == 1
     blob, filename = await generate_smr_excel_bytes(
         db,
         report_app_id,
         include_financial=include_financial,
         include_participant_salary=include_participant_salary,
-        team_id=team_id,
+        team_id=selected_team_id,
         team_name=team_name,
+        include_unassigned_for_team=include_unassigned,
     )
     headers = {
         "Content-Disposition": (

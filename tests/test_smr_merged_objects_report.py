@@ -210,7 +210,7 @@ def test_report_bundle_has_one_workbook_per_brigade_for_merged_smr():
             """
         )
         files = await smr_report.generate_smr_report_files(database, 235)
-        assert len(files) == 2
+        assert len(files) == 3
         report = await get_smr_read_model(database, 235)
         assert smr_report.get_smr_report_targets(report) == [
             (5, 'Бригада 5'),
@@ -218,10 +218,12 @@ def test_report_bundle_has_one_workbook_per_brigade_for_merged_smr():
         ]
 
         by_name = {filename: load_workbook(BytesIO(blob), data_only=True) for blob, filename in files}
+        general_name = next(name for name in by_name if 'Общий отчёт' in name)
         brigade_5_name = next(name for name in by_name if 'Бригада 5' in name)
         brigade_6_name = next(name for name in by_name if 'Бригада 6' in name)
         brigade_5 = by_name[brigade_5_name]
         brigade_6 = by_name[brigade_6_name]
+        general = by_name[general_name]
 
         def value_under(workbook, sheet_name, heading):
             sheet = workbook[sheet_name]
@@ -237,5 +239,82 @@ def test_report_bundle_has_one_workbook_per_brigade_for_merged_smr():
         assert value_under(brigade_6, 'Работы', 'Наименование') == 'Протаскивание трубы'
         assert brigade_5['Часы'].max_row == 2
         assert brigade_6['Часы'].max_row == 2
+        assert general['Часы'].max_row == 3
+        assert general['Работы'].max_row == 3
+
+    asyncio.run(scenario())
+
+
+def test_single_brigade_file_includes_legacy_unassigned_extra_work():
+    import asyncio
+
+    async def scenario():
+        database = _database()
+        database.conn.raw.executescript(
+            """
+            INSERT INTO extra_works_catalog VALUES (9, 'Газорезка', 'ч');
+            INSERT INTO application_extra_works
+                (id, application_id, kp_id, extra_work_id, custom_name, unit,
+                 volume, salary, price, team_id, is_additional, filled_at,
+                 filled_by_user_id)
+            VALUES (1, 235, NULL, 9, 'Газорезка', 'ч', 2, 100, 200,
+                    NULL, 0, '2026-08-10', 100);
+            """
+        )
+        files = await smr_report.generate_smr_report_files(database, 235)
+        assert len(files) == 2
+        by_name = {
+            filename: load_workbook(BytesIO(blob), data_only=True)
+            for blob, filename in files
+        }
+        brigade_name = next(name for name in by_name if 'Бригада 5' in name)
+        brigade = by_name[brigade_name]
+        extra_sheet = brigade['Доп. работы']
+        name_column = next(
+            index for index in range(1, extra_sheet.max_column + 1)
+            if extra_sheet.cell(1, index).value == 'Наименование'
+        )
+        team_column = next(
+            index for index in range(1, extra_sheet.max_column + 1)
+            if extra_sheet.cell(1, index).value == 'Бригада'
+        )
+        assert extra_sheet.cell(2, name_column).value == 'Газорезка'
+        assert extra_sheet.cell(2, team_column).value == 'Бригада 5'
+
+    asyncio.run(scenario())
+
+
+def test_unassigned_extra_is_not_guessed_between_multiple_brigades():
+    import asyncio
+
+    async def scenario():
+        database = _database()
+        database.conn.raw.executescript(
+            """
+            INSERT INTO teams VALUES (6, 'Бригада 6');
+            UPDATE applications SET team_id='6' WHERE id=236;
+            UPDATE application_kp SET team_id=6 WHERE id=2;
+            UPDATE application_hours SET team_id=6 WHERE id=2;
+            INSERT INTO extra_works_catalog VALUES (9, 'Газорезка', 'ч');
+            INSERT INTO application_extra_works
+                (id, application_id, kp_id, extra_work_id, custom_name, unit,
+                 volume, salary, price, team_id, is_additional, filled_at,
+                 filled_by_user_id)
+            VALUES (1, 235, NULL, 9, 'Газорезка', 'ч', 2, 100, 200,
+                    NULL, 0, '2026-08-10', 100);
+            """
+        )
+        files = await smr_report.generate_smr_report_files(database, 235)
+        assert len(files) == 3
+        by_name = {
+            filename: load_workbook(BytesIO(blob), data_only=True)
+            for blob, filename in files
+        }
+        general_name = next(name for name in by_name if 'Общий отчёт' in name)
+        assert 'Доп. работы' in by_name[general_name].sheetnames
+        for filename, workbook in by_name.items():
+            if filename == general_name:
+                continue
+            assert 'Доп. работы' not in workbook.sheetnames
 
     asyncio.run(scenario())
