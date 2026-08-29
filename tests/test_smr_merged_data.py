@@ -73,6 +73,72 @@ def test_single_brigade_extra_work_is_saved_with_team_and_replaced_cleanly():
     asyncio.run(scenario())
 
 
+def test_extra_work_writer_does_not_commit_owners_savepoint():
+    async def scenario():
+        conn = await aiosqlite.connect(":memory:")
+        conn.row_factory = aiosqlite.Row
+        await conn.executescript(
+            """
+            CREATE TABLE applications (id INTEGER PRIMARY KEY, team_id TEXT);
+            CREATE TABLE kp_catalog (
+                id INTEGER PRIMARY KEY, name TEXT, unit TEXT,
+                salary REAL, price REAL
+            );
+            CREATE TABLE extra_works_catalog (
+                id INTEGER PRIMARY KEY, name TEXT, unit TEXT,
+                salary REAL, price REAL
+            );
+            CREATE TABLE application_extra_works (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                application_id INTEGER, extra_work_id INTEGER, kp_id INTEGER,
+                custom_name TEXT, unit TEXT, volume REAL, salary REAL,
+                price REAL, filled_by_user_id INTEGER, filled_at TEXT,
+                team_id INTEGER, is_additional INTEGER DEFAULT 0
+            );
+            INSERT INTO applications VALUES (235, '5');
+            INSERT INTO kp_catalog VALUES (10, 'Газорезка', 'ч', 100, 200);
+            INSERT INTO application_extra_works
+                (application_id, extra_work_id, kp_id, custom_name, unit,
+                 volume, salary, price, filled_by_user_id, filled_at,
+                 team_id, is_additional)
+            VALUES (235, 0, 10, 'Газорезка', 'ч', 1, 100, 200,
+                    99, '2026-08-01T10:00:00', 5, 0);
+            """
+        )
+        await conn.commit()
+        old_db = kp.db
+        kp.db = type("Db", (), {"conn": conn})()
+        try:
+            await conn.execute("SAVEPOINT edit_completed_smr")
+            await kp._save_extra_works_inline(
+                235,
+                [{"kp_id": 10, "volume": 3}],
+                100,
+                "foreman",
+                team_scope=({5}, False),
+                commit=False,
+            )
+
+            # Simulate a later failure in the ready-report edit. The writer
+            # must leave the caller's savepoint alive so the original report
+            # can be restored atomically.
+            await conn.execute("ROLLBACK TO SAVEPOINT edit_completed_smr")
+            await conn.execute("RELEASE SAVEPOINT edit_completed_smr")
+            await conn.commit()
+
+            async with conn.execute(
+                "SELECT volume, filled_by_user_id "
+                "FROM application_extra_works WHERE application_id = 235"
+            ) as cur:
+                rows = await cur.fetchall()
+            assert [(row[0], row[1]) for row in rows] == [(1.0, 99)]
+        finally:
+            kp.db = old_db
+            await conn.close()
+
+    asyncio.run(scenario())
+
+
 def test_merged_works_include_secondary_object_and_primary_saved_value():
     async def scenario():
         conn = await aiosqlite.connect(":memory:")

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
+import toast from 'react-hot-toast';
 import { ArrowLeft, Send, Clock, Hammer, Plus, Loader2, Check, WalletCards, Save } from 'lucide-react';
 
 const sourceId = (value, fallback = 0) => Number(
@@ -17,6 +18,7 @@ export default function StepReview({
     appId,
     app,
     hoursData,
+    setHoursData,
     worksData,
     extraWorksData,
     onEdit,
@@ -25,11 +27,39 @@ export default function StepReview({
     approveMode = false,
     addendumMode = false,
     editReadyMode = false,
+    canFinalize = false,
 }) {
     const [teams, setTeams] = useState([]);
     const [planItems, setPlanItems] = useState([]);
     const [catalog, setCatalog] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [suggestingSalary, setSuggestingSalary] = useState(false);
+
+    const suggestSalary = async () => {
+        setSuggestingSalary(true);
+        try {
+            const response = await axios.post(`/api/kp/apps/${appId}/smr/salary-suggestions`, {
+                hours: hoursData,
+                works: worksData,
+                extra_works: extraWorksData,
+            });
+            const suggestions = new Map((response.data?.items || []).map(item => [
+                memberKey(sourceId(item, appId), item.team_id, item.user_id),
+                Number(item.participant_salary || 0),
+            ]));
+            setHoursData?.(prev => prev.map(item => {
+                const key = memberKey(sourceId(item, appId), item.team_id, item.user_id);
+                return suggestions.has(key)
+                    ? { ...item, participant_salary: suggestions.get(key) }
+                    : item;
+            }));
+            toast.success(`Предложение рассчитано: ${Number(response.data?.work_salary_total || 0).toLocaleString('ru-RU')} ₽`);
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Не удалось рассчитать предложение ЗП');
+        } finally {
+            setSuggestingSalary(false);
+        }
+    };
 
     useEffect(() => {
         let alive = true;
@@ -273,6 +303,12 @@ export default function StepReview({
             )}
 
             {/* Actions */}
+            {canFinalize && !approveMode && !addendumMode && !editReadyMode && (
+                <button type="button" onClick={suggestSalary} disabled={suggestingSalary || submitting} className="w-full min-h-11 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50">
+                    {suggestingSalary ? <Loader2 className="w-4 h-4 animate-spin" /> : <WalletCards className="w-4 h-4" />}
+                    Предложить ЗП по расценкам работ
+                </button>
+            )}
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
                 <div className="flex gap-2">
                     <button
@@ -310,8 +346,10 @@ export default function StepReview({
                         <><Save className="w-4 h-4" /> Сохранить изменения</>
                     ) : approveMode ? (
                         <><Check className="w-4 h-4" /> Одобрить отчёт</>
+                    ) : canFinalize ? (
+                        <><Check className="w-4 h-4" /> Завершить СМР</>
                     ) : (
-                        <><Send className="w-4 h-4" /> Отправить отчёт</>
+                        <><Send className="w-4 h-4" /> Передать данные прорабу</>
                     )}
                 </button>
             </div>

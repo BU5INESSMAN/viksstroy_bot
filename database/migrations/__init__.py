@@ -66,6 +66,9 @@ MIGRATIONS_ORDER = [
     # Foreman workflow: exact release time for teams/equipment and
     # report-only applications created for yesterday.
     "m_2026_08_backdated_apps_and_resource_releases",
+    # Stable per-brigade progress/roster snapshots. Brigadier submissions no
+    # longer close the whole report; a foreman explicitly finalizes it.
+    "m_2026_08_smr_team_sections",
 ]
 
 

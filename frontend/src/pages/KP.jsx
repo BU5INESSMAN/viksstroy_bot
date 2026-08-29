@@ -16,6 +16,7 @@ import SMRWizard from '../features/kp/components/SMRWizard';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
 import SMRReconciliationModal from '../features/kp/components/SMRReconciliationModal';
 import SMRFilesModal from '../features/kp/components/SMRFilesModal';
+import SMRPeriodReportModal from '../features/kp/components/SMRPeriodReportModal';
 import { formatApplicationNumber } from '../utils/applicationNumber';
 import { matchesDeepSearch } from '../utils/deepSearch';
 
@@ -139,6 +140,7 @@ export default function KP() {
     const [accountingBusy, setAccountingBusy] = useState(false);
     const [reportActionBusy, setReportActionBusy] = useState(null);
     const [showReconciliation, setShowReconciliation] = useState(false);
+    const [showPeriodReport, setShowPeriodReport] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
 
     const fileInputRef = useRef(null);
@@ -501,6 +503,9 @@ export default function KP() {
                         <button onClick={() => setShowReconciliation(true)} className="col-span-2 md:col-span-1 min-h-11 min-w-0 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 px-4 py-2.5 rounded-xl text-sm font-bold border border-indigo-200 dark:border-indigo-800/60 transition-all flex items-center justify-center gap-2 hover:bg-indigo-100">
                             <Scale className="w-4 h-4" /> Сверка цен
                         </button>
+                        <button onClick={() => setShowPeriodReport(true)} className="col-span-2 md:col-span-1 min-h-11 min-w-0 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 px-4 py-2.5 rounded-xl text-sm font-bold border border-emerald-200 dark:border-emerald-800/60 transition-all flex items-center justify-center gap-2 hover:bg-emerald-100">
+                            <CalendarIcon className="w-4 h-4" /> Отчёт за период
+                        </button>
                     </div>
                 )}
             </div>
@@ -667,7 +672,7 @@ export default function KP() {
                         onClick={() => setShowAddendumPicker(true)}
                         className="bg-amber-500 hover:bg-amber-600 text-white px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm flex items-center gap-2 transition-colors active:scale-[0.99]"
                     >
-                        <Plus className="w-4 h-4" /> Создать отчёт
+                        <Plus className="w-4 h-4" /> Добавить данные
                     </button>
                 </div>
             )}
@@ -720,6 +725,10 @@ export default function KP() {
                         if (app) openModal(app);
                     }}
                 />
+            )}
+
+            {showPeriodReport && (
+                <SMRPeriodReportModal onClose={() => setShowPeriodReport(false)} />
             )}
 
             {filesModalApp && (
@@ -779,7 +788,7 @@ export default function KP() {
                                 <div className="mt-6 border border-gray-100 dark:border-gray-700 rounded-2xl overflow-hidden">
                                     <div className="bg-gray-50 dark:bg-gray-900/50 px-4 py-2 text-xs font-bold text-gray-500 uppercase flex items-center justify-between">
                                         <span className="inline-flex items-center gap-2"><Clock className="w-4 h-4" /> Часы сотрудников</span>
-                                        <span>{smrTotals?.hours ?? 0} ч</span>
+                                        <span>Смена: {smrTotals?.shift_hours ?? 0} ч · Человеко-часы: {smrTotals?.hours ?? 0} ч</span>
                                     </div>
                                     <div className="divide-y divide-gray-50 dark:divide-gray-700">
                                         {smrHours.map(row => (
@@ -930,7 +939,7 @@ export default function KP() {
                     <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
                         <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700">
                             <h3 className="text-lg font-bold dark:text-white flex items-center gap-2">
-                                <Plus className="w-5 h-5 text-amber-500" /> Создать доп. отчёт
+                                <Plus className="w-5 h-5 text-amber-500" /> Добавить забытые данные
                             </h3>
                             <button onClick={() => setShowAddendumPicker(false)} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-2 border border-gray-100 dark:border-gray-700">
                                 <X className="w-5 h-5" />
@@ -938,7 +947,7 @@ export default function KP() {
                         </div>
                         <div className="p-4">
                             <p className="text-xs text-gray-500 dark:text-gray-400 px-2 pb-3 leading-relaxed">
-                                Выберите готовый отчёт, чтобы добавить забытые работы или часы. Существующие данные не изменятся — записи только добавляются.
+                                Этот режим только добавляет новые работы, часы или ЗП и не меняет старые строки. Если нужно исправить ошибку в уже внесённых данных, закройте окно и используйте кнопку с карандашом у готового отчёта.
                             </p>
                             {data.approved.length === 0 ? (
                                 <p className="text-center text-gray-400 text-sm py-8">Нет готовых отчётов</p>
@@ -1205,6 +1214,16 @@ function SMRGroupRow({
                     {isBackdated && (
                         <span className="inline-flex text-[9px] font-black uppercase tracking-wide text-amber-800 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
                             задним числом · только СМР
+                        </span>
+                    )}
+                    {tab === 'to_fill' && Number(app.smr_submitted_sections || 0) > 0 && (
+                        <span className="text-[10px] font-extrabold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/30 px-2 py-0.5 rounded-full">
+                            заполнено бригад: {app.smr_submitted_sections}
+                        </span>
+                    )}
+                    {tab === 'to_fill' && Number(app.smr_not_worked_sections || 0) > 0 && (
+                        <span className="text-[10px] font-extrabold text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded-full">
+                            не работали: {app.smr_not_worked_sections}
                         </span>
                     )}
                 </p>

@@ -590,6 +590,11 @@ export default function StepWorks({
             {/* Common mode */}
             {!perBrigade && (
                 <div className="space-y-6">
+                    {showToggle && (
+                        <p className="rounded-xl bg-blue-50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 px-3 py-2 text-xs text-blue-700 dark:text-blue-300">
+                            Общая работа относится ко всем бригадам, показывается в каждом отдельном файле, но в общем итоге учитывается только один раз.
+                        </p>
+                    )}
                     {objectSections.map(section => {
                         const source = section.source_application_id;
                         const sectionTeams = (teams || []).filter(
@@ -659,41 +664,26 @@ export default function StepWorks({
                                                 </div>
                                             );
                                         })}
-                                        {unassignedExtras.length > 0 && sectionTeams.length > 1 && (
-                                            <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-3 text-xs text-amber-800 dark:text-amber-200">
-                                                <p className="font-bold">Старые доп. работы без бригады: {unassignedExtras.length}</p>
-                                                <p className="mt-1">Назначьте каждую строку нужной бригаде. До назначения она останется только в общем отчёте.</p>
-                                                <div className="space-y-2 mt-3">
-                                                    {unassignedExtras.map((extra, extraIndex) => (
-                                                        <div key={extra.rid || `${extra.kp_id}:${extra.extra_work_id}:${extraIndex}`} className="rounded-lg bg-white/80 dark:bg-gray-800/70 border border-amber-100 dark:border-amber-800/70 p-2">
-                                                            <p className="font-semibold text-gray-800 dark:text-gray-100 mb-1.5">
-                                                                {extra.name || 'Дополнительная работа'} · {extra.volume} {extra.unit || ''}
-                                                            </p>
-                                                            <select
-                                                                value=""
-                                                                disabled={readOnly}
-                                                                onChange={(event) => {
-                                                                    const nextTeamId = Number(event.target.value || 0);
-                                                                    if (!nextTeamId) return;
-                                                                    setExtraWorksData(prev => prev.map(item => (
-                                                                        item === extra || (extra.rid && item.rid === extra.rid)
-                                                                            ? { ...item, team_id: nextTeamId }
-                                                                            : item
-                                                                    )));
-                                                                }}
-                                                                className="w-full rounded-lg border border-amber-200 dark:border-amber-700 bg-white dark:bg-gray-900 px-2.5 py-2 text-xs font-semibold text-gray-800 dark:text-gray-100 disabled:opacity-60"
-                                                                aria-label={`Назначить бригаду для ${extra.name || 'дополнительной работы'}`}
-                                                            >
-                                                                <option value="">Выбрать бригаду…</option>
-                                                                {sectionTeams.map(team => (
-                                                                    <option key={team.team_id} value={team.team_id}>
-                                                                        {team.team_name || `Бригада ${team.team_id}`}
-                                                                    </option>
-                                                                ))}
-                                                            </select>
-                                                        </div>
-                                                    ))}
-                                                </div>
+                                        {sectionTeams.length > 1 && (
+                                            <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50/60 dark:bg-blue-900/20 p-3">
+                                                <p className="text-xs font-black uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-1">Для всех бригад</p>
+                                                <p className="text-xs text-blue-700/80 dark:text-blue-300/80 mb-2">Доп. работа попадёт в файлы всех бригад, а в общем итоге посчитается один раз.</p>
+                                                <ExtraWorksPicker
+                                                    catalog={catalog}
+                                                    selected={unassignedExtras}
+                                                    onChange={(items) => setExtraWorksData(prev => [
+                                                        ...prev.filter(item => !(
+                                                            sourceId(item, appId) === source && !Number(item.team_id || 0)
+                                                        )),
+                                                        ...items.map(item => ({
+                                                            ...item,
+                                                            source_application_id: source,
+                                                            team_id: null,
+                                                        })),
+                                                    ])}
+                                                    disabled={readOnly}
+                                                    defaultOpen={unassignedExtras.length > 0}
+                                                />
                                             </div>
                                         )}
                                     </div>

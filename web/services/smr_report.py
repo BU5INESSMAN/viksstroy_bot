@@ -376,7 +376,10 @@ async def generate_smr_excel_bytes(
         ws_summary = wb.create_sheet("Итоги", 0)
         _write_header(ws_summary, ["Показатель", "Значение"])
         totals = report.get('totals', {})
-        summary_rows = [("Всего часов", totals.get('hours', 0))]
+        summary_rows = []
+        if float(totals.get('shift_hours') or 0) > 0:
+            summary_rows.append(("Длительность смен", totals.get('shift_hours', 0)))
+        summary_rows.append(("Человеко-часы", totals.get('hours', 0)))
         if include_participant_salary:
             summary_rows.append(("ЗП участникам", totals.get('participant_salary', 0)))
         if include_financial:
@@ -466,7 +469,9 @@ async def generate_smr_report_files(
         include_participant_salary=include_participant_salary,
         team_name='Общий отчёт',
     )]
-    include_unassigned = len(targets) == 1
+    # A NULL brigade is an explicit shared allocation: it is counted once in
+    # the general report and shown in every involved brigade's file.
+    include_unassigned = True
     for target_team_id, target_team_name in targets:
         files.append(await generate_smr_excel_bytes(
             db,

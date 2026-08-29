@@ -379,6 +379,28 @@ CREATE INDEX IF NOT EXISTS idx_app_hours_app ON application_hours(app_id);
 -- can add extra hours for an existing member.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_app_hours_unique ON application_hours(app_id, team_id, user_id) WHERE is_additional = 0;
 
+-- Stable brigade-level SMR progress. The roster snapshot prevents later
+-- transfers/deletions in Resources from changing an already-created report.
+CREATE TABLE IF NOT EXISTS smr_team_sections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    app_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft'
+        CHECK(status IN ('draft', 'submitted', 'not_worked', 'confirmed')),
+    roster_json TEXT NOT NULL DEFAULT '[]',
+    not_worked_reason TEXT DEFAULT '',
+    updated_by INTEGER,
+    updated_by_role TEXT DEFAULT '',
+    submitted_at TEXT,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(app_id, team_id),
+    FOREIGN KEY (app_id) REFERENCES applications(id),
+    FOREIGN KEY (team_id) REFERENCES teams(id)
+);
+CREATE INDEX IF NOT EXISTS idx_smr_team_sections_app
+    ON smr_team_sections(app_id, team_id, status);
+
 -- Immutable financial history for SMR reports. The complete before/after
 -- snapshots make an audit entry independent from later catalog edits.
 CREATE TABLE IF NOT EXISTS smr_financial_audit (

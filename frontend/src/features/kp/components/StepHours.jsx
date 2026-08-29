@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
-import { ChevronDown, User, Crown, ArrowRight, UserPlus, X, Search } from 'lucide-react';
+import { ChevronDown, User, Crown, ArrowRight, UserPlus, X, Search, MoreVertical, Ban, RotateCcw, ListChecks } from 'lucide-react';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -33,12 +33,15 @@ export default function StepHours({
     onNext,
     readOnly = false,
     addendumMode = false,
+    onTeamStatusChange,
 }) {
     const [teams, setTeams] = useState([]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(() => new Set());
     const [customOverrides, setCustomOverrides] = useState(() => new Set());
     const [teamHourInputs, setTeamHourInputs] = useState({});
+    const [sectionMenu, setSectionMenu] = useState(null);
+    const [statusBusy, setStatusBusy] = useState(null);
 
     // v2.7 — ad-hoc worker picker (foreman/office only).
     const canAddAdHoc = ['foreman', 'moderator', 'boss', 'superadmin', 'hr'].includes(userRole);
@@ -56,6 +59,11 @@ export default function StepHours({
                 if (!alive) return;
                 const data = res.data || [];
                 setTeams(data);
+                for (const team of data) {
+                    if (team.smr_section_status === 'not_worked') {
+                        onTeamStatusChange?.(sourceId(team, appId), team.team_id, 'not_worked');
+                    }
+                }
 
                 // Seed hoursData on first load — use any pre-saved values.
                 // v2.10: in addendum mode the editable buckets stay EMPTY so
@@ -334,9 +342,54 @@ export default function StepHours({
         return first !== undefined && values.every(v => v === first) ? first : '';
     };
 
+    const fillMissingWithZero = (team) => {
+        const source = sourceId(team, appId);
+        for (const member of (team.members || [])) {
+            const key = memberKey(source, team.team_id, member.user_id);
+            if (!hoursMap.has(key)) {
+                setMemberHours(source, team.team_id, member.user_id, 0, true);
+            }
+        }
+        setSectionMenu(null);
+        toast.success('Пустые часы заполнены нулями');
+    };
+
+    const changeTeamStatus = async (team, status) => {
+        const source = sourceId(team, appId);
+        if (status === 'not_worked' && !window.confirm(
+            `Отметить «${team.team_name}» как не работавшую на объекте «${team.object_name || `Объект ${source}`}»?\n\nСохранённые часы и работы этой бригады на объекте будут очищены.`
+        )) return;
+        const key = sectionKey(source, team.team_id);
+        setStatusBusy(key);
+        try {
+            await axios.post(`/api/kp/apps/${appId}/smr/team-status`, {
+                source_application_id: source,
+                team_id: team.team_id,
+                status,
+            });
+            setTeams(prev => prev.map(item => (
+                sourceId(item, appId) === source && Number(item.team_id) === Number(team.team_id)
+                    ? { ...item, smr_section_status: status, smr_not_worked_reason: '' }
+                    : item
+            )));
+            if (status === 'not_worked') {
+                setHoursData(prev => prev.filter(item => !(
+                    sourceId(item, appId) === source && Number(item.team_id) === Number(team.team_id)
+                )));
+            }
+            onTeamStatusChange?.(source, team.team_id, status);
+            toast.success(status === 'not_worked' ? 'Бригада отмечена: не работала' : 'Бригада возвращена к заполнению');
+            setSectionMenu(null);
+        } catch (error) {
+            toast.error(error.response?.data?.detail || 'Не удалось изменить статус бригады');
+        } finally {
+            setStatusBusy(null);
+        }
+    };
+
     const hasHoursEntry = hoursData.some(h =>
         h.hours !== '' && Number.isFinite(Number(h.hours)) && Number(h.hours) >= 0
-    );
+    ) || visibleTeams.some(team => team.smr_section_status === 'not_worked');
 
     if (loading) {
         return (
@@ -417,6 +470,7 @@ export default function StepHours({
                 const currentSection = sectionKey(source, team.team_id);
                 const isOpen = expanded.has(currentSection);
                 const teamValue = getTeamLevel(team);
+                const isNotWorked = team.smr_section_status === 'not_worked';
                 return (
                     <div
                         key={currentSection}
@@ -450,13 +504,18 @@ export default function StepHours({
                                 <span className="text-[10px] font-bold text-gray-400 bg-gray-100 dark:bg-gray-700 px-1.5 py-0.5 rounded">
                                     {team.members?.length || 0}
                                 </span>
+                                {isNotWorked && (
+                                    <span className="text-[10px] font-bold text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-900/30 px-1.5 py-0.5 rounded">
+                                        не работала
+                                    </span>
+                                )}
                             </button>
                             <input
                                 type="number"
                                 min="0"
                                 max="24"
                                 step="0.5"
-                                disabled={readOnly}
+                                disabled={readOnly || isNotWorked}
                                 value={teamValue}
                                 onChange={(e) => setTeamHours(source, team.team_id, e.target.value)}
                                 placeholder="ч"
@@ -464,11 +523,36 @@ export default function StepHours({
                                 className="w-20 p-2 text-center font-bold border border-gray-200 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-900 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-400"
                             />
                             <span className="text-xs font-semibold text-gray-400 w-6">ч</span>
+                            {!readOnly && canAddAdHoc && (
+                                <div className="relative">
+                                    <button type="button" onClick={() => setSectionMenu(sectionMenu === currentSection ? null : currentSection)} className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700" aria-label="Действия с бригадой">
+                                        <MoreVertical className="w-4 h-4" />
+                                    </button>
+                                    {sectionMenu === currentSection && (
+                                        <div className="absolute right-0 top-10 z-30 w-64 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 shadow-xl p-1.5">
+                                            {!isNotWorked ? (
+                                                <>
+                                                    <button type="button" onClick={() => fillMissingWithZero(team)} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left text-xs font-bold text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700">
+                                                        <ListChecks className="w-4 h-4 text-blue-500" /> Заполнить пропуски нулями
+                                                    </button>
+                                                    <button type="button" disabled={statusBusy === currentSection} onClick={() => changeTeamStatus(team, 'not_worked')} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left text-xs font-bold text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50">
+                                                        <Ban className="w-4 h-4" /> Бригада не работала
+                                                    </button>
+                                                </>
+                                            ) : (
+                                                <button type="button" disabled={statusBusy === currentSection} onClick={() => changeTeamStatus(team, 'draft')} className="w-full flex items-center gap-2 px-3 py-2.5 rounded-lg text-left text-xs font-bold text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50">
+                                                    <RotateCcw className="w-4 h-4" /> Вернуть к заполнению
+                                                </button>
+                                            )}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
 
                         {/* Members */}
                         <AnimatePresence initial={false}>
-                            {isOpen && (
+                            {isOpen && !isNotWorked && (
                                 <motion.div
                                     initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
                                     animate={{ height: 'auto', opacity: 1 }}

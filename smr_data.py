@@ -191,7 +191,23 @@ async def get_smr_read_model(db, app_id: int) -> dict:
                 'team_ids', 'selected_member_ids', 'kp_ids',
             )
         })
+    totals = calculate_smr_totals(plan, extras, hours)
+    try:
+        async with db.conn.execute(
+            f"SELECT time_start,time_end FROM applications WHERE id IN ({marks})",
+            tuple(app_ids),
+        ) as cur:
+            timing_rows = await cur.fetchall()
+        shift_hours = round(sum(
+            max(0.0, float(row[1] or 0) - float(row[0] or 0))
+            for row in timing_rows
+            if row[0] is not None and row[1] is not None
+        ), 3)
+        if shift_hours > 0:
+            totals["shift_hours"] = shift_hours
+    except Exception:
+        pass
     return {"application_ids": app_ids, "primary_application_id": app_ids[0],
             "applications": public_contexts,
             "plan_works": plan, "extra_works": extras, "hours": hours,
-            "totals": calculate_smr_totals(plan, extras, hours)}
+            "totals": totals}

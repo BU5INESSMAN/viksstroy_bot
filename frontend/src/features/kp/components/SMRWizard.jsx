@@ -60,6 +60,7 @@ export default function SMRWizard({
     // draft. Carried through state + payload, not rendered as an editable section.
     const [commonWorks, setCommonWorks] = useState([]);
     const [commonExtras, setCommonExtras] = useState([]);
+    const [notWorkedSections, setNotWorkedSections] = useState([]);
     const [submitting, setSubmitting] = useState(false);
     const [draftSavedAt, setDraftSavedAt] = useState(null);
     const [draftTick, setDraftTick] = useState(0);
@@ -86,6 +87,7 @@ export default function SMRWizard({
         if (d.extraByTeam && typeof d.extraByTeam === 'object') setExtraByTeam(d.extraByTeam);
         if (Array.isArray(d.commonWorks)) setCommonWorks(d.commonWorks);
         if (Array.isArray(d.commonExtras)) setCommonExtras(d.commonExtras);
+        if (Array.isArray(d.notWorkedSections)) setNotWorkedSections(d.notWorkedSections);
         if (d.step === 'hours' || d.step === 'works' || d.step === 'review') setStep(d.step);
         setDraftSavedAt(found.savedAt);
 
@@ -96,6 +98,7 @@ export default function SMRWizard({
         hoursData, worksData, extraWorksData,
         perBrigade, worksByTeam, extraByTeam,
         commonWorks, commonExtras,
+        notWorkedSections,
         step,
     }, {
         shouldSave: (d) =>
@@ -126,10 +129,16 @@ export default function SMRWizard({
     const submit = async () => {
         setSubmitting(true);
         try {
+            const notWorked = new Set(notWorkedSections);
+            const rowIsNotWorked = (row) => notWorked.has(
+                `${Number(row?.source_application_id || appId)}:${Number(row?.team_id || 0)}`
+            );
+            const canFinalize = ['foreman', 'moderator', 'boss', 'superadmin', 'hr'].includes(userRole);
             const payload = {
-                hours: hoursData,
-                works: worksData,
-                extra_works: extraWorksData,
+                hours: hoursData.filter(row => !rowIsNotWorked(row)),
+                works: worksData.filter(row => !rowIsNotWorked(row)),
+                extra_works: extraWorksData.filter(row => !rowIsNotWorked(row)),
+                finalize: canFinalize && !addendumMode && !approveMode && !editReadyMode,
             };
             if (addendumMode) {
                 // Доп.отчёт: pure-INSERT addendum — send ONLY the newly entered
@@ -145,11 +154,9 @@ export default function SMRWizard({
                 toast.success(editReadyMode ? 'Изменения сохранены' : 'Отчёт одобрен');
             } else {
                 await axios.post(`/api/kp/apps/${appId}/smr/submit`, payload);
-                toast.success(
-                    userRole === 'brigadier'
-                        ? 'Отправлено на проверку прорабу'
-                        : 'Отчёт сохранён'
-                );
+                toast.success(canFinalize
+                    ? 'СМР завершён и перемещён в готовые'
+                    : 'Ваша часть сохранена и передана прорабу');
             }
             clearDraft(draftKey);
             onSubmitted?.();
@@ -236,6 +243,14 @@ export default function SMRWizard({
                                         hoursData={hoursData}
                                         setHoursData={setHoursData}
                                         addendumMode={addendumMode}
+                                        onTeamStatusChange={(source, team, status) => {
+                                            const key = `${Number(source)}:${Number(team)}`;
+                                            setNotWorkedSections(prev => (
+                                                status === 'not_worked'
+                                                    ? [...new Set([...prev, key])]
+                                                    : prev.filter(value => value !== key)
+                                            ));
+                                        }}
                                         onNext={() => goTo('works')}
                                     />
                                 )}
@@ -269,6 +284,7 @@ export default function SMRWizard({
                                         appId={appId}
                                         app={app}
                                         hoursData={hoursData}
+                                        setHoursData={setHoursData}
                                         worksData={worksData}
                                         extraWorksData={extraWorksData}
                                         onEdit={(target) => goTo(target || 'hours')}
@@ -277,6 +293,7 @@ export default function SMRWizard({
                                         approveMode={approveMode}
                                         editReadyMode={editReadyMode}
                                         addendumMode={addendumMode}
+                                        canFinalize={['foreman', 'moderator', 'boss', 'superadmin', 'hr'].includes(userRole)}
                                     />
                                 )}
                             </motion.div>

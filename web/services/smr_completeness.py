@@ -7,6 +7,8 @@ main report.
 
 from __future__ import annotations
 
+from services.smr_sections import roster_member_ids
+
 
 def _csv_ids(value) -> set[int]:
     result: set[int] = set()
@@ -68,6 +70,24 @@ async def get_smr_completeness(db, app_ids: list[int]) -> dict[int, dict]:
             for row in await cur.fetchall()
         }
 
+    # New reports use a frozen roster and explicit brigade state. Tests and
+    # pre-migration databases may not have the table yet, so keep the legacy
+    # calculation as a safe fallback until the migration runs.
+    async with db.conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='smr_team_sections'"
+    ) as cur:
+        has_sections_table = await cur.fetchone() is not None
+    section_map: dict[tuple[int, int], dict] = {}
+    if has_sections_table:
+        async with db.conn.execute(
+            f"SELECT * FROM smr_team_sections WHERE app_id IN ({marks})",
+            tuple(normalized),
+        ) as cur:
+            section_map = {
+                (int(row["app_id"]), int(row["team_id"])): dict(row)
+                for row in await cur.fetchall()
+            }
+
     raw: dict[int, dict] = {}
     for app in applications:
         app_id = int(app["id"])
@@ -75,11 +95,29 @@ async def get_smr_completeness(db, app_ids: list[int]) -> dict[int, dict]:
         selected_ids = _csv_ids(app.get("selected_members"))
         missing_sections = 0
         missing_members = 0
+        not_worked_sections = 0
+        submitted_sections = 0
+        confirmed_sections = 0
         for team_id in app_team_ids:
-            expected = {
-                member_id for member_id in selected_ids
-                if member_team.get(member_id) == team_id
-            }
+            section = section_map.get((app_id, team_id), {})
+            section_status = section.get("status") or "draft"
+            if section_status == "not_worked":
+                not_worked_sections += 1
+                continue
+            if section_status == "confirmed":
+                # Historical ready reports were confirmed under the rules
+                # active at the time. Their completeness must not change when
+                # today's brigade roster changes.
+                confirmed_sections += 1
+                continue
+            if section_status == "submitted":
+                submitted_sections += 1
+            expected = roster_member_ids(section)
+            if not expected:
+                expected = {
+                    member_id for member_id in selected_ids
+                    if member_team.get(member_id) == team_id
+                }
             saved = {
                 member_id for saved_app, saved_team, member_id in saved_rows
                 if saved_app == app_id and saved_team == team_id
@@ -101,6 +139,9 @@ async def get_smr_completeness(db, app_ids: list[int]) -> dict[int, dict]:
             "is_complete": missing_sections == 0,
             "missing_sections": missing_sections,
             "missing_members": missing_members,
+            "not_worked_sections": not_worked_sections,
+            "submitted_sections": submitted_sections,
+            "confirmed_sections": confirmed_sections,
         }
 
     logical_groups: dict[str, list[int]] = {}
@@ -113,10 +154,16 @@ async def get_smr_completeness(db, app_ids: list[int]) -> dict[int, dict]:
     for member_ids in logical_groups.values():
         missing_sections = sum(raw[app_id]["missing_sections"] for app_id in member_ids)
         missing_members = sum(raw[app_id]["missing_members"] for app_id in member_ids)
+        not_worked_sections = sum(raw[app_id]["not_worked_sections"] for app_id in member_ids)
+        submitted_sections = sum(raw[app_id]["submitted_sections"] for app_id in member_ids)
+        confirmed_sections = sum(raw[app_id]["confirmed_sections"] for app_id in member_ids)
         group_result = {
             "is_complete": missing_sections == 0,
             "missing_sections": missing_sections,
             "missing_members": missing_members,
+            "not_worked_sections": not_worked_sections,
+            "submitted_sections": submitted_sections,
+            "confirmed_sections": confirmed_sections,
         }
         for app_id in member_ids:
             result[app_id] = dict(group_result)

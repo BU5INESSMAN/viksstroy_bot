@@ -284,7 +284,7 @@ def test_single_brigade_file_includes_legacy_unassigned_extra_work():
     asyncio.run(scenario())
 
 
-def test_unassigned_extra_is_not_guessed_between_multiple_brigades():
+def test_shared_extra_is_visible_in_every_brigade_file():
     import asyncio
 
     async def scenario():
@@ -312,9 +312,12 @@ def test_unassigned_extra_is_not_guessed_between_multiple_brigades():
         }
         general_name = next(name for name in by_name if 'Общий отчёт' in name)
         assert 'Доп. работы' in by_name[general_name].sheetnames
+        brigade_files = 0
         for filename, workbook in by_name.items():
             if filename == general_name:
                 continue
-            assert 'Доп. работы' not in workbook.sheetnames
+            brigade_files += 1
+            assert 'Доп. работы' in workbook.sheetnames
+        assert brigade_files == 2
 
     asyncio.run(scenario())
