@@ -133,7 +133,7 @@ async def logical_smr_app_ids(db, app_id: int) -> list[int]:
         return [int(r[0]) for r in await cur.fetchall()]
 
 
-async def get_smr_read_model(db, app_id: int) -> dict:
+async def get_smr_read_model(db, app_id: int, *, include_zero_hours: bool = False) -> dict:
     app_ids = await logical_smr_app_ids(db, app_id)
     if not app_ids:
         return {}
@@ -174,9 +174,9 @@ async def get_smr_read_model(db, app_id: int) -> dict:
         FROM application_hours ah LEFT JOIN team_members tm ON tm.id=ah.user_id
         LEFT JOIN teams t ON t.id=ah.team_id LEFT JOIN users u ON u.user_id=ah.filled_by_user_id
         WHERE ah.app_id IN ({marks})
-          AND (ah.hours>0 OR COALESCE(ah.participant_salary,0)>0)
+          AND (? OR ah.hours>0 OR COALESCE(ah.participant_salary,0)>0)
         ORDER BY ah.app_id, ah.is_additional, t.name, tm.fio, ah.id
-    """, tuple(app_ids)) as cur:
+    """, (*app_ids, int(include_zero_hours))) as cur:
         hours = [dict(r) for r in await cur.fetchall()]
     contexts = await _load_application_contexts(db, app_ids)
     _attach_row_context(plan, contexts, 'plan')

@@ -39,6 +39,11 @@ export default function SMRFilesModal({ app, onClose }) {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [downloading, setDownloading] = useState(null);
+    const files = info?.files || [];
+    const fileGroups = [
+        { id: 'comparison', title: 'Новые варианты — для выбора Кадрами', files: files.filter((file) => file.kind === 'comparison') },
+        { id: 'classic', title: 'Привычные файлы', files: files.filter((file) => file.kind !== 'comparison') },
+    ].filter((group) => group.files.length > 0);
 
     useEffect(() => {
         let active = true;
@@ -90,7 +95,7 @@ export default function SMRFilesModal({ app, onClose }) {
         <ModalPortal>
             <div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm overflow-y-auto" onClick={onClose}>
                 <div className="min-h-[100dvh] flex items-start sm:items-center justify-center p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
-                    <div className="w-full max-w-lg max-h-[calc(100dvh-2rem)] bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col" onClick={(event) => event.stopPropagation()}>
+                    <div className="w-full max-w-lg max-h-[calc(100dvh-max(1rem,env(safe-area-inset-top))-max(1rem,env(safe-area-inset-bottom)))] bg-white dark:bg-gray-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col" onClick={(event) => event.stopPropagation()}>
                         <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-100 dark:border-gray-700">
                             <div className="min-w-0">
                                 <h3 className="font-bold text-lg text-gray-900 dark:text-white flex items-center gap-2">
@@ -105,7 +110,7 @@ export default function SMRFilesModal({ app, onClose }) {
                             </button>
                         </div>
 
-                        <div className="overflow-y-auto custom-scrollbar p-5 space-y-4">
+                        <div className="min-h-0 overflow-y-auto custom-scrollbar p-5 space-y-4">
                             {loading && (
                                 <div className="py-12 flex flex-col items-center text-sm text-gray-400">
                                     <Loader2 className="w-7 h-7 animate-spin mb-3 text-emerald-500" /> Загружаем файлы…
@@ -125,7 +130,7 @@ export default function SMRFilesModal({ app, onClose }) {
                                         <InfoLine
                                             icon={Users}
                                             label="Файлы"
-                                            value={`1 общий + ${Math.max((info.files?.length || 1) - 1, 0)} по бригадам`}
+                                            value={`${files.length} файлов · ${files.filter((file) => file.kind === 'comparison').length} новых вариантов`}
                                         />
                                         <div className={`rounded-2xl border p-3 flex items-center gap-2 ${info.is_complete ? 'border-emerald-200 bg-emerald-50 dark:border-emerald-800 dark:bg-emerald-900/20' : 'border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-900/20'}`}>
                                             {info.is_complete
@@ -137,10 +142,13 @@ export default function SMRFilesModal({ app, onClose }) {
                                         </div>
                                     </div>
 
-                                    <div>
-                                        <p className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2">Файлы отчёта</p>
+                                    {fileGroups.map((group) => <div key={group.id}>
+                                        <p className="text-xs font-black uppercase tracking-wider text-gray-400 mb-2">{group.title}</p>
+                                        {group.id === 'comparison' && <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">Все варианты используют одни данные. «Единый состав» меняет только оформление. Общие работы без долей не делятся автоматически.</p>}
                                         <div className="space-y-2">
-                                            {(info.files || []).map((file, index) => (
+                                            {group.files.map((file) => {
+                                                const index = files.indexOf(file);
+                                                return (
                                                 <div key={`${file.kind || 'brigade'}:${file.team_id}:${index}`} className="rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/20 p-3 flex items-center gap-3">
                                                     <div className="w-10 h-10 rounded-xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center flex-shrink-0">
                                                         <FileSpreadsheet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
@@ -148,7 +156,7 @@ export default function SMRFilesModal({ app, onClose }) {
                                                     <div className="min-w-0 flex-1">
                                                         <p className="font-bold text-sm text-gray-900 dark:text-white break-words">{file.team_name}</p>
                                                         <p className="text-xs text-gray-500 dark:text-gray-400 break-words">
-                                                            Excel · {file.kind === 'general' ? 'все бригады' : 'отдельная бригада'} · {(file.objects || []).join(', ') || 'СМР'}
+                                                            {file.description || `Excel · ${file.kind === 'general' ? 'все бригады' : 'отдельная бригада'} · ${(file.objects || []).join(', ') || 'СМР'}`}
                                                         </p>
                                                     </div>
                                                     <button
@@ -157,19 +165,20 @@ export default function SMRFilesModal({ app, onClose }) {
                                                         onClick={() => downloadOne(file, index)}
                                                         className="w-11 h-11 flex-shrink-0 rounded-xl bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 text-blue-600 dark:text-blue-400 flex items-center justify-center disabled:opacity-50"
                                                         title={`Скачать ${file.team_name}`}
+                                                        aria-label={`Скачать ${file.team_name}`}
                                                     >
                                                         {downloading === `file:${index}` ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
                                                     </button>
                                                 </div>
-                                            ))}
+                                            ); })}
                                         </div>
-                                    </div>
+                                    </div>)}
                                 </>
                             )}
                         </div>
 
                         {!loading && info?.files?.length > 0 && (
-                            <div className="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/20">
+                            <div className="flex-shrink-0 p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/20">
                                 <button
                                     type="button"
                                     onClick={downloadAll}

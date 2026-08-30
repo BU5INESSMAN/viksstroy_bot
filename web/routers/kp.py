@@ -2466,6 +2466,7 @@ async def list_smr_report_files(app_id: int, current_user=Depends(get_current_us
     """Return general report information and its separate brigade files."""
     from smr_data import get_smr_read_model
     from services.smr_report import get_smr_report_targets
+    from services.smr_layouts import smr_layout_file_entries
 
     if db.conn is None:
         await db.init_db()
@@ -2473,6 +2474,7 @@ async def list_smr_report_files(app_id: int, current_user=Depends(get_current_us
     if not group_ids:
         raise HTTPException(404, "Заявка не найдена")
     report_app_id = min(group_ids)
+    comparison_allowed = await _can_download_smr_layouts(group_ids, current_user)
     report = await get_smr_read_model(db, report_app_id)
     contexts = report.get("applications") or []
     context_by_id = {int(context["id"]): context for context in contexts}
@@ -2494,6 +2496,8 @@ async def list_smr_report_files(app_id: int, current_user=Depends(get_current_us
         "objects": all_objects,
         "download_url": f"/api/kp/apps/{report_app_id}/smr/download?scope=general",
     }]
+    if comparison_allowed:
+        files.extend(smr_layout_file_entries(report_app_id, all_objects))
     include_unassigned = True
     for target_team_id, target_team_name in targets:
         source_ids = set()
@@ -2562,6 +2566,20 @@ async def list_smr_report_files(app_id: int, current_user=Depends(get_current_us
     }
 
 
+async def _can_download_smr_layouts(group_ids: list[int], current_user: dict) -> bool:
+    """Full report comparisons are for office and the owning foreman only."""
+    if current_user.get('role') in ('moderator', 'boss', 'superadmin', 'hr'):
+        return True
+    if current_user.get('role') != 'foreman' or not group_ids:
+        return False
+    async with db.conn.execute(
+        f"SELECT foreman_id FROM applications WHERE id IN ({','.join('?' for _ in group_ids)})",
+        tuple(group_ids),
+    ) as cursor:
+        owners = [r[0] for r in await cursor.fetchall()]
+    return bool(owners) and all(int(owner or 0) == int(current_user.get('tg_id') or 0) for owner in owners)
+
+
 @router.get("/api/kp/apps/{app_id}/smr/download")
 async def download_smr_report(
     app_id: int,
@@ -2579,6 +2597,7 @@ async def download_smr_report(
     """
     from smr_data import get_smr_read_model
     from services.smr_report import generate_smr_excel_bytes, get_smr_report_targets
+    from services.smr_layouts import SMR_LAYOUTS, generate_smr_layout_bytes
 
     if db.conn is None:
         await db.init_db()
@@ -2595,6 +2614,22 @@ async def download_smr_report(
     role = current_user.get('role', 'worker')
     include_financial = role in ('moderator', 'boss', 'superadmin', 'hr')
     include_participant_salary = include_financial or role == 'foreman'
+    if scope in SMR_LAYOUTS:
+        if team_id is not None:
+            raise HTTPException(400, "Вариант оформления скачивается целиком, без team_id")
+        if not await _can_download_smr_layouts(group_ids, current_user):
+            raise HTTPException(403, "Варианты доступны офису и прорабу этой заявки")
+        blob, filename = await generate_smr_layout_bytes(
+            db, report_app_id, scope,
+            include_financial=include_financial,
+            include_participant_salary=include_participant_salary,
+        )
+        import io
+        return StreamingResponse(
+            io.BytesIO(blob),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+        )
     report = await get_smr_read_model(db, report_app_id)
     targets = get_smr_report_targets(report)
     if scope == "general":
