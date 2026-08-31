@@ -67,12 +67,14 @@ export default function StepWorks({
         let alive = true;
         setLoading(true);
         Promise.all([
-            axios.get(`/api/kp/apps/${appId}/items`),
+            addendumMode
+                ? axios.get(`/api/kp/apps/${appId}/smr/summary`).then(res => ({ data: res.data.plan_works || [] }))
+                : axios.get(`/api/kp/apps/${appId}/items`),
             // v2.10: in addendum mode pull ALL existing extras (incl. prior
             // addenda) for the read-only reference so the user doesn't re-add.
             axios.get(`/api/kp/apps/${appId}/extra_works${addendumMode ? '?include_additional=1' : ''}`),
             axios.get('/api/kp/catalog'),
-            axios.get(`/api/kp/apps/${appId}/hours`).catch(() => ({ data: [] })),
+            axios.get(`/api/kp/apps/${appId}/hours${addendumMode ? '?include_additional=1' : ''}`).catch(() => ({ data: [] })),
         ])
             .then(([itemsRes, extraRes, catRes, hoursRes]) => {
                 if (!alive) return;

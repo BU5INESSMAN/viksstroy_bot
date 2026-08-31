@@ -6,6 +6,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json
 import asyncio
 import logging
+from functools import wraps
 
 from fastapi import APIRouter, Request, HTTPException, UploadFile, File, Depends
 from fastapi.responses import StreamingResponse, FileResponse
@@ -36,6 +37,16 @@ router = APIRouter(tags=["KP"])
 
 _require_office = require_role("superadmin", "boss", "moderator", "hr")
 _require_superadmin = require_role("superadmin")
+
+
+def _isolated_smr_request(function):
+    @wraps(function)
+    async def wrapped(*args, **kwargs):
+        if not hasattr(db, 'isolated_connection'):  # small isolated test doubles
+            return await function(*args, **kwargs)
+        async with db.isolated_connection():
+            return await function(*args, **kwargs)
+    return wrapped
 
 
 def _csv_team_ids(value) -> set[int]:
@@ -304,12 +315,24 @@ async def get_smr_summary(app_id: int, current_user=Depends(get_current_user)):
     return result
 
 
+@router.get("/api/kp/apps/{app_id}/smr/editor")
+@_isolated_smr_request
+async def get_smr_editor(app_id: int, current_user=Depends(get_current_user)):
+    from services.smr_editor import editor_state
+    # One read transaction prevents a mixed snapshot if another user saves.
+    await db.conn.execute('BEGIN')
+    try:
+        return await editor_state(db, app_id, current_user)
+    finally:
+        await db.conn.rollback()
+
+
 # ==========================================
 # SMR WIZARD STEP 1 — HOURS
 # ==========================================
 
 @router.get("/api/kp/apps/{app_id}/hours")
-async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
+async def get_app_hours(app_id: int, current_user=Depends(get_current_user), include_additional: bool = False):
     """Hours for an application grouped by team.
     Pre-fills with any previously saved hours. Brigadier sees all teams on
     the application; restriction on WRITE is enforced on POST.
@@ -386,7 +409,7 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user)):
 
     by_key: dict[tuple[int, int, int], dict] = {}
     for stored_aid in group_ids:
-        for r in await db.get_app_hours(stored_aid):
+        for r in await db.get_app_hours(stored_aid, include_additional=include_additional):
             tid = int(r['team_id'])
             mid = int(r['member_id'])
             owners = roster_owners.get((tid, mid), [])
@@ -604,6 +627,7 @@ async def save_app_hours_endpoint(app_id: int, request: Request, current_user=De
 # ==========================================
 
 @router.post("/api/kp/apps/{app_id}/smr/submit")
+@_isolated_smr_request
 async def submit_smr_report(app_id: int, request: Request, current_user=Depends(get_current_user)):
     """Unified SMR submit.
     Body: {
@@ -1288,6 +1312,7 @@ async def _insert_additional_hours(
 
 
 @router.post("/api/kp/apps/{app_id}/smr/additional")
+@_isolated_smr_request
 async def submit_additional_report(app_id: int, request: Request, current_user=Depends(get_current_user)):
     """Доп.отчёт — add forgotten works/extras/hours to an EXISTING report.
 
@@ -1304,6 +1329,22 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
 
     data = await request.json()
     tg_id = current_user['tg_id']
+
+    from smr_audit import payload_hash
+    operation = str(data.get('operation_id') or '')
+    if not 8 <= len(operation) <= 100:
+        raise HTTPException(409, 'Обновите страницу перед добавлением данных: включена защита повторной отправки.')
+    request_hash = payload_hash({'app_id': app_id, 'additional': data})
+    await db.conn.execute('BEGIN IMMEDIATE')
+    async with db.conn.execute('SELECT request_hash,response_json FROM smr_edit_requests WHERE actor_id=? AND operation_id=?', (tg_id, operation)) as cur:
+        previous = await cur.fetchone()
+    if previous:
+        if previous['request_hash'] != request_hash:
+            raise HTTPException(409, 'Данные изменились после попытки отправки. Откройте форму заново.')
+        await db.conn.rollback()
+        return json.loads(previous['response_json'])
+    if role == 'foreman':
+        await _require_smr_report_manager(app_id, current_user)
 
     if db.conn is None:
         await db.init_db()
@@ -1358,6 +1399,9 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
     # Any non-empty addendum means the external office program may be stale.
     if n_works or n_extras or n_hours:
         await _reset_smr_accounted(app_id)
+    response = {"status": "ok", "works": n_works, "extra_works": n_extras, "hours": n_hours}
+    await db.conn.execute('INSERT INTO smr_edit_requests(actor_id,operation_id,application_id,request_hash,response_json) VALUES(?,?,?,?,?)',
+                          (tg_id, operation, app_id, request_hash, json.dumps(response)))
     await db.conn.commit()
     await _audit_smr_change(
         app_id,
@@ -1397,6 +1441,7 @@ async def submit_additional_report(app_id: int, request: Request, current_user=D
 
 
 @router.post("/api/kp/apps/{app_id}/smr/review")
+@_isolated_smr_request
 async def review_smr(app_id: int, request: Request, current_user=Depends(get_current_user)):
     """Foreman reviews a brigadier's SMR submission.
     Body: {action: 'approve' | 'edit', hours?, works?, extra_works?}"""
@@ -1408,106 +1453,19 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
     group_ids = await _require_smr_report_manager(
         app_id, current_user, completed_only=ready_edit
     )
+    if ready_edit:
+        # Old clients submitted only the primary part, and cannot safely edit
+        # the complete report. Never reinterpret that partial payload.
+        if not data.get('editor_revision'):
+            raise HTTPException(409, "Редактор обновлён. Закройте отчёт и обновите страницу; данные не изменены.")
+        from services.smr_editor import save_report_changes
+        return await save_report_changes(db, app_id, data, current_user)
     before_snapshot = (
         await capture_smr_financial_snapshot(db, app_id)
         if action == 'edit' else {}
     )
 
-    if action == 'edit' and ready_edit:
-        # A ready-report edit is an authoritative replacement of the MAIN
-        # report. Additional reports stay intact and can still be cleared by
-        # the dedicated full-clear action. Keep replacement atomic so invalid
-        # input cannot leave a half-erased report.
-        await db.conn.execute("SAVEPOINT edit_completed_smr")
-        try:
-            marks = ','.join('?' * len(group_ids))
-            await ensure_smr_team_sections(db, group_ids)
-            await db.conn.execute(
-                f"UPDATE smr_team_sections SET status='draft', "
-                f"updated_at=datetime('now','localtime') "
-                f"WHERE app_id IN ({marks}) AND status!='not_worked'",
-                tuple(group_ids),
-            )
-            for table, column in (
-                ('application_hours', 'app_id'),
-                ('application_kp', 'application_id'),
-                ('application_extra_works', 'application_id'),
-            ):
-                await db.conn.execute(
-                    f"DELETE FROM {table} WHERE {column} IN ({marks}) "
-                    f"AND COALESCE(is_additional, 0) = 0",
-                    tuple(group_ids),
-                )
-
-            hours = await _guard_adhoc_hours(app_id, data.get('hours') or [], role)
-            if hours:
-                for source_id, source_rows in _rows_by_source_application(hours, group_ids).items():
-                    await db.save_app_hours(
-                        source_id,
-                        source_rows,
-                        tg_id,
-                        allow_participant_salary=True,
-                        commit=False,
-                    )
-            works = data.get('works') or []
-            works_scope = _compute_write_scope(role, None, works)
-            for source_id, source_rows in _rows_by_source_application(works, group_ids).items():
-                await db.submit_kp_report(
-                    source_id,
-                    source_rows,
-                    role,
-                    filled_by_user_id=tg_id,
-                    team_scope=works_scope,
-                    commit=False,
-                )
-            extras = data.get('extra_works') or []
-            extras_scope = _compute_write_scope(role, None, extras)
-            for source_id, source_rows in _rows_by_source_application(extras, group_ids).items():
-                await _save_extra_works_inline(
-                    source_id,
-                    source_rows,
-                    tg_id,
-                    role,
-                    team_scope=extras_scope,
-                    commit=False,
-                )
-            await mark_payload_sections_submitted(
-                db,
-                group_ids,
-                [*hours, *works, *extras],
-                actor_id=tg_id,
-                actor_role=role,
-            )
-            completeness = await get_smr_completeness(db, group_ids)
-            report_state = completeness.get(min(group_ids), {})
-            if not report_state.get('is_complete'):
-                raise HTTPException(
-                    400,
-                    "Готовый отчёт не изменён: после правки остались незаполненные "
-                    f"бригады ({int(report_state.get('missing_sections') or 0)}). "
-                    "Укажите каждому сотруднику часы, включая 0.",
-                )
-            await db.conn.execute(
-                f"UPDATE smr_team_sections SET status='confirmed', updated_by=?, "
-                f"updated_by_role=?, updated_at=datetime('now','localtime') "
-                f"WHERE app_id IN ({marks}) AND status!='not_worked'",
-                (tg_id, role, *group_ids),
-            )
-            await _reset_smr_accounted(app_id)
-            marks = ','.join('?' * len(group_ids))
-            await db.conn.execute(
-                f"UPDATE applications SET smr_status = 'approved', kp_status = 'approved' "
-                f"WHERE id IN ({marks})",
-                tuple(group_ids),
-            )
-            await db.conn.execute("RELEASE SAVEPOINT edit_completed_smr")
-            await db.conn.commit()
-        except Exception:
-            await db.conn.execute("ROLLBACK TO SAVEPOINT edit_completed_smr")
-            await db.conn.execute("RELEASE SAVEPOINT edit_completed_smr")
-            await db.conn.rollback()
-            raise
-    elif action == 'edit':
+    if action == 'edit':
         # Reviewer is foreman+ (role-gated above), so the write scope is the
         # payload's concrete teams plus the common bucket — non-destructive
         # toward brigades not present in this review payload.
@@ -1587,6 +1545,7 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
 
 
 @router.post("/api/kp/apps/{app_id}/smr/clear")
+@_isolated_smr_request
 async def clear_completed_smr_report(
     app_id: int,
     current_user=Depends(get_current_user),
@@ -2106,6 +2065,7 @@ async def get_smr_reconciliation(app_id: int, current_user=Depends(_require_offi
 
 
 @router.post("/api/kp/apps/{app_id}/smr/team-status")
+@_isolated_smr_request
 async def update_smr_team_status(
     app_id: int,
     request: Request,

@@ -522,3 +522,13 @@ CREATE TABLE IF NOT EXISTS equipment_exchanges (
 -- was selected from the main KP catalog; `extra_work_id` is retained only
 -- for the legacy extra-work catalog. Prices remain snapshots on this row.
 CREATE INDEX IF NOT EXISTS idx_application_kp_app ON application_kp(application_id);
+
+CREATE TABLE IF NOT EXISTS smr_edit_requests (
+    actor_id INTEGER NOT NULL,
+    operation_id TEXT NOT NULL,
+    application_id INTEGER NOT NULL,
+    request_hash TEXT NOT NULL,
+    response_json TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY(actor_id, operation_id)
+);

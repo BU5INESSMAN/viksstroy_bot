@@ -181,6 +181,7 @@ export default function ExtraWorksPicker({
                                                 </p>
                                                 {/* v2.10: addendum (доп.отчёт) rows carry is_additional;
                                                     editable rows never do, so this is inert there. */}
+                                                {(s.object_name || s.team_name) && <span className="block text-xs font-normal text-gray-500 whitespace-normal">{[s.object_name, s.team_name].filter(Boolean).join(' · ')}</span>}
                                                 {s.is_additional ? (
                                                     <span className="inline-block mt-0.5 text-[9px] font-bold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-1.5 py-0.5 rounded">
                                                         добавлено позже{s.filled_at ? ` · ${String(s.filled_at).split('T')[0]}` : ''}

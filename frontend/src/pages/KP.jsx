@@ -13,6 +13,7 @@ import TabBadge from '../components/ui/TabBadge';
 import ExtraWorksPicker from '../features/kp/components/ExtraWorksPicker';
 import { genRowId } from '../features/kp/utils/rowId';
 import SMRWizard from '../features/kp/components/SMRWizard';
+import SMRReadyEditor from '../features/kp/components/SMRReadyEditor';
 import ObjectDisplay from '../components/ui/ObjectDisplay';
 import SMRReconciliationModal from '../features/kp/components/SMRReconciliationModal';
 import SMRFilesModal from '../features/kp/components/SMRFilesModal';
@@ -252,6 +253,10 @@ export default function KP() {
             // in that case we keep them in view-only form via custom_name.
             setExtraWorks((summary.extra_works || []).map(ew => ({
                 rid: genRowId(),
+                source_application_id: ew.source_application_id || ew.application_id,
+                object_name: ew.object_name,
+                team_id: ew.team_id,
+                team_name: ew.team_name,
                 kp_id: ew.kp_id || null,
                 extra_work_id: ew.extra_work_id || null,
                 name: ew.name || ew.custom_name || '',
@@ -753,7 +758,7 @@ export default function KP() {
                                             <div className="bg-gray-50 dark:bg-gray-900/50 px-4 py-2 text-xs font-bold text-gray-500 uppercase">{cat}</div>
                                             <div className="divide-y divide-gray-50 dark:divide-gray-700">
                                                 {items.map(item => (
-                                                    <div key={`${item.kp_id}_${item.team_id ?? 'common'}`} className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+                                                    <div key={`work-${item.id}`} className="p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
                                                         <div className="flex-1">
                                                             <p className="font-bold text-sm text-gray-800 dark:text-gray-100 flex items-center gap-2 flex-wrap">
                                                                 {item.name}
@@ -773,7 +778,7 @@ export default function KP() {
                                                             )}
                                                         </div>
                                                         <div className="flex items-center gap-2">
-                                                            <input type="number" min="0" step="0.1" disabled={activeTab !== 'to_fill' && !(activeTab === 'approved' && isOffice) && !(activeTab === 'pending_review' && isEditing)} value={item.volume} onChange={(e) => handleVolumeChange(item.kp_id, item.team_id ?? null, e.target.value)} className="w-20 p-2 text-center font-bold border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-white" />
+                                                            <input type="number" min="0" step="0.1" disabled={activeTab !== 'to_fill' && !(activeTab === 'pending_review' && isEditing)} value={item.volume} onChange={(e) => handleVolumeChange(item.kp_id, item.team_id ?? null, e.target.value)} className="w-20 p-2 text-center font-bold border border-gray-200 dark:border-gray-600 rounded-lg dark:bg-gray-900 dark:text-white" />
                                                             <span className="min-w-[2.5rem] text-xs font-semibold text-gray-500 dark:text-gray-400">{item.unit || ''}</span>
                                                         </div>
                                                     </div>
@@ -782,7 +787,7 @@ export default function KP() {
                                         </div>
                                     ))}
                                 </div>
-                            ) : <p className="text-center text-gray-400 py-8">Работы не назначены.</p>}
+                            ) : <p className="text-center text-gray-400 py-3">Работ из КП нет. Работы из справочника показаны ниже.</p>}
 
                             {smrHours.length > 0 && (
                                 <div className="mt-6 border border-gray-100 dark:border-gray-700 rounded-2xl overflow-hidden">
@@ -795,7 +800,7 @@ export default function KP() {
                                             <div key={`hours-${row.id}`} className="px-4 py-2.5 flex items-center gap-3 text-sm">
                                                 <div className="flex-1 min-w-0">
                                                     <p className="font-medium text-gray-800 dark:text-gray-100 truncate">{row.fio || 'Сотрудник'}</p>
-                                                    <p className="text-[11px] text-gray-400 truncate">{row.team_name || '—'}{row.is_additional ? ' · добавлено позже' : ''}</p>
+                                                    <p className="text-[11px] text-gray-400 break-words">{row.object_name} · {row.team_name || '—'}{row.is_additional ? ' · добавлено позже' : ''}</p>
                                                 </div>
                                                 <div className="text-right whitespace-nowrap">
                                                     <span className="block font-bold text-gray-900 dark:text-white">{row.hours} ч</span>
@@ -818,13 +823,13 @@ export default function KP() {
                                         catalog={extraWorksCatalog}
                                         selected={extraWorks}
                                         onChange={setExtraWorks}
-                                        disabled={activeTab !== 'to_fill' && !(activeTab === 'approved' && isOffice) && !(activeTab === 'pending_review' && isEditing)}
+                                        disabled={activeTab !== 'to_fill' && !(activeTab === 'pending_review' && isEditing)}
                                         defaultOpen={extraWorks.length > 0}
                                     />
                                 </div>
                             )}
                         </div>
-                        {kpItems.length > 0 && (
+                        {(kpItems.length > 0 || extraWorks.length > 0 || smrHours.length > 0) && (
                             <div className="p-6 border-t bg-gray-50/50 dark:bg-gray-900/50">
                                 {(canViewFinance || canViewParticipantSalary) && (
                                     <div className="space-y-2 mb-6">
@@ -983,7 +988,11 @@ export default function KP() {
                 </div>
             )}
 
-            {wizardApp && (
+            {wizardApp && wizardEditReadyMode && (
+                <SMRReadyEditor appId={wizardApp.id} userRole={role}
+                    onClose={() => setWizardApp(null)} onSubmitted={() => fetchApps()} />
+            )}
+            {wizardApp && !wizardEditReadyMode && (
                 <SMRWizard
                     appId={wizardApp.id}
                     app={wizardApp}

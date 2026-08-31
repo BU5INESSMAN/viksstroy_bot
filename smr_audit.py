@@ -92,6 +92,7 @@ def _hours_snapshot(row: dict) -> dict:
         "specialty": row.get("specialty") or "",
         "is_additional": bool(row.get("is_additional")),
         "hours": _number(row.get("hours"), QUANTITY_STEP),
+        "participant_salary": _number(row.get("participant_salary"), MONEY_STEP),
     }
 
 
@@ -170,6 +171,7 @@ async def record_smr_change(
     after_snapshot: dict | None = None,
     metadata: dict | None = None,
     force: bool = False,
+    commit: bool = True,
 ) -> dict | None:
     """Capture the final state and append an audit row when data changed."""
     before = before_snapshot or {}
@@ -193,6 +195,7 @@ async def record_smr_change(
         after_snapshot=after,
         diff=changes,
         metadata=metadata or {},
+        commit=commit,
     )
 
 

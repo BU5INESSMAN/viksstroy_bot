@@ -80,7 +80,7 @@ def test_zero_hours_and_deleted_name_are_visible_without_changing_classic_read_m
     async def scenario():
         db=_database()
         db.conn.raw.executescript("UPDATE application_hours SET hours=0 WHERE id=1; DELETE FROM team_members WHERE id=17;")
-        report=await get_smr_read_model(db,235)
+        report=await get_smr_read_model(db,235,include_zero_hours=False)
         assert len(report['hours'])==1
         blob,_=await generate_smr_layout_bytes(db,235,'roster')
         values=_values(load_workbook(BytesIO(blob),data_only=True))

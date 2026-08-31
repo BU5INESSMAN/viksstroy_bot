@@ -35,6 +35,7 @@ class SmrAuditRepoMixin:
         after_snapshot: dict,
         diff: list[dict],
         metadata: dict,
+        commit: bool = True,
     ) -> dict:
         if not str(event_type or "").strip():
             raise ValueError("event_type is required for an SMR audit entry")
@@ -59,7 +60,8 @@ class SmrAuditRepoMixin:
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             values,
         )
-        await self.conn.commit()
+        if commit:
+            await self.conn.commit()
         return await self.get_smr_financial_audit_entry(int(cursor.lastrowid))
 
     async def get_smr_financial_audit_entry(self, audit_id: int) -> dict | None:

@@ -239,11 +239,6 @@ async def generate_smr_excel_bytes(
     )
     r = 2
     for h in hours_rows:
-        if (
-            float(h.get('hours') or 0) <= 0
-            and float(h.get('participant_salary') or 0) <= 0
-        ):
-            continue
         col = 1
         if include_object_context:
             object_name, application_label = _row_context(h, app_meta)

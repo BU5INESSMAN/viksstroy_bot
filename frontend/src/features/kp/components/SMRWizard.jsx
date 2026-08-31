@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -62,6 +62,8 @@ export default function SMRWizard({
     const [commonExtras, setCommonExtras] = useState([]);
     const [notWorkedSections, setNotWorkedSections] = useState([]);
     const [submitting, setSubmitting] = useState(false);
+    const submitLock = useRef(false);
+    const operationId = useRef(null);
     const [draftSavedAt, setDraftSavedAt] = useState(null);
     const [draftTick, setDraftTick] = useState(0);
 
@@ -127,6 +129,9 @@ export default function SMRWizard({
     const goTo = (next) => setStep(next);
 
     const submit = async () => {
+        if (submitLock.current) return;
+        submitLock.current = true;
+        operationId.current ||= globalThis.crypto?.randomUUID?.() || `smr-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         setSubmitting(true);
         try {
             const notWorked = new Set(notWorkedSections);
@@ -135,6 +140,7 @@ export default function SMRWizard({
             );
             const canFinalize = ['foreman', 'moderator', 'boss', 'superadmin', 'hr'].includes(userRole);
             const payload = {
+                operation_id: operationId.current,
                 hours: hoursData.filter(row => !rowIsNotWorked(row)),
                 works: worksData.filter(row => !rowIsNotWorked(row)),
                 extra_works: extraWorksData.filter(row => !rowIsNotWorked(row)),
@@ -164,6 +170,7 @@ export default function SMRWizard({
         } catch (e) {
             toast.error(e?.response?.data?.detail || 'Ошибка сохранения');
         } finally {
+            submitLock.current = false;
             setSubmitting(false);
         }
     };

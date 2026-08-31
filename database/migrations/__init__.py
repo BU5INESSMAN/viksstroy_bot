@@ -69,6 +69,7 @@ MIGRATIONS_ORDER = [
     # Stable per-brigade progress/roster snapshots. Brigadier submissions no
     # longer close the whole report; a foreman explicitly finalizes it.
     "m_2026_08_smr_team_sections",
+    "m_2026_08_smr_edit_requests",
 ]
 
 

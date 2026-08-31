@@ -133,7 +133,7 @@ async def logical_smr_app_ids(db, app_id: int) -> list[int]:
         return [int(r[0]) for r in await cur.fetchall()]
 
 
-async def get_smr_read_model(db, app_id: int, *, include_zero_hours: bool = False) -> dict:
+async def get_smr_read_model(db, app_id: int, *, include_zero_hours: bool = True) -> dict:
     app_ids = await logical_smr_app_ids(db, app_id)
     if not app_ids:
         return {}

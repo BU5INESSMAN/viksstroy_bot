@@ -201,7 +201,7 @@ class _HoursDb:
     def __init__(self, conn):
         self.conn = conn
 
-    async def get_app_hours(self, _app_id):
+    async def get_app_hours(self, _app_id, include_additional=False):
         return []
 
     async def get_teams_for_app(self, app_id):

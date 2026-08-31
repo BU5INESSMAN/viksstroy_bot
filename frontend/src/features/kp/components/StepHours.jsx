@@ -54,7 +54,7 @@ export default function StepHours({
     useEffect(() => {
         let alive = true;
         setLoading(true);
-        axios.get(`/api/kp/apps/${appId}/hours`)
+        axios.get(`/api/kp/apps/${appId}/hours${addendumMode ? '?include_additional=1' : ''}`)
             .then(res => {
                 if (!alive) return;
                 const data = res.data || [];
@@ -610,7 +610,7 @@ export default function StepHours({
                                                                 disabled={readOnly}
                                                                 value={current}
                                                                 onChange={(e) => setMemberHours(source, team.team_id, m.user_id, e.target.value, true)}
-                                                                placeholder="0"
+                                                                placeholder="—"
                                                                 aria-label={`Часы для ${m.fio}`}
                                                                 className="w-16 p-1.5 text-center text-sm font-bold border border-gray-200 dark:border-gray-600 rounded-lg bg-gray-50 dark:bg-gray-900 dark:text-white disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-blue-400"
                                                             />

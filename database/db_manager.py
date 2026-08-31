@@ -1,6 +1,9 @@
 import aiosqlite
 import os
 import logging
+import asyncio
+from contextvars import ContextVar
+from contextlib import asynccontextmanager
 from datetime import datetime
 import pandas as pd
 
@@ -19,7 +22,45 @@ from database.smr_audit_repo import SmrAuditRepoMixin
 class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin, ObjectsRepoMixin, KpRepoMixin, ExchangeRepoMixin, HoursRepoMixin, SmrAuditRepoMixin):
     def __init__(self, db_path: str):
         self.db_path = db_path
-        self.conn = None
+        self._conn = None
+        self._request_connection = ContextVar(f"db_connection_{id(self)}", default=None)
+
+    @property
+    def conn(self):
+        scoped = self._request_connection.get()
+        # Child/background tasks must not inherit a connection which closes
+        # when the originating request finishes.
+        if scoped is not None and scoped[0] is asyncio.current_task():
+            return scoped[1]
+        return self._conn
+
+    @conn.setter
+    def conn(self, value):
+        self._conn = value
+
+    @asynccontextmanager
+    async def isolated_connection(self):
+        """Independent connection: another HTTP request cannot commit us.
+
+        Does NOT initialize/migrate the database. The route controls its
+        transaction; unfinished writes are rolled back even on cancellation.
+        """
+        scoped = self._request_connection.get()
+        if scoped is not None and scoped[0] is asyncio.current_task():
+            yield self
+            return
+        conn = await aiosqlite.connect(self.db_path, timeout=30)
+        conn.row_factory = aiosqlite.Row
+        await conn.execute("PRAGMA busy_timeout=30000")
+        token = self._request_connection.set((asyncio.current_task(), conn))
+        try:
+            yield self
+        finally:
+            self._request_connection.reset(token)
+            try:
+                await conn.rollback()
+            finally:
+                await conn.close()
 
     async def init_db(self):
         os.makedirs(os.path.dirname(self.db_path), exist_ok=True)

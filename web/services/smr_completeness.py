@@ -1,8 +1,8 @@
-"""Completeness checks for main SMR reports.
+"""Completeness checks for the complete factual SMR report.
 
 An hours row is a completion marker even when its value is zero: zero is a
-valid, explicitly entered value. Additional-report rows never complete the
-main report.
+valid, explicitly entered value. An additional-report row also completes
+the participant: it is part of the same factual report, not missing input.
 """
 
 from __future__ import annotations
@@ -19,11 +19,11 @@ def _csv_ids(value) -> set[int]:
     return result
 
 
-async def get_smr_completeness(db, app_ids: list[int]) -> dict[int, dict]:
+async def get_smr_completeness(db, app_ids: list[int], *, trust_confirmed: bool = True) -> dict[int, dict]:
     """Return a logical-report completeness result for every application.
 
     Every source application/object and every assigned brigade must have its
-    main hours section saved. For modern applications, every explicitly
+    hours section saved (main or additional). For modern applications, every explicitly
     selected participant must have a row; for legacy applications without a
     saved roster, at least one row per brigade is required.
     """
@@ -62,13 +62,22 @@ async def get_smr_completeness(db, app_ids: list[int]) -> dict[int, dict]:
 
     async with db.conn.execute(
         f"SELECT app_id,team_id,user_id FROM application_hours "
-        f"WHERE app_id IN ({marks}) AND COALESCE(is_additional,0)=0",
+        f"WHERE app_id IN ({marks})",
         tuple(normalized),
     ) as cur:
         saved_rows = {
             (int(row[0]), int(row[1]), int(row[2]))
             for row in await cur.fetchall()
         }
+    # Legacy merges stored all rows on the primary application. A unique
+    # selected-person match owns that row, just as in the canonical read model.
+    attributed = set()
+    for stored_app, team_id, member_id in saved_rows:
+        owners = [int(a['id']) for a in applications
+                  if team_id in _csv_ids(a.get('team_id'))
+                  and member_id in _csv_ids(a.get('selected_members'))]
+        attributed.add((owners[0] if len(owners) == 1 else stored_app, team_id, member_id))
+    saved_rows = attributed
 
     # New reports use a frozen roster and explicit brigade state. Tests and
     # pre-migration databases may not have the table yet, so keep the legacy
@@ -104,7 +113,7 @@ async def get_smr_completeness(db, app_ids: list[int]) -> dict[int, dict]:
             if section_status == "not_worked":
                 not_worked_sections += 1
                 continue
-            if section_status == "confirmed":
+            if section_status == "confirmed" and trust_confirmed:
                 # Historical ready reports were confirmed under the rules
                 # active at the time. Their completeness must not change when
                 # today's brigade roster changes.
