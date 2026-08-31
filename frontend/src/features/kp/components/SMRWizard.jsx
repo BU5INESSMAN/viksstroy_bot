@@ -9,6 +9,7 @@ import StepReview from './StepReview';
 import ModalPortal from '../../../components/ui/ModalPortal';
 import { useDraft } from '../../../hooks/useDraft';
 import { loadDraft, clearDraft, formatDraftAge } from '../../../utils/draftStorage';
+import { reconcileDraftHours } from '../smrDraft';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -134,6 +135,14 @@ export default function SMRWizard({
         operationId.current ||= globalThis.crypto?.randomUUID?.() || `smr-${Date.now()}-${Math.random().toString(36).slice(2)}`;
         setSubmitting(true);
         try {
+            // Restoring on Works/Review bypasses StepHours: reconcile here too.
+            const latest = await axios.get(`/api/kp/apps/${appId}/hours`);
+            const reconciled = reconcileDraftHours(hoursData, latest.data || [], appId);
+            setHoursData(reconciled);
+            if (reconciled.some(row => row._draft_conflict)) {
+                setStep('hours');
+                throw new Error('После переноса проверьте часы сотрудника: в черновике разные значения.');
+            }
             const notWorked = new Set(notWorkedSections);
             const rowIsNotWorked = (row) => notWorked.has(
                 `${Number(row?.source_application_id || appId)}:${Number(row?.team_id || 0)}`
@@ -141,7 +150,7 @@ export default function SMRWizard({
             const canFinalize = ['foreman', 'moderator', 'boss', 'superadmin', 'hr'].includes(userRole);
             const payload = {
                 operation_id: operationId.current,
-                hours: hoursData.filter(row => !rowIsNotWorked(row)),
+                hours: reconciled.filter(row => !rowIsNotWorked(row)),
                 works: worksData.filter(row => !rowIsNotWorked(row)),
                 extra_works: extraWorksData.filter(row => !rowIsNotWorked(row)),
                 finalize: canFinalize && !addendumMode && !approveMode && !editReadyMode,
@@ -168,7 +177,7 @@ export default function SMRWizard({
             onSubmitted?.();
             onClose?.();
         } catch (e) {
-            toast.error(e?.response?.data?.detail || 'Ошибка сохранения');
+            toast.error(e?.response?.data?.detail || e.message || 'Ошибка сохранения');
         } finally {
             submitLock.current = false;
             setSubmitting(false);

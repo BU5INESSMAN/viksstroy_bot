@@ -72,6 +72,18 @@ async def load_period_matrix(db, date_from: date, date_to: date) -> dict[str, An
         (date_from.isoformat(), date_to.isoformat()),
     ) as cursor:
         rows = [dict(row) for row in await cursor.fetchall()]
+    from smr_roster import enrich_historical_hours
+    if rows:
+        async with db.conn.execute('PRAGMA table_info(application_hours)') as cursor:
+            has_teams = 'team_id' in {r[1] for r in await cursor.fetchall()}
+        if has_teams:
+            async with db.conn.execute('SELECT id,team_id FROM application_hours') as cursor:
+                hour_teams = {r[0]:r[1] for r in await cursor.fetchall()}
+            for row in rows:
+                row['team_id'] = hour_teams[row['id']]
+            await enrich_historical_hours(db, rows, sorted({r['app_id'] for r in rows}))
+    for row in rows:
+        row['member_fio'] = row.get('fio') or row['member_fio']
 
     matrix: dict[str, dict[str, dict[str, float]]] = defaultdict(
         lambda: defaultdict(lambda: {"salary": 0.0, "hours": 0.0})

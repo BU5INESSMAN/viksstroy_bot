@@ -47,6 +47,8 @@ class TeamsRepoMixin:
         await self.conn.commit()
 
     async def remove_team_member(self, member_id: int):
+        from smr_roster import preserve_member_history
+        await preserve_member_history(self, member_id)
         await self.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
         await self.conn.commit()
 

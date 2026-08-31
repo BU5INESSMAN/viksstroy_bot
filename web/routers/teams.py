@@ -392,8 +392,12 @@ async def delete_team_member(member_id: int, current_user=Depends(get_current_us
         m_row = await cur.fetchone()
     m_team_id = m_row[0] if m_row else 0
     m_fio = m_row[1] if m_row else ''
-    await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
-    await db.conn.commit()
+    from smr_roster import preserve_member_history
+    async with db.isolated_connection():
+        await db.conn.execute('BEGIN IMMEDIATE')
+        await preserve_member_history(db, member_id)
+        await db.conn.execute("DELETE FROM team_members WHERE id = ?", (member_id,))
+        await db.conn.commit()
 
     admin_fio = current_user.get("fio", "Система")
     _t_name = f"#{m_team_id}"
@@ -409,6 +413,11 @@ async def delete_team_member(member_id: int, current_user=Depends(get_current_us
 @router.post("/api/teams/{team_id}/delete")
 async def delete_entire_team(team_id: int, current_user=Depends(_require_office)):
     """Delete entire team. Office (moderator+) only."""
+    async with db.conn.execute("""SELECT 1 FROM applications
+        WHERE instr(',' || COALESCE(team_id,'') || ',', ',' || ? || ',') > 0
+           OR id IN (SELECT app_id FROM application_hours WHERE team_id=?) LIMIT 1""", (str(team_id), team_id)) as cur:
+        if await cur.fetchone():
+            raise HTTPException(409, 'Бригада используется в заявках или СМР. Удаление нарушит историю отчётов.')
     async with db.conn.execute("SELECT name FROM teams WHERE id = ?", (team_id,)) as cur:
         t_row = await cur.fetchone()
         t_name = t_row[0] if t_row else f"ID:{team_id}"

@@ -70,6 +70,7 @@ MIGRATIONS_ORDER = [
     # longer close the whole report; a foreman explicitly finalizes it.
     "m_2026_08_smr_team_sections",
     "m_2026_08_smr_edit_requests",
+    "m_2026_08_smr_historical_roster",
 ]
 
 

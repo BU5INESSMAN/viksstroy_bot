@@ -139,7 +139,7 @@ export default function SMRReadyEditor({ appId, onClose, onSubmitted, userRole }
                                     {numeric('hours', row, 'hours', 'Часы')}{numeric('hours', row, 'participant_salary', 'ЗП, ₽')}
                                 </div>)}
                                 {newHours.filter(r => keyOf(r) === section.key).map(row => <div key={row.member_id} className="flex flex-wrap gap-2 items-center">
-                                    <span className="flex-1 text-sm">{row.fio} · новый сотрудник</span>
+                                    <span className="flex-1 text-sm">{row.fio} · часы ещё не сохранены</span>
                                     <label className="text-xs">Часы <input className={inputClass} type="number" min="0" max="24" value={row.hours} disabled={busy} placeholder="Не задано"
                                         onChange={e => { operation.current = null; setNewHours(prev => prev.map(r => r === row ? { ...r, hours: e.target.value } : r)); }} /></label>
                                     <button disabled={busy} className="text-xs underline" onClick={() => { operation.current = null; setNewHours(prev => prev.filter(r => r !== row)); }}>Убрать</button>

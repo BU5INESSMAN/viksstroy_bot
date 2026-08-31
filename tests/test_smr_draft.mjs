@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import { reconcileDraftHours } from '../frontend/src/features/kp/smrDraft.js';
+const teams = [{ member_aliases: [{ app_id: 1, old_member_id: 91, member_id: 106, team_id: 27 }] }];
+const old = {source_application_id: 1, team_id: 11, user_id: 91, hours: 9, participant_salary: 0};
+const current = {source_application_id: 1, team_id: 27, user_id: 106, hours: 9, participant_salary: 0};
+assert.deepEqual(reconcileDraftHours([old], teams, 1), [current]);
+assert.deepEqual(reconcileDraftHours([old,current], teams, 1), [current]);
+assert.equal(reconcileDraftHours([{...old,hours:0}],teams,1)[0].hours,0);
+assert.equal(reconcileDraftHours([{...old,source_application_id:2}],teams,1)[0].user_id,91);
+const conflict = reconcileDraftHours([old,{...current,hours:8}],teams,1)[0];
+assert.equal(conflict.hours,'');
+assert.equal(conflict._draft_conflict.length,2);
+assert.deepEqual(reconcileDraftHours([conflict],teams,1),[conflict]);
+assert.equal(old.user_id,91);
+console.log('7 draft reconciliation checks passed');

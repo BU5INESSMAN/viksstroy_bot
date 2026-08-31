@@ -1,0 +1,23 @@
+// Match only explicit application-scoped identity aliases supplied by the API.
+export function resolveDraftHour(row, teams, appId) {
+    const source = Number(row.source_application_id || appId);
+    const alias = teams.flatMap(t => t.member_aliases || []).find(a =>
+        Number(a.app_id) === source && Number(a.old_member_id) === Number(row.user_id));
+    return alias ? { ...row, source_application_id: source, team_id: Number(alias.team_id), user_id: Number(alias.member_id) } : row;
+}
+
+export function reconcileDraftHours(rows, teams, appId) {
+    const result = new Map();
+    for (const original of rows) {
+        const row = resolveDraftHour(original, teams, appId);
+        const key = `${Number(row.source_application_id || appId)}:${row.team_id}:${row.user_id}`;
+        const prior = result.get(key);
+        if (!prior) { result.set(key, row); continue; }
+        if (Number(prior.hours) === Number(row.hours)
+            && Number(prior.participant_salary || 0) === Number(row.participant_salary || 0)
+            && !prior._draft_conflict && !row._draft_conflict) continue;
+        result.set(key, { ...row, hours: '', participant_salary: '',
+            _draft_conflict: [...(prior._draft_conflict || [prior]), ...(row._draft_conflict || [row])] });
+    }
+    return [...result.values()];
+}

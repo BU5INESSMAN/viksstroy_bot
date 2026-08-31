@@ -109,6 +109,8 @@ async def get_smr_completeness(db, app_ids: list[int], *, trust_confirmed: bool 
         confirmed_sections = 0
         for team_id in app_team_ids:
             section = section_map.get((app_id, team_id), {})
+            if not section.get('is_required', 1):
+                continue
             section_status = section.get("status") or "draft"
             if section_status == "not_worked":
                 not_worked_sections += 1

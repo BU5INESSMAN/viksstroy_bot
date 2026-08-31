@@ -241,7 +241,16 @@ async def _guard_adhoc_hours(app_id: int, hours_items: list, role: str) -> list:
     through untouched, so the normal path has zero behaviour change.
     """
     group_ids = await _expand_merge_group(app_id)
-    roster = await _roster_member_keys(group_ids)
+    from smr_roster import normalize_hours
+    try:
+        hours_items = await normalize_hours(db, group_ids, hours_items)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    roster = set()
+    for source in group_ids:
+        for team in await db.get_teams_for_app(source):
+            for member in team.get('members') or []:
+                roster.add((source, int(team['id']), int(member['id'])))
     out = []
     for it in hours_items:
         try:
@@ -249,7 +258,8 @@ async def _guard_adhoc_hours(app_id: int, hours_items: list, role: str) -> list:
             mid = int(it.get('user_id'))
         except (TypeError, ValueError):
             continue
-        if (tid, mid) in roster:
+        source = int(it.get('source_application_id') or min(group_ids))
+        if (source, tid, mid) in roster:
             out.append(it)
             continue
         # Out-of-roster → ad-hoc.
@@ -431,6 +441,8 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user), inc
     # Build a separate team section for every source application/object. This
     # intentionally keeps repeated brigades and people as separate report rows.
     result = []
+    from smr_roster import aliases_for
+    identity_aliases = await aliases_for(db, group_ids)
     for aid in group_ids:
         meta = app_meta.get(aid, {})
         for team in app_teams.get(aid, []):
@@ -471,6 +483,7 @@ async def get_app_hours(app_id: int, current_user=Depends(get_current_user), inc
                     (int(aid), int(team['id'])), {}
                 ).get('not_worked_reason', ''),
                 'members': members_out,
+                'member_aliases': [a for a in identity_aliases if int(a['app_id']) == aid and int(a['team_id']) == int(team['id'])],
             })
 
     # v2.7 — surface previously-saved AD-HOC workers. These are
@@ -753,6 +766,10 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
                 (group_id, smr_role, *group_ids),
             )
             await db.conn.commit()
+            await _audit_smr_change(
+                app_id, current_user, 'smr_draft_saved', before_snapshot,
+                metadata={'result_status': 'in_progress', 'finalization_rejected': True},
+            )
             raise HTTPException(
                 400,
                 "СМР сохранён как черновик, но ещё не закрыт. "

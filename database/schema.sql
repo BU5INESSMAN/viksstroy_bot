@@ -388,6 +388,7 @@ CREATE TABLE IF NOT EXISTS smr_team_sections (
     status TEXT NOT NULL DEFAULT 'draft'
         CHECK(status IN ('draft', 'submitted', 'not_worked', 'confirmed')),
     roster_json TEXT NOT NULL DEFAULT '[]',
+    is_required INTEGER NOT NULL DEFAULT 1,
     not_worked_reason TEXT DEFAULT '',
     updated_by INTEGER,
     updated_by_role TEXT DEFAULT '',
@@ -400,6 +401,16 @@ CREATE TABLE IF NOT EXISTS smr_team_sections (
 );
 CREATE INDEX IF NOT EXISTS idx_smr_team_sections_app
     ON smr_team_sections(app_id, team_id, status);
+
+-- Immutable financial history for SMR reports. The complete before/after
+CREATE TABLE IF NOT EXISTS smr_member_aliases (
+    app_id INTEGER NOT NULL,
+    old_member_id INTEGER NOT NULL,
+    member_id INTEGER NOT NULL,
+    team_id INTEGER NOT NULL,
+    reason TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (app_id, old_member_id)
+);
 
 -- Immutable financial history for SMR reports. The complete before/after
 -- snapshots make an audit entry independent from later catalog edits.

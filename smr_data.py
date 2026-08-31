@@ -178,6 +178,8 @@ async def get_smr_read_model(db, app_id: int, *, include_zero_hours: bool = True
         ORDER BY ah.app_id, ah.is_additional, t.name, tm.fio, ah.id
     """, (*app_ids, int(include_zero_hours))) as cur:
         hours = [dict(r) for r in await cur.fetchall()]
+    from smr_roster import enrich_historical_hours
+    await enrich_historical_hours(db, hours, app_ids)
     contexts = await _load_application_contexts(db, app_ids)
     _attach_row_context(plan, contexts, 'plan')
     _attach_row_context(extras, contexts, 'extra')

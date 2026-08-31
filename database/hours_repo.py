@@ -71,7 +71,9 @@ class HoursRepoMixin:
             ORDER BY t.name, tm.is_foreman DESC, tm.fio
         """
         async with self.conn.execute(query, (app_id,)) as cur:
-            return [dict(r) for r in await cur.fetchall()]
+            rows = [dict(r) for r in await cur.fetchall()]
+        from smr_roster import enrich_historical_hours
+        return await enrich_historical_hours(self, rows, [app_id])
 
     async def save_app_hours(
         self,
@@ -156,7 +158,12 @@ class HoursRepoMixin:
             return []
 
         teams: list[dict] = []
+        from smr_roster import sections_for, roster
+        sections = {int(s['team_id']): s for s in await sections_for(self, [app_id])}
         for tid in team_ids:
+            section = sections.get(tid, {})
+            if not section.get('is_required', 1):
+                continue
             async with self.conn.execute(
                 "SELECT id, name, icon FROM teams WHERE id = ?", (tid,)
             ) as cur:
@@ -177,6 +184,16 @@ class HoursRepoMixin:
 
             if selected_ids:
                 members = [m for m in members if m['id'] in selected_ids]
+
+            frozen = roster(section)
+            if frozen:
+                live = {int(m['id']): m for m in members}
+                members = [{**live.get(int(m['member_id']), {}),
+                            'id': int(m['member_id']), 'team_id': tid,
+                            'fio': m.get('fio') or live.get(int(m['member_id']), {}).get('fio', ''),
+                            'position': m.get('position') or '',
+                            'is_historical': int(m['member_id']) not in live}
+                           for m in frozen]
 
             teams.append({
                 'id': t_row['id'],

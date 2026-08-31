@@ -3,6 +3,7 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, User, Crown, ArrowRight, UserPlus, X, Search, MoreVertical, Ban, RotateCcw, ListChecks } from 'lucide-react';
+import { reconcileDraftHours } from '../smrDraft';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -69,7 +70,7 @@ export default function StepHours({
                 // v2.10: in addendum mode the editable buckets stay EMPTY so
                 // only NEW hours are collected (existing hours are shown
                 // read-only for reference below). Never seed here.
-                if (!addendumMode && hoursData.length === 0) {
+                if (!addendumMode) {
                     const seed = [];
                     for (const team of data) {
                         for (const m of (team.members || [])) {
@@ -88,7 +89,7 @@ export default function StepHours({
                             }
                         }
                     }
-                    if (seed.length > 0) setHoursData(seed);
+                    setHoursData(prev => reconcileDraftHours(prev.length ? prev : seed, data, appId));
                 }
 
                 // Default: expand all teams
@@ -152,6 +153,7 @@ export default function StepHours({
                 user_id,
                 hours: Number(numeric),
                 participant_salary: existing?.participant_salary ?? 0,
+                _draft_conflict: existing?._draft_conflict && existing?.participant_salary === '' ? existing._draft_conflict : undefined,
             }];
         });
         setCustomOverrides(prev => {
@@ -186,6 +188,7 @@ export default function StepHours({
                 user_id,
                 hours: existing?.hours ?? 0,
                 participant_salary: Number(value),
+                _draft_conflict: existing?._draft_conflict && existing?.hours === '' ? existing._draft_conflict : undefined,
             }];
         });
     };
@@ -390,6 +393,7 @@ export default function StepHours({
     const hasHoursEntry = hoursData.some(h =>
         h.hours !== '' && Number.isFinite(Number(h.hours)) && Number(h.hours) >= 0
     ) || visibleTeams.some(team => team.smr_section_status === 'not_worked');
+    const hasDraftConflict = hoursData.some(h => h._draft_conflict);
 
     if (loading) {
         return (
@@ -463,6 +467,12 @@ export default function StepHours({
                 <div className="text-center py-8 text-gray-400 dark:text-gray-500 text-sm italic border border-dashed border-gray-200 dark:border-gray-700 rounded-xl">
                     Нет бригад. Добавьте сотрудника кнопкой выше.
                 </div>
+            )}
+            {hasDraftConflict && (
+                <p role="alert" className="rounded-xl bg-amber-50 border border-amber-300 p-3 text-sm text-amber-900">
+                    После переноса в черновике нашлись разные значения одного сотрудника.
+                    Проверьте строки с пустыми часами и ЗП и введите правильные значения — повторные часы не суммируются.
+                </p>
             )}
 
             {visibleTeams.map(team => {
@@ -650,7 +660,7 @@ export default function StepHours({
                     <button
                         type="button"
                         onClick={onNext}
-                        disabled={!addendumMode && !hasHoursEntry}
+                        disabled={hasDraftConflict || (!addendumMode && !hasHoursEntry)}
                         className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-3.5 rounded-xl transition-colors active:scale-[0.99] flex items-center justify-center gap-2"
                     >
                         Далее — работы <ArrowRight className="w-4 h-4" />
