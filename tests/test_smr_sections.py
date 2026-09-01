@@ -4,7 +4,11 @@ import unittest
 import aiosqlite
 
 from web.services.smr_completeness import get_smr_completeness
-from web.services.smr_sections import ensure_smr_team_sections, set_smr_team_section_status
+from web.services.smr_sections import (
+    ensure_smr_team_sections,
+    mark_payload_sections_submitted,
+    set_smr_team_section_status,
+)
 
 
 class SmrTeamSectionsTests(unittest.IsolatedAsyncioTestCase):
@@ -66,6 +70,27 @@ class SmrTeamSectionsTests(unittest.IsolatedAsyncioTestCase):
         result = await get_smr_completeness(self.db, [1])
         self.assertTrue(result[1]["is_complete"])
         self.assertEqual(result[1]["not_worked_sections"], 1)
+
+    async def test_ad_hoc_workers_from_another_team_do_not_require_a_section(self):
+        await ensure_smr_team_sections(self.db, [1], commit=True)
+        await self.conn.execute(
+            "INSERT INTO application_hours VALUES (3,1,15,99,8,0)"
+        )
+        await mark_payload_sections_submitted(
+            self.db,
+            [1],
+            [
+                {"source_application_id": 1, "team_id": 5, "user_id": 10, "hours": 8},
+                {"source_application_id": 1, "team_id": 15, "user_id": 99, "hours": 8},
+            ],
+            actor_id=100,
+            actor_role="foreman",
+        )
+        async with self.conn.execute(
+            "SELECT team_id,status FROM smr_team_sections WHERE app_id=1 ORDER BY team_id"
+        ) as cursor:
+            rows = await cursor.fetchall()
+        self.assertEqual([(row[0], row[1]) for row in rows], [(5, "submitted")])
 
 
 if __name__ == "__main__":

@@ -137,6 +137,18 @@ async def mark_payload_sections_submitted(
         if app_id in group and team_id > 0:
             touched.add((app_id, team_id))
     for app_id, team_id in sorted(touched):
+        # Ad-hoc employees keep the id of their home brigade in hours rows,
+        # even when that brigade is not assigned to this application. Such a
+        # payload bucket has no required section and must not turn an otherwise
+        # valid submit into a server error. Assigned brigades already have a
+        # frozen section created by ensure_smr_team_sections.
+        await ensure_smr_team_sections(db, [app_id])
+        async with db.conn.execute(
+            "SELECT 1 FROM smr_team_sections WHERE app_id=? AND team_id=?",
+            (app_id, team_id),
+        ) as cursor:
+            if not await cursor.fetchone():
+                continue
         await set_smr_team_section_status(
             db,
             app_id,
