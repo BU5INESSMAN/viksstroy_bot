@@ -399,7 +399,11 @@ async def cleanup_old_logs_job():
             row = await cur.fetchone()
         days = int(row[0]) if row and row[0] else 90
         await db.cleanup_old_logs(days)
-        logger.info(f"🧹 Очистка логов: удалены записи старше {days} дней")
+        async with db.conn.execute("SELECT value FROM settings WHERE key = 'product_audit_retention_days'") as cur:
+            audit_row = await cur.fetchone()
+        audit_days = int(audit_row[0]) if audit_row and audit_row[0] else 180
+        removed = await db.cleanup_product_audit(audit_days)
+        logger.info(f"🧹 Очистка логов: действия старше {days} дней; аудит старше {audit_days} дней ({removed} записей)")
     except Exception as e:
         logger.error(f"Ошибка очистки логов: {e}")
 

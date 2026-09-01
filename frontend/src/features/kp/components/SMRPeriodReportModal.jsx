@@ -30,6 +30,7 @@ export default function SMRPeriodReportModal({ onClose }) {
     const [initial] = useState(() => initialRange());
     const [dateFrom, setDateFrom] = useState(initial.from);
     const [dateTo, setDateTo] = useState(initial.to);
+    const [includeUnaccounted, setIncludeUnaccounted] = useState(false);
     const [loading, setLoading] = useState(false);
 
     const download = async () => {
@@ -44,7 +45,11 @@ export default function SMRPeriodReportModal({ onClose }) {
         setLoading(true);
         try {
             const response = await axios.get('/api/kp/smr/period-report', {
-                params: { date_from: dateFrom, date_to: dateTo },
+                params: {
+                    date_from: dateFrom,
+                    date_to: dateTo,
+                    include_unaccounted: includeUnaccounted,
+                },
                 responseType: 'blob',
             });
             const url = window.URL.createObjectURL(new Blob([response.data]));
@@ -104,10 +109,23 @@ export default function SMRPeriodReportModal({ onClose }) {
                                 </label>
                             </div>
 
+                            <label className="min-h-12 flex items-center gap-3 rounded-2xl border border-amber-200 dark:border-amber-800/60 bg-amber-50/70 dark:bg-amber-950/20 px-4 py-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={includeUnaccounted}
+                                    onChange={(event) => setIncludeUnaccounted(event.target.checked)}
+                                    className="w-5 h-5 rounded text-amber-600"
+                                />
+                                <span className="min-w-0">
+                                    <span className="block text-sm font-bold text-amber-900 dark:text-amber-200">Включить неучтённые СМР</span>
+                                    <span className="block text-xs text-amber-700 dark:text-amber-300 mt-0.5">По умолчанию отчёт содержит только учтённые. Архивные СМР включаются всегда.</span>
+                                </span>
+                            </label>
+
                             <div className="rounded-2xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/70 dark:bg-blue-950/20 p-4 flex items-start gap-3">
                                 <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
                                 <p className="text-xs leading-5 text-blue-800 dark:text-blue-200">
-                                    Файл повторяет бухгалтерский образец: строки — сотрудники, колонки — объекты, внутри каждого объекта отдельно ЗП и часы. Учитываются готовые СМР и их дополнения.
+                                    В файле три листа: общая сводка, детализация по заявкам и все работы. Отдельно показаны введённая ЗП участников и расчётная ЗП по расценкам работ. Архивные СМР отбираются по дате выполнения работ.
                                 </p>
                             </div>
                         </div>

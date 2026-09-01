@@ -142,6 +142,8 @@ export default function KP() {
     const [reportActionBusy, setReportActionBusy] = useState(null);
     const [showReconciliation, setShowReconciliation] = useState(false);
     const [showPeriodReport, setShowPeriodReport] = useState(false);
+    const [batchArchiveBusy, setBatchArchiveBusy] = useState(false);
+    const [batchArchiveWarning, setBatchArchiveWarning] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
 
     const fileInputRef = useRef(null);
@@ -372,6 +374,37 @@ export default function KP() {
             toast.error(e.response?.data?.detail || 'Не удалось изменить отметку');
         } finally {
             setAccountingBusy(false);
+        }
+    };
+
+    const archiveSelected = async (confirmMixed = false) => {
+        if (!selectedForExport.length || batchArchiveBusy) return;
+        setBatchArchiveBusy(true);
+        try {
+            const response = await axios.post('/api/kp/smr/archive-batch', {
+                app_ids: selectedForExport,
+                confirm_mixed: confirmMixed,
+            });
+            const archived = Number(response.data?.archived_groups || 0);
+            const skipped = Number(response.data?.skipped_groups || 0);
+            if (archived > 0) {
+                toast.success(`Перемещено в архив: ${archived}`);
+            }
+            if (skipped > 0) {
+                toast(`Неучтённые СМР пропущены: ${skipped}`, { icon: '⚠️' });
+            }
+            setBatchArchiveWarning(null);
+            setSelectedForExport([]);
+            await fetchApps({ showLoader: false });
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            if (error?.response?.status === 409 && detail?.code === 'unaccounted_selected') {
+                setBatchArchiveWarning(detail);
+            } else {
+                toast.error(typeof detail === 'string' ? detail : 'Не удалось архивировать СМР');
+            }
+        } finally {
+            setBatchArchiveBusy(false);
         }
     };
 
@@ -666,6 +699,13 @@ export default function KP() {
                         >
                             <Download className="w-4 h-4" /> Скачать ({selectedForExport.length})
                         </button>
+                        <button
+                            disabled={selectedForExport.length === 0 || batchArchiveBusy}
+                            onClick={() => archiveSelected(false)}
+                            className="min-h-10 bg-gray-800 dark:bg-gray-200 text-white dark:text-gray-900 px-4 py-2 rounded-xl text-xs font-bold shadow-md flex items-center gap-2 disabled:opacity-50"
+                        >
+                            <Archive className="w-4 h-4" /> В архив ({selectedForExport.length})
+                        </button>
                     </div>
                 </div>
             )}
@@ -706,7 +746,7 @@ export default function KP() {
                         await axios.post(`/api/kp/apps/${app.id}/archive`);
                         toast.success('СМР перемещена в архив');
                         fetchApps();
-                    } catch { toast.error('Ошибка архивации'); }
+                    } catch (error) { toast.error(error?.response?.data?.detail || 'Ошибка архивации'); }
                 }}
                 onRemind={async (app) => {
                     try {
@@ -735,6 +775,48 @@ export default function KP() {
             {showPeriodReport && (
                 <SMRPeriodReportModal onClose={() => setShowPeriodReport(false)} />
             )}
+
+            <AnimatePresence>
+                {batchArchiveWarning && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"
+                        onClick={() => setBatchArchiveWarning(null)}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.96, y: 12 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.96, y: 12 }}
+                            className="w-full max-w-md rounded-3xl bg-white dark:bg-gray-800 shadow-2xl p-5 sm:p-6"
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            <div className="flex items-start gap-3">
+                                <div className="w-11 h-11 rounded-2xl bg-amber-100 dark:bg-amber-900/30 flex items-center justify-center flex-shrink-0">
+                                    <AlertTriangle className="w-6 h-6 text-amber-600" />
+                                </div>
+                                <div>
+                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white">В выборке есть неучтённые СМР</h3>
+                                    <p className="mt-2 text-sm leading-6 text-gray-600 dark:text-gray-300">
+                                        В архив будут перемещены только полностью учтённые отчёты: {batchArchiveWarning.eligible_groups || 0}.
+                                        Неучтённые отчёты будут пропущены: {batchArchiveWarning.skipped_groups || 0}.
+                                    </p>
+                                    <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                                        Объединённые СМР архивируются целиком только после учёта всех входящих заявок.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="mt-6 grid grid-cols-2 gap-3">
+                                <button type="button" onClick={() => setBatchArchiveWarning(null)} className="min-h-11 rounded-xl border border-gray-200 dark:border-gray-700 font-bold text-sm text-gray-700 dark:text-gray-200">
+                                    Отмена
+                                </button>
+                                <button type="button" disabled={batchArchiveBusy || !batchArchiveWarning.eligible_groups} onClick={() => archiveSelected(true)} className="min-h-11 rounded-xl bg-amber-600 text-white font-bold text-sm disabled:opacity-50">
+                                    Архивировать учтённые
+                                </button>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {filesModalApp && (
                 <SMRFilesModal app={filesModalApp} onClose={() => setFilesModalApp(null)} />

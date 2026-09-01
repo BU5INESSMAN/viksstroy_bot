@@ -1,10 +1,4 @@
-"""Period payroll matrix for completed SMR reports.
-
-The workbook intentionally mirrors the accounting export supplied by the
-customer: employees are rows, objects are paired salary/hour columns and the
-last row/columns contain totals.  Participant salary is a dedicated value
-entered by a foreman; catalog work-rate salary is never substituted for it.
-"""
+"""Three-sheet SMR period report for accounting and personnel review."""
 
 from __future__ import annotations
 
@@ -16,355 +10,369 @@ from typing import Any
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
-from openpyxl.worksheet.page import PageMargins
+from openpyxl.worksheet.table import Table, TableStyleInfo
 
 
-HEADER_BLUE = "4574A0"
+HEADER_BLUE = "375A9E"
+SUBHEADER_BLUE = "DCE6F8"
 TOTAL_BLUE = "4A62B9"
-GRID_BLUE = "7D8AB9"
-HEADER_BORDER = "BDC7EB"
+GRID_BLUE = "AAB8DA"
+MONEY_FORMAT = '#,##0.00" ₽"'
+NUMBER_FORMAT = "0.###"
+
+
+def _num(value: object) -> float:
+    try:
+        return float(value or 0)
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def _clean_number(value: float) -> int | float:
     rounded = round(float(value or 0), 8)
-    if abs(rounded - round(rounded)) < 1e-8:
-        return int(round(rounded))
-    return rounded
+    return int(round(rounded)) if abs(rounded - round(rounded)) < 1e-8 else rounded
 
 
-async def load_period_matrix(db, date_from: date, date_to: date) -> dict[str, Any]:
-    """Return employee/object salary and person-hour aggregates.
+def _ready_clause(alias: str = "a") -> str:
+    return (
+        f"({alias}.smr_status='approved' OR "
+        f"(COALESCE(TRIM({alias}.smr_status),'')='' AND {alias}.kp_status='approved'))"
+    )
 
-    Only reports that are genuinely in the ready state are included. Main and
-    addendum rows are both counted, because an addendum is part of the final
-    factual report. Deleted team-member names fall back to the immutable SMR
-    audit snapshots when available and finally to a stable technical label.
-    """
-    if db.conn is None:
-        await db.init_db()
 
+async def _table_exists(db, table: str) -> bool:
     async with db.conn.execute(
-        """
-        SELECT ah.id,
-               ah.app_id,
-               ah.user_id AS member_id,
-               COALESCE(NULLIF(TRIM(tm.fio), ''), '') AS member_fio,
-               a.object_id,
-               COALESCE(NULLIF(TRIM(o.name), ''),
-                        NULLIF(TRIM(a.object_address), ''),
-                        'Объект ' || a.id) AS object_name,
-               COALESCE(ah.hours, 0) AS hours,
-               COALESCE(ah.participant_salary, 0) AS participant_salary
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+    ) as cursor:
+        return await cursor.fetchone() is not None
+
+
+async def _load_hours(
+    db, date_from: date, date_to: date, *, include_unaccounted: bool
+) -> list[dict[str, Any]]:
+    async with db.conn.execute(
+        f"""
+        SELECT ah.id,ah.app_id,ah.team_id,ah.user_id AS member_id,
+               COALESCE(ah.hours,0) AS hours,
+               COALESCE(ah.participant_salary,0) AS participant_salary,
+               COALESCE(ah.is_additional,0) AS is_additional,
+               COALESCE(NULLIF(TRIM(tm.fio),''),'') AS member_fio,
+               COALESCE(NULLIF(TRIM(tm.position),''),'') AS member_position,
+               a.public_number,a.date_target,a.object_id,a.object_address,
+               a.foreman_id,COALESCE(NULLIF(TRIM(u.fio),''),a.foreman_name,'') AS foreman_name,
+               a.smr_accounted_at,a.kp_archived,
+               COALESCE(NULLIF(TRIM(o.name),''),NULLIF(TRIM(a.object_address),''),'Объект '||a.id) AS object_name,
+               COALESCE(NULLIF(TRIM(t.name),''),'Бригада '||ah.team_id) AS team_name
         FROM application_hours ah
-        JOIN applications a ON a.id = ah.app_id
-        LEFT JOIN team_members tm ON tm.id = ah.user_id
-        LEFT JOIN objects o ON o.id = a.object_id
+        JOIN applications a ON a.id=ah.app_id
+        LEFT JOIN team_members tm ON tm.id=ah.user_id
+        LEFT JOIN objects o ON o.id=a.object_id
+        LEFT JOIN teams t ON t.id=ah.team_id
+        LEFT JOIN users u ON u.user_id=a.foreman_id
         WHERE date(a.date_target) BETWEEN date(?) AND date(?)
-          AND (
-                a.smr_status = 'approved'
-                OR (
-                    COALESCE(TRIM(a.smr_status), '') = ''
-                    AND a.kp_status = 'approved'
-                )
-              )
-        ORDER BY object_name COLLATE NOCASE, member_fio COLLATE NOCASE, ah.id
+          AND {_ready_clause('a')}
+          AND (?=1 OR a.smr_accounted_at IS NOT NULL)
+        ORDER BY a.date_target,a.id,ah.team_id,member_fio,ah.id
         """,
-        (date_from.isoformat(), date_to.isoformat()),
+        (date_from.isoformat(), date_to.isoformat(), int(include_unaccounted)),
     ) as cursor:
         rows = [dict(row) for row in await cursor.fetchall()]
-    from smr_roster import enrich_historical_hours
-    if rows:
-        async with db.conn.execute('PRAGMA table_info(application_hours)') as cursor:
-            has_teams = 'team_id' in {r[1] for r in await cursor.fetchall()}
-        if has_teams:
-            async with db.conn.execute('SELECT id,team_id FROM application_hours') as cursor:
-                hour_teams = {r[0]:r[1] for r in await cursor.fetchall()}
-            for row in rows:
-                row['team_id'] = hour_teams[row['id']]
-            await enrich_historical_hours(db, rows, sorted({r['app_id'] for r in rows}))
-    for row in rows:
-        row['member_fio'] = row.get('fio') or row['member_fio']
 
-    matrix: dict[str, dict[str, dict[str, float]]] = defaultdict(
-        lambda: defaultdict(lambda: {"salary": 0.0, "hours": 0.0})
-    )
-    employee_names: dict[str, str] = {}
-    object_names: dict[str, str] = {}
-    missing_names: set[int] = set()
+    if rows:
+        from smr_roster import enrich_historical_hours
+
+        await enrich_historical_hours(db, rows, sorted({int(row["app_id"]) for row in rows}))
+
+    try:
+        from services.employee_identity import identity_map
+    except ModuleNotFoundError:  # direct package import in unit tests
+        from web.services.employee_identity import identity_map
+
+    mapping = await identity_map(db, {int(row.get("member_id") or 0) for row in rows})
     for row in rows:
-        fio = str(row.get("member_fio") or "").strip()
         member_id = int(row.get("member_id") or 0)
-        if not fio:
-            missing_names.add(member_id)
-            fio = f"Сотрудник #{member_id}"
-        object_name = str(row.get("object_name") or "Объект").strip() or "Объект"
-        employee_key = f"member:{member_id}"
-        object_id = int(row.get("object_id") or 0)
-        object_key = (
-            f"object:{object_id}"
-            if object_id > 0
-            else f"address:{object_name.casefold()}"
+        identity = mapping.get(member_id) or {}
+        row["identity_id"] = int(identity.get("identity_id") or member_id)
+        row["member_fio"] = (
+            identity.get("canonical_fio")
+            or row.get("fio")
+            or row.get("member_fio")
+            or f"Сотрудник #{member_id}"
         )
-        employee_names[employee_key] = fio
+        row["member_position"] = (
+            identity.get("position")
+            or row.get("specialty")
+            or row.get("member_position")
+            or ""
+        )
+    return rows
+
+
+async def _load_works(
+    db, date_from: date, date_to: date, *, include_unaccounted: bool
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    async with db.conn.execute(
+        f"""
+        SELECT akp.id,akp.application_id AS app_id,COALESCE(akp.team_id,0) AS team_id,
+               a.public_number,a.date_target,a.object_id,a.object_address,
+               COALESCE(NULLIF(TRIM(o.name),''),NULLIF(TRIM(a.object_address),''),'Объект '||a.id) AS object_name,
+               COALESCE(NULLIF(TRIM(t.name),''),CASE WHEN COALESCE(akp.team_id,0)=0 THEN 'Общие работы' ELSE 'Бригада '||akp.team_id END) AS team_name,
+               COALESCE(NULLIF(TRIM(k.category),''),'Без категории') AS category,
+               COALESCE(NULLIF(TRIM(k.name),''),'Работа #'||akp.kp_id) AS name,
+               COALESCE(NULLIF(TRIM(akp.unit),''),NULLIF(TRIM(k.unit),''),'') AS unit,
+               COALESCE(akp.volume,0) AS volume,
+               COALESCE(akp.current_salary,k.salary,0) AS rate_salary,
+               COALESCE(akp.current_price,k.price,0) AS rate_price,
+               COALESCE(akp.is_additional,0) AS is_additional,
+               a.smr_accounted_at,a.kp_archived,'Основная' AS work_kind
+        FROM application_kp akp
+        JOIN applications a ON a.id=akp.application_id
+        LEFT JOIN objects o ON o.id=a.object_id
+        LEFT JOIN teams t ON t.id=akp.team_id
+        LEFT JOIN kp_catalog k ON k.id=akp.kp_id
+        WHERE date(a.date_target) BETWEEN date(?) AND date(?)
+          AND {_ready_clause('a')}
+          AND (?=1 OR a.smr_accounted_at IS NOT NULL)
+          AND COALESCE(akp.volume,0)>0
+        """,
+        (date_from.isoformat(), date_to.isoformat(), int(include_unaccounted)),
+    ) as cursor:
+        rows.extend(dict(row) for row in await cursor.fetchall())
+
+    if await _table_exists(db, "application_extra_works"):
+        async with db.conn.execute(
+            f"""
+            SELECT aew.id,aew.application_id AS app_id,COALESCE(aew.team_id,0) AS team_id,
+                   a.public_number,a.date_target,a.object_id,a.object_address,
+                   COALESCE(NULLIF(TRIM(o.name),''),NULLIF(TRIM(a.object_address),''),'Объект '||a.id) AS object_name,
+                   COALESCE(NULLIF(TRIM(t.name),''),CASE WHEN COALESCE(aew.team_id,0)=0 THEN 'Общие работы' ELSE 'Бригада '||aew.team_id END) AS team_name,
+                   COALESCE(NULLIF(TRIM(k.category),''),'Дополнительные работы') AS category,
+                   COALESCE(NULLIF(TRIM(k.name),''),NULLIF(TRIM(ew.name),''),NULLIF(TRIM(aew.custom_name),''),'Доп. работа') AS name,
+                   COALESCE(NULLIF(TRIM(aew.unit),''),NULLIF(TRIM(k.unit),''),NULLIF(TRIM(ew.unit),''),'') AS unit,
+                   COALESCE(aew.volume,0) AS volume,
+                   COALESCE(aew.salary,k.salary,ew.salary,0) AS rate_salary,
+                   COALESCE(aew.price,k.price,ew.price,0) AS rate_price,
+                   COALESCE(aew.is_additional,0) AS is_additional,
+                   a.smr_accounted_at,a.kp_archived,'Дополнительная' AS work_kind
+            FROM application_extra_works aew
+            JOIN applications a ON a.id=aew.application_id
+            LEFT JOIN objects o ON o.id=a.object_id
+            LEFT JOIN teams t ON t.id=aew.team_id
+            LEFT JOIN kp_catalog k ON k.id=aew.kp_id
+            LEFT JOIN extra_works_catalog ew ON ew.id=aew.extra_work_id
+            WHERE date(a.date_target) BETWEEN date(?) AND date(?)
+              AND {_ready_clause('a')}
+              AND (?=1 OR a.smr_accounted_at IS NOT NULL)
+              AND COALESCE(aew.volume,0)>0
+            """,
+            (date_from.isoformat(), date_to.isoformat(), int(include_unaccounted)),
+        ) as cursor:
+            rows.extend(dict(row) for row in await cursor.fetchall())
+    rows.sort(key=lambda row: (str(row.get("date_target") or ""), int(row.get("app_id") or 0), int(row.get("team_id") or 0), str(row.get("name") or "").casefold()))
+    return rows
+
+
+def _aggregate_hours(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    aggregated: dict[tuple[int, int, int], dict[str, Any]] = {}
+    for row in rows:
+        key = (int(row["app_id"]), int(row["team_id"]), int(row["identity_id"]))
+        if key not in aggregated:
+            aggregated[key] = {**row, "hours": 0.0, "participant_salary": 0.0, "calculated_salary": 0.0, "member_ids": set()}
+        item = aggregated[key]
+        item["hours"] += _num(row.get("hours"))
+        item["participant_salary"] += _num(row.get("participant_salary"))
+        item["member_ids"].add(int(row.get("member_id") or 0))
+    return list(aggregated.values())
+
+
+def _allocate_work_salary(hours: list[dict[str, Any]], works: list[dict[str, Any]]) -> None:
+    pools: dict[tuple[int, int], float] = defaultdict(float)
+    for work in works:
+        pools[(int(work["app_id"]), int(work.get("team_id") or 0))] += _num(work.get("volume")) * _num(work.get("rate_salary"))
+    for (app_id, team_id), amount in pools.items():
+        recipients = [row for row in hours if int(row["app_id"]) == app_id and (team_id == 0 or int(row["team_id"]) == team_id) and _num(row.get("hours")) > 0]
+        total_hours = sum(_num(row.get("hours")) for row in recipients)
+        if amount <= 0 or total_hours <= 0:
+            continue
+        allocated = 0.0
+        for index, row in enumerate(recipients):
+            share = round(amount - allocated, 2) if index == len(recipients) - 1 else round(amount * _num(row.get("hours")) / total_hours, 2)
+            row["calculated_salary"] += share
+            allocated += share
+
+
+async def load_period_data(db, date_from: date, date_to: date, *, include_unaccounted: bool = False) -> dict[str, Any]:
+    if db.conn is None:
+        await db.init_db()
+    raw_hours = await _load_hours(db, date_from, date_to, include_unaccounted=include_unaccounted)
+    works = await _load_works(db, date_from, date_to, include_unaccounted=include_unaccounted)
+    hours = _aggregate_hours(raw_hours)
+    _allocate_work_salary(hours, works)
+    matrix: dict[str, dict[str, dict[str, float]]] = defaultdict(lambda: defaultdict(lambda: {"participant_salary": 0.0, "calculated_salary": 0.0, "hours": 0.0}))
+    employee_names: dict[str, str] = {}
+    employee_positions: dict[str, str] = {}
+    object_names: dict[str, str] = {}
+    for row in hours:
+        employee_key = f"identity:{int(row['identity_id'])}"
+        object_id = int(row.get("object_id") or 0)
+        object_name = str(row.get("object_name") or "Объект").strip() or "Объект"
+        object_key = f"object:{object_id}" if object_id > 0 else f"address:{object_name.casefold()}"
+        employee_names[employee_key] = str(row.get("member_fio") or employee_key)
+        employee_positions[employee_key] = str(row.get("member_position") or "")
         object_names[object_key] = object_name
         bucket = matrix[employee_key][object_key]
-        bucket["salary"] += float(row.get("participant_salary") or 0)
-        bucket["hours"] += float(row.get("hours") or 0)
-
-    employees = sorted(
-        matrix,
-        key=lambda key: (employee_names.get(key, key).casefold(), key),
-    )
-    objects = sorted(
-        {object_key for employee in matrix.values() for object_key in employee},
-        key=lambda key: (object_names.get(key, key).casefold(), key),
-    )
-    zero_salary_rows = sum(
-        1 for row in rows
-        if float(row.get("hours") or 0) != 0
-        and float(row.get("participant_salary") or 0) == 0
-    )
+        bucket["participant_salary"] += _num(row.get("participant_salary"))
+        bucket["calculated_salary"] += _num(row.get("calculated_salary"))
+        bucket["hours"] += _num(row.get("hours"))
+    employees = sorted(matrix, key=lambda key: (employee_names.get(key, key).casefold(), key))
+    objects = sorted(object_names, key=lambda key: (object_names[key].casefold(), key))
     return {
-        "employees": employees,
-        "employee_names": employee_names,
-        "objects": objects,
-        "object_names": object_names,
-        "matrix": matrix,
-        "source_rows": len(rows),
-        "zero_salary_rows": zero_salary_rows,
-        "missing_member_ids": sorted(value for value in missing_names if value > 0),
+        "employees": employees, "employee_names": employee_names,
+        "employee_positions": employee_positions, "objects": objects,
+        "object_names": object_names, "matrix": matrix,
+        "hours": sorted(hours, key=lambda row: (str(row.get("date_target") or ""), int(row.get("app_id") or 0), str(row.get("team_name") or ""), str(row.get("member_fio") or "").casefold())),
+        "works": works, "source_rows": len(raw_hours),
+        "include_unaccounted": include_unaccounted,
+        "zero_participant_salary_rows": sum(1 for row in hours if _num(row.get("hours")) > 0 and _num(row.get("participant_salary")) == 0),
+        "unresolved_members": sorted({int(row.get("member_id") or 0) for row in raw_hours if str(row.get("member_fio") or "").startswith("Сотрудник #")}),
     }
 
 
-def build_period_workbook(
-    data: dict[str, Any], date_from: date, date_to: date
-) -> Workbook:
-    """Build the exact matrix layout used by the supplied July 2026 report."""
+def _base_sheet(sheet, title: str, subtitle: str) -> None:
+    sheet.sheet_view.showGridLines = False
+    sheet["A1"] = title
+    sheet["A1"].font = Font(name="Arial", size=15, bold=True, color="FFFFFF")
+    sheet["A1"].fill = PatternFill("solid", fgColor=HEADER_BLUE)
+    sheet["A2"] = subtitle
+    sheet["A2"].font = Font(name="Arial", size=9, color="44546A")
+    sheet.freeze_panes = "A5"
+
+
+def _style_header(cell, *, dark: bool = True) -> None:
+    cell.font = Font(name="Arial", size=9, bold=True, color="FFFFFF" if dark else "1F2937")
+    cell.fill = PatternFill("solid", fgColor=HEADER_BLUE if dark else SUBHEADER_BLUE)
+    cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+    side = Side(style="thin", color=GRID_BLUE)
+    cell.border = Border(left=side, right=side, top=side, bottom=side)
+
+
+def _style_data_range(sheet, min_row: int, max_row: int, min_col: int, max_col: int) -> None:
+    side = Side(style="thin", color="D9E0F0")
+    for row in sheet.iter_rows(min_row=min_row, max_row=max_row, min_col=min_col, max_col=max_col):
+        for cell in row:
+            cell.font = Font(name="Arial", size=9)
+            cell.border = Border(bottom=side)
+            cell.alignment = Alignment(vertical="top", wrap_text=False)
+
+
+def _add_table(sheet, name: str, start_row: int, end_row: int, end_col: int) -> None:
+    if end_row < start_row + 1:
+        return
+    table = Table(displayName=name, ref=f"A{start_row}:{get_column_letter(end_col)}{end_row}")
+    table.tableStyleInfo = TableStyleInfo(name="TableStyleMedium2", showRowStripes=True, showFirstColumn=False, showLastColumn=False)
+    sheet.add_table(table)
+
+
+def build_period_workbook(data: dict[str, Any], date_from: date, date_to: date) -> Workbook:
     workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = "Лист_1"
-    sheet.sheet_properties.pageSetUpPr.fitToPage = True
-    sheet.page_setup.orientation = "portrait"
-    sheet.page_setup.paperSize = sheet.PAPERSIZE_A4
-    sheet.page_setup.fitToWidth = 1
-    sheet.page_setup.fitToHeight = 0
-    sheet.page_margins = PageMargins(
-        left=0.3937007874,
-        right=0.3937007874,
-        top=0.3937007874,
-        bottom=0.3937007874,
-        header=0,
-        footer=0,
-    )
+    summary = workbook.active
+    summary.title = "Сводка"
+    mode = "включая неучтённые" if data.get("include_unaccounted") else "только учтённые"
+    subtitle = f"Период: {date_from:%d.%m.%Y} — {date_to:%d.%m.%Y} · {mode}. Архивные СМР включены; отбор по дате работ."
+    _base_sheet(summary, "Сводный отчёт СМР", subtitle)
+    last_col = max(2, 2 + len(data["objects"]) * 3 + 3)
+    summary.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
+    summary.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
+    summary.merge_cells("A4:A5"); summary.merge_cells("B4:B5")
+    summary["A4"] = "Сотрудник"; summary["B4"] = "Должность"
+    column_groups: list[tuple[int, int, int, str]] = []
+    col = 3
+    for object_key in data["objects"]:
+        summary.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 2)
+        summary.cell(4, col, data["object_names"][object_key])
+        for offset, label in enumerate(("ЗП введённая", "ЗП по работам", "Часы")):
+            summary.cell(5, col + offset, label)
+        column_groups.append((col, col + 1, col + 2, object_key)); col += 3
+    summary.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 2)
+    summary.cell(4, col, "Итого")
+    for offset, label in enumerate(("ЗП введённая", "ЗП по работам", "Часы")):
+        summary.cell(5, col + offset, label)
+    total_cols = (col, col + 1, col + 2)
+    for row_no in (4, 5):
+        for column in range(1, col + 3):
+            _style_header(summary.cell(row_no, column), dark=row_no == 4)
+    matrix = data["matrix"]; start_row = 6
+    for offset, employee_key in enumerate(data["employees"]):
+        row_no = start_row + offset
+        summary.cell(row_no, 1, data["employee_names"].get(employee_key, employee_key))
+        summary.cell(row_no, 2, data["employee_positions"].get(employee_key, ""))
+        totals = [0.0, 0.0, 0.0]
+        for manual_col, calc_col, hours_col, object_key in column_groups:
+            bucket = matrix[employee_key].get(object_key, {})
+            values = (_num(bucket.get("participant_salary")), _num(bucket.get("calculated_salary")), _num(bucket.get("hours")))
+            for target_col, value in zip((manual_col, calc_col, hours_col), values):
+                if value: summary.cell(row_no, target_col, _clean_number(value))
+            totals = [totals[index] + values[index] for index in range(3)]
+        for target_col, value in zip(total_cols, totals): summary.cell(row_no, target_col, _clean_number(value))
+    end_employee_row = start_row + len(data["employees"]) - 1
+    total_row = max(start_row, end_employee_row + 1)
+    summary.cell(total_row, 1, "Итого"); summary.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=2)
+    for salary_col, calc_col, hours_col, object_key in column_groups:
+        for target_col, key in ((salary_col, "participant_salary"), (calc_col, "calculated_salary"), (hours_col, "hours")):
+            value = sum(_num(matrix[employee].get(object_key, {}).get(key)) for employee in data["employees"])
+            summary.cell(total_row, target_col, _clean_number(value))
+    grand = {"participant_salary": sum(_num(row.get("participant_salary")) for row in data["hours"]), "calculated_salary": sum(_num(row.get("calculated_salary")) for row in data["hours"]), "hours": sum(_num(row.get("hours")) for row in data["hours"])}
+    for target_col, key in zip(total_cols, ("participant_salary", "calculated_salary", "hours")): summary.cell(total_row, target_col, _clean_number(grand[key]))
+    for cell in summary[total_row]: cell.font = Font(name="Arial", size=9, bold=True, color="FFFFFF"); cell.fill = PatternFill("solid", fgColor=TOTAL_BLUE)
+    if data["employees"]: _style_data_range(summary, start_row, end_employee_row, 1, col + 2)
+    for column in range(3, col + 3):
+        for row_no in range(5, total_row + 1): summary.cell(row_no, column).number_format = MONEY_FORMAT if (column - 3) % 3 in (0, 1) else NUMBER_FORMAT
+    summary.column_dimensions["A"].width = 32; summary.column_dimensions["B"].width = 28
+    for column in range(3, col + 3): summary.column_dimensions[get_column_letter(column)].width = 15
+    summary.freeze_panes = "C6"; summary.auto_filter.ref = f"A5:{get_column_letter(col + 2)}{max(total_row - 1, 5)}"
 
-    normal_font = Font(name="Arial", size=8)
-    header_font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
-    total_font = Font(name="Arial", size=10, bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor=HEADER_BLUE)
-    total_fill = PatternFill("solid", fgColor=TOTAL_BLUE)
-    body_side = Side(style="thin", color=GRID_BLUE)
-    head_side = Side(style="thin", color=HEADER_BORDER)
-    body_border = Border(left=body_side, right=body_side, top=body_side, bottom=body_side)
-    head_border = Border(left=head_side, right=head_side, top=head_side, bottom=head_side)
+    details = workbook.create_sheet("По заявкам"); _base_sheet(details, "Сотрудники по заявкам", subtitle)
+    headers = ["Дата", "Номер заявки", "Объект", "Прораб", "Бригада", "Сотрудник", "Должность", "Часы", "ЗП введённая", "ЗП по работам", "Учтено", "В архиве"]
+    details.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
+    details.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
+    for column, label in enumerate(headers, 1): details.cell(4, column, label); _style_header(details.cell(4, column))
+    for row_no, row in enumerate(data["hours"], 5):
+        values = [date.fromisoformat(str(row.get("date_target"))[:10]) if row.get("date_target") else None, row.get("public_number") or f"№{row.get('app_id')}", row.get("object_name") or "", row.get("foreman_name") or "", row.get("team_name") or "", row.get("member_fio") or "", row.get("member_position") or "", _clean_number(_num(row.get("hours"))), round(_num(row.get("participant_salary")), 2), round(_num(row.get("calculated_salary")), 2), "Да" if row.get("smr_accounted_at") else "Нет", "Да" if int(row.get("kp_archived") or 0) else "Нет"]
+        for column, value in enumerate(values, 1): details.cell(row_no, column, value)
+    details_end = 4 + len(data["hours"])
+    if data["hours"]:
+        _style_data_range(details, 5, details_end, 1, len(headers))
+        for row_no in range(5, details_end + 1): details.cell(row_no, 1).number_format = "dd.mm.yyyy"; details.cell(row_no, 8).number_format = NUMBER_FORMAT; details.cell(row_no, 9).number_format = MONEY_FORMAT; details.cell(row_no, 10).number_format = MONEY_FORMAT
+    _add_table(details, "SMRPeriodDetails", 4, details_end, len(headers))
+    for column, width in enumerate([12, 18, 30, 28, 25, 32, 28, 11, 16, 16, 11, 11], 1): details.column_dimensions[get_column_letter(column)].width = width
 
-    sheet["A2"] = "Параметры:"
-    sheet["C2"] = (
-        f"Период: {date_from.strftime('%d.%m.%Y')} - "
-        f"{date_to.strftime('%d.%m.%Y')}"
-    )
-    for address in ("A2", "C2"):
-        sheet[address].font = normal_font
-        sheet[address].alignment = Alignment(vertical="top")
-
-    sheet.merge_cells("A4:C5")
-    sheet["A4"] = "Сотрудник"
-
-    objects: list[str] = data["objects"]
-    employee_start = 6
-    first_data_column = 4
-    column_pairs: list[tuple[int, int, str]] = []
-    next_column = first_data_column
-    object_names: dict[str, str] = data.get("object_names") or {}
-    for index, object_key in enumerate(objects):
-        object_name = object_names.get(object_key, object_key)
-        if index == 0:
-            salary_column, hours_column = next_column, next_column + 2
-            sheet.merge_cells(
-                start_row=4,
-                start_column=salary_column,
-                end_row=4,
-                end_column=hours_column,
-            )
-            sheet.merge_cells(
-                start_row=5,
-                start_column=salary_column,
-                end_row=5,
-                end_column=salary_column + 1,
-            )
-            next_column += 3
-        else:
-            salary_column, hours_column = next_column, next_column + 1
-            sheet.merge_cells(
-                start_row=4,
-                start_column=salary_column,
-                end_row=4,
-                end_column=hours_column,
-            )
-            next_column += 2
-        sheet.cell(4, salary_column, object_name)
-        sheet.cell(5, salary_column, "Заработная плата")
-        sheet.cell(5, hours_column, "Количество часов")
-        column_pairs.append((salary_column, hours_column, object_key))
-
-    total_salary_column, total_hours_column = next_column, next_column + 1
-    sheet.merge_cells(
-        start_row=4,
-        start_column=total_salary_column,
-        end_row=4,
-        end_column=total_hours_column,
-    )
-    sheet.cell(4, total_salary_column, "Итого")
-    sheet.cell(5, total_salary_column, "Заработная плата")
-    sheet.cell(5, total_hours_column, "Количество часов")
-
-    for row in range(4, 6):
-        for column in range(1, total_hours_column + 1):
-            cell = sheet.cell(row, column)
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.border = head_border
-            cell.alignment = Alignment(vertical="top", wrap_text=True)
-
-    matrix = data["matrix"]
-    employees: list[str] = data["employees"]
-    employee_names: dict[str, str] = data.get("employee_names") or {}
-    for offset, employee_key in enumerate(employees):
-        row = employee_start + offset
-        sheet.merge_cells(start_row=row, start_column=1, end_row=row, end_column=3)
-        name_cell = sheet.cell(row, 1, employee_names.get(employee_key, employee_key))
-        name_cell.font = normal_font
-        name_cell.alignment = Alignment(vertical="top", wrap_text=True)
-        name_cell.border = body_border
-
-        row_salary = 0.0
-        row_hours = 0.0
-        for pair_index, (salary_column, hours_column, object_key) in enumerate(column_pairs):
-            values = matrix[employee_key].get(object_key, {"salary": 0, "hours": 0})
-            salary = float(values.get("salary") or 0)
-            hours = float(values.get("hours") or 0)
-            # The supplied report merges the two salary cells of its wider
-            # first object only for non-empty employee rows.
-            if pair_index == 0 and salary:
-                sheet.merge_cells(
-                    start_row=row,
-                    start_column=salary_column,
-                    end_row=row,
-                    end_column=salary_column + 1,
-                )
-            row_salary += salary
-            row_hours += hours
-            for column, value, number_format in (
-                (salary_column, salary, "#,##0.00"),
-                (hours_column, hours, "0.########"),
-            ):
-                cell = sheet.cell(row, column)
-                if value:
-                    cell.value = _clean_number(value)
-                cell.font = normal_font
-                cell.border = body_border
-                cell.alignment = Alignment(horizontal="right", vertical="top")
-                cell.number_format = number_format
-        for column, value, number_format in (
-            (total_salary_column, row_salary, "#,##0.00"),
-            (total_hours_column, row_hours, "0.########"),
-        ):
-            cell = sheet.cell(row, column, _clean_number(value))
-            cell.font = normal_font
-            cell.border = body_border
-            cell.alignment = Alignment(horizontal="right", vertical="top")
-            cell.number_format = number_format
-        sheet.row_dimensions[row].height = 11.25
-
-    total_row = employee_start + len(employees)
-    sheet.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=3)
-    if column_pairs:
-        sheet.merge_cells(
-            start_row=total_row,
-            start_column=column_pairs[0][0],
-            end_row=total_row,
-            end_column=column_pairs[0][0] + 1,
-        )
-    sheet.cell(total_row, 1, "Итого")
-    grand_salary = 0.0
-    grand_hours = 0.0
-    for salary_column, hours_column, object_key in column_pairs:
-        salary_total = sum(
-            float(matrix[employee_key].get(object_key, {}).get("salary") or 0)
-            for employee_key in employees
-        )
-        hours_total = sum(
-            float(matrix[employee_key].get(object_key, {}).get("hours") or 0)
-            for employee_key in employees
-        )
-        grand_salary += salary_total
-        grand_hours += hours_total
-        sheet.cell(total_row, salary_column, _clean_number(salary_total)).number_format = "#,##0.00"
-        sheet.cell(total_row, hours_column, _clean_number(hours_total)).number_format = "0.########"
-    sheet.cell(total_row, total_salary_column, _clean_number(grand_salary)).number_format = "#,##0.00"
-    sheet.cell(total_row, total_hours_column, _clean_number(grand_hours)).number_format = "0.########"
-
-    for column in range(1, total_hours_column + 1):
-        cell = sheet.cell(total_row, column)
-        cell.font = total_font
-        cell.fill = total_fill
-        cell.border = head_border
-        cell.alignment = Alignment(
-            horizontal="right" if column >= first_data_column else None,
-            vertical="top",
-        )
-
-    sheet.row_dimensions[1].height = 9.95
-    sheet.row_dimensions[2].height = 11.25
-    sheet.row_dimensions[3].height = 9.95
-    sheet.row_dimensions[4].height = 38.25
-    sheet.row_dimensions[5].height = 25.5
-    sheet.row_dimensions[total_row].height = 12.75
-    sheet.column_dimensions["A"].width = 9.67
-    sheet.column_dimensions["B"].width = 0.36
-    sheet.column_dimensions["C"].width = 20.33
-
-    for index, (salary_column, hours_column, object_key) in enumerate(column_pairs):
-        object_name = object_names.get(object_key, object_key)
-        title_width = min(32.5, max(14.0, len(object_name) * 0.47))
-        if index == 0:
-            sheet.column_dimensions[get_column_letter(salary_column)].width = 5.17
-            sheet.column_dimensions[get_column_letter(salary_column + 1)].width = max(15.0, title_width - 5.0)
-            sheet.column_dimensions[get_column_letter(hours_column)].width = max(15.17, title_width)
-        else:
-            sheet.column_dimensions[get_column_letter(salary_column)].width = title_width
-            sheet.column_dimensions[get_column_letter(hours_column)].width = title_width + 0.17
-    sheet.column_dimensions[get_column_letter(total_salary_column)].width = 15.33
-    sheet.column_dimensions[get_column_letter(total_hours_column)].width = 18.33
-    sheet.print_area = f"A1:{get_column_letter(total_hours_column)}{total_row}"
+    works_sheet = workbook.create_sheet("Работы"); _base_sheet(works_sheet, "Работы за период", subtitle)
+    work_headers = ["Дата", "Номер заявки", "Объект", "Бригада", "Вид работы", "Часть отчёта", "Категория", "Наименование", "Ед. изм.", "Объём", "ЗП за единицу", "Сумма ЗП", "Цена СМР за единицу", "Сумма СМР", "Учтено", "В архиве"]
+    works_sheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(work_headers))
+    works_sheet.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(work_headers))
+    for column, label in enumerate(work_headers, 1): works_sheet.cell(4, column, label); _style_header(works_sheet.cell(4, column))
+    for row_no, row in enumerate(data["works"], 5):
+        volume = _num(row.get("volume")); rate_salary = _num(row.get("rate_salary")); rate_price = _num(row.get("rate_price"))
+        values = [date.fromisoformat(str(row.get("date_target"))[:10]) if row.get("date_target") else None, row.get("public_number") or f"№{row.get('app_id')}", row.get("object_name") or "", row.get("team_name") or "", row.get("work_kind") or "", "Дополнение" if int(row.get("is_additional") or 0) else "Основная часть", row.get("category") or "", row.get("name") or "", row.get("unit") or "", _clean_number(volume), round(rate_salary, 2), round(volume * rate_salary, 2), round(rate_price, 2), round(volume * rate_price, 2), "Да" if row.get("smr_accounted_at") else "Нет", "Да" if int(row.get("kp_archived") or 0) else "Нет"]
+        for column, value in enumerate(values, 1): works_sheet.cell(row_no, column, value)
+    works_end = 4 + len(data["works"])
+    if data["works"]:
+        _style_data_range(works_sheet, 5, works_end, 1, len(work_headers))
+        for row_no in range(5, works_end + 1):
+            works_sheet.cell(row_no, 1).number_format = "dd.mm.yyyy"; works_sheet.cell(row_no, 10).number_format = NUMBER_FORMAT
+            for column in (11, 12, 13, 14): works_sheet.cell(row_no, column).number_format = MONEY_FORMAT
+    _add_table(works_sheet, "SMRPeriodWorks", 4, works_end, len(work_headers))
+    for column, width in enumerate([12, 18, 30, 25, 18, 16, 22, 45, 11, 11, 16, 16, 18, 16, 11, 11], 1): works_sheet.column_dimensions[get_column_letter(column)].width = width
+    for sheet in workbook.worksheets:
+        sheet.row_dimensions[1].height = 25; sheet.row_dimensions[4].height = 34
+        sheet.sheet_properties.pageSetUpPr.fitToPage = True; sheet.page_setup.orientation = "landscape"; sheet.page_setup.fitToWidth = 1; sheet.page_setup.fitToHeight = 0
     return workbook
 
 
-async def generate_period_report(
-    db, date_from: date, date_to: date
-) -> tuple[bytes, str, dict[str, Any]]:
-    data = await load_period_matrix(db, date_from, date_to)
+async def generate_period_report(db, date_from: date, date_to: date, *, include_unaccounted: bool = False) -> tuple[bytes, str, dict[str, Any]]:
+    data = await load_period_data(db, date_from, date_to, include_unaccounted=include_unaccounted)
     workbook = build_period_workbook(data, date_from, date_to)
-    buffer = BytesIO()
-    workbook.save(buffer)
-    filename = (
-        f"СМР {date_from.strftime('%d.%m.%Y')} - "
-        f"{date_to.strftime('%d.%m.%Y')}.xlsx"
-    )
-    summary = {
-        "employees": len(data["employees"]),
-        "objects": len(data["objects"]),
-        "source_rows": data["source_rows"],
-        "zero_salary_rows": data["zero_salary_rows"],
-        "missing_member_ids": data["missing_member_ids"],
-    }
-    return buffer.getvalue(), filename, summary
+    buffer = BytesIO(); workbook.save(buffer)
+    filename = f"СМР {date_from:%d.%m.%Y} - {date_to:%d.%m.%Y}.xlsx"
+    return buffer.getvalue(), filename, {"employees": len(data["employees"]), "objects": len(data["objects"]), "source_rows": data["source_rows"], "works": len(data["works"]), "zero_salary_rows": data["zero_participant_salary_rows"], "unresolved_members": data["unresolved_members"]}

@@ -108,3 +108,29 @@ def test_foreman_cannot_clear_another_foremans_ready_report():
             await fake_db.conn.close()
 
     asyncio.run(scenario())
+
+
+def test_batch_archive_only_accepts_fully_accounted_logical_groups():
+    async def scenario():
+        fake_db = await _make_db()
+        try:
+            await fake_db.conn.execute(
+                "INSERT INTO applications VALUES (3,100,'group-b','approved','approved','foreman',500,'2026-08-10')"
+            )
+            await fake_db.conn.execute(
+                "INSERT INTO applications VALUES (4,100,'group-b','approved','approved','foreman',NULL,NULL)"
+            )
+            await fake_db.conn.execute(
+                "INSERT INTO applications VALUES (5,100,NULL,'approved','approved','foreman',500,'2026-08-10')"
+            )
+            await fake_db.conn.commit()
+            with patch.object(kp, "db", fake_db):
+                result = await kp._prepare_smr_archive([1, 3, 5])
+            assert result["eligible_ids"] == [1, 2, 5]
+            assert result["skipped_ids"] == [3, 4]
+            assert result["eligible_groups"] == 2
+            assert result["skipped_groups"] == 1
+        finally:
+            await fake_db.conn.close()
+
+    asyncio.run(scenario())

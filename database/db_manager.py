@@ -17,9 +17,10 @@ from database.kp_repo import KpRepoMixin
 from database.exchange_repo import ExchangeRepoMixin
 from database.hours_repo import HoursRepoMixin
 from database.smr_audit_repo import SmrAuditRepoMixin
+from database.product_audit_repo import ProductAuditRepoMixin
 
 
-class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin, ObjectsRepoMixin, KpRepoMixin, ExchangeRepoMixin, HoursRepoMixin, SmrAuditRepoMixin):
+class DatabaseManager(UsersRepoMixin, TeamsRepoMixin, EquipmentRepoMixin, AppsRepoMixin, LogsRepoMixin, ObjectsRepoMixin, KpRepoMixin, ExchangeRepoMixin, HoursRepoMixin, SmrAuditRepoMixin, ProductAuditRepoMixin):
     def __init__(self, db_path: str):
         self.db_path = db_path
         self._conn = None

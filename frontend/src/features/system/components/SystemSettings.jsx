@@ -158,6 +158,7 @@ export default function SystemSettings({ settings, handleSettingChange, saveSett
                     <input type="number" name="log_retention_days" value={settings.log_retention_days} onChange={handleSettingChange}
                         min="7" max="365"
                         className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-red-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" />
+                    {role === 'superadmin' && <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700"><label className="block text-[10px] font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-widest">Большой аудит (дней)</label><p className="text-xs text-gray-500 dark:text-gray-400 mb-2">Рекомендуется 180 дней: хватает для сравнения нескольких циклов улучшений.</p><input type="number" name="product_audit_retention_days" value={settings.product_audit_retention_days || '180'} onChange={handleSettingChange} min="30" max="730" className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 text-gray-900 text-sm font-bold rounded-xl focus:ring-2 focus:ring-violet-500 block w-full sm:w-1/2 p-3 dark:text-white shadow-sm outline-none" /></div>}
                 </div>
 
                 {/* Support settings — superadmin only */}

@@ -8,10 +8,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import asyncio
+import time
+import uuid
 
 from database_deps import db, TZ_BARNAUL
 from services.publish_service import execute_app_publish
-from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system, exchange, support, push, drivers
+from routers import auth, dashboard, users, teams, equipment, applications, objects, kp, system, exchange, support, push, drivers, audit, employee_audit
 from scheduler import start_scheduler
 from smr_calculations import SmrNumberError
 from system_monitoring import notify_system_incident
@@ -45,6 +47,25 @@ _last_active_cache = {}  # user_id → last_update_time (throttle to 1 update pe
 _session_user_cache = {}  # session_token → (user_id, cached_at) — avoid per-request SELECT on sessions
 
 
+async def _write_product_event(event: dict, user_id: int | None = None, token: str | None = None):
+    """Best-effort isolated audit write; diagnostics can never break a user request."""
+    try:
+        from services.product_audit import normalize_event, session_hash
+        user = None
+        async with db.isolated_connection():
+            if user_id:
+                async with db.conn.execute("SELECT user_id,fio,role FROM users WHERE user_id=?", (user_id,)) as cur:
+                    row = await cur.fetchone()
+                if row:
+                    user = dict(row)
+            normalized = normalize_event(
+                event, user=user, session=session_hash(token), app_version=os.getenv("APP_VERSION", "dev")
+            )
+            await db.append_product_audit_events([normalized])
+    except Exception:
+        logging.getLogger(__name__).exception("Product audit write failed")
+
+
 async def _resolve_user_from_session(token: str) -> int | None:
     """Resolve user_id from session cookie token with a short in-process cache.
 
@@ -75,9 +96,16 @@ async def _resolve_user_from_session(token: str) -> int | None:
 
 @app.middleware("http")
 async def track_activity(request: Request, call_next):
+    started = time.perf_counter()
+    request_id = str(uuid.uuid4())
+    if request.url.path == "/api/audit/events/batch":
+        try:
+            if int(request.headers.get("content-length", "0") or 0) > 262_144:
+                return JSONResponse(status_code=413, content={"detail": "Пакет диагностических событий слишком большой"})
+        except ValueError:
+            return JSONResponse(status_code=400, content={"detail": "Некорректный Content-Length"})
     response = await call_next(request)
     try:
-        import time
         user_id: int | None = None
 
         # Primary signal: session cookie (covers every cookie-auth request).
@@ -101,8 +129,39 @@ async def track_activity(request: Request, call_next):
             if now - last > 60:  # Throttle: max once per 60 seconds per user
                 _last_active_cache[user_id] = now
                 asyncio.create_task(_update_last_active(user_id))
+
+        # Every state-changing API request plus every rejected/failed/slow API
+        # call is useful for workflow analysis. Routine successful reads are
+        # represented by client page/action events to avoid inflating SQLite.
+        duration_ms = round((time.perf_counter() - started) * 1000)
+        path = request.url.path
+        method = request.method.upper()
+        status = response.status_code
+        should_audit = (
+            path.startswith("/api/")
+            and path not in {"/api/health", "/api/online", "/api/audit/events/batch"}
+            and (method not in {"GET", "HEAD", "OPTIONS"} or status >= 400 or duration_ms >= 1500)
+        )
+        if should_audit:
+            route_obj = request.scope.get("route")
+            route = getattr(route_obj, "path", path)
+            segments = [part for part in path.split("/") if part]
+            target_id = next((part for part in reversed(segments) if part.isdigit()), "")
+            outcome = "success" if status < 400 else "rejected" if status < 500 else "error"
+            event = {
+                "event_uuid": request_id,
+                "source": "server", "category": "api", "event_name": "http_request",
+                "outcome": outcome, "severity": "error" if status >= 500 else "warning" if status >= 400 else "info",
+                "request_id": request_id, "page": request.headers.get("X-VIKS-Page", ""),
+                "route": route, "method": method, "status_code": status, "duration_ms": duration_ms,
+                "target_type": segments[1] if len(segments) > 1 else "api", "target_id": target_id,
+                "metadata": {"query_keys": sorted(request.query_params.keys()),
+                             "response_bytes": response.headers.get("content-length", "")},
+            }
+            asyncio.create_task(_write_product_event(event, user_id, token))
+        response.headers["X-Request-ID"] = request_id
     except Exception:
-        pass
+        logging.getLogger(__name__).exception("Request activity tracking failed")
     return response
 
 
@@ -130,6 +189,8 @@ app.include_router(exchange.router)
 app.include_router(support.router)
 app.include_router(push.router)
 app.include_router(drivers.router)
+app.include_router(audit.router)
+app.include_router(employee_audit.router)
 
 
 @app.get("/api/health", include_in_schema=False)
@@ -190,6 +251,14 @@ async def global_exception_handler(request: Request, exc: Exception):
                 logging.exception("Failed to dispatch system incident")
 
         asyncio.create_task(_send_error_notification())
+        asyncio.create_task(_write_product_event({
+            "source": "server", "category": "error", "event_name": "server_exception",
+            "outcome": "error", "severity": "critical", "page": request.headers.get("X-VIKS-Page", ""),
+            "route": getattr(request.scope.get("route"), "path", request.url.path),
+            "method": request.method, "status_code": 500,
+            "error_type": type(exc).__name__, "error_message": str(exc),
+            "metadata": {"query_keys": sorted(request.query_params.keys())},
+        }, user_id, token))
     except Exception:
         logging.exception("Failed to prepare system incident")
     return JSONResponse(status_code=500, content={"detail": "Внутренняя ошибка сервера"})

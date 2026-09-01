@@ -11,6 +11,8 @@ import LogViewer from '../features/system/components/LogViewer';
 import { SystemSkeleton } from '../components/ui/PageSkeletons';
 import UsersTable from '../features/admin/components/UsersTable';
 import RolePasswordsPanel from '../features/admin/components/RolePasswordsPanel';
+import AuditJournalPanel from '../features/admin/components/AuditJournalPanel';
+import EmployeeAuditPanel from '../features/admin/components/EmployeeAuditPanel';
 
 const ADMIN_ROLES = ['boss', 'superadmin'];
 
@@ -56,6 +58,7 @@ export default function Admin() {
         equip_base_time_start: '08:00', equip_base_time_end: '18:00',
         exchange_enabled: true,
         log_retention_days: '90',
+        product_audit_retention_days: '180',
         support_max_link: '',
         gemini_api_key: '',
     });
@@ -100,6 +103,7 @@ export default function Admin() {
                 equip_base_time_end: res.data.equip_base_time_end || '18:00',
                 exchange_enabled: b('exchange_enabled'),
                 log_retention_days: res.data.log_retention_days || '90',
+                product_audit_retention_days: res.data.product_audit_retention_days || '180',
                 support_max_link: res.data.support_max_link || '',
                 gemini_api_key: res.data.gemini_api_key || '',
             });
@@ -146,6 +150,7 @@ export default function Admin() {
                 equip_base_time_end: settings.equip_base_time_end,
                 exchange_enabled: settings.exchange_enabled ? '1' : '0',
                 log_retention_days: settings.log_retention_days,
+                product_audit_retention_days: settings.product_audit_retention_days,
                 support_max_link: settings.support_max_link,
                 gemini_api_key: settings.gemini_api_key,
             }, { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } });
@@ -247,6 +252,8 @@ export default function Admin() {
 
             <RolePasswordsPanel role={role} />
 
+            {role === 'superadmin' && <EmployeeAuditPanel />}
+
             {/* Automation Settings */}
             <SystemSettings
                 settings={settings}
@@ -288,6 +295,7 @@ export default function Admin() {
 
             {/* Logs */}
             <div id="admin-logs" />
+            {role === 'superadmin' && <AuditJournalPanel />}
             <LogViewer
                 logs={logs}
                 serverLogs={serverLogs}

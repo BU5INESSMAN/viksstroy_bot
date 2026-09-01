@@ -2294,6 +2294,7 @@ async def get_kp_catalog_version(version_id: int, current_user=Depends(_require_
 async def download_smr_period_report(
     date_from: str,
     date_to: str,
+    include_unaccounted: bool = False,
     current_user=Depends(_require_office),
 ):
     """Download the accounting employee/object matrix for any date range."""
@@ -2310,12 +2311,16 @@ async def download_smr_period_report(
     if (finish - start).days > 1095:
         raise HTTPException(400, "За один раз можно сформировать период не более трёх лет")
 
-    blob, filename, summary = await generate_period_report(db, start, finish)
+    blob, filename, summary = await generate_period_report(
+        db, start, finish, include_unaccounted=include_unaccounted
+    )
     headers = {
         "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
         "X-Report-Employees": str(summary["employees"]),
         "X-Report-Objects": str(summary["objects"]),
         "X-Report-Zero-Salary-Rows": str(summary["zero_salary_rows"]),
+        "X-Report-Works": str(summary["works"]),
+        "X-Report-Unresolved-Members": str(len(summary["unresolved_members"])),
     }
     import io
     return StreamingResponse(
@@ -2766,25 +2771,132 @@ async def export_kp_mass(request: Request, current_user=Depends(_require_office)
 # ==========================================
 
 
+async def _prepare_smr_archive(app_ids: list[int]) -> dict:
+    expanded: set[int] = set()
+    for app_id in app_ids:
+        expanded.update(await _expand_merge_group(app_id))
+    expanded_ids = sorted(expanded)
+    if not expanded_ids:
+        return {"eligible_ids": [], "skipped_ids": [], "eligible_groups": 0, "skipped_groups": 0}
+    marks = ",".join("?" for _ in expanded_ids)
+    async with db.conn.execute(
+        f"SELECT id,smr_group_id,smr_accounted_at FROM applications "
+        f"WHERE id IN ({marks}) ORDER BY id",
+        tuple(expanded_ids),
+    ) as cursor:
+        rows = [dict(row) for row in await cursor.fetchall()]
+    if len(rows) != len(expanded_ids):
+        raise HTTPException(404, "Одна или несколько заявок не найдены")
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        group_id = str(row.get("smr_group_id") or "").strip()
+        key = f"group:{group_id}" if group_id else f"app:{row['id']}"
+        groups.setdefault(key, []).append(row)
+    eligible_ids: list[int] = []
+    skipped_ids: list[int] = []
+    eligible_groups = 0
+    skipped_groups = 0
+    for members in groups.values():
+        target = eligible_ids if all(member.get("smr_accounted_at") for member in members) else skipped_ids
+        target.extend(int(member["id"]) for member in members)
+        if target is eligible_ids:
+            eligible_groups += 1
+        else:
+            skipped_groups += 1
+    return {
+        "eligible_ids": sorted(eligible_ids),
+        "skipped_ids": sorted(skipped_ids),
+        "eligible_groups": eligible_groups,
+        "skipped_groups": skipped_groups,
+    }
+
+
+@router.post("/api/kp/smr/archive-batch")
+async def archive_kp_batch(request: Request, current_user=Depends(_require_office)):
+    """Archive accounted reports; merged SMR groups are always atomic."""
+    data = await request.json()
+    try:
+        app_ids = sorted({int(value) for value in (data.get("app_ids") or []) if int(value) > 0})
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Некорректный список заявок")
+    if not app_ids:
+        raise HTTPException(400, "Не выбраны СМР для архивации")
+    if len(app_ids) > 500:
+        raise HTTPException(400, "За один раз можно архивировать не более 500 СМР")
+    prepared = await _prepare_smr_archive(app_ids)
+    if prepared["skipped_ids"] and not bool(data.get("confirm_mixed")):
+        raise HTTPException(
+            409,
+            detail={
+                "code": "unaccounted_selected",
+                "message": "В архив попадут только полностью учтённые СМР",
+                "selected": len(app_ids),
+                "eligible_groups": prepared["eligible_groups"],
+                "eligible_applications": len(prepared["eligible_ids"]),
+                "skipped_groups": prepared["skipped_groups"],
+                "skipped_applications": len(prepared["skipped_ids"]),
+            },
+        )
+    eligible_ids = prepared["eligible_ids"]
+    if eligible_ids:
+        marks = ",".join("?" for _ in eligible_ids)
+        await db.conn.execute(
+            f"UPDATE applications SET kp_archived=1 WHERE id IN ({marks})",
+            tuple(eligible_ids),
+        )
+        await db.conn.commit()
+        await db.add_log(
+            current_user["tg_id"],
+            current_user.get("fio"),
+            f"Массово архивировал учтённые СМР: {prepared['eligible_groups']}",
+            target_type="smr",
+            details=json.dumps(
+                {
+                    "action": "smr_archive_batch",
+                    "application_ids": eligible_ids,
+                    "skipped_application_ids": prepared["skipped_ids"],
+                },
+                ensure_ascii=False,
+            ),
+        )
+    return {
+        "status": "ok",
+        "archived_groups": prepared["eligible_groups"],
+        "archived_applications": len(eligible_ids),
+        "skipped_groups": prepared["skipped_groups"],
+        "skipped_applications": len(prepared["skipped_ids"]),
+    }
+
+
 @router.post("/api/kp/apps/{app_id}/archive")
 async def archive_kp(app_id: int, current_user=Depends(_require_office)):
-    """Архивировать СМР заявки (только для модератор+)."""
-    await db.conn.execute("UPDATE applications SET kp_archived = 1 WHERE id = ?", (app_id,))
-    await db.conn.commit()
-    _obj = ''
-    try:
-        async with db.conn.execute("SELECT object_address FROM applications WHERE id = ?", (app_id,)) as c:
-            r = await c.fetchone()
-            if r: _obj = r[0]
-    except Exception: pass
-    await db.add_log(current_user["tg_id"], current_user.get('fio'), f"Архивировал СМР ({_obj})" if _obj else f"Архивировал СМР заявки №{app_id}", target_type='smr', target_id=app_id)
-    return {"status": "ok"}
+    """Archive one accounted logical report, including its whole merge group."""
+    prepared = await _prepare_smr_archive([app_id])
+    if prepared["skipped_ids"]:
+        raise HTTPException(400, "Архивировать можно только полностью учтённый СМР")
+    ids = prepared["eligible_ids"]
+    if ids:
+        marks = ",".join("?" for _ in ids)
+        await db.conn.execute(f"UPDATE applications SET kp_archived=1 WHERE id IN ({marks})", tuple(ids))
+        await db.conn.commit()
+    await db.add_log(
+        current_user["tg_id"], current_user.get('fio'),
+        f"Архивировал учтённый СМР: {len(ids)} заявок",
+        target_type='smr', target_id=app_id,
+        details=json.dumps({"action": "smr_archive", "application_ids": ids}, ensure_ascii=False),
+    )
+    return {"status": "ok", "archived_applications": len(ids)}
 
 
 @router.post("/api/kp/apps/{app_id}/restore")
 async def restore_kp(app_id: int, current_user=Depends(_require_office)):
-    """Восстановить СМР заявки из архива (только для модератор+)."""
-    await db.conn.execute("UPDATE applications SET kp_archived = 0 WHERE id = ?", (app_id,))
+    """Restore one logical SMR report, keeping merged groups atomic."""
+    ids = await _expand_merge_group(app_id)
+    marks = ",".join("?" for _ in ids)
+    await db.conn.execute(
+        f"UPDATE applications SET kp_archived=0 WHERE id IN ({marks})",
+        tuple(ids),
+    )
     await db.conn.commit()
     _obj = ''
     try:
@@ -2792,8 +2904,16 @@ async def restore_kp(app_id: int, current_user=Depends(_require_office)):
             r = await c.fetchone()
             if r: _obj = r[0]
     except Exception: pass
-    await db.add_log(current_user["tg_id"], current_user.get('fio'), f"Восстановил СМР ({_obj})" if _obj else f"Восстановил СМР заявки №{app_id}", target_type='smr', target_id=app_id)
-    return {"status": "ok"}
+    await db.add_log(
+        current_user["tg_id"], current_user.get('fio'),
+        f"Восстановил СМР ({_obj})" if _obj else f"Восстановил СМР заявки №{app_id}",
+        target_type='smr', target_id=app_id,
+        details=json.dumps(
+            {"action": "smr_restore", "application_ids": ids},
+            ensure_ascii=False,
+        ),
+    )
+    return {"status": "ok", "restored_applications": len(ids)}
 
 
 @router.get("/api/kp/archived")

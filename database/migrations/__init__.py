@@ -71,6 +71,11 @@ MIGRATIONS_ORDER = [
     "m_2026_08_smr_team_sections",
     "m_2026_08_smr_edit_requests",
     "m_2026_08_smr_historical_roster",
+    # Privacy-safe product diagnostics: interactions, failures and latency.
+    "m_2026_09_product_audit",
+    # Stable employee identities unify current and deleted brigade cards
+    # without rewriting immutable SMR history.
+    "m_2026_09_employee_identities",
 ]
 
 

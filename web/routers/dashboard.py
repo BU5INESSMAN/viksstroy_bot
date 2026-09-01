@@ -473,6 +473,7 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
                           equip_base_time_end: str = Form("18:00"),
                           exchange_enabled: str = Form("1"),
                           log_retention_days: str = Form("90"),
+                          product_audit_retention_days: str = Form("180"),
                           support_max_link: str = Form(""),
                           gemini_api_key: str = Form(""),
                           current_user=Depends(_require_office)):
@@ -494,9 +495,15 @@ async def update_settings(auto_publish_time: str = Form(""), auto_publish_enable
         ('log_retention_days', log_retention_days),
     ]
 
+    try:
+        audit_retention = str(max(30, min(int(product_audit_retention_days or 180), 730)))
+    except (TypeError, ValueError):
+        audit_retention = "180"
+
     # Support settings + API key — superadmin only
     if current_user.get('role') == 'superadmin':
         pairs.extend([
+            ('product_audit_retention_days', audit_retention),
             ('support_max_link', support_max_link),
             ('gemini_api_key', gemini_api_key),
         ])

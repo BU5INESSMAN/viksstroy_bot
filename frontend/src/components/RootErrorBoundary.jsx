@@ -1,4 +1,5 @@
 import React from 'react';
+import { trackReactError } from '../utils/productAudit';
 
 export function BootSignal() {
   // Signal as soon as React commits its first frame. useLayoutEffect runs
@@ -21,8 +22,9 @@ export default class RootErrorBoundary extends React.Component {
     return { failed: true };
   }
 
-  componentDidCatch(error) {
+  componentDidCatch(error, info) {
     console.error('[ui] root render failed:', error);
+    trackReactError(error, info);
   }
 
   render() {

@@ -6,9 +6,18 @@ import './index.css'
 import { initPWAInstall } from './utils/pwaInstall'
 import { clearAuthAndRedirect } from './utils/tokenStorage'
 import RootErrorBoundary, { BootSignal } from './components/RootErrorBoundary'
+import { initProductAudit, trackApiFailure } from './utils/productAudit'
+
+initProductAudit();
 
 // Send HttpOnly cookies on all requests (required for session persistence)
 axios.defaults.withCredentials = true;
+axios.interceptors.request.use((config) => {
+  config.__auditStarted = performance.now();
+  config.headers = config.headers || {};
+  config.headers['X-VIKS-Page'] = window.location.pathname;
+  return config;
+});
 
 // 401 interceptor — split into two paths:
 //
@@ -39,6 +48,7 @@ axios.defaults.withCredentials = true;
 axios.interceptors.response.use(
   (response) => response,
   (error) => {
+    if (!String(error?.config?.url || '').includes('/api/audit/events/batch')) trackApiFailure(error);
     const url = error?.config?.url || '';
     const isSessionProbe = url.includes('/api/auth/session');
     const isLogoutCall = url.includes('/api/auth/logout');

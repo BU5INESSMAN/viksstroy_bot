@@ -231,7 +231,10 @@ CREATE TABLE IF NOT EXISTS logs (
     tg_id INTEGER,
     fio TEXT,
     action TEXT,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+    target_type TEXT DEFAULT NULL,
+    target_id INTEGER DEFAULT NULL,
+    details TEXT DEFAULT ''
 );
 
 CREATE TABLE IF NOT EXISTS web_codes (code TEXT, max_id INTEGER, expires REAL);
@@ -412,6 +415,45 @@ CREATE TABLE IF NOT EXISTS smr_member_aliases (
     PRIMARY KEY (app_id, old_member_id)
 );
 
+-- Canonical employee registry. A person can have several historical
+-- team_members ids after transfers/deletions, but reports group them by one
+-- stable identity. Legacy member ids intentionally have no FK constraint.
+CREATE TABLE IF NOT EXISTS employee_identities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    canonical_fio TEXT NOT NULL,
+    normalized_fio TEXT NOT NULL DEFAULT '',
+    position TEXT NOT NULL DEFAULT '',
+    linked_user_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'active'
+        CHECK(status IN ('active','unresolved','merged','archived')),
+    merged_into_identity_id INTEGER,
+    notes TEXT NOT NULL DEFAULT '',
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (linked_user_id) REFERENCES users(user_id),
+    FOREIGN KEY (merged_into_identity_id) REFERENCES employee_identities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_employee_identities_name
+    ON employee_identities(normalized_fio, status);
+CREATE INDEX IF NOT EXISTS idx_employee_identities_link
+    ON employee_identities(linked_user_id, status);
+
+CREATE TABLE IF NOT EXISTS employee_identity_members (
+    member_id INTEGER PRIMARY KEY,
+    identity_id INTEGER NOT NULL,
+    source_fio TEXT NOT NULL DEFAULT '',
+    source_position TEXT NOT NULL DEFAULT '',
+    source_team_id INTEGER,
+    source TEXT NOT NULL DEFAULT 'current',
+    mapped_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (identity_id) REFERENCES employee_identities(id)
+);
+CREATE INDEX IF NOT EXISTS idx_employee_identity_members_identity
+    ON employee_identity_members(identity_id, member_id);
+
 -- Immutable financial history for SMR reports. The complete before/after
 -- snapshots make an audit entry independent from later catalog edits.
 CREATE TABLE IF NOT EXISTS smr_financial_audit (
@@ -543,3 +585,40 @@ CREATE TABLE IF NOT EXISTS smr_edit_requests (
     created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY(actor_id, operation_id)
 );
+
+-- Product diagnostics. Request/form bodies and secret values are never stored.
+CREATE TABLE IF NOT EXISTS product_audit_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_uuid TEXT NOT NULL UNIQUE,
+    occurred_at TEXT NOT NULL,
+    received_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    source TEXT NOT NULL DEFAULT 'server',
+    category TEXT NOT NULL DEFAULT 'interaction',
+    event_name TEXT NOT NULL,
+    outcome TEXT NOT NULL DEFAULT 'info',
+    severity TEXT NOT NULL DEFAULT 'info',
+    user_id INTEGER,
+    user_fio TEXT DEFAULT '',
+    user_role TEXT DEFAULT '',
+    session_hash TEXT DEFAULT '',
+    request_id TEXT DEFAULT '',
+    page TEXT DEFAULT '',
+    route TEXT DEFAULT '',
+    method TEXT DEFAULT '',
+    status_code INTEGER,
+    duration_ms INTEGER,
+    element TEXT DEFAULT '',
+    target_type TEXT DEFAULT '',
+    target_id TEXT DEFAULT '',
+    error_type TEXT DEFAULT '',
+    error_message TEXT DEFAULT '',
+    metadata_json TEXT NOT NULL DEFAULT '{}',
+    client_json TEXT NOT NULL DEFAULT '{}',
+    app_version TEXT DEFAULT '',
+    FOREIGN KEY (user_id) REFERENCES users(user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_product_audit_time ON product_audit_events(occurred_at DESC, id DESC);
+CREATE INDEX IF NOT EXISTS idx_product_audit_user_time ON product_audit_events(user_id, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_audit_category_time ON product_audit_events(category, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_audit_outcome_time ON product_audit_events(outcome, occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_product_audit_name_time ON product_audit_events(event_name, occurred_at DESC);
