@@ -112,10 +112,11 @@ class SmrPeriodReportTests(unittest.IsolatedAsyncioTestCase):
         names = [workbook["Сводка"].cell(row, 1).value for row in range(6, 8)]
         self.assertEqual(names.count("Иванов Иван Иванович"), 1)
         headers = [workbook["Сводка"].cell(5, column).value for column in range(1, workbook["Сводка"].max_column + 1)]
-        self.assertNotIn("ЗП по работам", headers)
-        self.assertIn("ЗП прораба", headers)
+        self.assertIn("Предложение прораба", headers)
+        self.assertIn("Расчёт по справочнику", headers)
         detail_headers = [workbook["По заявкам"].cell(4, column).value for column in range(1, workbook["По заявкам"].max_column + 1)]
-        self.assertNotIn("ЗП по работам", detail_headers)
+        self.assertIn("Предложение прораба", detail_headers)
+        self.assertIn("Расчёт по справочнику", detail_headers)
         detail_numbers = {
             workbook["По заявкам"].cell(row, 2).value
             for row in range(5, workbook["По заявкам"].max_row + 1)
@@ -126,6 +127,18 @@ class SmrPeriodReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(summary["objects"], 2)
         self.assertEqual(summary["works"], 3)
         self.assertTrue(filename.endswith(".xlsx"))
+
+        data = await load_period_data(
+            self.db, date(2026, 8, 1), date(2026, 8, 31)
+        )
+        rows_by_name = {
+            row["member_fio"]: row
+            for row in data["hours"]
+            if row["app_id"] == 1
+        }
+        self.assertEqual(rows_by_name["Иванов Иван Иванович"]["participant_salary"], 4000)
+        self.assertEqual(rows_by_name["Иванов Иван Иванович"]["calculated_salary"], 666.67)
+        self.assertEqual(rows_by_name["Петров Пётр"]["calculated_salary"], 333.33)
 
     async def test_include_unaccounted_checkbox_adds_ready_reports_only(self):
         data = await load_period_data(

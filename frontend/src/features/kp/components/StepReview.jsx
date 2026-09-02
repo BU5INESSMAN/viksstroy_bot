@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
 import axios from 'axios';
-import toast from 'react-hot-toast';
 import { ArrowLeft, Send, Clock, Hammer, Plus, Loader2, Check, WalletCards, Save } from 'lucide-react';
 
 const sourceId = (value, fallback = 0) => Number(
@@ -33,33 +32,6 @@ export default function StepReview({
     const [planItems, setPlanItems] = useState([]);
     const [catalog, setCatalog] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [suggestingSalary, setSuggestingSalary] = useState(false);
-
-    const suggestSalary = async () => {
-        setSuggestingSalary(true);
-        try {
-            const response = await axios.post(`/api/kp/apps/${appId}/smr/salary-suggestions`, {
-                hours: hoursData,
-                works: worksData,
-                extra_works: extraWorksData,
-            });
-            const suggestions = new Map((response.data?.items || []).map(item => [
-                memberKey(sourceId(item, appId), item.team_id, item.user_id),
-                Number(item.participant_salary || 0),
-            ]));
-            setHoursData?.(prev => prev.map(item => {
-                const key = memberKey(sourceId(item, appId), item.team_id, item.user_id);
-                return suggestions.has(key)
-                    ? { ...item, participant_salary: suggestions.get(key) }
-                    : item;
-            }));
-            toast.success(`Предложение рассчитано: ${Number(response.data?.work_salary_total || 0).toLocaleString('ru-RU')} ₽. Суммы можно изменить вручную.`);
-        } catch (error) {
-            toast.error(error.response?.data?.detail || 'Не удалось рассчитать предложение ЗП');
-        } finally {
-            setSuggestingSalary(false);
-        }
-    };
 
     const canEditSalary = canFinalize && !approveMode && !addendumMode && !editReadyMode;
     const setReviewSalary = (sourceApplicationId, teamId, memberId, value) => {
@@ -208,7 +180,7 @@ export default function StepReview({
                 </p>
                 {canEditSalary && (
                     <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-2">
-                        Можно распределить фонд ЗП по справочнику, а затем вручную изменить итоговую сумму любого сотрудника.
+                        Укажите своё предложение по ЗП каждому сотруднику. Справочные расценки прорабу не показываются.
                     </p>
                 )}
             </div>
@@ -225,7 +197,7 @@ export default function StepReview({
                         </span>
                         {totalParticipantSalary > 0 && (
                             <span className="block text-[11px] font-bold text-emerald-600 dark:text-emerald-400">
-                                ЗП участникам: {totalParticipantSalary.toLocaleString('ru-RU')} ₽
+                                Предложение ЗП: {totalParticipantSalary.toLocaleString('ru-RU')} ₽
                             </span>
                         )}
                     </div>
@@ -267,7 +239,7 @@ export default function StepReview({
                                                             m.user_id,
                                                             event.target.value,
                                                         )}
-                                                        aria-label={`ЗП для ${m.fio}`}
+                                                        aria-label={`Предложение ЗП для ${m.fio}`}
                                                         placeholder="Введите"
                                                         className="w-24 p-1.5 text-center text-sm font-bold border border-emerald-200 dark:border-emerald-700 rounded-lg bg-emerald-50/50 dark:bg-emerald-900/10 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
                                                     />
@@ -341,12 +313,6 @@ export default function StepReview({
             )}
 
             {/* Actions */}
-            {canEditSalary && (
-                <button type="button" onClick={suggestSalary} disabled={suggestingSalary || submitting} className="w-full min-h-11 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50">
-                    {suggestingSalary ? <Loader2 className="w-4 h-4 animate-spin" /> : <WalletCards className="w-4 h-4" />}
-                    Рассчитать предложение ЗП по справочнику
-                </button>
-            )}
             <div className="flex flex-col sm:flex-row gap-3 pt-2">
                 <div className="flex gap-2">
                     <button

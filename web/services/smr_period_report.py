@@ -233,6 +233,7 @@ def _aggregate_hours(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 **row,
                 "hours": 0.0,
                 "participant_salary": 0.0,
+                "calculated_salary": 0.0,
                 "member_ids": set(),
                 "identity_ids": set(),
             }
@@ -244,6 +245,36 @@ def _aggregate_hours(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(aggregated.values())
 
 
+def _allocate_work_salary(hours: list[dict[str, Any]], works: list[dict[str, Any]]) -> None:
+    """Calculate the catalog-based payroll separately from a foreman's proposal."""
+    pools: dict[tuple[int, int], float] = defaultdict(float)
+    for work in works:
+        pools[(int(work["app_id"]), int(work.get("team_id") or 0))] += (
+            _num(work.get("volume")) * _num(work.get("rate_salary"))
+        )
+
+    for (app_id, team_id), amount in pools.items():
+        recipients = [
+            row
+            for row in hours
+            if int(row["app_id"]) == app_id
+            and (team_id == 0 or int(row["team_id"]) == team_id)
+            and _num(row.get("hours")) > 0
+        ]
+        total_hours = sum(_num(row.get("hours")) for row in recipients)
+        if amount <= 0 or total_hours <= 0:
+            continue
+        allocated = 0.0
+        for index, row in enumerate(recipients):
+            share = (
+                round(amount - allocated, 2)
+                if index == len(recipients) - 1
+                else round(amount * _num(row.get("hours")) / total_hours, 2)
+            )
+            row["calculated_salary"] += share
+            allocated += share
+
+
 async def load_period_data(db, date_from: date, date_to: date, *, include_unaccounted: bool = False) -> dict[str, Any]:
     if db.conn is None:
         await db.init_db()
@@ -251,8 +282,15 @@ async def load_period_data(db, date_from: date, date_to: date, *, include_unacco
     works = await _load_works(db, date_from, date_to, include_unaccounted=include_unaccounted)
     _canonicalize_report_people(raw_hours)
     hours = _aggregate_hours(raw_hours)
+    _allocate_work_salary(hours, works)
     matrix: dict[str, dict[str, dict[str, float]]] = defaultdict(
-        lambda: defaultdict(lambda: {"participant_salary": 0.0, "hours": 0.0})
+        lambda: defaultdict(
+            lambda: {
+                "participant_salary": 0.0,
+                "calculated_salary": 0.0,
+                "hours": 0.0,
+            }
+        )
     )
     employee_names: dict[str, str] = {}
     employee_positions: dict[str, str] = {}
@@ -267,6 +305,7 @@ async def load_period_data(db, date_from: date, date_to: date, *, include_unacco
         object_names[object_key] = object_name
         bucket = matrix[employee_key][object_key]
         bucket["participant_salary"] += _num(row.get("participant_salary"))
+        bucket["calculated_salary"] += _num(row.get("calculated_salary"))
         bucket["hours"] += _num(row.get("hours"))
     employees = sorted(matrix, key=lambda key: (employee_names.get(key, key).casefold(), key))
     objects = sorted(object_names, key=lambda key: (object_names[key].casefold(), key))
@@ -329,11 +368,14 @@ def build_period_workbook(data: dict[str, Any], date_from: date, date_to: date) 
     mode = "включая неучтённые" if data.get("include_unaccounted") else "только учтённые"
     subtitle = f"Период: {date_from:%d.%m.%Y} — {date_to:%d.%m.%Y} · {mode}. Архивные СМР включены; отбор по дате работ."
     _base_sheet(summary, "Сводный отчёт СМР", subtitle)
-    last_col = max(2, 2 + len(data["objects"]) * 2 + 2)
+    last_col = max(2, 2 + len(data["objects"]) * 3 + 3)
     summary.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
     summary.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
     summary.merge_cells(start_row=3, start_column=1, end_row=3, end_column=last_col)
-    quality_notes = ["ЗП — только суммы, введённые прорабом вручную; расценки работ не распределяются по сотрудникам."]
+    quality_notes = [
+        "Предложение прораба и внутренний расчёт по справочнику показаны отдельно. "
+        "Прораб не видит справочные расценки и вводит предложение самостоятельно."
+    ]
     if data.get("zero_participant_salary_rows"):
         quality_notes.append(
             f"Строк с рабочими часами и ЗП 0: {data['zero_participant_salary_rows']}."
@@ -354,63 +396,75 @@ def build_period_workbook(data: dict[str, Any], date_from: date, date_to: date) 
     column_groups: list[tuple[int, int, str]] = []
     col = 3
     for object_key in data["objects"]:
-        summary.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 1)
+        summary.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 2)
         summary.cell(4, col, data["object_names"][object_key])
-        for offset, label in enumerate(("ЗП прораба", "Часы")):
+        for offset, label in enumerate(("Предложение прораба", "Расчёт по справочнику", "Часы")):
             summary.cell(5, col + offset, label)
-        column_groups.append((col, col + 1, object_key)); col += 2
-    summary.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 1)
+        column_groups.append((col, col + 1, col + 2, object_key)); col += 3
+    summary.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 2)
     summary.cell(4, col, "Итого")
-    for offset, label in enumerate(("ЗП прораба", "Часы")):
+    for offset, label in enumerate(("Предложение прораба", "Расчёт по справочнику", "Часы")):
         summary.cell(5, col + offset, label)
-    total_cols = (col, col + 1)
+    total_cols = (col, col + 1, col + 2)
     for row_no in (4, 5):
-        for column in range(1, col + 2):
+        for column in range(1, col + 3):
             _style_header(summary.cell(row_no, column), dark=row_no == 4)
     matrix = data["matrix"]; start_row = 6
     for offset, employee_key in enumerate(data["employees"]):
         row_no = start_row + offset
         summary.cell(row_no, 1, data["employee_names"].get(employee_key, employee_key))
         summary.cell(row_no, 2, data["employee_positions"].get(employee_key, ""))
-        totals = [0.0, 0.0]
-        for salary_col, hours_col, object_key in column_groups:
+        totals = [0.0, 0.0, 0.0]
+        for proposal_col, calculation_col, hours_col, object_key in column_groups:
             bucket = matrix[employee_key].get(object_key, {})
-            values = (_num(bucket.get("participant_salary")), _num(bucket.get("hours")))
-            for target_col, value in zip((salary_col, hours_col), values):
+            values = (
+                _num(bucket.get("participant_salary")),
+                _num(bucket.get("calculated_salary")),
+                _num(bucket.get("hours")),
+            )
+            for target_col, value in zip((proposal_col, calculation_col, hours_col), values):
                 if value: summary.cell(row_no, target_col, _clean_number(value))
-            totals = [totals[index] + values[index] for index in range(2)]
+            totals = [totals[index] + values[index] for index in range(3)]
         for target_col, value in zip(total_cols, totals): summary.cell(row_no, target_col, _clean_number(value))
     end_employee_row = start_row + len(data["employees"]) - 1
     total_row = max(start_row, end_employee_row + 1)
     summary.cell(total_row, 1, "Итого"); summary.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=2)
-    for salary_col, hours_col, object_key in column_groups:
-        for target_col, key in ((salary_col, "participant_salary"), (hours_col, "hours")):
+    for proposal_col, calculation_col, hours_col, object_key in column_groups:
+        for target_col, key in (
+            (proposal_col, "participant_salary"),
+            (calculation_col, "calculated_salary"),
+            (hours_col, "hours"),
+        ):
             value = sum(_num(matrix[employee].get(object_key, {}).get(key)) for employee in data["employees"])
             summary.cell(total_row, target_col, _clean_number(value))
-    grand = {"participant_salary": sum(_num(row.get("participant_salary")) for row in data["hours"]), "hours": sum(_num(row.get("hours")) for row in data["hours"])}
-    for target_col, key in zip(total_cols, ("participant_salary", "hours")): summary.cell(total_row, target_col, _clean_number(grand[key]))
+    grand = {
+        "participant_salary": sum(_num(row.get("participant_salary")) for row in data["hours"]),
+        "calculated_salary": sum(_num(row.get("calculated_salary")) for row in data["hours"]),
+        "hours": sum(_num(row.get("hours")) for row in data["hours"]),
+    }
+    for target_col, key in zip(total_cols, ("participant_salary", "calculated_salary", "hours")): summary.cell(total_row, target_col, _clean_number(grand[key]))
     for cell in summary[total_row]: cell.font = Font(name="Arial", size=9, bold=True, color="FFFFFF"); cell.fill = PatternFill("solid", fgColor=TOTAL_BLUE)
-    if data["employees"]: _style_data_range(summary, start_row, end_employee_row, 1, col + 1)
-    for column in range(3, col + 2):
-        for row_no in range(5, total_row + 1): summary.cell(row_no, column).number_format = MONEY_FORMAT if (column - 3) % 2 == 0 else NUMBER_FORMAT
+    if data["employees"]: _style_data_range(summary, start_row, end_employee_row, 1, col + 2)
+    for column in range(3, col + 3):
+        for row_no in range(5, total_row + 1): summary.cell(row_no, column).number_format = MONEY_FORMAT if (column - 3) % 3 in (0, 1) else NUMBER_FORMAT
     summary.column_dimensions["A"].width = 32; summary.column_dimensions["B"].width = 28
-    for column in range(3, col + 2): summary.column_dimensions[get_column_letter(column)].width = 15
-    summary.freeze_panes = "C6"; summary.auto_filter.ref = f"A5:{get_column_letter(col + 1)}{max(total_row - 1, 5)}"
+    for column in range(3, col + 3): summary.column_dimensions[get_column_letter(column)].width = 18
+    summary.freeze_panes = "C6"; summary.auto_filter.ref = f"A5:{get_column_letter(col + 2)}{max(total_row - 1, 5)}"
 
     details = workbook.create_sheet("По заявкам"); _base_sheet(details, "Сотрудники по заявкам", subtitle)
-    headers = ["Дата", "Номер заявки", "Объект", "Прораб", "Бригада", "Сотрудник", "Должность", "Часы", "ЗП прораба", "Учтено", "В архиве"]
+    headers = ["Дата", "Номер заявки", "Объект", "Прораб", "Бригада", "Сотрудник", "Должность", "Часы", "Предложение прораба", "Расчёт по справочнику", "Учтено", "В архиве"]
     details.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
     details.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
     for column, label in enumerate(headers, 1): details.cell(4, column, label); _style_header(details.cell(4, column))
     for row_no, row in enumerate(data["hours"], 5):
-        values = [date.fromisoformat(str(row.get("date_target"))[:10]) if row.get("date_target") else None, row.get("public_number") or f"№{row.get('app_id')}", row.get("object_name") or "", row.get("foreman_name") or "", row.get("team_name") or "", row.get("member_fio") or "", row.get("member_position") or "", _clean_number(_num(row.get("hours"))), round(_num(row.get("participant_salary")), 2), "Да" if row.get("smr_accounted_at") else "Нет", "Да" if int(row.get("kp_archived") or 0) else "Нет"]
+        values = [date.fromisoformat(str(row.get("date_target"))[:10]) if row.get("date_target") else None, row.get("public_number") or f"№{row.get('app_id')}", row.get("object_name") or "", row.get("foreman_name") or "", row.get("team_name") or "", row.get("member_fio") or "", row.get("member_position") or "", _clean_number(_num(row.get("hours"))), round(_num(row.get("participant_salary")), 2), round(_num(row.get("calculated_salary")), 2), "Да" if row.get("smr_accounted_at") else "Нет", "Да" if int(row.get("kp_archived") or 0) else "Нет"]
         for column, value in enumerate(values, 1): details.cell(row_no, column, value)
     details_end = 4 + len(data["hours"])
     if data["hours"]:
         _style_data_range(details, 5, details_end, 1, len(headers))
-        for row_no in range(5, details_end + 1): details.cell(row_no, 1).number_format = "dd.mm.yyyy"; details.cell(row_no, 8).number_format = NUMBER_FORMAT; details.cell(row_no, 9).number_format = MONEY_FORMAT
+        for row_no in range(5, details_end + 1): details.cell(row_no, 1).number_format = "dd.mm.yyyy"; details.cell(row_no, 8).number_format = NUMBER_FORMAT; details.cell(row_no, 9).number_format = MONEY_FORMAT; details.cell(row_no, 10).number_format = MONEY_FORMAT
     _add_table(details, "SMRPeriodDetails", 4, details_end, len(headers))
-    for column, width in enumerate([12, 18, 30, 28, 25, 32, 28, 11, 16, 11, 11], 1): details.column_dimensions[get_column_letter(column)].width = width
+    for column, width in enumerate([12, 18, 30, 28, 25, 32, 28, 11, 20, 20, 11, 11], 1): details.column_dimensions[get_column_letter(column)].width = width
 
     works_sheet = workbook.create_sheet("Работы"); _base_sheet(works_sheet, "Работы за период", subtitle)
     work_headers = ["Дата", "Номер заявки", "Объект", "Бригада", "Вид работы", "Часть отчёта", "Категория", "Наименование", "Ед. изм.", "Объём", "ЗП за единицу", "Сумма ЗП", "Цена СМР за единицу", "Сумма СМР", "Учтено", "В архиве"]

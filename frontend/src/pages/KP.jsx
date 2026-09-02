@@ -963,7 +963,7 @@ export default function KP() {
                                                     <span className="block font-bold text-gray-900 dark:text-white">{row.hours} ч</span>
                                                     {canViewParticipantSalary && (
                                                         <span className="block text-xs font-bold text-emerald-600 dark:text-emerald-400">
-                                                            ЗП: {Number(row.participant_salary || 0).toLocaleString('ru-RU')} ₽
+                                                            Предложение: {Number(row.participant_salary || 0).toLocaleString('ru-RU')} ₽
                                                         </span>
                                                     )}
                                                 </div>
@@ -992,7 +992,7 @@ export default function KP() {
                                     <div className="space-y-2 mb-6">
                                         {canViewParticipantSalary && (
                                             <div className="flex justify-between items-center bg-emerald-50/70 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800/50">
-                                                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase">ЗП участникам:</span>
+                                                <span className="text-xs font-bold text-emerald-700 dark:text-emerald-400 uppercase">Предложение прораба:</span>
                                                 <span className="text-xl font-black text-emerald-700 dark:text-emerald-400">{totalParticipantSalary.toLocaleString('ru-RU')} ₽</span>
                                             </div>
                                         )}

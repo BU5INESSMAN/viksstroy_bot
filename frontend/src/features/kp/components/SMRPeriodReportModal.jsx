@@ -125,7 +125,7 @@ export default function SMRPeriodReportModal({ onClose }) {
                             <div className="rounded-2xl border border-blue-100 dark:border-blue-900/50 bg-blue-50/70 dark:bg-blue-950/20 p-4 flex items-start gap-3">
                                 <Info className="w-5 h-5 text-blue-500 flex-shrink-0 mt-0.5" />
                                 <p className="text-xs leading-5 text-blue-800 dark:text-blue-200">
-                                    В файле три листа: общая сводка, детализация по заявкам и все работы. Отдельно показаны введённая ЗП участников и расчётная ЗП по расценкам работ. Архивные СМР отбираются по дате выполнения работ.
+                                    В файле три листа: общая сводка, детализация по заявкам и все работы. Отдельно показаны предложение прораба и внутренний расчёт по справочнику. Архивные СМР отбираются по дате выполнения работ.
                                 </p>
                             </div>
                         </div>

@@ -627,8 +627,8 @@ export default function StepHours({
                                                             <span className="text-xs font-semibold text-gray-400">ч</span>
                                                         </label>
                                                         {canEditParticipantSalary && (
-                                                            <label className="flex items-center gap-1" title={`ЗП участника: ${m.fio}`}>
-                                                                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">ЗП</span>
+                                                            <label className="flex items-center gap-1" title={`Ваше предложение по ЗП: ${m.fio}`}>
+                                                                <span className="text-[10px] font-bold text-emerald-600 dark:text-emerald-400">Предл. ЗП</span>
                                                                 <input
                                                                     type="number"
                                                                     min="0"
