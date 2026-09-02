@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from datetime import date
 from io import BytesIO
+import re
 from typing import Any
 
 from openpyxl import Workbook
@@ -173,33 +174,74 @@ async def _load_works(
     return rows
 
 
-def _aggregate_hours(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    aggregated: dict[tuple[int, int, int], dict[str, Any]] = {}
+def _normalize_person_name(value: object) -> str:
+    return re.sub(r"[^а-яёa-z0-9]+", " ", str(value or "").casefold()).strip()
+
+
+def _canonicalize_report_people(rows: list[dict[str, Any]]) -> None:
+    """Merge only unambiguous FIO variants without conflating namesakes."""
+    display_by_name: dict[str, str] = {}
+    position_by_name: dict[str, str] = {}
+    complete_names: set[str] = set()
     for row in rows:
-        key = (int(row["app_id"]), int(row["team_id"]), int(row["identity_id"]))
+        display = re.sub(r"\s+", " ", str(row.get("member_fio") or "").strip())
+        normalized = _normalize_person_name(display)
+        if not normalized:
+            normalized = f"сотрудник {int(row.get('member_id') or 0)}"
+            display = display or f"Сотрудник #{int(row.get('member_id') or 0)}"
+        if len(normalized.split()) >= 3:
+            complete_names.add(normalized)
+        if len(display) > len(display_by_name.get(normalized, "")):
+            display_by_name[normalized] = display
+        position = str(row.get("member_position") or "").strip()
+        if len(position) > len(position_by_name.get(normalized, "")):
+            position_by_name[normalized] = position
+
+    target_by_name: dict[str, str] = {}
+    for normalized in display_by_name:
+        parts = normalized.split()
+        if normalized in complete_names:
+            target_by_name[normalized] = normalized
+            continue
+        candidates = {
+            candidate
+            for candidate in complete_names
+            if candidate.split()[: len(parts)] == parts
+        }
+        target_by_name[normalized] = next(iter(candidates)) if len(candidates) == 1 else normalized
+
+    for row in rows:
+        original = _normalize_person_name(row.get("member_fio"))
+        if not original:
+            original = f"сотрудник {int(row.get('member_id') or 0)}"
+        target = target_by_name.get(original, original)
+        row["report_person_key"] = target
+        row["member_fio"] = display_by_name.get(target) or row.get("member_fio")
+        row["member_position"] = position_by_name.get(target) or row.get("member_position") or ""
+
+
+def _aggregate_hours(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    aggregated: dict[tuple[int, int, str], dict[str, Any]] = {}
+    for row in rows:
+        key = (
+            int(row["app_id"]),
+            int(row["team_id"]),
+            str(row.get("report_person_key") or f"member:{int(row.get('member_id') or 0)}"),
+        )
         if key not in aggregated:
-            aggregated[key] = {**row, "hours": 0.0, "participant_salary": 0.0, "calculated_salary": 0.0, "member_ids": set()}
+            aggregated[key] = {
+                **row,
+                "hours": 0.0,
+                "participant_salary": 0.0,
+                "member_ids": set(),
+                "identity_ids": set(),
+            }
         item = aggregated[key]
         item["hours"] += _num(row.get("hours"))
         item["participant_salary"] += _num(row.get("participant_salary"))
         item["member_ids"].add(int(row.get("member_id") or 0))
+        item["identity_ids"].add(int(row.get("identity_id") or 0))
     return list(aggregated.values())
-
-
-def _allocate_work_salary(hours: list[dict[str, Any]], works: list[dict[str, Any]]) -> None:
-    pools: dict[tuple[int, int], float] = defaultdict(float)
-    for work in works:
-        pools[(int(work["app_id"]), int(work.get("team_id") or 0))] += _num(work.get("volume")) * _num(work.get("rate_salary"))
-    for (app_id, team_id), amount in pools.items():
-        recipients = [row for row in hours if int(row["app_id"]) == app_id and (team_id == 0 or int(row["team_id"]) == team_id) and _num(row.get("hours")) > 0]
-        total_hours = sum(_num(row.get("hours")) for row in recipients)
-        if amount <= 0 or total_hours <= 0:
-            continue
-        allocated = 0.0
-        for index, row in enumerate(recipients):
-            share = round(amount - allocated, 2) if index == len(recipients) - 1 else round(amount * _num(row.get("hours")) / total_hours, 2)
-            row["calculated_salary"] += share
-            allocated += share
 
 
 async def load_period_data(db, date_from: date, date_to: date, *, include_unaccounted: bool = False) -> dict[str, Any]:
@@ -207,14 +249,16 @@ async def load_period_data(db, date_from: date, date_to: date, *, include_unacco
         await db.init_db()
     raw_hours = await _load_hours(db, date_from, date_to, include_unaccounted=include_unaccounted)
     works = await _load_works(db, date_from, date_to, include_unaccounted=include_unaccounted)
+    _canonicalize_report_people(raw_hours)
     hours = _aggregate_hours(raw_hours)
-    _allocate_work_salary(hours, works)
-    matrix: dict[str, dict[str, dict[str, float]]] = defaultdict(lambda: defaultdict(lambda: {"participant_salary": 0.0, "calculated_salary": 0.0, "hours": 0.0}))
+    matrix: dict[str, dict[str, dict[str, float]]] = defaultdict(
+        lambda: defaultdict(lambda: {"participant_salary": 0.0, "hours": 0.0})
+    )
     employee_names: dict[str, str] = {}
     employee_positions: dict[str, str] = {}
     object_names: dict[str, str] = {}
     for row in hours:
-        employee_key = f"identity:{int(row['identity_id'])}"
+        employee_key = f"person:{row['report_person_key']}"
         object_id = int(row.get("object_id") or 0)
         object_name = str(row.get("object_name") or "Объект").strip() or "Объект"
         object_key = f"object:{object_id}" if object_id > 0 else f"address:{object_name.casefold()}"
@@ -223,7 +267,6 @@ async def load_period_data(db, date_from: date, date_to: date, *, include_unacco
         object_names[object_key] = object_name
         bucket = matrix[employee_key][object_key]
         bucket["participant_salary"] += _num(row.get("participant_salary"))
-        bucket["calculated_salary"] += _num(row.get("calculated_salary"))
         bucket["hours"] += _num(row.get("hours"))
     employees = sorted(matrix, key=lambda key: (employee_names.get(key, key).casefold(), key))
     objects = sorted(object_names, key=lambda key: (object_names[key].casefold(), key))
@@ -235,6 +278,11 @@ async def load_period_data(db, date_from: date, date_to: date, *, include_unacco
         "works": works, "source_rows": len(raw_hours),
         "include_unaccounted": include_unaccounted,
         "zero_participant_salary_rows": sum(1 for row in hours if _num(row.get("hours")) > 0 and _num(row.get("participant_salary")) == 0),
+        "incomplete_employee_names": sorted({
+            str(row.get("member_fio") or "")
+            for row in hours
+            if len(_normalize_person_name(row.get("member_fio")).split()) < 3
+        }),
         "unresolved_members": sorted({int(row.get("member_id") or 0) for row in raw_hours if str(row.get("member_fio") or "").startswith("Сотрудник #")}),
     }
 
@@ -281,71 +329,88 @@ def build_period_workbook(data: dict[str, Any], date_from: date, date_to: date) 
     mode = "включая неучтённые" if data.get("include_unaccounted") else "только учтённые"
     subtitle = f"Период: {date_from:%d.%m.%Y} — {date_to:%d.%m.%Y} · {mode}. Архивные СМР включены; отбор по дате работ."
     _base_sheet(summary, "Сводный отчёт СМР", subtitle)
-    last_col = max(2, 2 + len(data["objects"]) * 3 + 3)
+    last_col = max(2, 2 + len(data["objects"]) * 2 + 2)
     summary.merge_cells(start_row=1, start_column=1, end_row=1, end_column=last_col)
     summary.merge_cells(start_row=2, start_column=1, end_row=2, end_column=last_col)
+    summary.merge_cells(start_row=3, start_column=1, end_row=3, end_column=last_col)
+    quality_notes = ["ЗП — только суммы, введённые прорабом вручную; расценки работ не распределяются по сотрудникам."]
+    if data.get("zero_participant_salary_rows"):
+        quality_notes.append(
+            f"Строк с рабочими часами и ЗП 0: {data['zero_participant_salary_rows']}."
+        )
+    if data.get("incomplete_employee_names"):
+        quality_notes.append(
+            "Неполные ФИО требуют исправления в аудите сотрудников: "
+            + ", ".join(data["incomplete_employee_names"])
+            + "."
+        )
+    summary["A3"] = " ".join(quality_notes)
+    summary["A3"].font = Font(name="Arial", size=9, color="9A3412")
+    summary["A3"].fill = PatternFill("solid", fgColor="FFF7ED")
+    summary["A3"].alignment = Alignment(wrap_text=True, vertical="center")
+    summary.row_dimensions[3].height = 34
     summary.merge_cells("A4:A5"); summary.merge_cells("B4:B5")
     summary["A4"] = "Сотрудник"; summary["B4"] = "Должность"
-    column_groups: list[tuple[int, int, int, str]] = []
+    column_groups: list[tuple[int, int, str]] = []
     col = 3
     for object_key in data["objects"]:
-        summary.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 2)
+        summary.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 1)
         summary.cell(4, col, data["object_names"][object_key])
-        for offset, label in enumerate(("ЗП введённая", "ЗП по работам", "Часы")):
+        for offset, label in enumerate(("ЗП прораба", "Часы")):
             summary.cell(5, col + offset, label)
-        column_groups.append((col, col + 1, col + 2, object_key)); col += 3
-    summary.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 2)
+        column_groups.append((col, col + 1, object_key)); col += 2
+    summary.merge_cells(start_row=4, start_column=col, end_row=4, end_column=col + 1)
     summary.cell(4, col, "Итого")
-    for offset, label in enumerate(("ЗП введённая", "ЗП по работам", "Часы")):
+    for offset, label in enumerate(("ЗП прораба", "Часы")):
         summary.cell(5, col + offset, label)
-    total_cols = (col, col + 1, col + 2)
+    total_cols = (col, col + 1)
     for row_no in (4, 5):
-        for column in range(1, col + 3):
+        for column in range(1, col + 2):
             _style_header(summary.cell(row_no, column), dark=row_no == 4)
     matrix = data["matrix"]; start_row = 6
     for offset, employee_key in enumerate(data["employees"]):
         row_no = start_row + offset
         summary.cell(row_no, 1, data["employee_names"].get(employee_key, employee_key))
         summary.cell(row_no, 2, data["employee_positions"].get(employee_key, ""))
-        totals = [0.0, 0.0, 0.0]
-        for manual_col, calc_col, hours_col, object_key in column_groups:
+        totals = [0.0, 0.0]
+        for salary_col, hours_col, object_key in column_groups:
             bucket = matrix[employee_key].get(object_key, {})
-            values = (_num(bucket.get("participant_salary")), _num(bucket.get("calculated_salary")), _num(bucket.get("hours")))
-            for target_col, value in zip((manual_col, calc_col, hours_col), values):
+            values = (_num(bucket.get("participant_salary")), _num(bucket.get("hours")))
+            for target_col, value in zip((salary_col, hours_col), values):
                 if value: summary.cell(row_no, target_col, _clean_number(value))
-            totals = [totals[index] + values[index] for index in range(3)]
+            totals = [totals[index] + values[index] for index in range(2)]
         for target_col, value in zip(total_cols, totals): summary.cell(row_no, target_col, _clean_number(value))
     end_employee_row = start_row + len(data["employees"]) - 1
     total_row = max(start_row, end_employee_row + 1)
     summary.cell(total_row, 1, "Итого"); summary.merge_cells(start_row=total_row, start_column=1, end_row=total_row, end_column=2)
-    for salary_col, calc_col, hours_col, object_key in column_groups:
-        for target_col, key in ((salary_col, "participant_salary"), (calc_col, "calculated_salary"), (hours_col, "hours")):
+    for salary_col, hours_col, object_key in column_groups:
+        for target_col, key in ((salary_col, "participant_salary"), (hours_col, "hours")):
             value = sum(_num(matrix[employee].get(object_key, {}).get(key)) for employee in data["employees"])
             summary.cell(total_row, target_col, _clean_number(value))
-    grand = {"participant_salary": sum(_num(row.get("participant_salary")) for row in data["hours"]), "calculated_salary": sum(_num(row.get("calculated_salary")) for row in data["hours"]), "hours": sum(_num(row.get("hours")) for row in data["hours"])}
-    for target_col, key in zip(total_cols, ("participant_salary", "calculated_salary", "hours")): summary.cell(total_row, target_col, _clean_number(grand[key]))
+    grand = {"participant_salary": sum(_num(row.get("participant_salary")) for row in data["hours"]), "hours": sum(_num(row.get("hours")) for row in data["hours"])}
+    for target_col, key in zip(total_cols, ("participant_salary", "hours")): summary.cell(total_row, target_col, _clean_number(grand[key]))
     for cell in summary[total_row]: cell.font = Font(name="Arial", size=9, bold=True, color="FFFFFF"); cell.fill = PatternFill("solid", fgColor=TOTAL_BLUE)
-    if data["employees"]: _style_data_range(summary, start_row, end_employee_row, 1, col + 2)
-    for column in range(3, col + 3):
-        for row_no in range(5, total_row + 1): summary.cell(row_no, column).number_format = MONEY_FORMAT if (column - 3) % 3 in (0, 1) else NUMBER_FORMAT
+    if data["employees"]: _style_data_range(summary, start_row, end_employee_row, 1, col + 1)
+    for column in range(3, col + 2):
+        for row_no in range(5, total_row + 1): summary.cell(row_no, column).number_format = MONEY_FORMAT if (column - 3) % 2 == 0 else NUMBER_FORMAT
     summary.column_dimensions["A"].width = 32; summary.column_dimensions["B"].width = 28
-    for column in range(3, col + 3): summary.column_dimensions[get_column_letter(column)].width = 15
-    summary.freeze_panes = "C6"; summary.auto_filter.ref = f"A5:{get_column_letter(col + 2)}{max(total_row - 1, 5)}"
+    for column in range(3, col + 2): summary.column_dimensions[get_column_letter(column)].width = 15
+    summary.freeze_panes = "C6"; summary.auto_filter.ref = f"A5:{get_column_letter(col + 1)}{max(total_row - 1, 5)}"
 
     details = workbook.create_sheet("По заявкам"); _base_sheet(details, "Сотрудники по заявкам", subtitle)
-    headers = ["Дата", "Номер заявки", "Объект", "Прораб", "Бригада", "Сотрудник", "Должность", "Часы", "ЗП введённая", "ЗП по работам", "Учтено", "В архиве"]
+    headers = ["Дата", "Номер заявки", "Объект", "Прораб", "Бригада", "Сотрудник", "Должность", "Часы", "ЗП прораба", "Учтено", "В архиве"]
     details.merge_cells(start_row=1, start_column=1, end_row=1, end_column=len(headers))
     details.merge_cells(start_row=2, start_column=1, end_row=2, end_column=len(headers))
     for column, label in enumerate(headers, 1): details.cell(4, column, label); _style_header(details.cell(4, column))
     for row_no, row in enumerate(data["hours"], 5):
-        values = [date.fromisoformat(str(row.get("date_target"))[:10]) if row.get("date_target") else None, row.get("public_number") or f"№{row.get('app_id')}", row.get("object_name") or "", row.get("foreman_name") or "", row.get("team_name") or "", row.get("member_fio") or "", row.get("member_position") or "", _clean_number(_num(row.get("hours"))), round(_num(row.get("participant_salary")), 2), round(_num(row.get("calculated_salary")), 2), "Да" if row.get("smr_accounted_at") else "Нет", "Да" if int(row.get("kp_archived") or 0) else "Нет"]
+        values = [date.fromisoformat(str(row.get("date_target"))[:10]) if row.get("date_target") else None, row.get("public_number") or f"№{row.get('app_id')}", row.get("object_name") or "", row.get("foreman_name") or "", row.get("team_name") or "", row.get("member_fio") or "", row.get("member_position") or "", _clean_number(_num(row.get("hours"))), round(_num(row.get("participant_salary")), 2), "Да" if row.get("smr_accounted_at") else "Нет", "Да" if int(row.get("kp_archived") or 0) else "Нет"]
         for column, value in enumerate(values, 1): details.cell(row_no, column, value)
     details_end = 4 + len(data["hours"])
     if data["hours"]:
         _style_data_range(details, 5, details_end, 1, len(headers))
-        for row_no in range(5, details_end + 1): details.cell(row_no, 1).number_format = "dd.mm.yyyy"; details.cell(row_no, 8).number_format = NUMBER_FORMAT; details.cell(row_no, 9).number_format = MONEY_FORMAT; details.cell(row_no, 10).number_format = MONEY_FORMAT
+        for row_no in range(5, details_end + 1): details.cell(row_no, 1).number_format = "dd.mm.yyyy"; details.cell(row_no, 8).number_format = NUMBER_FORMAT; details.cell(row_no, 9).number_format = MONEY_FORMAT
     _add_table(details, "SMRPeriodDetails", 4, details_end, len(headers))
-    for column, width in enumerate([12, 18, 30, 28, 25, 32, 28, 11, 16, 16, 11, 11], 1): details.column_dimensions[get_column_letter(column)].width = width
+    for column, width in enumerate([12, 18, 30, 28, 25, 32, 28, 11, 16, 11, 11], 1): details.column_dimensions[get_column_letter(column)].width = width
 
     works_sheet = workbook.create_sheet("Работы"); _base_sheet(works_sheet, "Работы за период", subtitle)
     work_headers = ["Дата", "Номер заявки", "Объект", "Бригада", "Вид работы", "Часть отчёта", "Категория", "Наименование", "Ед. изм.", "Объём", "ЗП за единицу", "Сумма ЗП", "Цена СМР за единицу", "Сумма СМР", "Учтено", "В архиве"]
@@ -375,4 +440,12 @@ async def generate_period_report(db, date_from: date, date_to: date, *, include_
     workbook = build_period_workbook(data, date_from, date_to)
     buffer = BytesIO(); workbook.save(buffer)
     filename = f"СМР {date_from:%d.%m.%Y} - {date_to:%d.%m.%Y}.xlsx"
-    return buffer.getvalue(), filename, {"employees": len(data["employees"]), "objects": len(data["objects"]), "source_rows": data["source_rows"], "works": len(data["works"]), "zero_salary_rows": data["zero_participant_salary_rows"], "unresolved_members": data["unresolved_members"]}
+    return buffer.getvalue(), filename, {
+        "employees": len(data["employees"]),
+        "objects": len(data["objects"]),
+        "source_rows": data["source_rows"],
+        "works": len(data["works"]),
+        "zero_salary_rows": data["zero_participant_salary_rows"],
+        "unresolved_members": data["unresolved_members"],
+        "incomplete_employee_names": data["incomplete_employee_names"],
+    }

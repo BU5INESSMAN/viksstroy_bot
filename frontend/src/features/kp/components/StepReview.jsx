@@ -53,12 +53,23 @@ export default function StepReview({
                     ? { ...item, participant_salary: suggestions.get(key) }
                     : item;
             }));
-            toast.success(`Предложение рассчитано: ${Number(response.data?.work_salary_total || 0).toLocaleString('ru-RU')} ₽`);
+            toast.success(`Предложение рассчитано: ${Number(response.data?.work_salary_total || 0).toLocaleString('ru-RU')} ₽. Суммы можно изменить вручную.`);
         } catch (error) {
             toast.error(error.response?.data?.detail || 'Не удалось рассчитать предложение ЗП');
         } finally {
             setSuggestingSalary(false);
         }
+    };
+
+    const canEditSalary = canFinalize && !approveMode && !addendumMode && !editReadyMode;
+    const setReviewSalary = (sourceApplicationId, teamId, memberId, value) => {
+        if (!canEditSalary || !setHoursData) return;
+        setHoursData(prev => prev.map(item => (
+            memberKey(sourceId(item, appId), item.team_id, item.user_id)
+                === memberKey(sourceApplicationId, teamId, memberId)
+                ? { ...item, participant_salary: value === '' ? '' : Number(value) }
+                : item
+        )));
     };
 
     useEffect(() => {
@@ -99,7 +110,7 @@ export default function StepReview({
                     participant_salary: hoursData.find(
                         h => memberKey(sourceId(h, appId), h.team_id, h.user_id)
                             === memberKey(sourceId(t, appId), t.team_id, m.user_id)
-                    )?.participant_salary || 0,
+                    )?.participant_salary ?? '',
                 }));
             if (rows.length > 0) {
                 out.push({
@@ -195,6 +206,11 @@ export default function StepReview({
                 <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
                     Проверьте данные перед отправкой. Можно вернуться и отредактировать.
                 </p>
+                {canEditSalary && (
+                    <p className="text-xs text-emerald-700 dark:text-emerald-400 mt-2">
+                        Можно распределить фонд ЗП по справочнику, а затем вручную изменить итоговую сумму любого сотрудника.
+                    </p>
+                )}
             </div>
 
             {/* Hours section */}
@@ -237,10 +253,32 @@ export default function StepReview({
                                             <span className="w-16 text-right text-sm font-bold text-gray-900 dark:text-white">
                                                 {Number(m.hours).toFixed(1)} ч
                                             </span>
-                                            <span className="min-w-[7rem] text-right text-sm font-bold text-emerald-700 dark:text-emerald-400 inline-flex items-center justify-end gap-1">
-                                                <WalletCards className="w-3.5 h-3.5" />
-                                                {Number(m.participant_salary || 0).toLocaleString('ru-RU')} ₽
-                                            </span>
+                                            {canEditSalary ? (
+                                                <label className="min-w-[8.5rem] inline-flex items-center justify-end gap-1 text-emerald-700 dark:text-emerald-400">
+                                                    <WalletCards className="w-3.5 h-3.5 flex-none" />
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        step="0.01"
+                                                        value={m.participant_salary ?? ''}
+                                                        onChange={(event) => setReviewSalary(
+                                                            t.source_application_id,
+                                                            t.team_id,
+                                                            m.user_id,
+                                                            event.target.value,
+                                                        )}
+                                                        aria-label={`ЗП для ${m.fio}`}
+                                                        placeholder="Введите"
+                                                        className="w-24 p-1.5 text-center text-sm font-bold border border-emerald-200 dark:border-emerald-700 rounded-lg bg-emerald-50/50 dark:bg-emerald-900/10 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-400"
+                                                    />
+                                                    <span className="text-xs font-semibold text-gray-400">₽</span>
+                                                </label>
+                                            ) : (
+                                                <span className="min-w-[7rem] text-right text-sm font-bold text-emerald-700 dark:text-emerald-400 inline-flex items-center justify-end gap-1">
+                                                    <WalletCards className="w-3.5 h-3.5" />
+                                                    {Number(m.participant_salary || 0).toLocaleString('ru-RU')} ₽
+                                                </span>
+                                            )}
                                         </li>
                                     ))}
                                 </ul>
@@ -303,10 +341,10 @@ export default function StepReview({
             )}
 
             {/* Actions */}
-            {canFinalize && !approveMode && !addendumMode && !editReadyMode && (
+            {canEditSalary && (
                 <button type="button" onClick={suggestSalary} disabled={suggestingSalary || submitting} className="w-full min-h-11 rounded-xl border border-emerald-200 dark:border-emerald-800 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-700 dark:text-emerald-300 text-sm font-bold flex items-center justify-center gap-2 disabled:opacity-50">
                     {suggestingSalary ? <Loader2 className="w-4 h-4 animate-spin" /> : <WalletCards className="w-4 h-4" />}
-                    Предложить ЗП по расценкам работ
+                    Рассчитать предложение ЗП по справочнику
                 </button>
             )}
             <div className="flex flex-col sm:flex-row gap-3 pt-2">

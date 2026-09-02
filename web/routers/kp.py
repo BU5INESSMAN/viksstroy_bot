@@ -2167,7 +2167,12 @@ async def suggest_smr_participant_salary(
     request: Request,
     current_user=Depends(get_current_user),
 ):
-    """Distribute saved catalog work salary proportionally to person-hours."""
+    """Distribute saved catalog work salary proportionally to person-hours.
+
+    This endpoint returns an editable proposal. The client places the values
+    into the participant salary inputs, and the foreman may change any amount
+    before submitting the SMR report.
+    """
     role = current_user.get("role", "worker")
     if role not in ("foreman", "moderator", "boss", "superadmin", "hr"):
         raise HTTPException(403, "Рассчитать предложение ЗП может только прораб или офис")
@@ -2216,7 +2221,8 @@ async def suggest_smr_participant_salary(
     for row in works:
         key = (source_of(row), int(row.get("team_id") or 0))
         pools[key] = pools.get(key, 0.0) + (
-            float(row.get("volume") or 0) * kp_salary.get(int(row.get("kp_id") or 0), 0.0)
+            float(row.get("volume") or 0)
+            * kp_salary.get(int(row.get("kp_id") or 0), 0.0)
         )
     for row in extras:
         key = (source_of(row), int(row.get("team_id") or 0))

@@ -5,7 +5,11 @@ from io import BytesIO
 import aiosqlite
 from openpyxl import load_workbook
 
-from web.services.smr_period_report import generate_period_report, load_period_data
+from web.services.smr_period_report import (
+    _canonicalize_report_people,
+    generate_period_report,
+    load_period_data,
+)
 
 
 class SmrPeriodReportTests(unittest.IsolatedAsyncioTestCase):
@@ -107,6 +111,11 @@ class SmrPeriodReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Архивные СМР включены", workbook["Сводка"]["A2"].value)
         names = [workbook["Сводка"].cell(row, 1).value for row in range(6, 8)]
         self.assertEqual(names.count("Иванов Иван Иванович"), 1)
+        headers = [workbook["Сводка"].cell(5, column).value for column in range(1, workbook["Сводка"].max_column + 1)]
+        self.assertNotIn("ЗП по работам", headers)
+        self.assertIn("ЗП прораба", headers)
+        detail_headers = [workbook["По заявкам"].cell(4, column).value for column in range(1, workbook["По заявкам"].max_column + 1)]
+        self.assertNotIn("ЗП по работам", detail_headers)
         detail_numbers = {
             workbook["По заявкам"].cell(row, 2).value
             for row in range(5, workbook["По заявкам"].max_row + 1)
@@ -129,6 +138,21 @@ class SmrPeriodReportTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("З-120826-01", numbers)
         self.assertNotIn("З-130826-01", numbers)
         self.assertEqual(len(data["works"]), 4)
+
+    def test_report_merges_only_unambiguous_short_names(self):
+        rows = [
+            {"member_id": 1, "member_fio": "Борисов Илья", "member_position": "Рабочий"},
+            {"member_id": 2, "member_fio": "Борисов Илья Артемович", "member_position": "Монтажник"},
+            {"member_id": 3, "member_fio": "Борисов Илья Артемович", "member_position": "Монтажник"},
+            {"member_id": 4, "member_fio": "Иванов Иван", "member_position": ""},
+            {"member_id": 5, "member_fio": "Иванов Иван Петрович", "member_position": ""},
+            {"member_id": 6, "member_fio": "Иванов Иван Сергеевич", "member_position": ""},
+        ]
+        _canonicalize_report_people(rows)
+        self.assertEqual(len({row["report_person_key"] for row in rows[:3]}), 1)
+        self.assertTrue(all(row["member_fio"] == "Борисов Илья Артемович" for row in rows[:3]))
+        self.assertNotEqual(rows[3]["report_person_key"], rows[4]["report_person_key"])
+        self.assertNotEqual(rows[3]["report_person_key"], rows[5]["report_person_key"])
 
 
 if __name__ == "__main__":
