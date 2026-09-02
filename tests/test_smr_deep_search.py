@@ -40,6 +40,13 @@ class SmrDeepSearchTests(unittest.IsolatedAsyncioTestCase):
                 application_id INTEGER, kp_id INTEGER, extra_work_id INTEGER,
                 custom_name TEXT, unit TEXT, volume REAL
             );
+            CREATE TABLE employee_identities(
+                id INTEGER PRIMARY KEY, canonical_fio TEXT, position TEXT
+            );
+            CREATE TABLE employee_identity_members(
+                member_id INTEGER PRIMARY KEY, identity_id INTEGER,
+                source_fio TEXT, source_position TEXT
+            );
 
             INSERT INTO teams VALUES(4, 'Бригада Альфа');
             INSERT INTO team_members VALUES(21, 4, 'Иванов Андрей', 'бетонщик');
@@ -48,6 +55,8 @@ class SmrDeepSearchTests(unittest.IsolatedAsyncioTestCase):
             INSERT INTO kp_catalog VALUES(8, 'Благоустройство', 'Монтаж бордюра');
             INSERT INTO application_kp VALUES(70, 8, 'м', 15);
             INSERT INTO application_extra_works VALUES(70, NULL, NULL, 'Вывоз грунта', 'м3', 2);
+            INSERT INTO employee_identities VALUES(1, 'Иванов Андрей Иванович', 'Бетонщик');
+            INSERT INTO employee_identity_members VALUES(21, 1, 'Иванов Андрей', 'бетонщик');
             """
         )
         await conn.commit()
@@ -81,6 +90,19 @@ class SmrDeepSearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Монтаж бордюра", search_text)
         self.assertIn("Вывоз грунта", search_text)
         self.assertIn("А001АА22", search_text)
+
+    async def test_archive_details_use_historical_identity_and_compact_totals(self):
+        apps = [{"id": 70, "search_text": "Школа №1"}]
+
+        await kp._attach_archived_smr_details(apps)
+
+        self.assertEqual(apps[0]["participant_names"], ["Иванов Андрей Иванович"])
+        self.assertEqual(apps[0]["participant_count"], 1)
+        self.assertEqual(apps[0]["team_names"], ["Бригада Альфа"])
+        self.assertEqual(apps[0]["total_hours"], 8.0)
+        self.assertEqual(apps[0]["work_count"], 1)
+        self.assertEqual(apps[0]["extra_work_count"], 1)
+        self.assertIn("Иванов Андрей Иванович", apps[0]["search_text"])
 
 
 if __name__ == "__main__":

@@ -5,7 +5,8 @@ import toast from 'react-hot-toast';
 import {
     FileText, FileSpreadsheet, CheckCircle, Search, X, MapPin,
     Download, Save, AlertTriangle, Edit3, Upload, Lock, Settings, Bell, HardHat, Plus, Trash2, Archive,
-    Calendar as CalendarIcon, Link2, Link2Off, Eye, EyeOff, CheckCheck, Undo2, Clock, Scale
+    Calendar as CalendarIcon, Link2, Link2Off, Eye, EyeOff, CheckCheck, Undo2, Clock, Scale,
+    Users, ChevronDown, ChevronRight, RotateCcw, FolderOpen
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { KPSkeleton } from '../components/ui/PageSkeletons';
@@ -74,6 +75,12 @@ function groupSMRItems(items, mode) {
     return groups;
 }
 
+function formatRuDate(value) {
+    if (!value) return 'Дата не указана';
+    const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(value));
+    return match ? `${match[3]}.${match[2]}.${match[1]}` : String(value);
+}
+
 export default function KP() {
     const [searchParams, setSearchParams] = useSearchParams();
     const role = localStorage.getItem('user_role') || 'worker';
@@ -122,6 +129,10 @@ export default function KP() {
     const [smrTotals, setSmrTotals] = useState(null);
     const [showArchive, setShowArchive] = useState(false);
     const [archivedApps, setArchivedApps] = useState([]);
+    const [archiveSearch, setArchiveSearch] = useState('');
+    const [archiveRestoreSelected, setArchiveRestoreSelected] = useState([]);
+    const [archiveExpandedObjects, setArchiveExpandedObjects] = useState([]);
+    const [archiveRestoreBusy, setArchiveRestoreBusy] = useState(false);
     // v2.4.5 SMR wizard integration
     const [wizardApp, setWizardApp] = useState(null);
     const [wizardApproveMode, setWizardApproveMode] = useState(false);
@@ -180,7 +191,9 @@ export default function KP() {
     const fetchArchived = async () => {
         try {
             const res = await axios.get('/api/kp/archived');
-            setArchivedApps(res.data || []);
+            const next = res.data || [];
+            setArchivedApps(next);
+            setArchiveRestoreSelected(previous => previous.filter(id => next.some(app => app.id === id)));
         } catch { setArchivedApps([]); }
     };
 
@@ -408,6 +421,50 @@ export default function KP() {
         }
     };
 
+    const restoreArchived = async (appIds, { skipConfirm = false } = {}) => {
+        const ids = [...new Set(appIds || [])];
+        if (!ids.length || archiveRestoreBusy) return;
+        const selectedRows = archivedApps.filter(app => ids.includes(app.id));
+        const hasMerged = selectedRows.some(app => app.is_merged);
+        if (!skipConfirm) {
+            const message = ids.length === 1
+                ? `Восстановить ${formatApplicationNumber(selectedRows[0] || { id: ids[0] })} из архива?`
+                : `Восстановить выбранные отчёты: ${ids.length}?`;
+            const mergedNote = hasMerged
+                ? '\n\nВ выборе есть объединённый СМР — все его заявки восстановятся вместе.'
+                : '';
+            if (!window.confirm(`${message}${mergedNote}`)) return;
+        }
+        setArchiveRestoreBusy(true);
+        try {
+            const response = await axios.post('/api/kp/smr/restore-batch', { app_ids: ids });
+            const groups = Number(response.data?.restored_groups || 0);
+            const applications = Number(response.data?.restored_applications || 0);
+            if (groups > 0) {
+                toast.success(groups === 1
+                    ? `СМР восстановлен${applications > 1 ? ` · заявок: ${applications}` : ''}`
+                    : `Восстановлено отчётов: ${groups}`);
+            } else {
+                toast('Выбранные отчёты уже восстановлены', { icon: 'ℹ️' });
+            }
+            setArchiveRestoreSelected(previous => previous.filter(id => !ids.includes(id)));
+            await Promise.all([fetchArchived(), fetchApps({ showLoader: false })]);
+        } catch (error) {
+            const detail = error?.response?.data?.detail;
+            toast.error(typeof detail === 'string' ? detail : 'Не удалось восстановить СМР');
+        } finally {
+            setArchiveRestoreBusy(false);
+        }
+    };
+
+    const toggleArchiveObject = (key) => {
+        setArchiveExpandedObjects(previous => (
+            previous.includes(key)
+                ? previous.filter(item => item !== key)
+                : [...previous, key]
+        ));
+    };
+
     const clearReadyReport = async (app) => {
         if (reportActionBusy) return;
         const label = `${formatApplicationNumber(app)} — ${app.object_name || app.obj_name || app.object_address || 'Объект'}`;
@@ -499,6 +556,24 @@ export default function KP() {
         app.smr_accounted_at ? 'учтено учтенный' : 'не учтено',
         app.smr_is_complete === false ? 'неполный не заполнено полностью' : 'полный заполнено полностью',
     ], searchQuery));
+    const filteredArchivedApps = archivedApps.filter(app => matchesDeepSearch([
+        app.search_text,
+        app.public_number,
+        app.id,
+        app.foreman_name,
+        app.object_name,
+        app.obj_name,
+        app.object_address,
+        app.object_clean_address,
+        app.date_target,
+        app.participant_names,
+        app.team_names,
+        app.smr_accounted_by_fio,
+    ], archiveSearch));
+    const archivedObjectGroups = groupSMRItems(filteredArchivedApps, 'object');
+    const archiveVisibleIds = filteredArchivedApps.map(app => app.id);
+    const allVisibleArchiveSelected = archiveVisibleIds.length > 0
+        && archiveVisibleIds.every(id => archiveRestoreSelected.includes(id));
     const selectedUnaccounted = selectedForExport.filter(id =>
         unaccountedReady.some(app => app.id === id)
     );
@@ -978,42 +1053,165 @@ export default function KP() {
                 </div>
             )}
             {showArchive && (
-                <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm">
-                    <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden">
-                        <div className="flex justify-between items-center p-6 border-b border-gray-100 dark:border-gray-700">
-                            <h3 className="text-lg font-bold dark:text-white flex items-center gap-2">
-                                <Archive className="w-5 h-5 text-gray-500" /> Архив СМР
-                            </h3>
-                            <button onClick={() => setShowArchive(false)} className="text-gray-400 bg-white dark:bg-gray-800 rounded-full p-2 border border-gray-100 dark:border-gray-700">
+                <div className="fixed inset-0 w-full h-[100dvh] z-[100] bg-black/60 flex items-center justify-center p-2 sm:p-4 pt-[max(0.5rem,env(safe-area-inset-top))] pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-sm">
+                    <div className="bg-white dark:bg-gray-800 rounded-2xl sm:rounded-3xl w-full max-w-6xl max-h-full shadow-2xl overflow-hidden flex flex-col">
+                        <div className="flex justify-between items-start gap-4 p-4 sm:p-6 border-b border-gray-100 dark:border-gray-700">
+                            <div className="min-w-0">
+                                <h3 className="text-lg font-bold dark:text-white flex items-center gap-2">
+                                    <Archive className="w-5 h-5 text-gray-500" /> Архив СМР
+                                </h3>
+                                <p className="text-xs text-gray-400 mt-1">
+                                    Объектов: {archivedObjectGroups.length} · заявок: {archivedApps.length}
+                                </p>
+                            </div>
+                            <button onClick={() => setShowArchive(false)} className="shrink-0 text-gray-400 bg-white dark:bg-gray-800 rounded-full p-2 border border-gray-100 dark:border-gray-700" aria-label="Закрыть архив">
                                 <X className="w-5 h-5" />
                             </button>
                         </div>
-                        <div className="p-6 max-h-[60vh] overflow-y-auto custom-scrollbar">
+
+                        <div className="p-3 sm:p-4 border-b border-gray-100 dark:border-gray-700 bg-gray-50/70 dark:bg-gray-900/20 space-y-3">
+                            <div className="relative">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                                <input
+                                    value={archiveSearch}
+                                    onChange={event => setArchiveSearch(event.target.value)}
+                                    placeholder="Номер, объект, прораб, бригада, сотрудник или работа"
+                                    className="w-full min-h-11 pl-10 pr-10 rounded-xl border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-900 text-sm text-gray-800 dark:text-gray-100 outline-none focus:ring-2 focus:ring-blue-500/30"
+                                />
+                                {archiveSearch && (
+                                    <button onClick={() => setArchiveSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 p-2 text-gray-400" aria-label="Очистить поиск">
+                                        <X className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </div>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                <label className="inline-flex items-center gap-2 text-xs font-semibold text-gray-600 dark:text-gray-300 cursor-pointer min-h-9">
+                                    <input
+                                        type="checkbox"
+                                        checked={allVisibleArchiveSelected}
+                                        onChange={() => setArchiveRestoreSelected(previous => (
+                                            allVisibleArchiveSelected
+                                                ? previous.filter(id => !archiveVisibleIds.includes(id))
+                                                : [...new Set([...previous, ...archiveVisibleIds])]
+                                        ))}
+                                        className="w-4 h-4 rounded border-gray-300 text-blue-600"
+                                    />
+                                    Выбрать найденные ({archiveVisibleIds.length})
+                                </label>
+                                <button
+                                    onClick={() => restoreArchived(archiveRestoreSelected)}
+                                    disabled={!archiveRestoreSelected.length || archiveRestoreBusy}
+                                    className="min-h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold disabled:opacity-40 disabled:cursor-not-allowed inline-flex items-center justify-center gap-2 transition-colors"
+                                >
+                                    <RotateCcw className={`w-4 h-4 ${archiveRestoreBusy ? 'animate-spin' : ''}`} />
+                                    Восстановить выбранные{archiveRestoreSelected.length ? ` (${archiveRestoreSelected.length})` : ''}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="p-3 sm:p-5 overflow-y-auto custom-scrollbar flex-1 min-h-0">
                             {archivedApps.length === 0 ? (
-                                <p className="text-center text-gray-400 text-sm py-8">Архив пуст</p>
+                                <div className="text-center text-gray-400 text-sm py-12">
+                                    <Archive className="w-10 h-10 mx-auto mb-3 opacity-40" />
+                                    Архив пуст
+                                </div>
+                            ) : archivedObjectGroups.length === 0 ? (
+                                <div className="text-center text-gray-400 text-sm py-12">
+                                    По запросу ничего не найдено
+                                </div>
                             ) : (
                                 <div className="space-y-3">
-                                    {archivedApps.map(app => (
-                                        <div key={app.id} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700/30 p-4 rounded-xl border border-gray-100 dark:border-gray-700">
-                                            <div>
-                                                <p className="font-bold text-sm text-gray-800 dark:text-gray-100">{app.obj_name || app.object_address || 'Объект'}</p>
-                                                <p className="text-xs text-gray-400 mt-0.5">{app.foreman_name} · {app.date_target}</p>
-                                            </div>
-                                            <button
-                                                onClick={async () => {
-                                                    try {
-                                                        await axios.post(`/api/kp/apps/${app.id}/restore`);
-                                                        toast.success('СМР восстановлена');
-                                                        fetchArchived();
-                                                        fetchApps();
-                                                    } catch { toast.error('Ошибка восстановления'); }
-                                                }}
-                                                className="text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-900/20 dark:text-emerald-400 dark:hover:bg-emerald-900/40 px-3 py-1.5 rounded-lg text-xs font-bold transition-colors border border-emerald-200 dark:border-emerald-800/50"
-                                            >
-                                                Восстановить
-                                            </button>
-                                        </div>
-                                    ))}
+                                    {archivedObjectGroups.map(group => {
+                                        const expanded = Boolean(archiveSearch.trim()) || archiveExpandedObjects.includes(group.key);
+                                        const selectedInGroup = group.apps.filter(app => archiveRestoreSelected.includes(app.id)).length;
+                                        return (
+                                            <section key={group.key} className="rounded-2xl border border-gray-200 dark:border-gray-700 overflow-hidden bg-white dark:bg-gray-800">
+                                                <button
+                                                    onClick={() => toggleArchiveObject(group.key)}
+                                                    className="w-full p-4 flex items-center gap-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+                                                >
+                                                    <span className="w-10 h-10 shrink-0 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-300 flex items-center justify-center">
+                                                        <FolderOpen className="w-5 h-5" />
+                                                    </span>
+                                                    <span className="flex-1 min-w-0">
+                                                        <span className="block font-bold text-sm text-gray-900 dark:text-gray-100 truncate">{group.title}</span>
+                                                        {group.subtitle && <span className="block text-xs text-gray-400 truncate mt-0.5">{group.subtitle}</span>}
+                                                    </span>
+                                                    <span className="text-xs font-bold text-gray-500 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-lg whitespace-nowrap">
+                                                        {selectedInGroup ? `${selectedInGroup}/` : ''}{group.apps.length}
+                                                    </span>
+                                                    {expanded ? <ChevronDown className="w-5 h-5 text-gray-400" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
+                                                </button>
+
+                                                {expanded && (
+                                                    <div className="border-t border-gray-100 dark:border-gray-700 divide-y divide-gray-100 dark:divide-gray-700">
+                                                        {group.apps.map(app => (
+                                                            <div key={app.id} className="p-3 sm:p-4 bg-gray-50/50 dark:bg-gray-900/10">
+                                                                <div className="flex items-start gap-3">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={archiveRestoreSelected.includes(app.id)}
+                                                                        onChange={() => setArchiveRestoreSelected(previous => (
+                                                                            previous.includes(app.id)
+                                                                                ? previous.filter(id => id !== app.id)
+                                                                                : [...previous, app.id]
+                                                                        ))}
+                                                                        className="w-4 h-4 mt-1 rounded border-gray-300 text-blue-600 shrink-0"
+                                                                        aria-label={`Выбрать ${formatApplicationNumber(app)}`}
+                                                                    />
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center gap-2 flex-wrap">
+                                                                            <span className="font-black text-sm text-gray-900 dark:text-white">{formatApplicationNumber(app)}</span>
+                                                                            <span className="text-xs text-gray-500 dark:text-gray-400">{formatRuDate(app.date_target)}</span>
+                                                                            {app.is_merged && (
+                                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 dark:bg-indigo-900/30 dark:text-indigo-300">
+                                                                                    объединённый · {app.merge_group_size}
+                                                                                </span>
+                                                                            )}
+                                                                        </div>
+                                                                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                                                                            Прораб: {app.foreman_name || 'не указан'}
+                                                                        </p>
+                                                                        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-gray-500 dark:text-gray-400">
+                                                                            <span className="inline-flex items-center gap-1"><Users className="w-3.5 h-3.5" /> {app.participant_count || 0} чел. · {app.total_hours || 0} ч</span>
+                                                                            <span className="inline-flex items-center gap-1"><FileText className="w-3.5 h-3.5" /> работ: {(app.work_count || 0) + (app.extra_work_count || 0)}</span>
+                                                                            {app.team_names?.length > 0 && <span className="truncate max-w-full">{app.team_names.join(', ')}</span>}
+                                                                        </div>
+                                                                        {app.participant_names?.length > 0 && (
+                                                                            <p className="text-[11px] text-gray-400 mt-1.5 line-clamp-2">
+                                                                                {app.participant_names.join(', ')}
+                                                                            </p>
+                                                                        )}
+                                                                        {app.is_merged && (
+                                                                            <p className="text-[10px] text-indigo-500 dark:text-indigo-300 mt-1.5">При восстановлении вернутся все части объединённого СМР.</p>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                                <div className="mt-3 flex flex-col sm:flex-row gap-2 sm:justify-end">
+                                                                    <button
+                                                                        onClick={() => {
+                                                                            setShowArchive(false);
+                                                                            openModal({ ...app, obj_name: app.object_name || app.obj_name });
+                                                                        }}
+                                                                        className="min-h-10 px-3 rounded-xl border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20 text-xs font-bold inline-flex items-center justify-center gap-2"
+                                                                    >
+                                                                        <Eye className="w-4 h-4" /> Посмотреть полностью
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => restoreArchived([app.id])}
+                                                                        disabled={archiveRestoreBusy}
+                                                                        className="min-h-10 px-3 rounded-xl border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20 text-xs font-bold inline-flex items-center justify-center gap-2 disabled:opacity-50"
+                                                                    >
+                                                                        <RotateCcw className="w-4 h-4" /> Восстановить
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                )}
+                                            </section>
+                                        );
+                                    })}
                                 </div>
                             )}
                         </div>

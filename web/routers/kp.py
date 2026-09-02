@@ -2811,6 +2811,144 @@ async def _prepare_smr_archive(app_ids: list[int]) -> dict:
     }
 
 
+async def _prepare_smr_restore(app_ids: list[int]) -> dict:
+    """Resolve selected archive rows to complete logical SMR reports.
+
+    A merged report is deliberately restored as one unit.  This also repairs
+    legacy partially archived groups by putting every member back into the
+    active list when at least one member of the group is archived.
+    """
+    expanded: set[int] = set()
+    for app_id in app_ids:
+        expanded.update(await _expand_merge_group(app_id))
+    expanded_ids = sorted(expanded)
+    if not expanded_ids:
+        return {"restore_ids": [], "restored_groups": 0, "already_active_groups": 0}
+
+    marks = ",".join("?" for _ in expanded_ids)
+    async with db.conn.execute(
+        f"SELECT id,smr_group_id,COALESCE(kp_archived,0) AS kp_archived "
+        f"FROM applications WHERE id IN ({marks}) ORDER BY id",
+        tuple(expanded_ids),
+    ) as cursor:
+        rows = [dict(row) for row in await cursor.fetchall()]
+    if len(rows) != len(expanded_ids):
+        raise HTTPException(404, "Одна или несколько заявок не найдены")
+
+    groups: dict[str, list[dict]] = {}
+    for row in rows:
+        group_id = str(row.get("smr_group_id") or "").strip()
+        key = f"group:{group_id}" if group_id else f"app:{row['id']}"
+        groups.setdefault(key, []).append(row)
+
+    restore_ids: list[int] = []
+    restored_groups = 0
+    already_active_groups = 0
+    for members in groups.values():
+        if any(bool(member.get("kp_archived")) for member in members):
+            restore_ids.extend(int(member["id"]) for member in members)
+            restored_groups += 1
+        else:
+            already_active_groups += 1
+    return {
+        "restore_ids": sorted(restore_ids),
+        "restored_groups": restored_groups,
+        "already_active_groups": already_active_groups,
+    }
+
+
+async def _attach_archived_smr_details(apps: list[dict]) -> None:
+    """Attach compact report facts used by archive cards and deep search."""
+    if not apps:
+        return
+    app_ids = [int(app["id"]) for app in apps]
+    marks = ",".join("?" for _ in app_ids)
+    details = {
+        app_id: {
+            "participants": [], "participant_seen": set(),
+            "teams": [], "team_seen": set(),
+            "total_hours": 0.0, "participant_count": 0,
+            "work_count": 0, "extra_work_count": 0,
+        }
+        for app_id in app_ids
+    }
+
+    has_identities = (
+        await _table_exists("employee_identity_members")
+        and await _table_exists("employee_identities")
+    )
+    if has_identities:
+        hours_sql = f"""
+            SELECT ah.app_id,ah.user_id,ah.hours,t.name,
+                   COALESCE(NULLIF(ei.canonical_fio,''),NULLIF(eim.source_fio,''),
+                            NULLIF(tm.fio,''),'Участник #' || ah.user_id) AS participant_name,
+                   COALESCE(NULLIF(ei.position,''),NULLIF(eim.source_position,''),tm.position,'')
+              FROM application_hours ah
+              LEFT JOIN team_members tm ON tm.id=ah.user_id
+              LEFT JOIN teams t ON t.id=ah.team_id
+              LEFT JOIN employee_identity_members eim ON eim.member_id=ah.user_id
+              LEFT JOIN employee_identities ei ON ei.id=eim.identity_id
+             WHERE ah.app_id IN ({marks})
+             ORDER BY ah.app_id,ah.team_id,ah.user_id
+        """
+    else:
+        hours_sql = f"""
+            SELECT ah.app_id,ah.user_id,ah.hours,t.name,
+                   COALESCE(NULLIF(tm.fio,''),'Участник #' || ah.user_id) AS participant_name,
+                   COALESCE(tm.position,'')
+              FROM application_hours ah
+              LEFT JOIN team_members tm ON tm.id=ah.user_id
+              LEFT JOIN teams t ON t.id=ah.team_id
+             WHERE ah.app_id IN ({marks})
+             ORDER BY ah.app_id,ah.team_id,ah.user_id
+        """
+    async with db.conn.execute(hours_sql, tuple(app_ids)) as cursor:
+        for row in await cursor.fetchall():
+            app_id = int(row[0])
+            item = details[app_id]
+            participant_key = (int(row[1] or 0), str(row[4] or ""))
+            if participant_key not in item["participant_seen"]:
+                item["participant_seen"].add(participant_key)
+                item["participants"].append(str(row[4] or ""))
+                item["participant_count"] += 1
+            team_name = str(row[3] or "").strip()
+            if team_name and team_name not in item["team_seen"]:
+                item["team_seen"].add(team_name)
+                item["teams"].append(team_name)
+            try:
+                item["total_hours"] += float(row[2] or 0)
+            except (TypeError, ValueError):
+                pass
+
+    for table, app_column, count_key in (
+        ("application_kp", "application_id", "work_count"),
+        ("application_extra_works", "application_id", "extra_work_count"),
+    ):
+        async with db.conn.execute(
+            f"SELECT {app_column},COUNT(*) FROM {table} "
+            f"WHERE {app_column} IN ({marks}) AND COALESCE(volume,0)>0 GROUP BY {app_column}",
+            tuple(app_ids),
+        ) as cursor:
+            for row in await cursor.fetchall():
+                details[int(row[0])][count_key] = int(row[1] or 0)
+
+    for app in apps:
+        item = details[int(app["id"])]
+        participant_names = item["participants"]
+        team_names = item["teams"]
+        app["participant_names"] = participant_names
+        app["participant_count"] = item["participant_count"]
+        app["team_names"] = team_names
+        app["total_hours"] = round(item["total_hours"], 2)
+        app["work_count"] = item["work_count"]
+        app["extra_work_count"] = item["extra_work_count"]
+        app["search_text"] = " ".join((
+            str(app.get("search_text") or ""),
+            " ".join(participant_names),
+            " ".join(team_names),
+        ))
+
+
 @router.post("/api/kp/smr/archive-batch")
 async def archive_kp_batch(request: Request, current_user=Depends(_require_office)):
     """Archive accounted reports; merged SMR groups are always atomic."""
@@ -2891,13 +3029,15 @@ async def archive_kp(app_id: int, current_user=Depends(_require_office)):
 @router.post("/api/kp/apps/{app_id}/restore")
 async def restore_kp(app_id: int, current_user=Depends(_require_office)):
     """Restore one logical SMR report, keeping merged groups atomic."""
-    ids = await _expand_merge_group(app_id)
-    marks = ",".join("?" for _ in ids)
-    await db.conn.execute(
-        f"UPDATE applications SET kp_archived=0 WHERE id IN ({marks})",
-        tuple(ids),
-    )
-    await db.conn.commit()
+    prepared = await _prepare_smr_restore([app_id])
+    ids = prepared["restore_ids"]
+    if ids:
+        marks = ",".join("?" for _ in ids)
+        await db.conn.execute(
+            f"UPDATE applications SET kp_archived=0 WHERE id IN ({marks})",
+            tuple(ids),
+        )
+        await db.conn.commit()
     _obj = ''
     try:
         async with db.conn.execute("SELECT object_address FROM applications WHERE id = ?", (app_id,)) as c:
@@ -2913,22 +3053,86 @@ async def restore_kp(app_id: int, current_user=Depends(_require_office)):
             ensure_ascii=False,
         ),
     )
-    return {"status": "ok", "restored_applications": len(ids)}
+    return {
+        "status": "ok",
+        "restored_groups": prepared["restored_groups"],
+        "restored_applications": len(ids),
+        "already_active_groups": prepared["already_active_groups"],
+    }
+
+
+@router.post("/api/kp/smr/restore-batch")
+async def restore_kp_batch(request: Request, current_user=Depends(_require_office)):
+    """Restore selected archived reports; merged reports stay atomic."""
+    data = await request.json()
+    try:
+        app_ids = sorted({int(value) for value in (data.get("app_ids") or []) if int(value) > 0})
+    except (TypeError, ValueError):
+        raise HTTPException(400, "Некорректный список заявок")
+    if not app_ids:
+        raise HTTPException(400, "Не выбраны СМР для восстановления")
+    if len(app_ids) > 500:
+        raise HTTPException(400, "За один раз можно восстановить не более 500 СМР")
+
+    prepared = await _prepare_smr_restore(app_ids)
+    restore_ids = prepared["restore_ids"]
+    if restore_ids:
+        marks = ",".join("?" for _ in restore_ids)
+        await db.conn.execute(
+            f"UPDATE applications SET kp_archived=0 WHERE id IN ({marks})",
+            tuple(restore_ids),
+        )
+        await db.conn.commit()
+        await db.add_log(
+            current_user["tg_id"], current_user.get("fio"),
+            f"Массово восстановил СМР из архива: {prepared['restored_groups']}",
+            target_type="smr",
+            details=json.dumps(
+                {
+                    "action": "smr_restore_batch",
+                    "selected_application_ids": app_ids,
+                    "restored_application_ids": restore_ids,
+                },
+                ensure_ascii=False,
+            ),
+        )
+    return {
+        "status": "ok",
+        "restored_groups": prepared["restored_groups"],
+        "restored_applications": len(restore_ids),
+        "already_active_groups": prepared["already_active_groups"],
+    }
 
 
 @router.get("/api/kp/archived")
 async def get_archived_kp(current_user=Depends(_require_office)):
-    """Список архивированных СМР (только для модератор+)."""
+    """Search-ready archive rows with compact report details for office roles."""
     async with db.conn.execute("""
-        SELECT a.id, a.public_number, a.date_target, a.object_address, o.name as obj_name,
-               u.fio as foreman_name, a.kp_status
+        SELECT a.id,a.public_number,a.date_target,a.object_id,a.object_address,
+               a.foreman_id,a.team_id,a.selected_members,
+               a.equipment_data,a.comment,a.kp_status,a.smr_status,a.smr_group_id,
+               a.smr_accounted_by,a.smr_accounted_at,a.created_at,
+               o.name AS object_name,o.name AS obj_name,
+               o.address AS object_clean_address,
+               COALESCE(u.fio,a.foreman_name) AS foreman_name,
+               accountant.fio AS smr_accounted_by_fio,
+               CASE WHEN NULLIF(TRIM(a.smr_group_id),'') IS NULL THEN 1 ELSE
+                   (SELECT COUNT(*) FROM applications grouped
+                     WHERE grouped.smr_group_id=a.smr_group_id)
+               END AS merge_group_size
         FROM applications a
         LEFT JOIN objects o ON a.object_id = o.id
         LEFT JOIN users u ON a.foreman_id = u.user_id
-        WHERE a.kp_archived = 1
-        ORDER BY a.date_target DESC
+        LEFT JOIN users accountant ON accountant.user_id=a.smr_accounted_by
+        WHERE COALESCE(a.kp_archived,0) = 1
+        ORDER BY a.date_target DESC,a.id DESC
     """) as cur:
-        return [dict(row) for row in await cur.fetchall()]
+        apps = [dict(row) for row in await cur.fetchall()]
+    await _attach_smr_search_text(apps)
+    await _attach_archived_smr_details(apps)
+    for app in apps:
+        app["is_merged"] = int(app.get("merge_group_size") or 1) > 1
+    return apps
 
 
 # ==========================================

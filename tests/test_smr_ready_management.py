@@ -29,7 +29,8 @@ async def _make_db():
             kp_status TEXT,
             smr_filled_by_role TEXT,
             smr_accounted_by INTEGER,
-            smr_accounted_at TEXT
+            smr_accounted_at TEXT,
+            kp_archived INTEGER DEFAULT 0
         );
         CREATE TABLE application_hours (
             id INTEGER PRIMARY KEY, app_id INTEGER, is_additional INTEGER DEFAULT 0
@@ -41,8 +42,8 @@ async def _make_db():
             id INTEGER PRIMARY KEY, application_id INTEGER, is_additional INTEGER DEFAULT 0
         );
         INSERT INTO applications VALUES
-            (1, 100, 'group-a', 'approved', 'approved', 'foreman', 500, '2026-08-10'),
-            (2, 100, 'group-a', 'approved', 'approved', 'foreman', 500, '2026-08-10');
+            (1, 100, 'group-a', 'approved', 'approved', 'foreman', 500, '2026-08-10', 0),
+            (2, 100, 'group-a', 'approved', 'approved', 'foreman', 500, '2026-08-10', 0);
         INSERT INTO application_hours VALUES (1, 1, 0), (2, 2, 1);
         INSERT INTO application_kp VALUES (1, 1, 0), (2, 2, 1);
         INSERT INTO application_extra_works VALUES (1, 1, 0), (2, 2, 1);
@@ -115,13 +116,13 @@ def test_batch_archive_only_accepts_fully_accounted_logical_groups():
         fake_db = await _make_db()
         try:
             await fake_db.conn.execute(
-                "INSERT INTO applications VALUES (3,100,'group-b','approved','approved','foreman',500,'2026-08-10')"
+                "INSERT INTO applications VALUES (3,100,'group-b','approved','approved','foreman',500,'2026-08-10',0)"
             )
             await fake_db.conn.execute(
-                "INSERT INTO applications VALUES (4,100,'group-b','approved','approved','foreman',NULL,NULL)"
+                "INSERT INTO applications VALUES (4,100,'group-b','approved','approved','foreman',NULL,NULL,0)"
             )
             await fake_db.conn.execute(
-                "INSERT INTO applications VALUES (5,100,NULL,'approved','approved','foreman',500,'2026-08-10')"
+                "INSERT INTO applications VALUES (5,100,NULL,'approved','approved','foreman',500,'2026-08-10',0)"
             )
             await fake_db.conn.commit()
             with patch.object(kp, "db", fake_db):
@@ -130,6 +131,29 @@ def test_batch_archive_only_accepts_fully_accounted_logical_groups():
             assert result["skipped_ids"] == [3, 4]
             assert result["eligible_groups"] == 2
             assert result["skipped_groups"] == 1
+        finally:
+            await fake_db.conn.close()
+
+    asyncio.run(scenario())
+
+
+def test_batch_restore_expands_merged_reports_and_repairs_partial_archive():
+    async def scenario():
+        fake_db = await _make_db()
+        try:
+            await fake_db.conn.execute("UPDATE applications SET kp_archived=1 WHERE id=1")
+            await fake_db.conn.execute(
+                "INSERT INTO applications VALUES (3,100,NULL,'approved','approved','foreman',500,'2026-08-10',1)"
+            )
+            await fake_db.conn.execute(
+                "INSERT INTO applications VALUES (4,100,NULL,'approved','approved','foreman',500,'2026-08-10',0)"
+            )
+            await fake_db.conn.commit()
+            with patch.object(kp, "db", fake_db):
+                result = await kp._prepare_smr_restore([1, 3, 4])
+            assert result["restore_ids"] == [1, 2, 3]
+            assert result["restored_groups"] == 2
+            assert result["already_active_groups"] == 1
         finally:
             await fake_db.conn.close()
 
