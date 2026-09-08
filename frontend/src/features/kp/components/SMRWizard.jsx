@@ -47,6 +47,7 @@ export default function SMRWizard({
     // 4. Refresh browser mid-edit → draft restores from localStorage with current step
     const [step, setStep] = useState('hours');
     const [hoursData, setHoursData] = useState([]);
+    const [draftWorkerTeams, setDraftWorkerTeams] = useState([]);
     const [worksData, setWorksData] = useState([]);
     const [extraWorksData, setExtraWorksData] = useState([]);
     // v2.5 Commit 3: lifted from StepWorks so the "Редактировать работы"
@@ -83,6 +84,7 @@ export default function SMRWizard({
         if (!found?.data) return;
         const d = found.data;
         if (Array.isArray(d.hoursData)) setHoursData(d.hoursData);
+        if (Array.isArray(d.draftWorkerTeams)) setDraftWorkerTeams(d.draftWorkerTeams);
         if (Array.isArray(d.worksData)) setWorksData(d.worksData);
         if (Array.isArray(d.extraWorksData)) setExtraWorksData(d.extraWorksData);
         if (typeof d.perBrigade === 'boolean') setPerBrigade(d.perBrigade);
@@ -98,13 +100,14 @@ export default function SMRWizard({
 
     // Autosave whole wizard state under one key (debounced).
     useDraft(draftKey, {
-        hoursData, worksData, extraWorksData,
+        hoursData, draftWorkerTeams, worksData, extraWorksData,
         perBrigade, worksByTeam, extraByTeam,
         commonWorks, commonExtras,
         notWorkedSections,
         step,
     }, {
         shouldSave: (d) =>
+            (Array.isArray(d.draftWorkerTeams) && d.draftWorkerTeams.length > 0) ||
             (Array.isArray(d.hoursData) && d.hoursData.length > 0) ||
             (Array.isArray(d.worksData) && d.worksData.length > 0) ||
             (Array.isArray(d.extraWorksData) && d.extraWorksData.length > 0) ||
@@ -259,6 +262,8 @@ export default function SMRWizard({
                                         hoursData={hoursData}
                                         setHoursData={setHoursData}
                                         addendumMode={addendumMode}
+                                        draftWorkerTeams={draftWorkerTeams}
+                                        setDraftWorkerTeams={setDraftWorkerTeams}
                                         onTeamStatusChange={(source, team, status) => {
                                             const key = `${Number(source)}:${Number(team)}`;
                                             setNotWorkedSections(prev => (

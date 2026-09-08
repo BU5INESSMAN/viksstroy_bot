@@ -21,3 +21,26 @@ export function reconcileDraftHours(rows, teams, appId) {
     }
     return [...result.values()];
 }
+
+// Unsaved ad-hoc participants belong to the wizard draft, not to a mounted
+// step. Retain them when returning from Works/Review or restoring the draft.
+export function mergeDraftWorkerTeams(teams, draftTeams, appId) {
+    const result = teams.map(t => ({ ...t, members: [...(t.members || [])] }));
+    for (const draft of draftTeams) {
+        const source = Number(draft.source_application_id || appId);
+        const existing = result.find(t => Number(t.source_application_id || appId) === source
+            && Number(t.team_id) === Number(draft.team_id));
+        if (existing?.smr_section_status === 'not_worked') continue;
+        const members = (draft.members || []).filter(m => m.is_ad_hoc);
+        if (existing) {
+            for (const member of members) {
+                if (!existing.members.some(m => Number(m.user_id) === Number(member.user_id))) {
+                    existing.members.push(member);
+                }
+            }
+        } else if (members.length) {
+            result.push({ ...draft, source_application_id: source, members: [...members] });
+        }
+    }
+    return result;
+}

@@ -3,7 +3,8 @@ import axios from 'axios';
 import toast from 'react-hot-toast';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ChevronDown, User, Crown, ArrowRight, UserPlus, X, Search, MoreVertical, Ban, RotateCcw, ListChecks } from 'lucide-react';
-import { reconcileDraftHours } from '../smrDraft';
+import { reconcileDraftHours, mergeDraftWorkerTeams } from '../smrDraft';
+import { updateTeamHours, clearParticipantSalary } from '../hourUpdates';
 
 const prefersReducedMotion = typeof window !== 'undefined'
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -31,12 +32,16 @@ export default function StepHours({
     tgId,
     hoursData,
     setHoursData,
+    draftWorkerTeams,
+    setDraftWorkerTeams,
     onNext,
     readOnly = false,
     addendumMode = false,
     onTeamStatusChange,
 }) {
-    const [teams, setTeams] = useState([]);
+    const [loadedTeams, setTeams] = useState([]);
+    const teams = useMemo(() => mergeDraftWorkerTeams(loadedTeams, draftWorkerTeams, appId),
+        [loadedTeams, draftWorkerTeams, appId]);
     const [loading, setLoading] = useState(true);
     const [expanded, setExpanded] = useState(() => new Set());
     const [customOverrides, setCustomOverrides] = useState(() => new Set());
@@ -176,10 +181,8 @@ export default function StepHours({
                 && h.team_id === team_id && h.user_id === user_id
             ));
             if (value === '') {
-                if (existing && Number(existing.hours || 0) > 0) {
-                    return [...others, { ...existing, participant_salary: 0 }];
-                }
-                return others;
+                const cleared = clearParticipantSalary(existing);
+                return cleared ? [...others, cleared] : others;
             }
             return [...others, {
                 ...existing,
@@ -201,43 +204,7 @@ export default function StepHours({
         if (!team) return;
         const currentSection = sectionKey(source_application_id, team_id);
         setTeamHourInputs(prev => ({ ...prev, [currentSection]: value }));
-        const numeric = value === '' ? null : Number(value);
-        setHoursData(prev => {
-            const others = prev.flatMap(h => {
-                if (h.team_id !== team_id
-                    || sourceId(h, appId) !== Number(source_application_id)
-                    || customOverrides.has(memberKey(source_application_id, team_id, h.user_id))) {
-                    return [h];
-                }
-                // Clearing the common value must not silently remove a salary
-                // already entered for a participant.
-                if (numeric === null && Number(h.participant_salary || 0) > 0) {
-                    return [{ ...h, hours: 0 }];
-                }
-                return [];
-            });
-            if (numeric === null || !Number.isFinite(numeric)) {
-                return others;
-            }
-            const additions = (team.members || [])
-                .filter(m => !customOverrides.has(memberKey(source_application_id, team_id, m.user_id)))
-                .filter(m => (m.status || 'available') === 'available')
-                .map(m => {
-                    const existing = prev.find(h =>
-                        sourceId(h, appId) === Number(source_application_id)
-                        && h.team_id === team_id && h.user_id === m.user_id
-                    );
-                    return {
-                        ...existing,
-                        source_application_id,
-                        team_id,
-                        user_id: m.user_id,
-                        hours: numeric,
-                        participant_salary: existing?.participant_salary ?? 0,
-                    };
-                });
-            return [...others, ...additions];
-        });
+        setHoursData(prev => updateTeamHours(prev, team, value, customOverrides, appId));
     };
 
     const toggleExpand = (source_application_id, team_id) => {
@@ -284,33 +251,16 @@ export default function StepHours({
             hours: 0,
             participant_salary: 0,
         };
-        setTeams(prev => {
-            const exists = prev.find(t =>
-                Number(t.team_id) === Number(teamId)
-                && sourceId(t, appId) === targetSource
-            );
-            if (exists) {
-                if ((exists.members || []).some(m => Number(m.user_id) === Number(cand.member_id))) {
-                    return prev;
-                }
-                return prev.map(t => (
-                    Number(t.team_id) === Number(teamId)
-                    && sourceId(t, appId) === targetSource
-                )
-                    ? { ...t, members: [...(t.members || []), newMember] }
-                    : t);
-            }
-            return [...prev, {
-                section_id: sectionKey(targetSource, teamId),
-                source_application_id: targetSource,
-                object_name: prev.find(t => sourceId(t, appId) === targetSource)?.object_name || `Объект ${targetSource}`,
-                team_id: teamId,
-                team_name: cand.team_name || `Бригада ${teamId}`,
-                team_icon: cand.team_icon || '',
-                is_virtual: true,
-                members: [newMember],
-            }];
-        });
+        setDraftWorkerTeams(prev => mergeDraftWorkerTeams(prev, [{
+            section_id: sectionKey(targetSource, teamId),
+            source_application_id: targetSource,
+            object_name: teams.find(t => sourceId(t, appId) === targetSource)?.object_name || `Объект ${targetSource}`,
+            team_id: teamId,
+            team_name: cand.team_name || `Бригада ${teamId}`,
+            team_icon: cand.team_icon || '',
+            is_virtual: true,
+            members: [newMember],
+        }], appId));
         setExpanded(prev => new Set(prev).add(sectionKey(targetSource, teamId)));
         setCandidates(prev => prev.filter(c => Number(c.member_id) !== Number(cand.member_id)));
         toast.success(`${cand.fio} добавлен`);
@@ -376,6 +326,9 @@ export default function StepHours({
                     : item
             )));
             if (status === 'not_worked') {
+                setDraftWorkerTeams(prev => prev.filter(item => !(
+                    sourceId(item, appId) === source && Number(item.team_id) === Number(team.team_id)
+                )));
                 setHoursData(prev => prev.filter(item => !(
                     sourceId(item, appId) === source && Number(item.team_id) === Number(team.team_id)
                 )));

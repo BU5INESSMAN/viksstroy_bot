@@ -14,7 +14,7 @@ from database_deps import db
 from auth_deps import get_current_user, require_role
 from urllib.parse import quote
 from services.notifications import notify_users
-from services.smr_completeness import get_smr_completeness
+from services.smr_completeness import get_smr_completeness, describe_smr_missing
 from services.smr_sections import (
     ensure_smr_team_sections,
     mark_payload_sections_submitted,
@@ -768,14 +768,13 @@ async def submit_smr_report(app_id: int, request: Request, current_user=Depends(
             await db.conn.commit()
             await _audit_smr_change(
                 app_id, current_user, 'smr_draft_saved', before_snapshot,
-                metadata={'result_status': 'in_progress', 'finalization_rejected': True},
+                metadata={'result_status': 'in_progress', 'finalization_rejected': True,
+                          'missing_details': report_state.get('missing_details', [])},
             )
             raise HTTPException(
                 400,
                 "СМР сохранён как черновик, но ещё не закрыт. "
-                f"Не заполнено бригад: {int(report_state.get('missing_sections') or 0)}; "
-                f"сотрудников: {int(report_state.get('missing_members') or 0)}. "
-                "Введите часы каждому сотруднику, включая явный 0, либо отметьте бригаду «Не работала».",
+                + await describe_smr_missing(db, report_state),
             )
         marks = ",".join("?" * len(group_ids))
         await db.conn.execute(
@@ -1530,7 +1529,7 @@ async def review_smr(app_id: int, request: Request, current_user=Depends(get_cur
             await db.conn.commit()
             raise HTTPException(
                 400,
-                "Отчёт сохранён, но не одобрен: заполнены не все бригады и сотрудники.",
+                "Отчёт сохранён, но не одобрен. " + await describe_smr_missing(db, report_state),
             )
         marks = ','.join('?' * len(group_ids))
         await db.conn.execute(

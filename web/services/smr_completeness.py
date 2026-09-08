@@ -98,6 +98,8 @@ async def get_smr_completeness(db, app_ids: list[int], *, trust_confirmed: bool 
             }
 
     raw: dict[int, dict] = {}
+    from smr_roster import aliases_for
+    aliases = await aliases_for(db, normalized)
     for app in applications:
         app_id = int(app["id"])
         app_team_ids = _csv_ids(app.get("team_id"))
@@ -107,6 +109,13 @@ async def get_smr_completeness(db, app_ids: list[int], *, trust_confirmed: bool 
         not_worked_sections = 0
         submitted_sections = 0
         confirmed_sections = 0
+        missing_details = []
+        known_selected = {mid for mid, tid in member_team.items() if tid in app_team_ids} | {
+            mid for (aid, _), section in section_map.items() if aid == app_id
+            for mid in roster_member_ids(section)
+        }
+        known_selected |= {int(a['old_member_id']) for a in aliases
+                           if int(a['app_id']) == app_id and int(a['member_id']) in known_selected}
         for team_id in app_team_ids:
             section = section_map.get((app_id, team_id), {})
             if not section.get('is_required', 1):
@@ -133,19 +142,35 @@ async def get_smr_completeness(db, app_ids: list[int], *, trust_confirmed: bool 
                 member_id for saved_app, saved_team, member_id in saved_rows
                 if saved_app == app_id and saved_team == team_id
             }
-            if selected_ids:
+            if expected:
                 missing = expected - saved
-                if not expected or missing:
+                if missing:
                     missing_sections += 1
-                    missing_members += max(1, len(missing))
+                    missing_members += len(missing)
+                    missing_details.append({'app_id': app_id, 'team_id': team_id,
+                                            'member_ids': sorted(missing), 'reason': 'missing_hours'})
+            elif selected_ids:
+                # An explicitly selected roster may cover only some of the
+                # assigned brigades. A provably empty brigade has no person
+                # whose hours could be entered; do not invent a missing worker.
+                # Unresolved legacy IDs must NOT be replaced by an ad-hoc row.
+                if selected_ids - known_selected:
+                    missing_sections += 1
+                    missing_members += 1
+                    missing_details.append({'app_id': app_id, 'team_id': team_id,
+                                            'member_ids': [], 'reason': 'unknown_roster'})
             elif not saved:
                 # Compatibility for old applications where the original
                 # participant roster was never persisted.
                 missing_sections += 1
                 missing_members += 1
+                missing_details.append({'app_id': app_id, 'team_id': team_id,
+                                        'member_ids': [], 'reason': 'empty_hours'})
         if not app_team_ids:
             missing_sections = 1
             missing_members = 1
+            missing_details.append({'app_id': app_id, 'team_id': None,
+                                    'member_ids': [], 'reason': 'no_teams'})
         raw[app_id] = {
             "is_complete": missing_sections == 0,
             "missing_sections": missing_sections,
@@ -153,6 +178,7 @@ async def get_smr_completeness(db, app_ids: list[int], *, trust_confirmed: bool 
             "not_worked_sections": not_worked_sections,
             "submitted_sections": submitted_sections,
             "confirmed_sections": confirmed_sections,
+            "missing_details": missing_details,
         }
 
     logical_groups: dict[str, list[int]] = {}
@@ -175,7 +201,44 @@ async def get_smr_completeness(db, app_ids: list[int], *, trust_confirmed: bool 
             "not_worked_sections": not_worked_sections,
             "submitted_sections": submitted_sections,
             "confirmed_sections": confirmed_sections,
+            "missing_details": [detail for app_id in member_ids for detail in raw[app_id]['missing_details']],
         }
         for app_id in member_ids:
             result[app_id] = dict(group_result)
     return result
+
+
+async def describe_smr_missing(db, state: dict) -> str:
+    """Explain the actionable cause, using frozen names before live names."""
+    from smr_roster import roster, sections_for
+    details = state.get('missing_details') or []
+    sections = await sections_for(db, sorted({d['app_id'] for d in details}))
+    names = {(int(s['app_id']), int(s['team_id']), int(m['member_id'])): m.get('fio')
+             for s in sections for m in roster(s)}
+    messages = []
+    for detail in details:
+        aid, tid = detail['app_id'], detail['team_id']
+        async with db.conn.execute('SELECT public_number FROM applications WHERE id=?', (aid,)) as cur:
+            row = await cur.fetchone()
+        label = (row[0] if row else None) or f'№{aid}'
+        if tid is None:
+            messages.append(f'{label}: не указана бригада.')
+            continue
+        async with db.conn.execute('SELECT name FROM teams WHERE id=?', (tid,)) as cur:
+            row = await cur.fetchone()
+        label += f' · {(row[0] if row else None) or f"бригада {tid}"}'
+        if detail['reason'] == 'unknown_roster':
+            messages.append(f'{label}: не удалось определить сохранённый состав. Требуется восстановить состав заявки; повторный ввод часов не устранит ошибку.')
+        elif detail['member_ids']:
+            members = []
+            for mid in detail['member_ids']:
+                name = names.get((aid, tid, mid))
+                if not name:
+                    async with db.conn.execute('SELECT fio FROM team_members WHERE id=?', (mid,)) as cur:
+                        row = await cur.fetchone()
+                    name = row[0] if row else None
+                members.append(name or f'сотрудник ID {mid}')
+            messages.append(f'{label}: не введены часы — {", ".join(members)}. Укажите часы, включая явный 0.')
+        else:
+            messages.append(f'{label}: не заполнены часы бригады.')
+    return ' '.join(messages)

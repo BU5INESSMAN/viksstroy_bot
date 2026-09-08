@@ -70,6 +70,74 @@ async def get_smr_team_sections(db, app_ids: list[int]) -> list[dict]:
     return await ensure_smr_team_sections(db, app_ids)
 
 
+async def sync_application_roster(db, app_id: int, team_ids, selected_members) -> None:
+    """Apply an explicit application roster edit in the caller's transaction.
+
+    Directory changes alone never refresh snapshots. Saved hours are retained,
+    including rows for deselected people (the hours API exposes them as ad-hoc).
+    Completed reports must be edited through the dedicated SMR editor.
+    """
+    from fastapi import HTTPException
+    from smr_roster import aliases_for, roster
+
+    async with db.conn.execute(
+        'SELECT team_id,selected_members,smr_status,kp_status FROM applications WHERE id=?',
+        (app_id,),
+    ) as cursor:
+        app = dict(await cursor.fetchone())
+    teams, selected = set(csv_ids(team_ids)), set(csv_ids(selected_members))
+    if teams == set(csv_ids(app['team_id'])) and selected == set(csv_ids(app['selected_members'])):
+        return
+    if app.get('smr_status') == 'approved' or app.get('kp_status') == 'approved':
+        raise HTTPException(409, 'СМР уже завершён. Измените участников в редакторе готового отчёта.')
+
+    sections = await ensure_smr_team_sections(db, [app_id])
+    if any(s.get('status') == 'confirmed' for s in sections):
+        raise HTTPException(409, 'Состав подтверждённого СМР изменяется в редакторе готового отчёта.')
+    aliases = {int(a['old_member_id']): int(a['member_id']) for a in await aliases_for(db, [app_id])}
+    selected = {aliases.get(mid, mid) for mid in selected}
+    snapshots = {int(s['team_id']): roster(s) for s in sections}
+    rosters = {}
+    for tid in sorted(teams):
+        # Keep names and brigade attribution of retained historical people.
+        members = {int(m['member_id']): m for m in snapshots.get(tid, [])
+                   if not selected or int(m['member_id']) in selected}
+        async with db.conn.execute(
+            'SELECT id,fio,position FROM team_members WHERE team_id=? ORDER BY id', (tid,),
+        ) as cursor:
+            for row in await cursor.fetchall():
+                mid = int(row['id'])
+                if (not selected or mid in selected) and not any(
+                    int(m['member_id']) == mid for sid, entries in snapshots.items()
+                    if sid in teams and sid != tid for m in entries
+                ):
+                    members.setdefault(mid, {'member_id': mid, 'fio': row['fio'], 'position': row['position']})
+        rosters[tid] = list(members.values())
+    covered = {int(m['member_id']) for members in rosters.values() for m in members}
+    if selected - covered:
+        ids = ', '.join(str(mid) for mid in sorted(selected - covered))
+        raise HTTPException(409, f'Не удалось определить бригаду выбранных сотрудников (ID: {ids}). Обновите состав заявки.')
+    # Retire only the requirement; never remove historical sections or facts.
+    marks = ','.join('?' for _ in teams)
+    await db.conn.execute(
+        'UPDATE smr_team_sections SET is_required=0 WHERE app_id=?'
+        + (f' AND team_id NOT IN ({marks})' if teams else ''),
+        (app_id, *sorted(teams)),
+    )
+    for tid, members in rosters.items():
+        await db.conn.execute(
+            """INSERT INTO smr_team_sections(app_id,team_id,roster_json,is_required)
+               VALUES(?,?,?,?) ON CONFLICT(app_id,team_id) DO UPDATE SET
+               roster_json=excluded.roster_json, is_required=excluded.is_required,
+               status=CASE WHEN smr_team_sections.roster_json!=excluded.roster_json
+                   OR smr_team_sections.is_required!=excluded.is_required THEN 'draft' ELSE smr_team_sections.status END,
+               not_worked_reason=CASE WHEN smr_team_sections.roster_json!=excluded.roster_json
+                   THEN '' ELSE smr_team_sections.not_worked_reason END,
+               updated_at=CURRENT_TIMESTAMP""",
+            (app_id, tid, json.dumps(members, ensure_ascii=False), int(bool(members) or not selected)),
+        )
+
+
 async def set_smr_team_section_status(
     db,
     app_id: int,

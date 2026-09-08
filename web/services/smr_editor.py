@@ -11,7 +11,7 @@ from fastapi import HTTPException
 from smr_data import get_smr_read_model, logical_smr_app_ids
 from smr_audit import payload_hash, capture_smr_financial_snapshot, record_smr_change
 from smr_calculations import decimal_value, money_value, MAX_HOURS_PER_ROW
-from services.smr_completeness import get_smr_completeness
+from services.smr_completeness import get_smr_completeness, describe_smr_missing
 
 
 async def editor_state(db, app_id, user):
@@ -137,7 +137,7 @@ async def save_report_changes(db, app_id, data, user):
         if count:
             completeness = await get_smr_completeness(db, ids, trust_confirmed=False)
             if not completeness[min(ids)]['is_complete']:
-                raise HTTPException(400, 'Заполните часы всех сотрудников, включая 0 для не работавших. Данные не изменены.')
+                raise HTTPException(400, 'Данные не изменены. ' + await describe_smr_missing(db, completeness[min(ids)]))
             marks = ','.join('?' for _ in ids)
             await db.conn.execute(f'UPDATE applications SET smr_accounted_at=NULL,smr_accounted_by=NULL WHERE id IN ({marks})', ids)
             await record_smr_change(db, app_id, event_type='smr_ready_edited', actor_user_id=actor,

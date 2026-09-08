@@ -867,6 +867,8 @@ async def update_application(app_id, tg_id, team_id, date_target, object_address
         "foreman_user_id": prev_foreman_id,
     }
     try:
+        from services.smr_sections import sync_application_roster
+        await sync_application_roster(db, app_id, team_id, selected_members)
         await db.conn.execute(
             "UPDATE applications SET team_id=?, date_target=?, object_address=?, object_id=?, comment=?, selected_members=?, equipment_data=? WHERE id = ?",
             (team_id, date_target, object_address, object_id, comment, selected_members, equipment_data, app_id))
